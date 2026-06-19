@@ -120,7 +120,7 @@ function fallbackPayload(session: MvpSession) {
     payments,
     financeTransactions: initialFinanceTransactions,
     auditLogs: initialAuditLogs,
-    metrics: getExecutiveSummary(branchFiltered, groups, students, payments)
+    metrics: getExecutiveSummary(branchFiltered, groups, students, payments, initialTeachers)
   };
 }
 
@@ -247,11 +247,19 @@ async function dbBootstrap(session: MvpSession) {
     studentCount: studentsRaw.filter((student) => student.group_id === group.id).length
   }));
 
+  // Role-based scoping (mirrors fallbackPayload): owner sees everything;
+  // branch_manager/admin see only their branch; teacher sees only their own students/groups.
+  const isOwner = session.role === "owner";
+  const branchAllowed = (branchId?: string | null) => isOwner || branchId === session.dbBranchId;
+
   const students = studentsRaw
     .filter((student) => {
-      if (session.role !== "teacher") return true;
-      const group = groupById.get(student.group_id);
-      return group?.teacher_id === session.userId;
+      if (isOwner) return true;
+      if (session.role === "teacher") {
+        const group = groupById.get(student.group_id);
+        return group?.teacher_id === session.userId;
+      }
+      return student.branch_id === session.dbBranchId;
     })
     .map((student) => {
       const group = groupById.get(student.group_id);
@@ -260,12 +268,10 @@ async function dbBootstrap(session: MvpSession) {
 
   const visibleStudentIds = new Set(students.map((student) => student.id));
   const payments = paymentsRaw.filter((payment) => visibleStudentIds.has(payment.student_id)).map(mapDbPayment);
-  
-  return {
-    mode: "supabase",
-    session,
-    organizations: initialOrganizations,
-    branches: branches.map((branch) => ({
+
+  const branchesVisible = branches
+    .filter((branch) => branchAllowed(branch.id))
+    .map((branch) => ({
       id: branch.id,
       organizationId: branch.organization_id,
       name: branch.name,
@@ -274,16 +280,32 @@ async function dbBootstrap(session: MvpSession) {
       managerName: users.find((user) => user.id === branch.manager_id)?.full_name || "Руководитель",
       phone: branch.phone || "",
       hallsCount: halls.filter((hall) => hall.branch_id === branch.id).length
-    })),
-    halls: halls.map((hall) => ({ id: hall.id, branchId: hall.branch_id, name: hall.name, capacity: hall.capacity || 0 })),
+    }));
+
+  const hallsVisible = halls
+    .filter((hall) => branchAllowed(hall.branch_id))
+    .map((hall) => ({ id: hall.id, branchId: hall.branch_id, name: hall.name, capacity: hall.capacity || 0 }));
+
+  const groupsVisible = groupsMapped.filter((group) => {
+    if (isOwner) return true;
+    if (session.role === "teacher") return group.teacherId === session.userId;
+    return group.branchId === session.dbBranchId;
+  });
+
+  return {
+    mode: "supabase",
+    session,
+    organizations: initialOrganizations,
+    branches: branchesVisible,
+    halls: hallsVisible,
     teachers,
-    groups: groupsMapped,
+    groups: groupsVisible,
     students,
     announcements: initialAnnouncements,
     payments,
     financeTransactions,
     auditLogs: initialAuditLogs,
-    metrics: getExecutiveSummary(branches as any, groupsMapped as any, students as any, payments as any)
+    metrics: getExecutiveSummary(branchesVisible as any, groupsVisible as any, students as any, payments as any, teachers as any)
   };
 }
 

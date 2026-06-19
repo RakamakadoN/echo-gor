@@ -71,13 +71,13 @@ export function OwnerExecutiveWorkspace({
   metrics
 }: OwnerExecutiveWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<OwnerTab>("dashboard");
-  const debt = Math.abs(students.filter((student) => student.balance < 0).reduce((sum, student) => sum + student.balance, 0)) + 420000;
-  const renewals = students.filter((student) => student.subscriptions.some((sub) => sub.lessonsLeft <= 2 || sub.status !== "active")).length + 37;
-  const monthRevenue = metrics.thisMonthRevenue + 4380000;
-  const todayRevenue = metrics.todayRevenue + 185000;
-  const activeStudents = metrics.activeStudentsTotal + 1284;
-  const newStudentsMonth = 86;
-  const eventsCount = competitions.length + 9;
+  const debt = Math.abs(students.filter((student) => student.balance < 0).reduce((sum, student) => sum + student.balance, 0));
+  const renewals = students.filter((student) => student.subscriptions.some((sub) => sub.lessonsLeft <= 2 || sub.status !== "active")).length;
+  const monthRevenue = metrics.thisMonthRevenue;
+  const todayRevenue = metrics.todayRevenue;
+  const activeStudents = metrics.activeStudentsTotal;
+  const newStudentsMonth = metrics.newRegistrationsToday;
+  const eventsCount = competitions.length;
 
   const branchScorecards = useMemo(() => {
     return metrics.branchMetrics.map((branchMetric, index) => {
@@ -86,11 +86,11 @@ export function OwnerExecutiveWorkspace({
       const status = branchMetric.attendanceRate < 70 ? "critical" : branchMetric.attendanceRate < 82 ? "warning" : "healthy";
       return {
         ...branchMetric,
-        city: branch?.city || ["Владикавказ", "Астана", "Шымкент"][index] || "Филиал",
+        city: branch?.city || "Филиал",
         managerName: branch?.managerName || "Руководитель филиала",
         teachersCount,
-        newLeads: 8 + index * 3,
-        retention: Math.max(78, 96 - index * 5),
+        newLeads: 0,
+        retention: Math.max(0, Math.round(100 - metrics.churnRate)),
         status
       };
     });
@@ -179,8 +179,8 @@ function OwnerDashboard({ branches, activeStudents, newStudentsMonth, teachers, 
     { label: "Активные ученики", value: activeStudents, tone: "white", detail: `${newStudentsMonth} новых за месяц` },
     { label: "Посещаемость сегодня", value: `${attendanceToday}%`, tone: "emerald", detail: "месяц 82%" },
     { label: "Филиалов", value: branches.length, tone: "white", detail: "3 активны" },
-    { label: "Преподавателей", value: teachers.length + 12, tone: "white", detail: "загрузка 86%" },
-    { label: "Групп", value: groups.length + 28, tone: "white", detail: "7 перегружены" },
+    { label: "Преподавателей", value: teachers.length, tone: "white", detail: "загрузка 86%" },
+    { label: "Групп", value: groups.length, tone: "white", detail: "7 перегружены" },
     { label: "Долги", value: money(debt), tone: "rose", detail: `${renewals} продлений` },
     { label: "Концерты", value: eventsCount, tone: "emerald", detail: "4 в подготовке" },
     { label: "Мероприятия", value: eventsCount + 6, tone: "white", detail: "месяц" },
@@ -308,7 +308,7 @@ function OwnerEduErpView({ branches, groups, students, teachers, payments, month
   const toggleEduSection = (title: string) => setOpenEduSections((sections) => ({ ...sections, [title]: !sections[title] }));
 
   const moduleCards = [
-    { icon: Users, title: "Посетители", text: "Все ученики сети, родители, статусы, источники, комментарии, архив.", accent: `${students.length + 2063}` },
+    { icon: Users, title: "Посетители", text: "Все ученики сети, родители, статусы, источники, комментарии, архив.", accent: `${students.length}` },
     { icon: Receipt, title: "Счета", text: "Оплата, отправка, редактирование, удаление, массовое выставление.", accent: money(debt) },
     { icon: WalletCards, title: "Баланс", text: "Пополнения, возвраты, корректировки, резерв баланса, экспорт.", accent: money(todayRevenue) },
     { icon: BadgePercent, title: "Абонементы", text: "Типы, ПП, скидки, справки, сроки, остатки занятий.", accent: `${renewals}` },
@@ -316,7 +316,7 @@ function OwnerEduErpView({ branches, groups, students, teachers, payments, month
     { icon: Send, title: "Рассылка", text: "SMS, email, push, шаблоны, будущая отправка, история доставки.", accent: "100%" },
     { icon: CheckCircle, title: "Задачи", text: "Просроченные, на сегодня, мои, шаблоны задач и реестр.", accent: "2062" },
     { icon: BarChart3, title: "Отчеты", text: "Выручка, потери, взаиморасчеты, источники, посещаемость.", accent: "12", area: "reports" as const },
-    { icon: UserRound, title: "Сотрудники", text: "Преподаватели, администраторы, руководители, роли, нагрузка.", accent: `${teachers.length + 12}`, area: "employees" as const },
+    { icon: UserRound, title: "Сотрудники", text: "Преподаватели, администраторы, руководители, роли, нагрузка.", accent: `${teachers.length}`, area: "employees" as const },
     { icon: Settings, title: "Справочники", text: "Филиалы, группы, статусы, источники, стоимость, интеграции.", accent: "18", area: "directories" as const }
   ];
 
@@ -571,7 +571,7 @@ function StudentsNetworkView({ students, branches }: { students: Student[]; bran
   return (
     <OwnerScreen title="Ученики сети" subtitle="Вся база учеников, распределение по филиалам, новые, ушедшие, посещаемость и история роста.">
       <div className="grid gap-3 md:grid-cols-4">
-        <OwnerKpi label="Всего учеников" value={students.length + 1284} detail="по сети" />
+        <OwnerKpi label="Всего учеников" value={students.length} detail="по сети" />
         <OwnerKpi label="Новые месяца" value="86" detail="лиды и записи" tone="emerald" />
         <OwnerKpi label="Риск оттока" value="37" detail="AI обнаружил" tone="rose" />
         <OwnerKpi label="Средний срок" value="14 мес." detail="обучения" tone="gold" />
@@ -672,8 +672,8 @@ function ExecutiveAnalyticsView({ branches, groups, teachers }: any) {
       <div className="grid gap-4 xl:grid-cols-3">
         <ExecutivePanel icon={<LineChart />} title="Рост сети" text="Новые ученики +14%, выручка +18%, повторные продажи 71%." />
         <ExecutivePanel icon={<Users />} title="Удержание" text="Retention 91%, средний срок обучения 14 месяцев, риск ухода 37 учеников." />
-        <ExecutivePanel icon={<GraduationCap />} title="Загрузка преподавателей" text={`${teachers.length + 12} преподавателей, средняя загрузка 86%, 2 зоны перегруза.`} />
-        <ExecutivePanel icon={<BookIconFallback />} title="Загрузка групп" text={`${groups.length + 28} групп, 7 перегружены, 4 требуют набора.`} />
+        <ExecutivePanel icon={<GraduationCap />} title="Загрузка преподавателей" text={`${teachers.length} преподавателей, средняя загрузка 86%, 2 зоны перегруза.`} />
+        <ExecutivePanel icon={<BookIconFallback />} title="Загрузка групп" text={`${groups.length} групп, 7 перегружены, 4 требуют набора.`} />
         <ExecutivePanel icon={<Building2 />} title="Эффективность филиалов" text={`${branches.length} филиала, 1 требует вмешательства, 1 в зоне внимания.`} />
         <ExecutivePanel icon={<WalletCards />} title="Финансы" text="Средний чек 42 000 ₸, рост MoM +18%, долги требуют контроля." />
       </div>
@@ -913,7 +913,7 @@ function OwnerEduAreaPreview({ activeArea, branches, teachers, groups, payments,
         <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">Срез сотрудников</p>
         <h4 className="mt-1 text-lg font-black text-white">Кого видит владелец</h4>
         <div className="mt-4 grid grid-cols-2 gap-2">
-          <MiniMetric label="Сотрудники" value={teachers.length + 12} />
+          <MiniMetric label="Сотрудники" value={teachers.length} />
           <MiniMetric label="Преподаватели" value={teachers.length} />
           <MiniMetric label="Админы" value="7" />
           <MiniMetric label="Руководители" value={branches.length} />
@@ -934,7 +934,7 @@ function OwnerEduAreaPreview({ activeArea, branches, teachers, groups, payments,
         <h4 className="mt-1 text-lg font-black text-white">Настройки EduERP-ядра</h4>
         <div className="mt-4 grid grid-cols-2 gap-2">
           <MiniMetric label="Филиалы" value={branches.length} />
-          <MiniMetric label="Группы" value={groups.length + 28} />
+          <MiniMetric label="Группы" value={groups.length} />
           <MiniMetric label="Абонементы" value="9" />
           <MiniMetric label="Шаблоны" value="24" />
         </div>
@@ -962,7 +962,7 @@ function OwnerEduAreaPreview({ activeArea, branches, teachers, groups, payments,
       <div className="mt-4 grid grid-cols-2 gap-2">
         <MiniMetric label="Месяц" value={money(monthRevenue)} />
         <MiniMetric label="Долги" value={money(debt)} />
-        <MiniMetric label="Операций" value={payments.length + 1840} />
+        <MiniMetric label="Операций" value={payments.length} />
         <MiniMetric label="Отчетов" value="24" />
       </div>
       <OwnerMiniTable

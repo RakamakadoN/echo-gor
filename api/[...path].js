@@ -1,4 +1,4 @@
-// api/[...path].ts
+// api/__entry.ts
 import express from "express";
 
 // src/dataMock.ts
@@ -212,32 +212,61 @@ var initialFinanceTransactions = [
 var initialAuditLogs = [
   { id: "log-1", organizationId: orgId, timestamp: "2026-05-31T09:12:00Z", userEmail: "owner@danceos.ru", userRole: "\u0412\u043B\u0430\u0434\u0435\u043B\u0435\u0446", action: "\u041F\u0440\u043E\u0441\u043C\u043E\u0442\u0440 \u043A\u043E\u043D\u0441\u043E\u043B\u0438\u0434\u0438\u0440\u043E\u0432\u0430\u043D\u043D\u043E\u0433\u043E \u0444\u0438\u043D\u0430\u043D\u0441\u043E\u0432\u043E\u0433\u043E \u043E\u0442\u0447\u0435\u0442\u0430", details: "\u0423\u0441\u043F\u0435\u0448\u043D\u0430\u044F \u0432\u044B\u0433\u0440\u0443\u0437\u043A\u0430 \u0437\u0430 \u043C\u0430\u0439 2026 \u0433\u043E\u0434\u0430" }
 ];
-function getExecutiveSummary(branches, groups, students, payments) {
+function getExecutiveSummary(branches, groups, students, payments, teachers = []) {
+  const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+  const monthPrefix = today.slice(0, 7);
+  const round1 = (n) => Math.round(n * 10) / 10;
+  const isPaid = (p) => p.status === "paid";
+  const paidSum = (list) => list.filter(isPaid).reduce((sum, p) => sum + (p.amount || 0), 0);
+  const attendanceRate2 = (list) => {
+    let present = 0;
+    let marked = 0;
+    list.forEach((s) => {
+      Object.values(s.attendance || {}).forEach((a) => {
+        if (!a || a.status === "unmarked") return;
+        marked += 1;
+        if (a.status === "present") present += 1;
+      });
+    });
+    return marked ? Math.round(present / marked * 100) : 0;
+  };
+  const hasActiveSub = (s) => (s.subscriptions || []).some((sub) => sub.status === "active");
+  const activeSubscriptionsCount = students.reduce(
+    (count, s) => count + (s.subscriptions || []).filter((sub) => sub.status === "active").length,
+    0
+  );
+  const churnRate = students.length ? round1(students.filter((s) => !hasActiveSub(s)).length / students.length * 100) : 0;
   return {
-    todayRevenue: 4500,
-    thisMonthRevenue: 124e3,
-    activeStudentsTotal: students.length + 154,
-    activeSubscriptionsCount: 148,
-    overallAttendanceRate: 94,
-    churnRate: 1.8,
-    newRegistrationsToday: 4,
-    branchMetrics: branches.map((b) => ({
-      branchId: b.id,
-      branchName: b.name,
-      studentsCount: students.filter((s) => s.branchId === b.id).length + 20,
-      revenue: 14e4,
-      attendanceRate: 95,
-      capacityRate: 80
-    })),
-    teacherPerformance: [
-      {
-        teacherId: "teach-aslan",
-        teacherName: "\u0410\u0441\u043B\u0430\u043D \u041F\u043B\u0438\u0435\u0432",
-        studentsCount: 65,
-        retentionRate: 97.4,
-        averageAttendance: 94.2
-      }
-    ]
+    todayRevenue: paidSum(payments.filter((p) => p.date === today)),
+    thisMonthRevenue: paidSum(payments.filter((p) => (p.date || "").startsWith(monthPrefix))),
+    activeStudentsTotal: students.length,
+    activeSubscriptionsCount,
+    overallAttendanceRate: attendanceRate2(students),
+    churnRate,
+    newRegistrationsToday: 0,
+    // creation date is not available in this view
+    branchMetrics: branches.map((b) => {
+      const branchStudents = students.filter((s) => s.branchId === b.id);
+      return {
+        branchId: b.id,
+        branchName: b.name,
+        studentsCount: branchStudents.length,
+        revenue: paidSum(payments.filter((p) => p.branchId === b.id)),
+        attendanceRate: attendanceRate2(branchStudents),
+        capacityRate: 0
+        // hall capacities are not available in this view
+      };
+    }),
+    teacherPerformance: teachers.map((t) => {
+      const taught = students.filter((s) => s.teacherId === t.id);
+      return {
+        teacherId: t.id,
+        teacherName: t.name,
+        studentsCount: taught.length,
+        retentionRate: taught.length ? round1(taught.filter(hasActiveSub).length / taught.length * 100) : 0,
+        averageAttendance: attendanceRate2(taught)
+      };
+    })
   };
 }
 
@@ -716,7 +745,7 @@ function fallbackPayload(session) {
     payments,
     financeTransactions: initialFinanceTransactions,
     auditLogs: initialAuditLogs,
-    metrics: getExecutiveSummary(branchFiltered, groups, students, payments)
+    metrics: getExecutiveSummary(branchFiltered, groups, students, payments, initialTeachers)
   };
 }
 function mapDbUserToTeacher(user) {
@@ -835,39 +864,51 @@ async function dbBootstrap(session) {
     level: "MVP",
     studentCount: studentsRaw.filter((student) => student.group_id === group.id).length
   }));
+  const isOwner = session.role === "owner";
+  const branchAllowed = (branchId) => isOwner || branchId === session.dbBranchId;
   const students = studentsRaw.filter((student) => {
-    if (session.role !== "teacher") return true;
-    const group = groupById.get(student.group_id);
-    return group?.teacher_id === session.userId;
+    if (isOwner) return true;
+    if (session.role === "teacher") {
+      const group = groupById.get(student.group_id);
+      return group?.teacher_id === session.userId;
+    }
+    return student.branch_id === session.dbBranchId;
   }).map((student) => {
     const group = groupById.get(student.group_id);
     return mapDbStudent({ ...student, teacher_id: group?.teacher_id }, attendanceByStudent, subsByStudent);
   });
   const visibleStudentIds = new Set(students.map((student) => student.id));
   const payments = paymentsRaw.filter((payment) => visibleStudentIds.has(payment.student_id)).map(mapDbPayment);
+  const branchesVisible = branches.filter((branch) => branchAllowed(branch.id)).map((branch) => ({
+    id: branch.id,
+    organizationId: branch.organization_id,
+    name: branch.name,
+    city: branch.city,
+    address: branch.address,
+    managerName: users.find((user) => user.id === branch.manager_id)?.full_name || "\u0420\u0443\u043A\u043E\u0432\u043E\u0434\u0438\u0442\u0435\u043B\u044C",
+    phone: branch.phone || "",
+    hallsCount: halls.filter((hall) => hall.branch_id === branch.id).length
+  }));
+  const hallsVisible = halls.filter((hall) => branchAllowed(hall.branch_id)).map((hall) => ({ id: hall.id, branchId: hall.branch_id, name: hall.name, capacity: hall.capacity || 0 }));
+  const groupsVisible = groupsMapped.filter((group) => {
+    if (isOwner) return true;
+    if (session.role === "teacher") return group.teacherId === session.userId;
+    return group.branchId === session.dbBranchId;
+  });
   return {
     mode: "supabase",
     session,
     organizations: initialOrganizations,
-    branches: branches.map((branch) => ({
-      id: branch.id,
-      organizationId: branch.organization_id,
-      name: branch.name,
-      city: branch.city,
-      address: branch.address,
-      managerName: users.find((user) => user.id === branch.manager_id)?.full_name || "\u0420\u0443\u043A\u043E\u0432\u043E\u0434\u0438\u0442\u0435\u043B\u044C",
-      phone: branch.phone || "",
-      hallsCount: halls.filter((hall) => hall.branch_id === branch.id).length
-    })),
-    halls: halls.map((hall) => ({ id: hall.id, branchId: hall.branch_id, name: hall.name, capacity: hall.capacity || 0 })),
+    branches: branchesVisible,
+    halls: hallsVisible,
     teachers,
-    groups: groupsMapped,
+    groups: groupsVisible,
     students,
     announcements: initialAnnouncements,
     payments,
     financeTransactions,
     auditLogs: initialAuditLogs,
-    metrics: getExecutiveSummary(branches, groupsMapped, students, payments)
+    metrics: getExecutiveSummary(branchesVisible, groupsVisible, students, payments, teachers)
   };
 }
 function registerMvpApi(app2) {
@@ -1084,13 +1125,74 @@ function registerMvpApi(app2) {
   });
 }
 
-// api/[...path].ts
+// server/geminiApi.ts
+import { GoogleGenAI } from "@google/genai";
+var apiKey = process.env.GEMINI_API_KEY;
+var model = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+var genai = apiKey ? new GoogleGenAI({ apiKey }) : null;
+async function generateJson(prompt) {
+  if (!genai) throw new Error("GEMINI_API_KEY is not configured");
+  const response = await genai.models.generateContent({
+    model,
+    contents: prompt,
+    config: { responseMimeType: "application/json", temperature: 0.7 }
+  });
+  const text = response.text ?? "";
+  return JSON.parse(text);
+}
+function registerGeminiApi(app2) {
+  app2.post("/api/gemini/insights", async (req, res) => {
+    if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });
+    const { metrics, currentContext } = req.body || {};
+    const prompt = `\u0422\u044B \u2014 \u0430\u043D\u0430\u043B\u0438\u0442\u0438\u043A \u0441\u0435\u0442\u0438 \u0448\u043A\u043E\u043B \u043A\u0430\u0432\u043A\u0430\u0437\u0441\u043A\u043E\u0433\u043E \u0442\u0430\u043D\u0446\u0430 \xAB\u042D\u0445\u043E \u0413\u043E\u0440\xBB. \u041F\u0440\u043E\u0430\u043D\u0430\u043B\u0438\u0437\u0438\u0440\u0443\u0439 \u043F\u043E\u043A\u0430\u0437\u0430\u0442\u0435\u043B\u0438 \u0438 \u0432\u0435\u0440\u043D\u0438 \u0421\u0422\u0420\u041E\u0413\u041E JSON \u043F\u043E \u0441\u0445\u0435\u043C\u0435:
+{"executiveSummary": string, "branchRisks": [{"branchId": string, "riskTitle": string, "description": string, "severity": "low"|"medium"|"high"}], "growthRecommendations": string[], "insights": string[]}
+\u041F\u0438\u0448\u0438 \u043F\u043E-\u0440\u0443\u0441\u0441\u043A\u0438, \u043A\u0440\u0430\u0442\u043A\u043E \u0438 \u043A\u043E\u043D\u043A\u0440\u0435\u0442\u043D\u043E, \u043E\u043F\u0438\u0440\u0430\u044F\u0441\u044C \u0442\u043E\u043B\u044C\u043A\u043E \u043D\u0430 \u043F\u0435\u0440\u0435\u0434\u0430\u043D\u043D\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435.
+metrics=${JSON.stringify(metrics ?? {})}
+context=${JSON.stringify(currentContext ?? {})}`;
+    try {
+      res.json(await generateJson(prompt));
+    } catch (e) {
+      res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
+  app2.post("/api/gemini/student-analysis", async (req, res) => {
+    if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });
+    const { student, notes } = req.body || {};
+    const prompt = `\u0422\u044B \u2014 \u043E\u043F\u044B\u0442\u043D\u044B\u0439 \u043F\u0435\u0434\u0430\u0433\u043E\u0433 \u043A\u0430\u0432\u043A\u0430\u0437\u0441\u043A\u043E\u0433\u043E \u0442\u0430\u043D\u0446\u0430 \u0448\u043A\u043E\u043B\u044B \xAB\u042D\u0445\u043E \u0413\u043E\u0440\xBB. \u041F\u0440\u043E\u0430\u043D\u0430\u043B\u0438\u0437\u0438\u0440\u0443\u0439 \u043F\u0440\u043E\u0433\u0440\u0435\u0441\u0441 \u0443\u0447\u0435\u043D\u0438\u043A\u0430 \u0438 \u0432\u0435\u0440\u043D\u0438 \u0421\u0422\u0420\u041E\u0413\u041E JSON \u043F\u043E \u0441\u0445\u0435\u043C\u0435:
+{"praise": string, "focusArea": string, "nextMilestoneAdvice": string}
+\u041F\u0438\u0448\u0438 \u043F\u043E-\u0440\u0443\u0441\u0441\u043A\u0438, \u0434\u043E\u0431\u0440\u043E\u0436\u0435\u043B\u0430\u0442\u0435\u043B\u044C\u043D\u043E \u0438 \u043F\u043E \u0434\u0435\u043B\u0443.
+student=${JSON.stringify(student ?? {})}
+notes=${JSON.stringify(notes ?? [])}`;
+    try {
+      res.json(await generateJson(prompt));
+    } catch (e) {
+      res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
+  app2.post("/api/gemini/competition-consult", async (req, res) => {
+    if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });
+    const { competition, groupName, groupLevel, studentCount } = req.body || {};
+    const prompt = `\u0422\u044B \u2014 \u0445\u043E\u0440\u0435\u043E\u0433\u0440\u0430\u0444-\u043F\u043E\u0441\u0442\u0430\u043D\u043E\u0432\u0449\u0438\u043A \u043A\u0430\u0432\u043A\u0430\u0437\u0441\u043A\u0438\u0445 \u0442\u0430\u043D\u0446\u0435\u0432 \u0448\u043A\u043E\u043B\u044B \xAB\u042D\u0445\u043E \u0413\u043E\u0440\xBB. \u0414\u0430\u0439 \u043A\u043E\u043D\u0441\u0443\u043B\u044C\u0442\u0430\u0446\u0438\u044E \u043F\u043E \u043F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u043A\u0435 \u0433\u0440\u0443\u043F\u043F\u044B \u043A \u043A\u043E\u043D\u043A\u0443\u0440\u0441\u0443 \u0438 \u0432\u0435\u0440\u043D\u0438 \u0421\u0422\u0420\u041E\u0413\u041E JSON \u043F\u043E \u0441\u0445\u0435\u043C\u0435:
+{"readinessRating": string, "rehearsalPlan": string, "stageCraftAdvice": string}
+\u041F\u0438\u0448\u0438 \u043F\u043E-\u0440\u0443\u0441\u0441\u043A\u0438. \u0412 rehearsalPlan \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 \u043F\u0435\u0440\u0435\u043D\u043E\u0441\u044B \u0441\u0442\u0440\u043E\u043A \u0434\u043B\u044F \u043D\u0435\u0434\u0435\u043B\u044C.
+competition=${JSON.stringify(competition ?? {})}
+group=${JSON.stringify({ groupName, groupLevel, studentCount })}`;
+    try {
+      res.json(await generateJson(prompt));
+    } catch (e) {
+      res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
+}
+
+// api/__entry.ts
 var app = express();
 app.use(express.json());
 registerMvpApi(app);
-var path_default = app;
+registerGeminiApi(app);
+var entry_default = app;
 export {
-  path_default as default
+  entry_default as default
 };
 /**
  * @license

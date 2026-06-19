@@ -237,33 +237,70 @@ export function getExecutiveSummary(
   branches: Branch[],
   groups: Group[],
   students: Student[],
-  payments: Payment[]
+  payments: Payment[],
+  teachers: Teacher[] = []
 ): ExecutiveSummary {
+  const today = new Date().toISOString().slice(0, 10);
+  const monthPrefix = today.slice(0, 7); // YYYY-MM
+  const round1 = (n: number) => Math.round(n * 10) / 10;
+
+  const isPaid = (p: Payment) => p.status === "paid";
+  const paidSum = (list: Payment[]) => list.filter(isPaid).reduce((sum, p) => sum + (p.amount || 0), 0);
+
+  // Attendance rate across a set of students (present / all marked entries).
+  const attendanceRate = (list: Student[]) => {
+    let present = 0;
+    let marked = 0;
+    list.forEach((s) => {
+      Object.values(s.attendance || {}).forEach((a) => {
+        if (!a || a.status === "unmarked") return;
+        marked += 1;
+        if (a.status === "present") present += 1;
+      });
+    });
+    return marked ? Math.round((present / marked) * 100) : 0;
+  };
+
+  const hasActiveSub = (s: Student) => (s.subscriptions || []).some((sub) => sub.status === "active");
+  const activeSubscriptionsCount = students.reduce(
+    (count, s) => count + (s.subscriptions || []).filter((sub) => sub.status === "active").length,
+    0
+  );
+
+  // Churn proxy: share of students without any active subscription.
+  const churnRate = students.length
+    ? round1((students.filter((s) => !hasActiveSub(s)).length / students.length) * 100)
+    : 0;
+
   return {
-    todayRevenue: 4500,
-    thisMonthRevenue: 124000,
-    activeStudentsTotal: students.length + 154,
-    activeSubscriptionsCount: 148,
-    overallAttendanceRate: 94,
-    churnRate: 1.8,
-    newRegistrationsToday: 4,
-    branchMetrics: branches.map(b => ({
-      branchId: b.id,
-      branchName: b.name,
-      studentsCount: students.filter(s => s.branchId === b.id).length + 20,
-      revenue: 140000,
-      attendanceRate: 95,
-      capacityRate: 80
-    })),
-    teacherPerformance: [
-      {
-        teacherId: "teach-aslan",
-        teacherName: "Аслан Плиев",
-        studentsCount: 65,
-        retentionRate: 97.4,
-        averageAttendance: 94.2
-      }
-    ]
+    todayRevenue: paidSum(payments.filter((p) => p.date === today)),
+    thisMonthRevenue: paidSum(payments.filter((p) => (p.date || "").startsWith(monthPrefix))),
+    activeStudentsTotal: students.length,
+    activeSubscriptionsCount,
+    overallAttendanceRate: attendanceRate(students),
+    churnRate,
+    newRegistrationsToday: 0, // creation date is not available in this view
+    branchMetrics: branches.map((b) => {
+      const branchStudents = students.filter((s) => s.branchId === b.id);
+      return {
+        branchId: b.id,
+        branchName: b.name,
+        studentsCount: branchStudents.length,
+        revenue: paidSum(payments.filter((p) => p.branchId === b.id)),
+        attendanceRate: attendanceRate(branchStudents),
+        capacityRate: 0 // hall capacities are not available in this view
+      };
+    }),
+    teacherPerformance: teachers.map((t) => {
+      const taught = students.filter((s) => s.teacherId === t.id);
+      return {
+        teacherId: t.id,
+        teacherName: t.name,
+        studentsCount: taught.length,
+        retentionRate: taught.length ? round1((taught.filter(hasActiveSub).length / taught.length) * 100) : 0,
+        averageAttendance: attendanceRate(taught)
+      };
+    })
   };
 }
 
