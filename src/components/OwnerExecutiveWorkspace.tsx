@@ -169,7 +169,7 @@ export function OwnerExecutiveWorkspace({
             />
           )}
           {activeTab === "eduerp" && <OwnerEduErpView branches={branches} groups={groups} students={students} teachers={teachers} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
-          {activeTab === "branches" && <BranchesView branches={branchScorecards} rawBranches={branches} onCreateBranch={onCreateBranch} onUpdateBranch={onUpdateBranch} onDeleteBranch={onDeleteBranch} />}
+          {activeTab === "branches" && <BranchesView branches={branchScorecards} rawBranches={branches} students={students} groups={groups} teachers={teachers} onCreateBranch={onCreateBranch} onUpdateBranch={onUpdateBranch} onDeleteBranch={onDeleteBranch} />}
           {activeTab === "students" && <StudentsNetworkView students={students} branches={branches} groups={groups} teachers={teachers} onCreateStudent={onCreateStudent} onUpdateStudent={onUpdateStudent} onDeleteStudent={onDeleteStudent} />}
           {activeTab === "teachers" && <TeachersNetworkView teachers={teachers} metrics={metrics} />}
           {activeTab === "finance" && <FinanceCenterView branches={branchScorecards} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
@@ -268,9 +268,12 @@ function OwnerDashboard({ branches, activeStudents, newStudentsMonth, teachers, 
   );
 }
 
-function BranchesView({ branches, rawBranches, onCreateBranch, onUpdateBranch, onDeleteBranch }: {
+function BranchesView({ branches, rawBranches, students, groups, teachers, onCreateBranch, onUpdateBranch, onDeleteBranch }: {
   branches: any[];
   rawBranches: Branch[];
+  students: Student[];
+  groups: Group[];
+  teachers: Teacher[];
   onCreateBranch?: (data: { name: string; city: string; address?: string; phone?: string }) => Promise<boolean>;
   onUpdateBranch?: (id: string, data: { name?: string; city?: string; address?: string; phone?: string }) => Promise<boolean>;
   onDeleteBranch?: (id: string) => Promise<boolean>;
@@ -280,7 +283,13 @@ function BranchesView({ branches, rawBranches, onCreateBranch, onUpdateBranch, o
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(empty);
   const [busy, setBusy] = useState(false);
+  const [openBranchId, setOpenBranchId] = useState<string | null>(null);
   const canManage = Boolean(onCreateBranch);
+
+  const groupName = (s: Student) => groups.find((g) => s.groupIds?.includes(g.id))?.name || "—";
+  const teacherName = (id: string) => teachers.find((t) => t.id === id)?.name || "—";
+  const branchStudents = (branchId: string) => students.filter((s) => s.branchId === branchId);
+  const hasActiveSub = (s: Student) => (s.subscriptions || []).some((sub) => sub.status === "active");
 
   const startAdd = () => { setEditingId(null); setForm(empty); setAdding(true); };
   const startEdit = (id: string) => {
@@ -357,9 +366,53 @@ function BranchesView({ branches, rawBranches, onCreateBranch, onUpdateBranch, o
               <MiniMetric label="Новые" value={branch.newLeads} />
               <MiniMetric label="Удерж." value={`${branch.retention}%`} />
             </div>
+            <button
+              onClick={() => setOpenBranchId(openBranchId === branch.branchId ? null : branch.branchId)}
+              className={`mt-4 flex w-full items-center justify-center gap-2 rounded-2xl border px-4 py-2 text-sm font-bold transition ${openBranchId === branch.branchId ? "border-[#C5A059]/60 bg-[#C5A059]/10 text-[#C5A059]" : "border-white/10 text-slate-300 hover:border-[#C5A059]/40 hover:text-[#C5A059]"}`}
+            >
+              <Users className="h-4 w-4" />
+              {openBranchId === branch.branchId ? "Скрыть учеников" : `Показать учеников (${branchStudents(branch.branchId).length})`}
+            </button>
           </article>
         ))}
       </div>
+
+      {openBranchId && (() => {
+        const list = branchStudents(openBranchId);
+        const title = branches.find((b) => b.branchId === openBranchId)?.branchName || rawBranches.find((b) => b.id === openBranchId)?.name || "Филиал";
+        return (
+          <div className="rounded-[2rem] border border-[#C5A059]/30 bg-[#161616] p-5">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-black text-white">Ученики · {title} <span className="text-slate-500">({list.length})</span></h3>
+              <button onClick={() => setOpenBranchId(null)} className="rounded-lg p-1 text-slate-400 hover:text-white"><X className="h-5 w-5" /></button>
+            </div>
+            <div className="mt-4 overflow-hidden rounded-2xl border border-white/10">
+              <div className="hidden grid-cols-12 gap-2 border-b border-white/5 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-500 md:grid">
+                <span className="col-span-4">Ученик</span>
+                <span className="col-span-3">Группа</span>
+                <span className="col-span-3">Преподаватель</span>
+                <span className="col-span-2">Абонемент</span>
+              </div>
+              {list.map((s) => (
+                <div key={s.id} className="grid grid-cols-2 gap-2 border-b border-white/5 px-4 py-2.5 text-sm md:grid-cols-12 md:items-center">
+                  <div className="col-span-4">
+                    <p className="font-bold text-white">{s.name}</p>
+                    <p className="text-xs text-slate-500">{s.parentName} · {s.parentPhone || "—"}</p>
+                  </div>
+                  <span className="col-span-3 text-slate-300">{groupName(s)}</span>
+                  <span className="col-span-3 text-slate-300">{teacherName(s.teacherId)}</span>
+                  <span className="col-span-2">
+                    {hasActiveSub(s)
+                      ? <span className="rounded-lg bg-emerald-500/15 px-2 py-1 text-xs font-bold text-emerald-400">активен</span>
+                      : <span className="rounded-lg bg-rose-500/15 px-2 py-1 text-xs font-bold text-rose-400">нет</span>}
+                  </span>
+                </div>
+              ))}
+              {list.length === 0 && <p className="px-4 py-6 text-center text-sm text-slate-500">В этом филиале пока нет учеников.</p>}
+            </div>
+          </div>
+        );
+      })()}
     </OwnerScreen>
   );
 }
