@@ -194,7 +194,7 @@ async function dbBootstrap(session: MvpSession) {
     supabaseFetch<any[]>("halls", `select=*`), // Halls are filtered by branch in mapping
     supabaseFetch<any[]>("users", `select=*&${orgFilter}`),
     supabaseFetch<any[]>("groups", `select=*&${orgFilter}`),
-    supabaseFetch<any[]>("students", `select=*&${orgFilter}`),
+    supabaseFetch<any[]>("students", `select=*&${orgFilter}&status=neq.archived`),
     supabaseFetch<any[]>("payments", `select=*&${orgFilter}&order=paid_at.desc`),
     supabaseFetch<any[]>("schedule_lessons", `select=*&order=starts_at.desc`), // Cross-org lessons are unlikely but we keep mapping safe
     supabaseFetch<any[]>("attendance", "select=*"),
@@ -263,7 +263,7 @@ async function dbBootstrap(session: MvpSession) {
     })
     .map((student) => {
       const group = groupById.get(student.group_id);
-      return mapDbStudent({ ...student, teacher_id: group?.teacher_id }, attendanceByStudent, subsByStudent);
+      return mapDbStudent({ ...student, teacher_id: student.teacher_id || group?.teacher_id }, attendanceByStudent, subsByStudent);
     });
 
   const visibleStudentIds = new Set(students.map((student) => student.id));
@@ -402,6 +402,7 @@ export function registerMvpApi(app: express.Express) {
         group_id: payload.groupId || null,
         first_name: firstName || payload.name,
         last_name: rest.join(" ") || "-",
+        teacher_id: payload.teacherId || null,
         parent_name: payload.parentName || null,
         parent_phone: payload.parentPhone || null,
         status: "active",
@@ -409,6 +410,61 @@ export function registerMvpApi(app: express.Express) {
       })
     });
     res.status(201).json({ student: inserted[0] });
+  });
+
+  app.patch("/api/mvp/students/:id", async (req, res) => {
+    const session = getSession(req);
+    const payload = req.body || {};
+    if (!supabaseEnabled) {
+      return res.status(503).json({ error: "Supabase is not configured" });
+    }
+    if (payload.branchId && !canSeeBranch(session, payload.branchId)) {
+      return res.status(403).json({ error: "Branch access denied" });
+    }
+    const updates: Record<string, unknown> = {};
+    if (payload.name !== undefined) {
+      const [firstName, ...rest] = String(payload.name).trim().split(/\s+/);
+      updates.first_name = firstName || payload.name;
+      updates.last_name = rest.join(" ") || "-";
+    }
+    if (payload.branchId !== undefined) updates.branch_id = payload.branchId;
+    if (payload.groupId !== undefined) updates.group_id = payload.groupId || null;
+    if (payload.teacherId !== undefined) updates.teacher_id = payload.teacherId || null;
+    if (payload.parentName !== undefined) updates.parent_name = payload.parentName || null;
+    if (payload.parentPhone !== undefined) updates.parent_phone = payload.parentPhone || null;
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: "Нет полей для обновления" });
+    }
+    try {
+      const rows = await supabaseFetch<any[]>(
+        "students",
+        `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
+        { method: "PATCH", body: JSON.stringify(updates) }
+      );
+      if (!rows[0]) return res.status(404).json({ error: "Ученик не найден" });
+      res.json({ student: rows[0] });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось обновить ученика" });
+    }
+  });
+
+  app.delete("/api/mvp/students/:id", async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) {
+      return res.status(503).json({ error: "Supabase is not configured" });
+    }
+    try {
+      // Soft delete: archive so payments/attendance history is preserved.
+      const rows = await supabaseFetch<any[]>(
+        "students",
+        `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
+        { method: "PATCH", body: JSON.stringify({ status: "archived" }) }
+      );
+      if (!rows[0]) return res.status(404).json({ error: "Ученик не найден" });
+      res.json({ student: rows[0], archived: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось удалить ученика" });
+    }
   });
 
   app.post("/api/mvp/payments", async (req, res) => {

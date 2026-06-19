@@ -607,6 +607,56 @@ export default function App() {
     }
   };
 
+  // --- Owner: student management ---
+  type StudentInput = { name?: string; branchId?: string; groupId?: string; teacherId?: string; parentName?: string; parentPhone?: string };
+  const handleCreateStudent = async (data: StudentInput) => {
+    try {
+      const response = await fetch("/api/mvp/students", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+        body: JSON.stringify(data)
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await loadMvpBootstrap(activeRole);
+      addAuditLog("Добавление ученика", `Добавлен ученик ${data.name}`);
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось добавить ученика");
+      return false;
+    }
+  };
+  const handleUpdateStudent = async (id: string, data: StudentInput) => {
+    try {
+      const response = await fetch(`/api/mvp/students/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+        body: JSON.stringify(data)
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await loadMvpBootstrap(activeRole);
+      addAuditLog("Изменение ученика", `Обновлён ученик ${data.name || id}`);
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось обновить ученика");
+      return false;
+    }
+  };
+  const handleDeleteStudent = async (id: string) => {
+    try {
+      const response = await fetch(`/api/mvp/students/${id}`, {
+        method: "DELETE",
+        headers: { "x-demo-role": getMvpRoleHeader() }
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await loadMvpBootstrap(activeRole);
+      addAuditLog("Удаление ученика", `Ученик архивирован (${id})`);
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось удалить ученика");
+      return false;
+    }
+  };
+
   // --- Owner: branch management ---
   const handleCreateBranch = async (data: { name: string; city: string; address?: string; phone?: string }) => {
     try {
@@ -2198,6 +2248,9 @@ export default function App() {
               onCreateBranch={handleCreateBranch}
               onUpdateBranch={handleUpdateBranch}
               onDeleteBranch={handleDeleteBranch}
+              onCreateStudent={handleCreateStudent}
+              onUpdateStudent={handleUpdateStudent}
+              onDeleteStudent={handleDeleteStudent}
             />
           ) : activeRole === "admin" ? (
             <AdminEduErpWorkspace

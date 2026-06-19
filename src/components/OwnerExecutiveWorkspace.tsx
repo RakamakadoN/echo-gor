@@ -37,6 +37,8 @@ import {
 } from "lucide-react";
 import { Announcement, Branch, Competition, ExecutiveSummary, Group, Payment, Student, Teacher } from "../types";
 
+type StudentInput = { name?: string; branchId?: string; groupId?: string; teacherId?: string; parentName?: string; parentPhone?: string };
+
 interface OwnerExecutiveWorkspaceProps {
   branches: Branch[];
   groups: Group[];
@@ -49,6 +51,9 @@ interface OwnerExecutiveWorkspaceProps {
   onCreateBranch?: (data: { name: string; city: string; address?: string; phone?: string }) => Promise<boolean>;
   onUpdateBranch?: (id: string, data: { name?: string; city?: string; address?: string; phone?: string }) => Promise<boolean>;
   onDeleteBranch?: (id: string) => Promise<boolean>;
+  onCreateStudent?: (data: StudentInput) => Promise<boolean>;
+  onUpdateStudent?: (id: string, data: StudentInput) => Promise<boolean>;
+  onDeleteStudent?: (id: string) => Promise<boolean>;
 }
 
 type OwnerTab = "dashboard" | "eduerp" | "branches" | "students" | "teachers" | "finance" | "events" | "announcements" | "analytics" | "ai" | "settings";
@@ -78,7 +83,10 @@ export function OwnerExecutiveWorkspace({
   metrics,
   onCreateBranch,
   onUpdateBranch,
-  onDeleteBranch
+  onDeleteBranch,
+  onCreateStudent,
+  onUpdateStudent,
+  onDeleteStudent
 }: OwnerExecutiveWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<OwnerTab>("dashboard");
   const debt = Math.abs(students.filter((student) => student.balance < 0).reduce((sum, student) => sum + student.balance, 0));
@@ -162,7 +170,7 @@ export function OwnerExecutiveWorkspace({
           )}
           {activeTab === "eduerp" && <OwnerEduErpView branches={branches} groups={groups} students={students} teachers={teachers} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
           {activeTab === "branches" && <BranchesView branches={branchScorecards} rawBranches={branches} onCreateBranch={onCreateBranch} onUpdateBranch={onUpdateBranch} onDeleteBranch={onDeleteBranch} />}
-          {activeTab === "students" && <StudentsNetworkView students={students} branches={branches} />}
+          {activeTab === "students" && <StudentsNetworkView students={students} branches={branches} groups={groups} teachers={teachers} onCreateStudent={onCreateStudent} onUpdateStudent={onUpdateStudent} onDeleteStudent={onDeleteStudent} />}
           {activeTab === "teachers" && <TeachersNetworkView teachers={teachers} metrics={metrics} />}
           {activeTab === "finance" && <FinanceCenterView branches={branchScorecards} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
           {activeTab === "events" && <EventsView competitions={competitions} branches={branches} />}
@@ -570,7 +578,35 @@ function OwnerEduErpView({ branches, groups, students, teachers, payments, month
               </div>
             </div>
           </div>
-          <div className="overflow-x-auto">
+          {/* Mobile card list (md-) */}
+          <div className="space-y-3 p-4 md:hidden">
+            {students.slice(0, 8).map((student) => {
+              const branch = branches.find((item) => item.id === student.branchId);
+              const group = groups.find((item) => item.id === (student.groupIds?.[0] || (student as any).groupId));
+              const subscription = student.subscriptions[0];
+              const active = selectedStudent?.id === student.id;
+              return (
+                <button
+                  key={student.id}
+                  type="button"
+                  onClick={() => setSelectedStudentId(student.id)}
+                  className={`w-full rounded-2xl border border-white/10 bg-white/[0.02] p-3 text-left transition active:scale-[0.99] ${active ? "border-[#C5A059]/40 bg-[#C5A059]/10" : ""}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="truncate font-black text-white">{student.name}</p>
+                    <span className={`shrink-0 text-sm font-black ${student.balance < 0 ? "text-rose-300" : "text-emerald-300"}`}>{money(student.balance)}</span>
+                  </div>
+                  <p className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-slate-400"><Phone className="h-3.5 w-3.5 shrink-0 text-[#C5A059]" />{student.parentPhone} · {branch?.city || "Филиал"} · {group?.name || "Группа"}</p>
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <OwnerStatus text={student.balance < 0 ? "Не оплачен" : "Активен"} warning={student.balance < 0} />
+                    <span className="text-[11px] text-slate-500">Посещение {subscription?.lessonsLeft ?? 0}/{subscription?.lessonsTotal ?? 0}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          {/* Full table (md+) */}
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[980px] text-left text-sm">
               <thead className="bg-white/[0.03] text-[10px] uppercase tracking-widest text-slate-500">
                 <tr>{["Имя", "Контакты", "Родитель", "Статус", "Филиал", "Группа", "Абонемент", "Посещение", "Баланс"].map((header) => <th key={header} className="p-4 font-black">{header}</th>)}</tr>
@@ -690,24 +726,197 @@ function OwnerEduErpView({ branches, groups, students, teachers, payments, month
   );
 }
 
-function StudentsNetworkView({ students, branches }: { students: Student[]; branches: Branch[] }) {
+function StudentsNetworkView({ students, branches, groups, teachers, onCreateStudent, onUpdateStudent, onDeleteStudent }: {
+  students: Student[];
+  branches: Branch[];
+  groups: Group[];
+  teachers: Teacher[];
+  onCreateStudent?: (data: StudentInput) => Promise<boolean>;
+  onUpdateStudent?: (id: string, data: StudentInput) => Promise<boolean>;
+  onDeleteStudent?: (id: string) => Promise<boolean>;
+}) {
+  const empty = { name: "", parentName: "", parentPhone: "", branchId: branches[0]?.id || "", groupId: "", teacherId: "" };
+  const [adding, setAdding] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<StudentInput>(empty);
+  const [busy, setBusy] = useState(false);
+  const [query, setQuery] = useState("");
+  const canManage = Boolean(onCreateStudent);
+
+  const hasActiveSub = (s: Student) => (s.subscriptions || []).some((sub) => sub.status === "active");
+  const noSub = students.filter((s) => !hasActiveSub(s)).length;
+  const debtors = students.filter((s) => s.balance < 0).length;
+  const activeSubs = students.reduce((n, s) => n + (s.subscriptions || []).filter((sub) => sub.status === "active").length, 0);
+
+  const branchName = (id: string) => branches.find((b) => b.id === id)?.name || "—";
+  const groupName = (s: Student) => groups.find((g) => s.groupIds?.includes(g.id))?.name || "—";
+  const teacherName = (id: string) => teachers.find((t) => t.id === id)?.name || "—";
+
+  const startAdd = () => { setEditingId(null); setForm(empty); setAdding(true); };
+  const startEdit = (s: Student) => {
+    setAdding(false);
+    setEditingId(s.id);
+    setForm({ name: s.name, parentName: s.parentName, parentPhone: s.parentPhone, branchId: s.branchId, groupId: s.groupIds?.[0] || "", teacherId: s.teacherId || "" });
+  };
+  const cancel = () => { setAdding(false); setEditingId(null); setForm(empty); };
+
+  const submit = async () => {
+    if (!form.name?.trim() || !form.branchId) return;
+    setBusy(true);
+    let ok = false;
+    if (adding && onCreateStudent) ok = await onCreateStudent(form);
+    else if (editingId && onUpdateStudent) ok = await onUpdateStudent(editingId, form);
+    setBusy(false);
+    if (ok) cancel();
+  };
+
+  const remove = async (s: Student) => {
+    if (!onDeleteStudent) return;
+    if (!window.confirm(`Архивировать ученика «${s.name}»? История оплат и посещений сохранится.`)) return;
+    await onDeleteStudent(s.id);
+  };
+
+  const filtered = students.filter((s) =>
+    !query || s.name.toLowerCase().includes(query.toLowerCase()) || (s.parentName || "").toLowerCase().includes(query.toLowerCase())
+  );
+
   return (
-    <OwnerScreen title="Ученики сети" subtitle="Вся база учеников, распределение по филиалам, новые, ушедшие, посещаемость и история роста.">
+    <OwnerScreen title="Ученики сети" subtitle="Вся база учеников. Владелец может добавлять, редактировать, архивировать учеников и назначать филиал, группу и преподавателя.">
       <div className="grid gap-3 md:grid-cols-4">
         <OwnerKpi label="Всего учеников" value={students.length} detail="по сети" />
-        <OwnerKpi label="Новые месяца" value="86" detail="лиды и записи" tone="emerald" />
-        <OwnerKpi label="Риск оттока" value="37" detail="AI обнаружил" tone="rose" />
-        <OwnerKpi label="Средний срок" value="14 мес." detail="обучения" tone="gold" />
+        <OwnerKpi label="Активные абонементы" value={activeSubs} detail="оплачено" tone="emerald" />
+        <OwnerKpi label="Без абонемента" value={noSub} detail="риск оттока" tone="rose" />
+        <OwnerKpi label="Должники" value={debtors} detail="отрицательный баланс" tone="gold" />
       </div>
-      <div className="grid gap-4 lg:grid-cols-2">
-        {branches.map((branch) => (
-          <section key={branch.id} className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
-            <h3 className="font-black text-white">{branch.name}</h3>
-            <p className="mt-2 text-sm text-slate-400">Распределение учеников, активность, новые записи и удержание филиала.</p>
-          </section>
+
+      {canManage && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Поиск по имени или родителю…"
+            className="w-full max-w-xs rounded-xl border border-white/10 bg-[#0C0C0C] px-3 py-2 text-sm text-white outline-none focus:border-[#C5A059]/50"
+          />
+          {!adding && editingId === null && (
+            <button onClick={startAdd} className="inline-flex items-center gap-2 rounded-2xl bg-[#C5A059] px-4 py-2 text-sm font-bold text-black transition hover:bg-[#d4b06a]">
+              <Plus className="h-4 w-4" /> Добавить ученика
+            </button>
+          )}
+        </div>
+      )}
+
+      {(adding || editingId !== null) && (
+        <StudentForm
+          title={adding ? "Новый ученик" : "Редактирование ученика"}
+          form={form}
+          setForm={setForm}
+          branches={branches}
+          groups={groups}
+          teachers={teachers}
+          busy={busy}
+          onSubmit={submit}
+          onCancel={cancel}
+        />
+      )}
+
+      <div className="overflow-hidden rounded-[2rem] border border-white/10 bg-[#121212]">
+        <div className="hidden grid-cols-12 gap-2 border-b border-white/5 px-5 py-3 text-[11px] font-bold uppercase tracking-wider text-slate-500 md:grid">
+          <span className="col-span-3">Ученик</span>
+          <span className="col-span-2">Филиал</span>
+          <span className="col-span-2">Группа</span>
+          <span className="col-span-2">Преподаватель</span>
+          <span className="col-span-2">Абонемент</span>
+          <span className="col-span-1 text-right">Действия</span>
+        </div>
+        {filtered.map((s) => (
+          <div key={s.id} className="grid grid-cols-2 gap-2 border-b border-white/5 px-5 py-3 text-sm md:grid-cols-12 md:items-center">
+            <div className="col-span-3">
+              <p className="font-bold text-white">{s.name}</p>
+              <p className="text-xs text-slate-500">{s.parentName} · {s.parentPhone || "—"}</p>
+            </div>
+            <span className="col-span-2 text-slate-300">{branchName(s.branchId)}</span>
+            <span className="col-span-2 text-slate-300">{groupName(s)}</span>
+            <span className="col-span-2 text-slate-300">{teacherName(s.teacherId)}</span>
+            <span className="col-span-2">
+              {hasActiveSub(s)
+                ? <span className="rounded-lg bg-emerald-500/15 px-2 py-1 text-xs font-bold text-emerald-400">активен</span>
+                : <span className="rounded-lg bg-rose-500/15 px-2 py-1 text-xs font-bold text-rose-400">нет</span>}
+            </span>
+            {canManage && (
+              <div className="col-span-1 flex justify-end gap-1">
+                <button onClick={() => startEdit(s)} title="Редактировать" className="rounded-lg border border-white/10 p-1.5 text-slate-300 transition hover:border-[#C5A059]/40 hover:text-[#C5A059]"><Pencil className="h-4 w-4" /></button>
+                <button onClick={() => remove(s)} title="Архивировать" className="rounded-lg border border-white/10 p-1.5 text-slate-300 transition hover:border-red-500/40 hover:text-red-400"><Trash2 className="h-4 w-4" /></button>
+              </div>
+            )}
+          </div>
         ))}
+        {filtered.length === 0 && <p className="px-5 py-6 text-center text-sm text-slate-500">Ученики не найдены.</p>}
       </div>
     </OwnerScreen>
+  );
+}
+
+function StudentForm({ title, form, setForm, branches, groups, teachers, busy, onSubmit, onCancel }: {
+  title: string;
+  form: StudentInput;
+  setForm: (f: StudentInput) => void;
+  branches: Branch[];
+  groups: Group[];
+  teachers: Teacher[];
+  busy: boolean;
+  onSubmit: () => void;
+  onCancel: () => void;
+}) {
+  const inputCls = "mt-1 w-full rounded-xl border border-white/10 bg-[#0C0C0C] px-3 py-2 text-sm text-white outline-none focus:border-[#C5A059]/50";
+  const groupOptions = groups.filter((g) => !form.branchId || g.branchId === form.branchId);
+  return (
+    <div className="rounded-[2rem] border border-[#C5A059]/30 bg-[#161616] p-5">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-black text-white">{title}</h3>
+        <button onClick={onCancel} className="rounded-lg p-1 text-slate-400 hover:text-white"><X className="h-5 w-5" /></button>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <label className="block">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Имя ученика</span>
+          <input value={form.name || ""} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Имя Фамилия" className={inputCls} />
+        </label>
+        <label className="block">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Родитель</span>
+          <input value={form.parentName || ""} onChange={(e) => setForm({ ...form, parentName: e.target.value })} placeholder="Имя родителя" className={inputCls} />
+        </label>
+        <label className="block">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Телефон</span>
+          <input value={form.parentPhone || ""} onChange={(e) => setForm({ ...form, parentPhone: e.target.value })} placeholder="+7 ..." className={inputCls} />
+        </label>
+        <label className="block">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Филиал</span>
+          <select value={form.branchId || ""} onChange={(e) => setForm({ ...form, branchId: e.target.value, groupId: "" })} className={inputCls}>
+            <option value="">— выберите —</option>
+            {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+        </label>
+        <label className="block">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Группа</span>
+          <select value={form.groupId || ""} onChange={(e) => setForm({ ...form, groupId: e.target.value })} className={inputCls}>
+            <option value="">— без группы —</option>
+            {groupOptions.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+          </select>
+        </label>
+        <label className="block">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Преподаватель</span>
+          <select value={form.teacherId || ""} onChange={(e) => setForm({ ...form, teacherId: e.target.value })} className={inputCls}>
+            <option value="">— не назначен —</option>
+            {teachers.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        </label>
+      </div>
+      <div className="mt-4 flex gap-2">
+        <button disabled={busy || !form.name?.trim() || !form.branchId} onClick={onSubmit} className="rounded-2xl bg-[#C5A059] px-5 py-2 text-sm font-bold text-black transition hover:bg-[#d4b06a] disabled:opacity-50">
+          {busy ? "Сохранение…" : "Сохранить"}
+        </button>
+        <button onClick={onCancel} className="rounded-2xl border border-white/10 px-5 py-2 text-sm font-bold text-slate-300 hover:text-white">Отмена</button>
+      </div>
+    </div>
   );
 }
 

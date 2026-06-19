@@ -921,7 +921,24 @@ function DirectoryPanel({ icon, title, count, items }: { icon: React.ElementType
 function DataTable({ headers, rows }: { headers: string[]; rows: Array<Array<string | number>> }) {
   return (
     <section className="overflow-hidden rounded-[2rem] border border-white/10 bg-[#111]">
-      <div className="overflow-x-auto">
+      {/* Mobile card list (md-) */}
+      <div className="space-y-3 p-4 md:hidden">
+        {rows.map((row, rowIndex) => (
+          <div key={rowIndex} className="rounded-2xl border border-white/10 bg-white/[0.02] p-3">
+            <p className="mb-2 font-black text-white">{row[0]}</p>
+            <dl className="space-y-1">
+              {row.slice(1).map((cell, cellIndex) => (
+                <div key={`${rowIndex}-${cellIndex}`} className="flex items-start justify-between gap-3 text-xs">
+                  <dt className="text-slate-500">{headers[cellIndex + 1]}</dt>
+                  <dd className="text-right font-semibold text-slate-300">{cell}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        ))}
+      </div>
+      {/* Full table (md+) */}
+      <div className="hidden overflow-x-auto md:block">
         <table className="w-full min-w-[860px] text-left text-sm">
           <thead className="bg-white/[0.03] text-[10px] uppercase tracking-widest text-slate-500">
             <tr>{headers.map((header) => <th key={header} className="p-4 font-black">{header}</th>)}</tr>

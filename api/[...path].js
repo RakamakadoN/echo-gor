@@ -815,7 +815,7 @@ async function dbBootstrap(session) {
     // Halls are filtered by branch in mapping
     supabaseFetch("users", `select=*&${orgFilter}`),
     supabaseFetch("groups", `select=*&${orgFilter}`),
-    supabaseFetch("students", `select=*&${orgFilter}`),
+    supabaseFetch("students", `select=*&${orgFilter}&status=neq.archived`),
     supabaseFetch("payments", `select=*&${orgFilter}&order=paid_at.desc`),
     supabaseFetch("schedule_lessons", `select=*&order=starts_at.desc`),
     // Cross-org lessons are unlikely but we keep mapping safe
@@ -875,7 +875,7 @@ async function dbBootstrap(session) {
     return student.branch_id === session.dbBranchId;
   }).map((student) => {
     const group = groupById.get(student.group_id);
-    return mapDbStudent({ ...student, teacher_id: group?.teacher_id }, attendanceByStudent, subsByStudent);
+    return mapDbStudent({ ...student, teacher_id: student.teacher_id || group?.teacher_id }, attendanceByStudent, subsByStudent);
   });
   const visibleStudentIds = new Set(students.map((student) => student.id));
   const payments = paymentsRaw.filter((payment) => visibleStudentIds.has(payment.student_id)).map(mapDbPayment);
@@ -994,6 +994,7 @@ function registerMvpApi(app2) {
         group_id: payload.groupId || null,
         first_name: firstName || payload.name,
         last_name: rest.join(" ") || "-",
+        teacher_id: payload.teacherId || null,
         parent_name: payload.parentName || null,
         parent_phone: payload.parentPhone || null,
         status: "active",
@@ -1001,6 +1002,58 @@ function registerMvpApi(app2) {
       })
     });
     res.status(201).json({ student: inserted[0] });
+  });
+  app2.patch("/api/mvp/students/:id", async (req, res) => {
+    const session = getSession(req);
+    const payload = req.body || {};
+    if (!supabaseEnabled) {
+      return res.status(503).json({ error: "Supabase is not configured" });
+    }
+    if (payload.branchId && !canSeeBranch(session, payload.branchId)) {
+      return res.status(403).json({ error: "Branch access denied" });
+    }
+    const updates = {};
+    if (payload.name !== void 0) {
+      const [firstName, ...rest] = String(payload.name).trim().split(/\s+/);
+      updates.first_name = firstName || payload.name;
+      updates.last_name = rest.join(" ") || "-";
+    }
+    if (payload.branchId !== void 0) updates.branch_id = payload.branchId;
+    if (payload.groupId !== void 0) updates.group_id = payload.groupId || null;
+    if (payload.teacherId !== void 0) updates.teacher_id = payload.teacherId || null;
+    if (payload.parentName !== void 0) updates.parent_name = payload.parentName || null;
+    if (payload.parentPhone !== void 0) updates.parent_phone = payload.parentPhone || null;
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: "\u041D\u0435\u0442 \u043F\u043E\u043B\u0435\u0439 \u0434\u043B\u044F \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F" });
+    }
+    try {
+      const rows = await supabaseFetch(
+        "students",
+        `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
+        { method: "PATCH", body: JSON.stringify(updates) }
+      );
+      if (!rows[0]) return res.status(404).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+      res.json({ student: rows[0] });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0443\u0447\u0435\u043D\u0438\u043A\u0430" });
+    }
+  });
+  app2.delete("/api/mvp/students/:id", async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) {
+      return res.status(503).json({ error: "Supabase is not configured" });
+    }
+    try {
+      const rows = await supabaseFetch(
+        "students",
+        `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
+        { method: "PATCH", body: JSON.stringify({ status: "archived" }) }
+      );
+      if (!rows[0]) return res.status(404).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+      res.json({ student: rows[0], archived: true });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u0443\u0447\u0435\u043D\u0438\u043A\u0430" });
+    }
   });
   app2.post("/api/mvp/payments", async (req, res) => {
     const session = getSession(req);
