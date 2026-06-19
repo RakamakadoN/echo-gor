@@ -674,6 +674,10 @@ var simulateQueue = (id) => {
 };
 
 // server/danceEventsParser.ts
+function dbg(ctx, name) {
+  if (!ctx.debug) return null;
+  return ctx.debug[name] ??= { links: 0, prefiltered: 0, fetchErrors: 0 };
+}
 var CAUCASUS_KEYWORDS_CYR = [
   "\u043B\u0435\u0437\u0433\u0438\u043D\u043A",
   "\u043A\u0430\u0432\u043A\u0430\u0437",
@@ -896,21 +900,24 @@ function extractHrefs(html, pattern) {
   for (const m of html.matchAll(pattern)) out.add(m[1]);
   return [...out];
 }
-async function safeFetchText(ctx, url) {
+async function safeFetchText(ctx, url, stat) {
   try {
     const res = await ctx.fetchFn(url, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; EhoGorBot/1.0; +https://echo-gor)",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "ru,en;q=0.8"
       }
     });
     if (!res.ok) {
       ctx.log(`  ${url} \u2192 HTTP ${res.status}`);
+      if (stat) stat.fetchErrors++;
       return null;
     }
     return await res.text();
   } catch (e) {
     ctx.log(`  ${url} \u2192 \u043E\u0448\u0438\u0431\u043A\u0430: ${e?.message || e}`);
+    if (stat) stat.fetchErrors++;
     return null;
   }
 }
@@ -934,14 +941,19 @@ function ticketonAdapter(opts) {
     applyCaucasusFilter: true,
     async run(ctx) {
       const found = [];
+      const d = dbg(ctx, "ticketon");
       let detailBudget = ctx.maxDetailFetches;
       for (const c of cities) {
         for (const page of ["", "?page=2", "?page=3"]) {
           const listUrl = `https://ticketon.kz/${c.slug}/concerts${page}`;
-          const html = await safeFetchText(ctx, listUrl);
+          const html = await safeFetchText(ctx, listUrl, d);
           if (!html) continue;
           const hrefs = extractHrefs(html, /href=["'](\/[a-z-]+\/event\/[^"'?#]+|\/promo\/[^"'?#]+)["']/gi);
           const candidates = hrefs.filter((h) => CAUCASUS_KEYWORDS_TRANSLIT.some((m) => h.toLowerCase().includes(m)));
+          if (d) {
+            d.links += hrefs.length;
+            d.prefiltered += candidates.length;
+          }
           ctx.log(`ticketon ${c.slug}${page}: \u0441\u0441\u044B\u043B\u043E\u043A ${hrefs.length}, \u043A\u0430\u043D\u0434\u0438\u0434\u0430\u0442\u043E\u0432 ${candidates.length}`);
           for (const href of candidates) {
             if (detailBudget-- <= 0) {
@@ -949,7 +961,7 @@ function ticketonAdapter(opts) {
               break;
             }
             const url = href.startsWith("http") ? href : `https://ticketon.kz${href}`;
-            const detail = await safeFetchText(ctx, url);
+            const detail = await safeFetchText(ctx, url, d);
             if (!detail) continue;
             const title = pageTitle(detail) || slugOf(href).replace(/-/g, " ");
             if (!isCaucasian(title, href)) continue;
@@ -987,14 +999,19 @@ function kassirAdapter(opts) {
     applyCaucasusFilter: true,
     async run(ctx) {
       const found = [];
+      const d = dbg(ctx, "kassir");
       let detailBudget = ctx.maxDetailFetches;
       for (const c of cities) {
         const base = `https://${c.sub}.kassir.ru`;
         for (const sect of ["/bilety-na-koncert", "/bilety-na-koncert/folk", "/bilety-na-koncert/dance"]) {
-          const html = await safeFetchText(ctx, base + sect);
+          const html = await safeFetchText(ctx, base + sect, d);
           if (!html) continue;
           const hrefs = extractHrefs(html, /href=["']([^"']*\/(?:koncert|shou)\/[^"'?#]+)["']/gi);
           const candidates = hrefs.filter((h) => CAUCASUS_KEYWORDS_TRANSLIT.some((m) => h.toLowerCase().includes(m)));
+          if (d) {
+            d.links += hrefs.length;
+            d.prefiltered += candidates.length;
+          }
           ctx.log(`kassir ${c.sub}${sect}: \u0441\u0441\u044B\u043B\u043E\u043A ${hrefs.length}, \u043A\u0430\u043D\u0434\u0438\u0434\u0430\u0442\u043E\u0432 ${candidates.length}`);
           for (const href of candidates) {
             if (detailBudget-- <= 0) {
@@ -1002,7 +1019,7 @@ function kassirAdapter(opts) {
               break;
             }
             const url = href.startsWith("http") ? href : base + href;
-            const detail = await safeFetchText(ctx, url);
+            const detail = await safeFetchText(ctx, url, d);
             if (!detail) continue;
             const title = pageTitle(detail) || slugOf(href).replace(/-/g, " ");
             if (!isCaucasian(title, href)) continue;
@@ -1062,7 +1079,8 @@ async function runParser(options = {}) {
   const log = options.log ?? (() => {
   });
   const now = options.now ?? /* @__PURE__ */ new Date();
-  const ctx = { fetchFn, log, maxDetailFetches: options.maxDetailFetches ?? 40 };
+  const debug = {};
+  const ctx = { fetchFn, log, maxDetailFetches: options.maxDetailFetches ?? 40, debug };
   const result = {
     ok: true,
     bySource: {},
@@ -1070,7 +1088,8 @@ async function runParser(options = {}) {
     upserted: 0,
     byType: { tournament: 0, concert: 0 },
     events: [],
-    errors: []
+    errors: [],
+    debug
   };
   const seen = /* @__PURE__ */ new Set();
   for (const adapter of adapters) {

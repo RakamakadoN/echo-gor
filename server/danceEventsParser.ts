@@ -66,6 +66,13 @@ export interface AdapterContext {
   log: (msg: string) => void;
   /** Ограничение detail-запросов на источник, чтобы не перегружать. */
   maxDetailFetches: number;
+  /** Диагностика: счётчики по источникам (всего ссылок, прошло пред-фильтр, ошибок сети). */
+  debug?: Record<string, { links: number; prefiltered: number; fetchErrors: number }>;
+}
+
+function dbg(ctx: AdapterContext, name: string) {
+  if (!ctx.debug) return null;
+  return (ctx.debug[name] ??= { links: 0, prefiltered: 0, fetchErrors: 0 });
 }
 
 export interface SourceAdapter {
@@ -261,18 +268,24 @@ function extractHrefs(html: string, pattern: RegExp): string[] {
   return [...out];
 }
 
-async function safeFetchText(ctx: AdapterContext, url: string): Promise<string | null> {
+async function safeFetchText(
+  ctx: AdapterContext,
+  url: string,
+  stat?: { fetchErrors: number } | null,
+): Promise<string | null> {
   try {
     const res = await ctx.fetchFn(url, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; EhoGorBot/1.0; +https://echo-gor)",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "ru,en;q=0.8",
       },
     });
-    if (!res.ok) { ctx.log(`  ${url} → HTTP ${res.status}`); return null; }
+    if (!res.ok) { ctx.log(`  ${url} → HTTP ${res.status}`); if (stat) stat.fetchErrors++; return null; }
     return await res.text();
   } catch (e: any) {
     ctx.log(`  ${url} → ошибка: ${e?.message || e}`);
+    if (stat) stat.fetchErrors++;
     return null;
   }
 }
@@ -307,20 +320,22 @@ export function ticketonAdapter(opts?: { cities?: typeof TICKETON_CITIES }): Sou
     applyCaucasusFilter: true,
     async run(ctx) {
       const found: RawCandidate[] = [];
+      const d = dbg(ctx, "ticketon");
       let detailBudget = ctx.maxDetailFetches;
       for (const c of cities) {
         for (const page of ["", "?page=2", "?page=3"]) {
           const listUrl = `https://ticketon.kz/${c.slug}/concerts${page}`;
-          const html = await safeFetchText(ctx, listUrl);
+          const html = await safeFetchText(ctx, listUrl, d);
           if (!html) continue;
           const hrefs = extractHrefs(html, /href=["'](\/[a-z-]+\/event\/[^"'?#]+|\/promo\/[^"'?#]+)["']/gi);
           const candidates = hrefs.filter((h) =>
             CAUCASUS_KEYWORDS_TRANSLIT.some((m) => h.toLowerCase().includes(m)));
+          if (d) { d.links += hrefs.length; d.prefiltered += candidates.length; }
           ctx.log(`ticketon ${c.slug}${page}: ссылок ${hrefs.length}, кандидатов ${candidates.length}`);
           for (const href of candidates) {
             if (detailBudget-- <= 0) { ctx.log("ticketon: лимит detail-запросов"); break; }
             const url = href.startsWith("http") ? href : `https://ticketon.kz${href}`;
-            const detail = await safeFetchText(ctx, url);
+            const detail = await safeFetchText(ctx, url, d);
             if (!detail) continue;
             const title = pageTitle(detail) || slugOf(href).replace(/-/g, " ");
             if (!isCaucasian(title, href)) continue;
@@ -365,20 +380,22 @@ export function kassirAdapter(opts?: { cities?: typeof KASSIR_CITIES }): SourceA
     applyCaucasusFilter: true,
     async run(ctx) {
       const found: RawCandidate[] = [];
+      const d = dbg(ctx, "kassir");
       let detailBudget = ctx.maxDetailFetches;
       for (const c of cities) {
         const base = `https://${c.sub}.kassir.ru`;
         for (const sect of ["/bilety-na-koncert", "/bilety-na-koncert/folk", "/bilety-na-koncert/dance"]) {
-          const html = await safeFetchText(ctx, base + sect);
+          const html = await safeFetchText(ctx, base + sect, d);
           if (!html) continue;
           const hrefs = extractHrefs(html, /href=["']([^"']*\/(?:koncert|shou)\/[^"'?#]+)["']/gi);
           const candidates = hrefs.filter((h) =>
             CAUCASUS_KEYWORDS_TRANSLIT.some((m) => h.toLowerCase().includes(m)));
+          if (d) { d.links += hrefs.length; d.prefiltered += candidates.length; }
           ctx.log(`kassir ${c.sub}${sect}: ссылок ${hrefs.length}, кандидатов ${candidates.length}`);
           for (const href of candidates) {
             if (detailBudget-- <= 0) { ctx.log("kassir: лимит detail-запросов"); break; }
             const url = href.startsWith("http") ? href : base + href;
-            const detail = await safeFetchText(ctx, url);
+            const detail = await safeFetchText(ctx, url, d);
             if (!detail) continue;
             const title = pageTitle(detail) || slugOf(href).replace(/-/g, " ");
             if (!isCaucasian(title, href)) continue;
@@ -447,6 +464,7 @@ export interface ParseResult {
   byType: Record<EventType, number>;
   events: NormalizedEvent[];
   errors: string[];
+  debug?: Record<string, { links: number; prefiltered: number; fetchErrors: number }>;
 }
 
 export interface RunOptions {
@@ -465,11 +483,12 @@ export async function runParser(options: RunOptions = {}): Promise<ParseResult> 
   const fetchFn = options.fetchFn ?? fetch;
   const log = options.log ?? (() => {});
   const now = options.now ?? new Date();
-  const ctx: AdapterContext = { fetchFn, log, maxDetailFetches: options.maxDetailFetches ?? 40 };
+  const debug: Record<string, { links: number; prefiltered: number; fetchErrors: number }> = {};
+  const ctx: AdapterContext = { fetchFn, log, maxDetailFetches: options.maxDetailFetches ?? 40, debug };
 
   const result: ParseResult = {
     ok: true, bySource: {}, matched: 0, upserted: 0,
-    byType: { tournament: 0, concert: 0 }, events: [], errors: [],
+    byType: { tournament: 0, concert: 0 }, events: [], errors: [], debug,
   };
 
   const seen = new Set<string>();

@@ -40,6 +40,9 @@ import {
   X
 } from "lucide-react";
 import { Announcement, AnnouncementAudience, Branch, Competition, ExecutiveSummary, Group, Payment, Student, Teacher } from "../types";
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
+} from "recharts";
 
 type StudentInput = { name?: string; branchId?: string; groupId?: string; teacherId?: string; parentName?: string; parentPhone?: string };
 type TeacherInput = { name?: string; phone?: string; specialization?: string; branchId?: string | null; role?: string };
@@ -194,7 +197,7 @@ export function OwnerExecutiveWorkspace({
           {activeTab === "events" && <EventsView competitions={competitions} branches={branches} />}
           {activeTab === "feed" && <DanceEventsFeedView />}
           {activeTab === "announcements" && <OwnerAnnouncementsView announcements={announcements} branches={branches} onCreateAnnouncement={onCreateAnnouncement} onUpdateAnnouncement={onUpdateAnnouncement} onDeleteAnnouncement={onDeleteAnnouncement} />}
-          {activeTab === "analytics" && <ExecutiveAnalyticsView branches={branchScorecards} groups={groups} teachers={teachers} />}
+          {activeTab === "analytics" && <ExecutiveAnalyticsView branches={branchScorecards} groups={groups} teachers={teachers} students={students} payments={payments} metrics={metrics} />}
           {activeTab === "ai" && <OwnerAiView branches={branchScorecards} renewals={renewals} debt={debt} />}
           {activeTab === "settings" && <NetworkSettingsView branches={branches} teachers={teachers} />}
         </main>
@@ -1666,17 +1669,214 @@ function OwnerAnnouncementsView({
   );
 }
 
-function ExecutiveAnalyticsView({ branches, groups, teachers }: any) {
+function AnalyticsKpiCard({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: boolean }) {
   return (
-    <OwnerScreen title="Executive Analytics" subtitle="Рост сети, удержание, загрузка преподавателей, загрузка групп и эффективность филиалов.">
-      <div className="grid gap-4 xl:grid-cols-3">
-        <ExecutivePanel icon={<LineChart />} title="Рост сети" text="Новые ученики +14%, выручка +18%, повторные продажи 71%." />
-        <ExecutivePanel icon={<Users />} title="Удержание" text="Retention 91%, средний срок обучения 14 месяцев, риск ухода 37 учеников." />
-        <ExecutivePanel icon={<GraduationCap />} title="Загрузка преподавателей" text={`${teachers.length} преподавателей, средняя загрузка 86%, 2 зоны перегруза.`} />
-        <ExecutivePanel icon={<BookIconFallback />} title="Загрузка групп" text={`${groups.length} групп, 7 перегружены, 4 требуют набора.`} />
-        <ExecutivePanel icon={<Building2 />} title="Эффективность филиалов" text={`${branches.length} филиала, 1 требует вмешательства, 1 в зоне внимания.`} />
-        <ExecutivePanel icon={<WalletCards />} title="Финансы" text="Средний чек 42 000 ₸, рост MoM +18%, долги требуют контроля." />
-      </div>
+    <div className={`rounded-[2rem] border p-5 ${accent ? "border-[#C5A059]/30 bg-[#C5A059]/8" : "border-white/8 bg-white/3"}`}>
+      <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">{label}</p>
+      <p className={`mt-2 text-2xl font-black ${accent ? "text-[#C5A059]" : "text-white"}`}>{value}</p>
+      {sub && <p className="mt-1 text-xs text-slate-500">{sub}</p>}
+    </div>
+  );
+}
+
+function AnalyticsSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <h3 className="mb-4 text-[11px] font-black uppercase tracking-[0.26em] text-slate-500">{title}</h3>
+      {children}
+    </div>
+  );
+}
+
+const GOLD = "#C5A059";
+const CHART_COLORS = ["#C5A059", "#7B6B3A", "#A08840", "#D4B870", "#8A7030"];
+
+function ExecutiveAnalyticsView({
+  branches, groups, teachers, students, payments, metrics
+}: {
+  branches: any[];
+  groups: Group[];
+  teachers: Teacher[];
+  students: Student[];
+  payments: Payment[];
+  metrics: ExecutiveSummary;
+}) {
+  // ── Computed values ──────────────────────────────────────────────
+  const paidPayments = payments.filter((p) => p.status === "paid");
+
+  const totalDebt = Math.abs(
+    students.filter((s) => s.balance < 0).reduce((sum, s) => sum + s.balance, 0)
+  );
+
+  const avgCheck = paidPayments.length
+    ? Math.round(paidPayments.reduce((sum, p) => sum + p.amount, 0) / paidPayments.length)
+    : 0;
+
+  const atRiskCount = students.filter((s) =>
+    s.subscriptions.some((sub) => sub.lessonsLeft <= 2 && sub.status === "active")
+  ).length;
+
+  const groupsOverloaded = groups.filter((g) => g.studentCount >= 12).length;
+  const groupsUnderloaded = groups.filter((g) => g.studentCount <= 4).length;
+
+  // Branch bar chart data
+  const branchChartData = metrics.branchMetrics.map((b) => ({
+    name: b.branchName.length > 10 ? b.branchName.slice(0, 10) + "…" : b.branchName,
+    fullName: b.branchName,
+    revenue: Math.round(b.revenue / 1000), // в тысячах
+    students: b.studentsCount,
+    attendance: b.attendanceRate,
+  }));
+
+  // Payment type breakdown
+  const payByType: Record<string, number> = {};
+  paidPayments.forEach((p) => {
+    const label =
+      p.type === "subscription" ? "Абонементы" :
+      p.type === "concert" ? "Концерты" :
+      p.type === "uniform" ? "Форма" : "Разовые";
+    payByType[label] = (payByType[label] || 0) + p.amount;
+  });
+  const payTypeData = Object.entries(payByType).map(([name, value]) => ({ name, value: Math.round(value / 1000) }));
+
+  // Teacher performance data
+  const teacherData = metrics.teacherPerformance
+    .filter((t) => t.studentsCount > 0)
+    .sort((a, b) => b.studentsCount - a.studentsCount);
+
+  const attendanceColor = (rate: number) =>
+    rate >= 80 ? "text-emerald-400" : rate >= 60 ? "text-yellow-400" : "text-red-400";
+
+  const retentionColor = (rate: number) =>
+    rate >= 80 ? "text-emerald-400" : rate >= 60 ? "text-yellow-400" : "text-red-400";
+
+  return (
+    <OwnerScreen title="Аналитика сети" subtitle="Реальные данные — ученики, выручка, посещаемость, загрузка преподавателей и групп.">
+
+      {/* KPI cards */}
+      <AnalyticsSection title="Ключевые показатели">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <AnalyticsKpiCard label="Учеников в сети" value={String(metrics.activeStudentsTotal)} sub={`Активных абонементов: ${metrics.activeSubscriptionsCount}`} accent />
+          <AnalyticsKpiCard label="Посещаемость" value={`${metrics.overallAttendanceRate}%`} sub="По всем филиалам и группам" />
+          <AnalyticsKpiCard label="Отток" value={`${metrics.churnRate}%`} sub="Без активного абонемента" />
+          <AnalyticsKpiCard label="Выручка месяца" value={money(metrics.thisMonthRevenue)} sub={`Сегодня: ${money(metrics.todayRevenue)}`} accent />
+          <AnalyticsKpiCard label="Средний чек" value={avgCheck ? money(avgCheck) : "—"} sub={`Платежей: ${paidPayments.length}`} />
+          <AnalyticsKpiCard label="Долги сети" value={money(totalDebt)} sub={`Под риском ухода: ${atRiskCount} уч.`} />
+        </div>
+      </AnalyticsSection>
+
+      {/* Branch revenue chart */}
+      {branchChartData.length > 0 && (
+        <AnalyticsSection title="Выручка по филиалам (тыс. ₸)">
+          <div className="rounded-[2rem] border border-white/8 bg-white/3 p-5">
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={branchChartData} margin={{ top: 4, right: 8, left: -12, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} />
+                <Tooltip
+                  contentStyle={{ background: "#141414", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "1rem", color: "#fff", fontSize: 12 }}
+                  formatter={(v: any, _name: any, props: any) => [`${v} тыс. ₸`, props.payload.fullName]}
+                  cursor={{ fill: "rgba(255,255,255,0.04)" }}
+                />
+                <Bar dataKey="revenue" radius={[8, 8, 0, 0]}>
+                  {branchChartData.map((_entry, i) => (
+                    <Cell key={i} fill={i === 0 ? GOLD : CHART_COLORS[i % CHART_COLORS.length]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </AnalyticsSection>
+      )}
+
+      {/* Branch attendance chart */}
+      {branchChartData.length > 0 && (
+        <AnalyticsSection title="Посещаемость по филиалам (%)">
+          <div className="rounded-[2rem] border border-white/8 bg-white/3 p-5">
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={branchChartData} margin={{ top: 4, right: 8, left: -12, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis domain={[0, 100]} tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} />
+                <Tooltip
+                  contentStyle={{ background: "#141414", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "1rem", color: "#fff", fontSize: 12 }}
+                  formatter={(v: any, _name: any, props: any) => [`${v}%`, props.payload.fullName]}
+                  cursor={{ fill: "rgba(255,255,255,0.04)" }}
+                />
+                <Bar dataKey="attendance" radius={[8, 8, 0, 0]}>
+                  {branchChartData.map((entry, i) => (
+                    <Cell key={i} fill={entry.attendance >= 80 ? "#34d399" : entry.attendance >= 60 ? "#fbbf24" : "#f87171"} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </AnalyticsSection>
+      )}
+
+      {/* Payment type breakdown */}
+      {payTypeData.length > 0 && (
+        <AnalyticsSection title="Структура выручки (тыс. ₸)">
+          <div className="rounded-[2rem] border border-white/8 bg-white/3 p-5">
+            <ResponsiveContainer width="100%" height={180}>
+              <BarChart data={payTypeData} layout="vertical" margin={{ top: 0, right: 16, left: 12, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" horizontal={false} />
+                <XAxis type="number" tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" tick={{ fill: "#94a3b8", fontSize: 12 }} axisLine={false} tickLine={false} width={90} />
+                <Tooltip
+                  contentStyle={{ background: "#141414", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "1rem", color: "#fff", fontSize: 12 }}
+                  formatter={(v: any) => [`${v} тыс. ₸`]}
+                  cursor={{ fill: "rgba(255,255,255,0.04)" }}
+                />
+                <Bar dataKey="value" radius={[0, 8, 8, 0]}>
+                  {payTypeData.map((_entry, i) => (
+                    <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </AnalyticsSection>
+      )}
+
+      {/* Teacher performance table */}
+      {teacherData.length > 0 && (
+        <AnalyticsSection title="Эффективность преподавателей">
+          <div className="overflow-hidden rounded-[2rem] border border-white/8 bg-white/3">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-white/8">
+                  <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest text-slate-500">Преподаватель</th>
+                  <th className="px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest text-slate-500">Учеников</th>
+                  <th className="px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest text-slate-500">Удержание</th>
+                  <th className="px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest text-slate-500">Посещ.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {teacherData.map((t, i) => (
+                  <tr key={t.teacherId} className={i < teacherData.length - 1 ? "border-b border-white/5" : ""}>
+                    <td className="px-5 py-3 font-semibold text-white">{t.teacherName}</td>
+                    <td className="px-4 py-3 text-center text-slate-300">{t.studentsCount}</td>
+                    <td className={`px-4 py-3 text-center font-bold ${retentionColor(t.retentionRate)}`}>{t.retentionRate}%</td>
+                    <td className={`px-4 py-3 text-center font-bold ${attendanceColor(t.averageAttendance)}`}>{t.averageAttendance}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </AnalyticsSection>
+      )}
+
+      {/* Groups overview */}
+      <AnalyticsSection title="Группы">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <AnalyticsKpiCard label="Всего групп" value={String(groups.length)} sub="По всей сети" />
+          <AnalyticsKpiCard label="Перегружены" value={String(groupsOverloaded)} sub="≥ 12 учеников" />
+          <AnalyticsKpiCard label="Требуют набора" value={String(groupsUnderloaded)} sub="≤ 4 ученика" />
+        </div>
+      </AnalyticsSection>
+
     </OwnerScreen>
   );
 }
