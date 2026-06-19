@@ -19,6 +19,14 @@ import {
   getVideoJobs,
   listVideoTemplates,
 } from "./video/videoGeneration";
+import {
+  runParser,
+  normalize,
+  supabaseUpsert,
+  type RawCandidate,
+  type EventType,
+  type Audience,
+} from "./danceEventsParser";
 
 type MvpSession = {
   userId: string;
@@ -759,6 +767,82 @@ export function registerMvpApi(app: express.Express) {
       res.json({ teacher: mapDbUserToTeacher(rows[0]), archived: true });
     } catch (error: any) {
       res.status(400).json({ error: error.message || "Не удалось удалить преподавателя" });
+    }
+  });
+
+  // ───────────────── Каталог событий кавказского танца (турниры + концерты) ──
+
+  // Список событий. Фильтры: ?type=tournament|concert &audience=kids|adults|all
+  //   &country=KZ,RU,... &status=new|published|hidden &q=поиск
+  app.get("/api/mvp/dance-events", async (req, res) => {
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const parts = ["select=*", "order=start_date.asc.nullslast"];
+    const { type, audience, country, status, q } = req.query as Record<string, string>;
+    if (type) parts.push(`event_type=eq.${type}`);
+    if (audience) parts.push(`audience=eq.${audience}`);
+    if (country) parts.push(`country=in.(${country})`);
+    if (status) parts.push(`status=eq.${status}`);
+    if (q) parts.push(`title=ilike.*${encodeURIComponent(q)}*`);
+    try {
+      const rows = await supabaseFetch<any[]>("dance_events", parts.join("&"));
+      res.json({ events: rows });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось загрузить события" });
+    }
+  });
+
+  // Запуск парсинга (только владелец). Тело: { dryRun?: boolean, maxDetailFetches?: number }
+  app.post("/api/mvp/dance-events/parse", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "Только владелец может запускать парсинг" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const { dryRun, maxDetailFetches } = req.body || {};
+    try {
+      const result = await runParser({
+        dryRun: Boolean(dryRun),
+        maxDetailFetches: Number(maxDetailFetches) || undefined,
+        log: (m) => console.log("[dance-events]", m),
+      });
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Парсинг не выполнен" });
+    }
+  });
+
+  // Ручное добавление турнира/концерта (для событий вне билетных систем).
+  app.post("/api/mvp/dance-events", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "Только владелец может добавлять события" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const b = req.body || {};
+    if (!b.title) return res.status(400).json({ error: "title обязателен" });
+    const candidate: RawCandidate = {
+      title: String(b.title),
+      url: b.url || "",
+      source: "manual",
+      sourceUid: b.sourceUid || undefined,
+      dateText: b.dateText || undefined,
+      city: b.city || undefined,
+      country: b.country || undefined,
+      venue: b.venue || undefined,
+      organizer: b.organizer || undefined,
+      priceText: b.price || undefined,
+      image: b.image || undefined,
+      ageText: b.ageText || undefined,
+      raw: b,
+    };
+    const ev = normalize(candidate);
+    // Явные переопределения из формы (если оператор задал тип/аудиторию вручную).
+    if (b.eventType) ev.event_type = b.eventType as EventType;
+    if (b.audience) ev.audience = b.audience as Audience;
+    if (b.regDeadline) ev.reg_deadline = b.regDeadline;
+    if (b.ageCategories) ev.age_categories = b.ageCategories;
+    if (b.disciplines) ev.disciplines = b.disciplines;
+    try {
+      const n = await supabaseUpsert([ev]);
+      res.status(201).json({ event: ev, upserted: n });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось сохранить событие" });
     }
   });
 }
