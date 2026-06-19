@@ -76,9 +76,19 @@ interface OwnerExecutiveWorkspaceProps {
   } | null;
   aiGenerating?: boolean;
   onTriggerAiReport?: () => void;
+  halls?: any[];
+  scheduleItems?: any[];
+  scheduleLoading?: boolean;
+  onLoadSchedule?: (filters?: { branchId?: string; groupId?: string; from?: string; to?: string }) => void;
+  onCreateGroup?: (data: any) => Promise<boolean>;
+  onUpdateGroup?: (id: string, data: any) => Promise<boolean>;
+  onDeleteGroup?: (id: string) => Promise<boolean>;
+  onCreateLesson?: (data: any) => Promise<boolean>;
+  onUpdateLesson?: (id: string, data: any) => Promise<boolean>;
+  onDeleteLesson?: (id: string) => Promise<boolean>;
 }
 
-type OwnerTab = "dashboard" | "eduerp" | "branches" | "students" | "teachers" | "finance" | "events" | "feed" | "announcements" | "analytics" | "ai" | "settings";
+type OwnerTab = "dashboard" | "eduerp" | "branches" | "students" | "teachers" | "schedule" | "finance" | "events" | "feed" | "announcements" | "analytics" | "ai" | "settings";
 
 const ownerTabs: { id: OwnerTab; label: string; short: string; icon: React.ElementType }[] = [
   { id: "dashboard", label: "Dashboard", short: "Главная", icon: Activity },
@@ -86,6 +96,7 @@ const ownerTabs: { id: OwnerTab; label: string; short: string; icon: React.Eleme
   { id: "branches", label: "Филиалы", short: "Филиалы", icon: Building2 },
   { id: "students", label: "Ученики", short: "Ученики", icon: Users },
   { id: "teachers", label: "Преподаватели", short: "Педагоги", icon: GraduationCap },
+  { id: "schedule", label: "Расписание", short: "Расписание", icon: CalendarDays },
   { id: "finance", label: "Финансы", short: "Деньги", icon: Coins },
   { id: "events", label: "Концерты", short: "Сцена", icon: Trophy },
   { id: "feed", label: "Афиша СНГ", short: "Афиша", icon: CalendarDays },
@@ -118,7 +129,17 @@ export function OwnerExecutiveWorkspace({
   onDeleteAnnouncement,
   aiResult,
   aiGenerating,
-  onTriggerAiReport
+  onTriggerAiReport,
+  halls = [],
+  scheduleItems = [],
+  scheduleLoading = false,
+  onLoadSchedule,
+  onCreateGroup,
+  onUpdateGroup,
+  onDeleteGroup,
+  onCreateLesson,
+  onUpdateLesson,
+  onDeleteLesson,
 }: OwnerExecutiveWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<OwnerTab>("dashboard");
   const debt = Math.abs(students.filter((student) => student.balance < 0).reduce((sum, student) => sum + student.balance, 0));
@@ -205,6 +226,23 @@ export function OwnerExecutiveWorkspace({
           {activeTab === "students" && <StudentsNetworkView students={students} branches={branches} groups={groups} teachers={teachers} onCreateStudent={onCreateStudent} onUpdateStudent={onUpdateStudent} onDeleteStudent={onDeleteStudent} />}
           {activeTab === "teachers" && <TeachersNetworkView teachers={teachers} metrics={metrics} branches={branches} onCreateTeacher={onCreateTeacher} onUpdateTeacher={onUpdateTeacher} onDeleteTeacher={onDeleteTeacher} />}
           {activeTab === "finance" && <FinanceCenterView branches={branchScorecards} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
+          {activeTab === "schedule" && (
+            <OwnerScheduleView
+              branches={branches}
+              groups={groups}
+              teachers={teachers}
+              halls={halls}
+              scheduleItems={scheduleItems}
+              scheduleLoading={scheduleLoading}
+              onLoadSchedule={onLoadSchedule}
+              onCreateGroup={onCreateGroup}
+              onUpdateGroup={onUpdateGroup}
+              onDeleteGroup={onDeleteGroup}
+              onCreateLesson={onCreateLesson}
+              onUpdateLesson={onUpdateLesson}
+              onDeleteLesson={onDeleteLesson}
+            />
+          )}
           {activeTab === "events" && <EventsView competitions={competitions} branches={branches} />}
           {activeTab === "feed" && <DanceEventsFeedView />}
           {activeTab === "announcements" && <OwnerAnnouncementsView announcements={announcements} branches={branches} onCreateAnnouncement={onCreateAnnouncement} onUpdateAnnouncement={onUpdateAnnouncement} onDeleteAnnouncement={onDeleteAnnouncement} />}
@@ -2328,4 +2366,224 @@ function BookIconFallback() {
 
 function money(value: number) {
   return `${Math.round(value).toLocaleString("ru-RU")} ₸`;
+}
+
+function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, scheduleLoading, onLoadSchedule, onCreateGroup, onUpdateGroup, onDeleteGroup, onCreateLesson, onUpdateLesson, onDeleteLesson }: any) {
+  const today = new Date().toISOString().slice(0, 10);
+  const weekAhead = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+
+  const [activeForm, setActiveForm] = useState<"lesson" | "group" | null>(null);
+  const [filterBranchId, setFilterBranchId] = useState("");
+  const [lessonForm, setLessonForm] = useState({ groupId: "", startsAt: "", endsAt: "", teacherId: "", hallId: "", topic: "" });
+  const [groupForm, setGroupForm] = useState({ name: "", branchId: "", teacherId: "", hallId: "", ageFrom: "", ageTo: "", level: "Начинающие", scheduleDays: "", scheduleTime: "" });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (onLoadSchedule) onLoadSchedule({ from: today, to: weekAhead });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const filteredLessons = (scheduleItems || [])
+    .filter((l: any) => l.status !== "cancelled" && (!filterBranchId || l.branchId === filterBranchId));
+
+  const handleSaveLesson = async () => {
+    if (!lessonForm.groupId || !lessonForm.startsAt || !lessonForm.endsAt) return;
+    setSaving(true);
+    const ok = await onCreateLesson?.({ ...lessonForm });
+    setSaving(false);
+    if (ok) { setLessonForm({ groupId: "", startsAt: "", endsAt: "", teacherId: "", hallId: "", topic: "" }); setActiveForm(null); }
+  };
+
+  const handleSaveGroup = async () => {
+    if (!groupForm.name || !groupForm.branchId) return;
+    setSaving(true);
+    const ok = await onCreateGroup?.({ ...groupForm, ageFrom: groupForm.ageFrom ? Number(groupForm.ageFrom) : undefined, ageTo: groupForm.ageTo ? Number(groupForm.ageTo) : undefined });
+    setSaving(false);
+    if (ok) { setGroupForm({ name: "", branchId: "", teacherId: "", hallId: "", ageFrom: "", ageTo: "", level: "Начинающие", scheduleDays: "", scheduleTime: "" }); setActiveForm(null); }
+  };
+
+  const inputCls = "rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white w-full";
+  const labelCls = "flex flex-col gap-1";
+  const kicCls = "text-[10px] uppercase tracking-widest text-slate-500 font-bold";
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#C5A059]">Сеть филиалов</p>
+          <h2 className="text-2xl font-black text-white">Расписание занятий</h2>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={() => setActiveForm(activeForm === "lesson" ? null : "lesson")} className="flex items-center gap-2 rounded-xl bg-[#C5A059]/15 border border-[#C5A059]/30 px-4 py-2 text-sm font-bold text-[#C5A059] hover:bg-[#C5A059]/25 transition-colors">
+            <Plus className="w-4 h-4" /> Новый урок
+          </button>
+          <button onClick={() => setActiveForm(activeForm === "group" ? null : "group")} className="flex items-center gap-2 rounded-xl bg-white/5 border border-white/10 px-4 py-2 text-sm font-bold text-slate-300 hover:bg-white/10 transition-colors">
+            <Plus className="w-4 h-4" /> Создать группу
+          </button>
+          <button onClick={() => onLoadSchedule?.({ from: today, to: weekAhead, branchId: filterBranchId || undefined })} className="rounded-xl bg-white/5 border border-white/10 px-4 py-2 text-sm font-bold text-slate-400 hover:bg-white/10 transition-colors">
+            Обновить
+          </button>
+        </div>
+      </div>
+
+      {/* Branch filter */}
+      <div className="flex gap-2 flex-wrap">
+        <button onClick={() => setFilterBranchId("")} className={`rounded-xl px-3 py-1.5 text-xs font-bold transition-colors ${!filterBranchId ? "bg-[#C5A059] text-black" : "bg-white/5 text-slate-400 hover:bg-white/10"}`}>Все филиалы</button>
+        {branches.map((b: Branch) => (
+          <button key={b.id} onClick={() => setFilterBranchId(b.id)} className={`rounded-xl px-3 py-1.5 text-xs font-bold transition-colors ${filterBranchId === b.id ? "bg-[#C5A059] text-black" : "bg-white/5 text-slate-400 hover:bg-white/10"}`}>{b.name}</button>
+        ))}
+      </div>
+
+      {activeForm === "lesson" && (
+        <div className="rounded-3xl border border-white/10 bg-[#111] p-5 space-y-4">
+          <p className="text-sm font-black text-white">Новый урок</p>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <label className={labelCls}><span className={kicCls}>Группа *</span>
+              <select value={lessonForm.groupId} onChange={(e) => setLessonForm(f => ({ ...f, groupId: e.target.value }))} className={inputCls}>
+                <option value="">Выберите группу</option>
+                {groups.map((g: Group) => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </select>
+            </label>
+            <label className={labelCls}><span className={kicCls}>Преподаватель</span>
+              <select value={lessonForm.teacherId} onChange={(e) => setLessonForm(f => ({ ...f, teacherId: e.target.value }))} className={inputCls}>
+                <option value="">Из группы</option>
+                {teachers.map((t: Teacher) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </label>
+            <label className={labelCls}><span className={kicCls}>Зал</span>
+              <select value={lessonForm.hallId} onChange={(e) => setLessonForm(f => ({ ...f, hallId: e.target.value }))} className={inputCls}>
+                <option value="">Без зала</option>
+                {(halls || []).map((h: any) => <option key={h.id} value={h.id}>{h.name}</option>)}
+              </select>
+            </label>
+            <label className={labelCls}><span className={kicCls}>Начало *</span>
+              <input type="datetime-local" value={lessonForm.startsAt} onChange={(e) => setLessonForm(f => ({ ...f, startsAt: e.target.value }))} className={inputCls} />
+            </label>
+            <label className={labelCls}><span className={kicCls}>Конец *</span>
+              <input type="datetime-local" value={lessonForm.endsAt} onChange={(e) => setLessonForm(f => ({ ...f, endsAt: e.target.value }))} className={inputCls} />
+            </label>
+            <label className={labelCls}><span className={kicCls}>Тема</span>
+              <input type="text" value={lessonForm.topic} onChange={(e) => setLessonForm(f => ({ ...f, topic: e.target.value }))} placeholder="Тема занятия" className={inputCls} />
+            </label>
+          </div>
+          <div className="flex gap-3">
+            <button onClick={handleSaveLesson} disabled={saving || !lessonForm.groupId || !lessonForm.startsAt} className="rounded-xl bg-[#C5A059] px-5 py-2 text-sm font-bold text-black disabled:opacity-40">{saving ? "Сохранение…" : "Создать"}</button>
+            <button onClick={() => setActiveForm(null)} className="rounded-xl bg-white/5 px-5 py-2 text-sm font-bold text-slate-400">Отмена</button>
+          </div>
+        </div>
+      )}
+
+      {activeForm === "group" && (
+        <div className="rounded-3xl border border-white/10 bg-[#111] p-5 space-y-4">
+          <p className="text-sm font-black text-white">Создать группу</p>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <label className={labelCls}><span className={kicCls}>Название *</span>
+              <input type="text" value={groupForm.name} onChange={(e) => setGroupForm(f => ({ ...f, name: e.target.value }))} placeholder="Название группы" className={inputCls} />
+            </label>
+            <label className={labelCls}><span className={kicCls}>Филиал *</span>
+              <select value={groupForm.branchId} onChange={(e) => setGroupForm(f => ({ ...f, branchId: e.target.value }))} className={inputCls}>
+                <option value="">Выберите филиал</option>
+                {branches.map((b: Branch) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+            </label>
+            <label className={labelCls}><span className={kicCls}>Преподаватель</span>
+              <select value={groupForm.teacherId} onChange={(e) => setGroupForm(f => ({ ...f, teacherId: e.target.value }))} className={inputCls}>
+                <option value="">Не выбрано</option>
+                {teachers.map((t: Teacher) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </label>
+            <label className={labelCls}><span className={kicCls}>Зал</span>
+              <select value={groupForm.hallId} onChange={(e) => setGroupForm(f => ({ ...f, hallId: e.target.value }))} className={inputCls}>
+                <option value="">Не выбрано</option>
+                {(halls || []).map((h: any) => <option key={h.id} value={h.id}>{h.name}</option>)}
+              </select>
+            </label>
+            <label className={labelCls}><span className={kicCls}>Возраст от–до</span>
+              <div className="flex gap-2">
+                <input type="number" value={groupForm.ageFrom} onChange={(e) => setGroupForm(f => ({ ...f, ageFrom: e.target.value }))} placeholder="от" className={inputCls} min={3} />
+                <input type="number" value={groupForm.ageTo} onChange={(e) => setGroupForm(f => ({ ...f, ageTo: e.target.value }))} placeholder="до" className={inputCls} min={3} />
+              </div>
+            </label>
+            <label className={labelCls}><span className={kicCls}>Уровень</span>
+              <select value={groupForm.level} onChange={(e) => setGroupForm(f => ({ ...f, level: e.target.value }))} className={inputCls}>
+                {["Начинающие", "Продолжающие", "Ансамбль", "Профи"].map((l) => <option key={l}>{l}</option>)}
+              </select>
+            </label>
+            <label className={labelCls}><span className={kicCls}>Дни занятий</span>
+              <input type="text" value={groupForm.scheduleDays} onChange={(e) => setGroupForm(f => ({ ...f, scheduleDays: e.target.value }))} placeholder="Пн, Ср, Пт" className={inputCls} />
+            </label>
+            <label className={labelCls}><span className={kicCls}>Время</span>
+              <input type="text" value={groupForm.scheduleTime} onChange={(e) => setGroupForm(f => ({ ...f, scheduleTime: e.target.value }))} placeholder="18:30–20:00" className={inputCls} />
+            </label>
+          </div>
+          <div className="flex gap-3">
+            <button onClick={handleSaveGroup} disabled={saving || !groupForm.name || !groupForm.branchId} className="rounded-xl bg-[#C5A059] px-5 py-2 text-sm font-bold text-black disabled:opacity-40">{saving ? "Сохранение…" : "Создать"}</button>
+            <button onClick={() => setActiveForm(null)} className="rounded-xl bg-white/5 px-5 py-2 text-sm font-bold text-slate-400">Отмена</button>
+          </div>
+        </div>
+      )}
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        {/* Lessons list */}
+        <div className="rounded-3xl border border-white/10 bg-[#111] overflow-hidden">
+          <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-[#C5A059]">Ближайшие 7 дней</p>
+              <p className="text-sm font-black text-white">{filteredLessons.length} занятий</p>
+            </div>
+            {scheduleLoading && <span className="text-xs text-slate-500">Загрузка…</span>}
+          </div>
+          <div className="p-4 space-y-3 max-h-[600px] overflow-y-auto">
+            {filteredLessons.length === 0 && !scheduleLoading && (
+              <div className="py-8 text-center">
+                <CalendarDays className="mx-auto mb-2 h-7 w-7 text-slate-600" />
+                <p className="text-sm text-slate-500">Нет занятий в этом периоде</p>
+              </div>
+            )}
+            {filteredLessons.map((lesson: any) => (
+              <div key={lesson.id} className="flex items-start justify-between gap-3 rounded-2xl bg-white/5 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-white truncate">{lesson.groupName || "Группа"}</p>
+                  <p className="mt-0.5 text-xs text-slate-400">
+                    {new Date(lesson.startsAt).toLocaleString("ru-RU", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                    {" – "}{new Date(lesson.endsAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    {lesson.teacherName && <span className="text-[10px] text-slate-500">{lesson.teacherName}</span>}
+                    {lesson.hallName && <span className="text-[10px] font-bold text-[#C5A059]">{lesson.hallName}</span>}
+                    {lesson.topic && <span className="text-[10px] italic text-slate-400">{lesson.topic}</span>}
+                  </div>
+                </div>
+                {onDeleteLesson && (
+                  <button onClick={() => onDeleteLesson(lesson.id)} className="flex-shrink-0 rounded-lg bg-red-500/10 px-2 py-1 text-[10px] font-bold text-red-400 hover:bg-red-500/20 transition-colors">Отменить</button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Groups list */}
+        <div className="rounded-3xl border border-white/10 bg-[#111] overflow-hidden">
+          <div className="px-5 py-4 border-b border-white/5">
+            <p className="text-[10px] font-black uppercase tracking-widest text-[#C5A059]">Все группы сети</p>
+            <p className="text-sm font-black text-white">{groups.filter((g: Group) => !filterBranchId || g.branchId === filterBranchId).length} групп</p>
+          </div>
+          <div className="p-4 space-y-3 max-h-[600px] overflow-y-auto">
+            {groups.filter((g: Group) => !filterBranchId || g.branchId === filterBranchId).map((group: Group) => (
+              <div key={group.id} className="flex items-start justify-between gap-3 rounded-2xl bg-black/25 border border-white/10 p-4">
+                <div className="min-w-0">
+                  <p className="text-sm font-black text-white">{group.name}</p>
+                  <p className="mt-0.5 text-xs text-slate-400">{group.ageGroup} · {group.level}</p>
+                  {(group.days?.length > 0 || group.time) && <p className="mt-0.5 text-xs text-slate-500">{group.days?.join(", ")} {group.time}</p>}
+                  <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-[#C5A059]">{group.studentCount} учеников</p>
+                </div>
+                {onDeleteGroup && (
+                  <button onClick={() => onDeleteGroup(group.id)} className="flex-shrink-0 rounded-lg bg-red-500/10 px-2 py-1 text-[10px] font-bold text-red-400 hover:bg-red-500/20 transition-colors">Архив</button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }

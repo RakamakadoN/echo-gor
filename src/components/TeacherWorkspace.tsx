@@ -18,6 +18,9 @@ interface TeacherWorkspaceProps {
   announcements: Announcement[];
   addAuditLog: (action: string, details: string) => void;
   teacherName?: string;
+  scheduleItems?: any[];
+  scheduleLoading?: boolean;
+  onLoadSchedule?: (filters?: { branchId?: string; groupId?: string; from?: string; to?: string }) => void;
 }
 
 // Sub-components: 
@@ -28,18 +31,28 @@ interface TeacherWorkspaceProps {
 // - CompetitionsView
 // - AINotebook
 
-export function TeacherWorkspace({ 
-  groups, 
-  students, 
-  competitions, 
+export function TeacherWorkspace({
+  groups,
+  students,
+  competitions,
   announcements,
   addAuditLog,
-  teacherName = "Аслан Плиев" 
+  teacherName = "Аслан Плиев",
+  scheduleItems = [],
+  scheduleLoading = false,
+  onLoadSchedule,
 }: TeacherWorkspaceProps) {
   
   const [activeTab, setActiveTab] = useState<'today' | 'profile' | 'groups' | 'students' | 'feedback' | 'more'>('today');
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+
+  // Load real schedule on mount
+  useEffect(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const weekAhead = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+    if (onLoadSchedule) onLoadSchedule({ from: today, to: weekAhead });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Local state for Homeworks and Notebook
   const [homeworks, setHomeworks] = useState<Homework[]>([]);
@@ -77,13 +90,15 @@ export function TeacherWorkspace({
         <div className="p-4 md:p-8">
           {/* TODAY VIEW */}
           {activeTab === 'today' && !selectedGroupId && !selectedStudentId && (
-            <DashboardView 
+            <DashboardView
               teacherName={teacherName}
               groups={teacherGroups}
               students={teacherStudents}
               announcements={announcements}
               onNavigateToGroup={navigateToGroup}
               onNavigateToStudent={navigateToStudent}
+              scheduleItems={scheduleItems}
+              scheduleLoading={scheduleLoading}
             />
           )}
 
@@ -744,7 +759,7 @@ function NavItem({ icon, label, active, onClick }: { icon: React.ReactNode, labe
   );
 }
 
-function DashboardView({ teacherName, groups, students, announcements, onNavigateToGroup, onNavigateToStudent }: any) {
+function DashboardView({ teacherName, groups, students, announcements, onNavigateToGroup, onNavigateToStudent, scheduleItems, scheduleLoading }: any) {
   const attentionStudents = students
     .filter((student: Student) => {
       const recent = Object.values(student.attendance || {}).slice(-4);
@@ -816,23 +831,40 @@ function DashboardView({ teacherName, groups, students, announcements, onNavigat
             </div>
           </div>
           <div className="space-y-3">
-            {groups.slice(0, 4).map((group: Group, index: number) => (
-              <button
-                key={group.id}
-                onClick={() => onNavigateToGroup(group.id)}
-                className="w-full rounded-2xl border border-white/5 bg-black/30 p-4 text-left hover:border-[#C5A059]/35 transition-colors"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-black text-white">{group.time || `${16 + index}:00`} • {group.name}</p>
-                    <p className="text-xs text-slate-500">{group.ageGroup} • {group.level} • {group.hallId}</p>
-                  </div>
-                  <span className="rounded-full bg-[#C5A059]/15 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-[#C5A059]">
-                    открыть
-                  </span>
-                </div>
-              </button>
-            ))}
+            {scheduleLoading && <p className="text-xs text-slate-500 py-3 text-center">Загрузка расписания…</p>}
+            {!scheduleLoading && scheduleItems && scheduleItems.length > 0
+              ? scheduleItems.filter((l: any) => l.status !== "cancelled").slice(0, 5).map((lesson: any) => (
+                  <button
+                    key={lesson.id}
+                    onClick={() => lesson.groupId && onNavigateToGroup(lesson.groupId)}
+                    className="w-full rounded-2xl border border-white/5 bg-black/30 p-4 text-left hover:border-[#C5A059]/35 transition-colors"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-black text-white">
+                          {new Date(lesson.startsAt).toLocaleString("ru-RU", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })} • {lesson.groupName || "Группа"}
+                        </p>
+                        <p className="text-xs text-slate-500">{lesson.hallName || ""}{lesson.topic ? ` • ${lesson.topic}` : ""}</p>
+                      </div>
+                      <span className="rounded-full bg-[#C5A059]/15 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-[#C5A059]">открыть</span>
+                    </div>
+                  </button>
+                ))
+              : !scheduleLoading && groups.slice(0, 4).map((group: Group, index: number) => (
+                  <button
+                    key={group.id}
+                    onClick={() => onNavigateToGroup(group.id)}
+                    className="w-full rounded-2xl border border-white/5 bg-black/30 p-4 text-left hover:border-[#C5A059]/35 transition-colors"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-black text-white">{group.time || `${16 + index}:00`} • {group.name}</p>
+                        <p className="text-xs text-slate-500">{group.ageGroup} • {group.level}</p>
+                      </div>
+                      <span className="rounded-full bg-[#C5A059]/15 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-[#C5A059]">открыть</span>
+                    </div>
+                  </button>
+                ))}
           </div>
         </section>
 

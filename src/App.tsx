@@ -2453,12 +2453,15 @@ export default function App() {
           {activeRole === "chart" ? (
             <AnimatedBarChartShowcase />
           ) : activeRole === "teacher" ? (
-             <TeacherWorkspace 
+             <TeacherWorkspace
                groups={groups}
                students={students}
                competitions={competitions}
                announcements={announcements}
                addAuditLog={addAuditLog}
+               scheduleItems={scheduleItems}
+               scheduleLoading={scheduleLoading}
+               onLoadSchedule={loadSchedule}
              />
           ) : activeRole === "branch" ? (
             <BranchManagerWorkspace
@@ -2506,6 +2509,16 @@ export default function App() {
               aiResult={aiResult}
               aiGenerating={aiGenerating}
               onTriggerAiReport={triggerAiReport}
+              halls={halls}
+              scheduleItems={scheduleItems}
+              scheduleLoading={scheduleLoading}
+              onLoadSchedule={loadSchedule}
+              onCreateGroup={handleCreateGroup}
+              onUpdateGroup={handleUpdateGroup}
+              onDeleteGroup={handleDeleteGroup}
+              onCreateLesson={handleCreateLesson}
+              onUpdateLesson={handleUpdateLesson}
+              onDeleteLesson={handleDeleteLesson}
             />
           ) : activeRole === "admin" ? (
             <AdminEduErpWorkspace
