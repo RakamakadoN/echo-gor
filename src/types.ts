@@ -184,6 +184,8 @@ export interface Student {
   paymentStatus?: string;
 }
 
+export type AnnouncementAudience = "all" | "branches" | "teachers" | "parents" | "students";
+
 export interface Announcement {
   id: string;
   organizationId: string;
@@ -194,6 +196,7 @@ export interface Announcement {
   authorName: string;
   authorRole: string; // e.g., "Владелец", "Директор", "Преподаватель"
   branchId?: string; // if undefined, visible network-wide
+  audience: AnnouncementAudience;
   likes: number;
   isImportant: boolean;
 }

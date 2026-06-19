@@ -845,4 +845,44 @@ export function registerMvpApi(app: express.Express) {
       res.status(400).json({ error: error.message || "Не удалось сохранить событие" });
     }
   });
+
+  // Обновление события (статус публикации/скрытия и базовые поля). Только владелец.
+  app.patch("/api/mvp/dance-events/:id", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "Только владелец может менять события" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const b = req.body || {};
+    const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    for (const key of ["status", "event_type", "audience", "title", "city", "country", "venue", "organizer", "price", "url", "image", "age_categories", "disciplines"]) {
+      if (b[key] !== undefined) updates[key] = b[key];
+    }
+    for (const key of ["start_date", "end_date", "reg_deadline"]) {
+      if (b[key] !== undefined) updates[key] = b[key] || null;
+    }
+    try {
+      const rows = await supabaseFetch<any[]>("dance_events", `id=eq.${req.params.id}`, {
+        method: "PATCH", body: JSON.stringify(updates),
+      });
+      if (!rows[0]) return res.status(404).json({ error: "Событие не найдено" });
+      res.json({ event: rows[0] });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось обновить событие" });
+    }
+  });
+
+  // Cron-эндпоинт для Vercel Cron (ежедневный авто-парсинг).
+  // Защита: заголовок Authorization: Bearer <CRON_SECRET> (env). Vercel шлёт его автоматически.
+  app.get("/api/cron/parse-dance-events", async (req, res) => {
+    const secret = process.env.CRON_SECRET;
+    if (secret && req.headers.authorization !== `Bearer ${secret}`) {
+      return res.status(401).json({ error: "unauthorized" });
+    }
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      const result = await runParser({ log: (m) => console.log("[cron dance-events]", m) });
+      res.json({ ranAt: new Date().toISOString(), ...result });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Парсинг не выполнен" });
+    }
+  });
 }

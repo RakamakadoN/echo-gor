@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -17,6 +17,10 @@ import {
   Filter,
   GraduationCap,
   LineChart,
+  MapPin,
+  ExternalLink,
+  RefreshCw,
+  Ticket,
   Megaphone,
   Phone,
   Receipt,
@@ -35,7 +39,7 @@ import {
   Trash2,
   X
 } from "lucide-react";
-import { Announcement, Branch, Competition, ExecutiveSummary, Group, Payment, Student, Teacher } from "../types";
+import { Announcement, AnnouncementAudience, Branch, Competition, ExecutiveSummary, Group, Payment, Student, Teacher } from "../types";
 
 type StudentInput = { name?: string; branchId?: string; groupId?: string; teacherId?: string; parentName?: string; parentPhone?: string };
 type TeacherInput = { name?: string; phone?: string; specialization?: string; branchId?: string | null; role?: string };
@@ -58,9 +62,12 @@ interface OwnerExecutiveWorkspaceProps {
   onCreateTeacher?: (data: TeacherInput) => Promise<boolean>;
   onUpdateTeacher?: (id: string, data: TeacherInput) => Promise<boolean>;
   onDeleteTeacher?: (id: string) => Promise<boolean>;
+  onCreateAnnouncement?: (data: { title: string; content: string; audience: AnnouncementAudience; isImportant: boolean }) => void;
+  onUpdateAnnouncement?: (id: string, data: { title?: string; content?: string; audience?: AnnouncementAudience; isImportant?: boolean }) => void;
+  onDeleteAnnouncement?: (id: string) => void;
 }
 
-type OwnerTab = "dashboard" | "eduerp" | "branches" | "students" | "teachers" | "finance" | "events" | "announcements" | "analytics" | "ai" | "settings";
+type OwnerTab = "dashboard" | "eduerp" | "branches" | "students" | "teachers" | "finance" | "events" | "feed" | "announcements" | "analytics" | "ai" | "settings";
 
 const ownerTabs: { id: OwnerTab; label: string; short: string; icon: React.ElementType }[] = [
   { id: "dashboard", label: "Dashboard", short: "Главная", icon: Activity },
@@ -70,6 +77,7 @@ const ownerTabs: { id: OwnerTab; label: string; short: string; icon: React.Eleme
   { id: "teachers", label: "Преподаватели", short: "Педагоги", icon: GraduationCap },
   { id: "finance", label: "Финансы", short: "Деньги", icon: Coins },
   { id: "events", label: "Концерты", short: "Сцена", icon: Trophy },
+  { id: "feed", label: "Афиша СНГ", short: "Афиша", icon: CalendarDays },
   { id: "announcements", label: "Объявления", short: "Связь", icon: Megaphone },
   { id: "analytics", label: "Аналитика", short: "BI", icon: BarChart3 },
   { id: "ai", label: "AI Assistant", short: "AI", icon: Sparkles },
@@ -93,7 +101,10 @@ export function OwnerExecutiveWorkspace({
   onDeleteStudent,
   onCreateTeacher,
   onUpdateTeacher,
-  onDeleteTeacher
+  onDeleteTeacher,
+  onCreateAnnouncement,
+  onUpdateAnnouncement,
+  onDeleteAnnouncement
 }: OwnerExecutiveWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<OwnerTab>("dashboard");
   const debt = Math.abs(students.filter((student) => student.balance < 0).reduce((sum, student) => sum + student.balance, 0));
@@ -181,7 +192,8 @@ export function OwnerExecutiveWorkspace({
           {activeTab === "teachers" && <TeachersNetworkView teachers={teachers} metrics={metrics} branches={branches} onCreateTeacher={onCreateTeacher} onUpdateTeacher={onUpdateTeacher} onDeleteTeacher={onDeleteTeacher} />}
           {activeTab === "finance" && <FinanceCenterView branches={branchScorecards} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
           {activeTab === "events" && <EventsView competitions={competitions} branches={branches} />}
-          {activeTab === "announcements" && <OwnerAnnouncementsView announcements={announcements} branches={branches} />}
+          {activeTab === "feed" && <DanceEventsFeedView />}
+          {activeTab === "announcements" && <OwnerAnnouncementsView announcements={announcements} branches={branches} onCreateAnnouncement={onCreateAnnouncement} onUpdateAnnouncement={onUpdateAnnouncement} onDeleteAnnouncement={onDeleteAnnouncement} />}
           {activeTab === "analytics" && <ExecutiveAnalyticsView branches={branchScorecards} groups={groups} teachers={teachers} />}
           {activeTab === "ai" && <OwnerAiView branches={branchScorecards} renewals={renewals} debt={debt} />}
           {activeTab === "settings" && <NetworkSettingsView branches={branches} teachers={teachers} />}
@@ -1203,20 +1215,453 @@ function EventsView({ competitions, branches }: { competitions: Competition[]; b
   );
 }
 
-function OwnerAnnouncementsView({ announcements, branches }: { announcements: Announcement[]; branches: Branch[] }) {
-  const audiences = ["Вся сеть", "Филиалы", "Преподаватели", "Родители", "Ученики"];
+// ─────────────── Афиша СНГ: парсенные турниры и концерты кавказского танца ───
+
+type DanceEvent = {
+  id: string;
+  event_type: "tournament" | "concert";
+  audience: "kids" | "adults" | "all";
+  title: string;
+  organizer: string | null;
+  city: string | null;
+  country: string | null;
+  venue: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  reg_deadline: string | null;
+  age_categories: string | null;
+  price: string | null;
+  url: string | null;
+  image: string | null;
+  source: string;
+  status: "new" | "published" | "hidden";
+};
+
+const COUNTRY_LABEL: Record<string, string> = {
+  KZ: "🇰🇿 Казахстан", RU: "🇷🇺 Россия", UZ: "🇺🇿 Узбекистан", KG: "🇰🇬 Кыргызстан",
+  TJ: "🇹🇯 Таджикистан", BY: "🇧🇾 Беларусь", AZ: "🇦🇿 Азербайджан", GE: "🇬🇪 Грузия", AM: "🇦🇲 Армения",
+};
+
+const AUDIENCE_LABEL: Record<DanceEvent["audience"], string> = { kids: "Дети", adults: "Взрослые", all: "Все" };
+
+function fmtDate(start: string | null, end: string | null): string {
+  if (!start) return "Дата уточняется";
+  const f = (d: string) => {
+    const [y, m, day] = d.split("-");
+    return `${day}.${m}.${y}`;
+  };
+  return end && end !== start ? `${f(start)} — ${f(end)}` : f(start);
+}
+
+const ownerHeaders = { "Content-Type": "application/json", "x-demo-role": "owner" };
+
+function DanceEventsFeedView() {
+  const [events, setEvents] = useState<DanceEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [type, setType] = useState<"" | "tournament" | "concert">("");
+  const [audience, setAudience] = useState<"" | "kids" | "adults">("");
+  const [country, setCountry] = useState<string>("");
+  const [parsing, setParsing] = useState(false);
+  const [parseMsg, setParseMsg] = useState<string | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams();
+      if (type) params.set("type", type);
+      if (audience) params.set("audience", audience);
+      if (country) params.set("country", country);
+      const res = await fetch(`/api/mvp/dance-events?${params.toString()}`, { headers: ownerHeaders });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Ошибка загрузки");
+      setEvents(data.events || []);
+    } catch (e: any) {
+      setError(e.message || "Не удалось загрузить афишу");
+      setEvents([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [type, audience, country]);
+
+  const runParse = async () => {
+    setParsing(true);
+    setParseMsg(null);
+    try {
+      const res = await fetch("/api/mvp/dance-events/parse", {
+        method: "POST", headers: ownerHeaders, body: JSON.stringify({}),
+      });
+      const r = await res.json();
+      if (!res.ok) throw new Error(r.error || "Парсинг не выполнен");
+      setParseMsg(`Найдено: ${r.matched}, добавлено/обновлено: ${r.upserted} (турниров ${r.byType?.tournament ?? 0}, концертов ${r.byType?.concert ?? 0}).`);
+      await load();
+    } catch (e: any) {
+      setParseMsg(`Ошибка парсинга: ${e.message}`);
+    } finally {
+      setParsing(false);
+    }
+  };
+
+  const setStatus = async (ev: DanceEvent, status: DanceEvent["status"]) => {
+    setEvents((prev) => prev.map((x) => (x.id === ev.id ? { ...x, status } : x)));
+    try {
+      await fetch(`/api/mvp/dance-events/${ev.id}`, {
+        method: "PATCH", headers: ownerHeaders, body: JSON.stringify({ status }),
+      });
+    } catch { await load(); }
+  };
+
+  const counts = useMemo(() => ({
+    total: events.length,
+    tournaments: events.filter((e) => e.event_type === "tournament").length,
+    concerts: events.filter((e) => e.event_type === "concert").length,
+  }), [events]);
+
+  const Chip = ({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) => (
+    <button
+      onClick={onClick}
+      className={`rounded-full px-4 py-2 text-xs font-bold transition ${
+        active ? "bg-[#C5A059] text-black" : "border border-white/10 bg-black/25 text-slate-300 hover:border-[#C5A059]/40"
+      }`}
+    >
+      {children}
+    </button>
+  );
+
+  return (
+    <OwnerScreen
+      title="Афиша СНГ — турниры и концерты"
+      subtitle="Турниры (дети/взрослые) и концерты кавказского танца из билетных систем и федераций. Запустите парсинг, чтобы обновить афишу."
+    >
+      {/* Панель управления */}
+      <section className="rounded-[2rem] border border-[#C5A059]/20 bg-[#C5A059]/5 p-5">
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={runParse}
+            disabled={parsing}
+            className="inline-flex items-center gap-2 rounded-2xl bg-[#C5A059] px-5 py-3 text-sm font-black text-black transition hover:brightness-110 disabled:opacity-60"
+          >
+            <RefreshCw className={`h-4 w-4 ${parsing ? "animate-spin" : ""}`} />
+            {parsing ? "Парсинг…" : "Обновить афишу"}
+          </button>
+          <span className="text-xs text-slate-400">
+            Всего {counts.total} · турниров {counts.tournaments} · концертов {counts.concerts}
+          </span>
+        </div>
+        {parseMsg && <p className="mt-3 text-xs text-[#C5A059]">{parseMsg}</p>}
+      </section>
+
+      {/* Фильтры */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Filter className="h-4 w-4 text-slate-500" />
+        <Chip active={type === ""} onClick={() => setType("")}>Все типы</Chip>
+        <Chip active={type === "tournament"} onClick={() => setType("tournament")}>Турниры</Chip>
+        <Chip active={type === "concert"} onClick={() => setType("concert")}>Концерты</Chip>
+        <span className="mx-1 h-5 w-px bg-white/10" />
+        <Chip active={audience === ""} onClick={() => setAudience("")}>Любой возраст</Chip>
+        <Chip active={audience === "kids"} onClick={() => setAudience("kids")}>Дети</Chip>
+        <Chip active={audience === "adults"} onClick={() => setAudience("adults")}>Взрослые</Chip>
+        <span className="mx-1 h-5 w-px bg-white/10" />
+        <select
+          value={country}
+          onChange={(e) => setCountry(e.target.value)}
+          className="rounded-full border border-white/10 bg-black/25 px-4 py-2 text-xs font-bold text-slate-300"
+        >
+          <option value="">Все страны</option>
+          {Object.entries(COUNTRY_LABEL).map(([code, label]) => (
+            <option key={code} value={code}>{label}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Список */}
+      {loading ? (
+        <p className="text-sm text-slate-400">Загрузка…</p>
+      ) : error ? (
+        <div className="rounded-[2rem] border border-rose-500/30 bg-rose-500/10 p-5 text-sm text-rose-200">{error}</div>
+      ) : events.length === 0 ? (
+        <div className="rounded-[2rem] border border-white/10 bg-[#121212] p-8 text-center">
+          <CalendarDays className="mx-auto h-8 w-8 text-slate-600" />
+          <p className="mt-3 text-sm text-slate-400">Событий пока нет. Нажмите «Обновить афишу», чтобы собрать данные.</p>
+        </div>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {events.map((ev) => (
+            <article
+              key={ev.id}
+              className={`rounded-[2rem] border bg-[#121212] p-5 transition ${
+                ev.status === "hidden" ? "border-white/5 opacity-50" : "border-white/10"
+              }`}
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${
+                  ev.event_type === "tournament" ? "bg-[#C5A059]/20 text-[#C5A059]" : "bg-emerald-500/15 text-emerald-300"
+                }`}>
+                  {ev.event_type === "tournament" ? "Турнир" : "Концерт"}
+                </span>
+                {ev.event_type === "tournament" && (
+                  <span className="rounded-full bg-sky-500/15 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-sky-300">
+                    {AUDIENCE_LABEL[ev.audience]}
+                  </span>
+                )}
+                {ev.status === "published" && (
+                  <span className="rounded-full bg-emerald-500/15 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-emerald-300">Опубликовано</span>
+                )}
+              </div>
+
+              <h3 className="mt-3 text-lg font-black leading-snug text-white">{ev.title}</h3>
+
+              <div className="mt-3 space-y-1.5 text-xs text-slate-400">
+                <p className="flex items-center gap-2"><CalendarDays className="h-3.5 w-3.5 text-[#C5A059]" />{fmtDate(ev.start_date, ev.end_date)}</p>
+                {(ev.city || ev.country) && (
+                  <p className="flex items-center gap-2"><MapPin className="h-3.5 w-3.5 text-[#C5A059]" />
+                    {[ev.city, ev.country ? (COUNTRY_LABEL[ev.country] || ev.country) : null].filter(Boolean).join(", ")}
+                  </p>
+                )}
+                {ev.organizer && <p>Организатор: {ev.organizer}</p>}
+                {ev.reg_deadline && <p>Регистрация до: {fmtDate(ev.reg_deadline, null)}</p>}
+                {ev.age_categories && <p>Категории: {ev.age_categories}</p>}
+                {ev.price && <p className="flex items-center gap-2"><Ticket className="h-3.5 w-3.5 text-[#C5A059]" />{ev.price}</p>}
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                {ev.url && (
+                  <a
+                    href={ev.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-[11px] font-bold text-slate-200 hover:border-[#C5A059]/40"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" /> Источник ({ev.source})
+                  </a>
+                )}
+                {ev.status !== "published" ? (
+                  <button onClick={() => setStatus(ev, "published")} className="rounded-xl bg-emerald-500/15 px-3 py-2 text-[11px] font-bold text-emerald-300 hover:bg-emerald-500/25">Опубликовать</button>
+                ) : (
+                  <button onClick={() => setStatus(ev, "new")} className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-[11px] font-bold text-slate-300">Снять с публикации</button>
+                )}
+                {ev.status !== "hidden" ? (
+                  <button onClick={() => setStatus(ev, "hidden")} className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-[11px] font-bold text-slate-400 hover:text-rose-300">Скрыть</button>
+                ) : (
+                  <button onClick={() => setStatus(ev, "new")} className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-[11px] font-bold text-slate-300">Вернуть</button>
+                )}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </OwnerScreen>
+  );
+}
+
+const AUDIENCE_OPTIONS: { value: AnnouncementAudience; label: string }[] = [
+  { value: "all", label: "Вся сеть" },
+  { value: "branches", label: "Филиалы" },
+  { value: "teachers", label: "Преподаватели" },
+  { value: "parents", label: "Родители" },
+  { value: "students", label: "Ученики" },
+];
+
+function audienceLabel(a: AnnouncementAudience) {
+  return AUDIENCE_OPTIONS.find((o) => o.value === a)?.label ?? a;
+}
+
+type AnnFormState = { title: string; content: string; audience: AnnouncementAudience; isImportant: boolean };
+const emptyForm = (): AnnFormState => ({ title: "", content: "", audience: "all", isImportant: false });
+
+function OwnerAnnouncementsView({
+  announcements,
+  branches,
+  onCreateAnnouncement,
+  onUpdateAnnouncement,
+  onDeleteAnnouncement,
+}: {
+  announcements: Announcement[];
+  branches: Branch[];
+  onCreateAnnouncement?: (data: AnnFormState) => void;
+  onUpdateAnnouncement?: (id: string, data: Partial<AnnFormState>) => void;
+  onDeleteAnnouncement?: (id: string) => void;
+}) {
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [form, setForm] = useState<AnnFormState>(emptyForm());
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  const openCreate = () => { setForm(emptyForm()); setEditId(null); setShowForm(true); };
+  const openEdit = (ann: Announcement) => {
+    setForm({ title: ann.title, content: ann.content, audience: ann.audience ?? "all", isImportant: ann.isImportant });
+    setEditId(ann.id);
+    setShowForm(true);
+  };
+  const closeForm = () => { setShowForm(false); setEditId(null); };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.title.trim() || !form.content.trim()) return;
+    if (editId) { onUpdateAnnouncement?.(editId, form); }
+    else { onCreateAnnouncement?.(form); }
+    closeForm();
+  };
+
   return (
     <OwnerScreen title="Объявления владельца" subtitle="Публикации всей сети, филиалам, преподавателям, родителям и ученикам.">
-      <section className="rounded-[2rem] border border-[#C5A059]/20 bg-[#C5A059]/10 p-5">
-        <h3 className="font-black text-white">Новая публикация сети</h3>
-        <div className="mt-4 grid gap-2 sm:grid-cols-5">
-          {audiences.map((audience) => <button key={audience} className="rounded-2xl border border-white/10 bg-black/25 px-3 py-3 text-xs font-bold text-slate-200">{audience}</button>)}
-        </div>
-        <p className="mt-4 text-xs text-slate-500">Поддержка: закрепленное, срочное, запланированное объявление. Филиалов: {branches.length}.</p>
-      </section>
-      <div className="grid gap-3 lg:grid-cols-2">
-        {announcements.slice(0, 4).map((item) => <ExecutivePanel key={item.id} icon={<Bell />} title={item.title} text={item.content} />)}
+      {/* Header action */}
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-slate-500">Филиалов: {branches.length}. Всего объявлений: {announcements.length}.</p>
+        <button
+          onClick={openCreate}
+          className="flex items-center gap-2 rounded-2xl bg-[#C5A059] px-4 py-2 text-xs font-black text-black transition hover:opacity-90"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Новое объявление
+        </button>
       </div>
+
+      {/* Create / Edit modal */}
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="w-full max-w-lg rounded-[2rem] border border-white/10 bg-[#141414] p-6 shadow-2xl">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-lg font-black text-white">{editId ? "Редактировать объявление" : "Новое объявление"}</h3>
+              <button onClick={closeForm} className="rounded-xl p-1.5 text-slate-400 hover:text-white hover:bg-white/10"><X className="h-4 w-4" /></button>
+            </div>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Audience */}
+              <div>
+                <p className="mb-2 text-xs font-black uppercase tracking-widest text-slate-400">Кому</p>
+                <div className="flex flex-wrap gap-2">
+                  {AUDIENCE_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setForm((f) => ({ ...f, audience: opt.value }))}
+                      className={`rounded-2xl border px-3 py-2 text-xs font-bold transition ${
+                        form.audience === opt.value
+                          ? "border-[#C5A059] bg-[#C5A059]/20 text-[#C5A059]"
+                          : "border-white/10 bg-black/25 text-slate-300 hover:border-white/30"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* Title */}
+              <div>
+                <label className="mb-1.5 block text-xs font-black uppercase tracking-widest text-slate-400">Заголовок</label>
+                <input
+                  value={form.title}
+                  onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+                  placeholder="Заголовок объявления"
+                  required
+                  className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-white placeholder-slate-500 outline-none focus:border-[#C5A059]/60"
+                />
+              </div>
+              {/* Content */}
+              <div>
+                <label className="mb-1.5 block text-xs font-black uppercase tracking-widest text-slate-400">Текст</label>
+                <textarea
+                  value={form.content}
+                  onChange={(e) => setForm((f) => ({ ...f, content: e.target.value }))}
+                  placeholder="Текст объявления..."
+                  rows={4}
+                  required
+                  className="w-full resize-none rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-white placeholder-slate-500 outline-none focus:border-[#C5A059]/60"
+                />
+              </div>
+              {/* Important toggle */}
+              <label className="flex items-center gap-3 cursor-pointer select-none">
+                <div
+                  onClick={() => setForm((f) => ({ ...f, isImportant: !f.isImportant }))}
+                  className={`relative h-6 w-11 rounded-full transition-colors ${form.isImportant ? "bg-[#C5A059]" : "bg-white/10"}`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${form.isImportant ? "translate-x-5" : ""}`} />
+                </div>
+                <span className="text-sm text-slate-300">Срочное / важное</span>
+              </label>
+              {/* Actions */}
+              <div className="flex gap-3 pt-1">
+                <button type="button" onClick={closeForm} className="flex-1 rounded-2xl border border-white/10 py-3 text-sm font-bold text-slate-300 hover:bg-white/5">Отмена</button>
+                <button type="submit" className="flex-1 rounded-2xl bg-[#C5A059] py-3 text-sm font-black text-black hover:opacity-90">
+                  {editId ? "Сохранить" : "Опубликовать"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirm modal */}
+      {deleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm rounded-[2rem] border border-white/10 bg-[#141414] p-6 shadow-2xl text-center">
+            <Trash2 className="mx-auto mb-3 h-8 w-8 text-red-400" />
+            <h3 className="text-base font-black text-white mb-2">Удалить объявление?</h3>
+            <p className="text-xs text-slate-400 mb-6">Это действие нельзя отменить.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteId(null)} className="flex-1 rounded-2xl border border-white/10 py-3 text-sm font-bold text-slate-300 hover:bg-white/5">Отмена</button>
+              <button
+                onClick={() => { onDeleteAnnouncement?.(deleteId); setDeleteId(null); }}
+                className="flex-1 rounded-2xl bg-red-500 py-3 text-sm font-black text-white hover:bg-red-600"
+              >
+                Удалить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Announcements list */}
+      {announcements.length === 0 ? (
+        <div className="rounded-[2rem] border border-white/5 bg-white/5 p-10 text-center text-slate-500">
+          <Megaphone className="mx-auto mb-3 h-8 w-8 opacity-30" />
+          <p className="text-sm">Нет объявлений. Создайте первое!</p>
+        </div>
+      ) : (
+        <div className="grid gap-3">
+          {announcements.map((ann) => (
+            <div
+              key={ann.id}
+              className={`rounded-[2rem] border p-5 ${ann.isImportant ? "border-[#C5A059]/30 bg-[#C5A059]/8" : "border-white/8 bg-white/3"}`}
+            >
+              <div className="flex items-start gap-4">
+                <div className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${ann.isImportant ? "bg-[#C5A059]/20 text-[#C5A059]" : "bg-white/8 text-slate-400"}`}>
+                  <Bell className="h-4 w-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2 mb-1">
+                    {ann.isImportant && (
+                      <span className="rounded-lg bg-[#C5A059]/20 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-[#C5A059]">Срочно</span>
+                    )}
+                    <span className="rounded-lg bg-white/8 px-2 py-0.5 text-[10px] font-bold text-slate-400">{audienceLabel(ann.audience ?? "all")}</span>
+                    <span className="text-[10px] text-slate-500">{ann.date}</span>
+                  </div>
+                  <h4 className="font-black text-white text-sm leading-snug">{ann.title}</h4>
+                  <p className="mt-1 text-xs leading-relaxed text-slate-400 line-clamp-3">{ann.content}</p>
+                  <p className="mt-2 text-[10px] text-slate-500">{ann.authorName} · {ann.authorRole}</p>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <button
+                    onClick={() => openEdit(ann)}
+                    className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 text-slate-400 hover:border-[#C5A059]/50 hover:text-[#C5A059] transition"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => setDeleteId(ann.id)}
+                    className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 text-slate-400 hover:border-red-400/50 hover:text-red-400 transition"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </OwnerScreen>
   );
 }

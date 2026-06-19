@@ -194,6 +194,7 @@ export const initialAnnouncements: Announcement[] = [
     authorId: "owner-1",
     authorName: "Асланбек Болотаев",
     authorRole: "Владелец",
+    audience: "all",
     likes: 24,
     isImportant: true
   }

@@ -188,6 +188,7 @@ var initialAnnouncements = [
     authorId: "owner-1",
     authorName: "\u0410\u0441\u043B\u0430\u043D\u0431\u0435\u043A \u0411\u043E\u043B\u043E\u0442\u0430\u0435\u0432",
     authorRole: "\u0412\u043B\u0430\u0434\u0435\u043B\u0435\u0446",
+    audience: "all",
     likes: 24,
     isImportant: true
   }
@@ -672,6 +673,457 @@ var simulateQueue = (id) => {
   }, 2200);
 };
 
+// server/danceEventsParser.ts
+var CAUCASUS_KEYWORDS_CYR = [
+  "\u043B\u0435\u0437\u0433\u0438\u043D\u043A",
+  "\u043A\u0430\u0432\u043A\u0430\u0437",
+  "\u0433\u043E\u0440\u0446\u044B",
+  "\u0433\u043E\u0440\u044F\u043D\u043A",
+  "\u0434\u0436\u0438\u0433\u0438\u0442",
+  "\u0432\u0430\u0439\u043D\u0430\u0445",
+  "\u043D\u043E\u0445\u0447\u043E",
+  "\u0432\u0430\u0442\u0430\u043D",
+  "\u043D\u0430\u043B\u044C\u043C\u044D\u0441",
+  "\u043A\u0430\u0431\u0430\u0440\u0434\u0438\u043D\u043A",
+  "\u044D\u0440\u0438\u0441\u0438\u043E\u043D\u0438",
+  "\u0441\u0443\u0445\u0438\u0448\u0432\u0438\u043B\u0438",
+  "\u0434\u0430\u0439\u043C\u043E\u0445\u043A",
+  "\u0438\u043D\u0433\u0443\u0448\u0435\u0442",
+  "\u0434\u0430\u0433\u0435\u0441\u0442\u0430\u043D",
+  "\u043E\u0441\u0435\u0442\u0438\u043D",
+  "\u0447\u0435\u0447\u0435\u043D",
+  "\u0430\u0434\u044B\u0433",
+  "\u0447\u0435\u0440\u043A\u0435\u0441",
+  "\u0431\u0430\u043B\u043A\u0430\u0440",
+  "\u043A\u0430\u0440\u0430\u0447\u0430\u0435\u0432",
+  "\u0430\u0441\u0441\u044B",
+  "\u0440\u0438\u0442\u043C\u044B \u043A\u0430\u0432\u043A\u0430\u0437\u0430",
+  "\u0434\u0435\u0442\u0438 \u0433\u043E\u0440",
+  "\u043F\u043B\u0430\u043C\u044F \u043A\u0430\u0432\u043A\u0430\u0437\u0430",
+  "\u0446\u0432\u0435\u0442\u044B \u043A\u0430\u0432\u043A\u0430\u0437\u0430",
+  "\u043B\u0435\u0433\u0435\u043D\u0434\u0430 \u043A\u0430\u0432\u043A\u0430\u0437\u0430",
+  "\u043C\u043E\u043B\u043E\u0434\u043E\u0441\u0442\u044C \u043A\u0430\u0432\u043A\u0430\u0437\u0430",
+  "\u0430\u043B\u0430\u043D\u044B",
+  "\u043A\u0430\u0432\u043A\u0430\u0437\u0441\u043A",
+  "\u043D\u0430\u0446\u0438\u043E\u043D\u0430\u043B\u044C\u043D \u0442\u0430\u043D\u0446",
+  "\u043D\u0430\u0440\u043E\u0434\u043E\u0432 \u043A\u0430\u0432\u043A\u0430\u0437\u0430",
+  "\u0437\u0438\u043A\u0440"
+];
+var CAUCASUS_KEYWORDS_TRANSLIT = [
+  "lezgin",
+  "kavkaz",
+  "kabardin",
+  "dagestan",
+  "osetin",
+  "chechen",
+  "ingush",
+  "adyg",
+  "cherkes",
+  "balkar",
+  "karachaev",
+  "vainah",
+  "vaynah",
+  "nohcho",
+  "vatan",
+  "nalmes",
+  "erisioni",
+  "suhishvili",
+  "sukhishvili",
+  "daymohk",
+  "gorcy",
+  "gorec",
+  "dzhigit",
+  "alan",
+  "ritmy-kavkaza",
+  "plamya-kavkaza",
+  "ansambl",
+  "ansamble",
+  "tanca-narodov",
+  "national-dance"
+];
+var TOURNAMENT_KEYWORDS = [
+  "\u0442\u0443\u0440\u043D\u0438\u0440",
+  "\u0447\u0435\u043C\u043F\u0438\u043E\u043D\u0430\u0442",
+  "\u043F\u0435\u0440\u0432\u0435\u043D\u0441\u0442\u0432",
+  "\u043A\u0443\u0431\u043E\u043A",
+  "\u043A\u043E\u043D\u043A\u0443\u0440\u0441",
+  "\u0441\u043E\u0440\u0435\u0432\u043D\u043E\u0432\u0430\u043D",
+  "battle",
+  "\u0431\u0430\u0442\u0442\u043B",
+  "championship",
+  "cup ",
+  "-cup",
+  "open ",
+  "\u0433\u0440\u0430\u043D-\u043F\u0440\u0438",
+  "\u0433\u0440\u0430\u043D \u043F\u0440\u0438",
+  "\u0444\u0435\u0441\u0442\u0438\u0432\u0430\u043B\u044C-\u043A\u043E\u043D\u043A\u0443\u0440\u0441"
+];
+var KIDS_MARKERS = [
+  "\u0434\u0435\u0442",
+  "\u044E\u043D\u0438\u043E\u0440",
+  "\u044E\u043D\u043E\u0448\u0435\u0441",
+  "\u0431\u0435\u0431\u0438",
+  "baby",
+  "kids",
+  "\u0448\u043A\u043E\u043B\u044C\u043D\u0438\u043A",
+  "\u043C\u043B\u0430\u0434\u0448",
+  "\u044E\u0432\u0435\u043D\u0430\u043B",
+  "0+",
+  "3+",
+  "6+"
+];
+var ADULTS_MARKERS = [
+  "\u0432\u0437\u0440\u043E\u0441\u043B",
+  "\u0441\u0435\u043D\u044C\u043E\u0440",
+  "senior",
+  "professional",
+  "\u043F\u0440\u043E\u0444\u0438",
+  "18+",
+  "21+",
+  "adult"
+];
+var MONTHS = {
+  \u044F\u043D\u0432: 1,
+  \u0444\u0435\u0432: 2,
+  \u043C\u0430\u0440: 3,
+  \u0430\u043F\u0440: 4,
+  \u043C\u0430\u0439: 5,
+  \u043C\u0430\u044F: 5,
+  \u0438\u044E\u043D: 6,
+  \u0438\u044E\u043B: 7,
+  \u0430\u0432\u0433: 8,
+  \u0441\u0435\u043D: 9,
+  \u043E\u043A\u0442: 10,
+  \u043D\u043E\u044F: 11,
+  \u0434\u0435\u043A: 12
+};
+var norm = (s) => s.toLowerCase().replace(/ё/g, "\u0435").replace(/\s+/g, " ").trim();
+function hasAny(text, markers) {
+  const t = norm(text);
+  return markers.some((m) => t.includes(norm(m)));
+}
+function isCaucasian(title, slug = "") {
+  return hasAny(title, CAUCASUS_KEYWORDS_CYR) || CAUCASUS_KEYWORDS_TRANSLIT.some((m) => norm(slug).includes(m));
+}
+function classifyEventType(title) {
+  return hasAny(title, TOURNAMENT_KEYWORDS) ? "tournament" : "concert";
+}
+function classifyAudience(title, ageText = "") {
+  const blob = `${title} ${ageText}`;
+  const kids = hasAny(blob, KIDS_MARKERS);
+  const adults = hasAny(blob, ADULTS_MARKERS);
+  if (kids && !adults) return "kids";
+  if (adults && !kids) return "adults";
+  return "all";
+}
+function parseDates(dateText, now = /* @__PURE__ */ new Date()) {
+  if (!dateText) return { start: null, end: null };
+  const text = dateText.replace(/ /g, " ").trim();
+  const dmy = [...text.matchAll(/(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{4})/g)];
+  if (dmy.length) {
+    const iso = (m) => `${m[3]}-${String(+m[2]).padStart(2, "0")}-${String(+m[1]).padStart(2, "0")}`;
+    return { start: iso(dmy[0]), end: dmy[1] ? iso(dmy[1]) : null };
+  }
+  const md = text.match(/(\d{1,2})(?:\s*[–—-]\s*(\d{1,2}))?\s+([а-яё]+)/i);
+  if (md) {
+    const day = +md[1];
+    const endDay = md[2] ? +md[2] : null;
+    const monKey = norm(md[3]).slice(0, 3);
+    const month = MONTHS[monKey];
+    if (month) {
+      let year = now.getFullYear();
+      if (month < now.getMonth() + 1) year += 1;
+      const pad = (n) => String(n).padStart(2, "0");
+      const start = `${year}-${pad(month)}-${pad(day)}`;
+      const end = endDay ? `${year}-${pad(month)}-${pad(endDay)}` : null;
+      return { start, end };
+    }
+  }
+  return { start: null, end: null };
+}
+function hash(str) {
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) h = (h << 5) + h + str.charCodeAt(i) >>> 0;
+  return h.toString(36);
+}
+function buildDedupKey(c) {
+  if (c.sourceUid) return `${c.source}:${c.sourceUid}`;
+  return `${c.source}:${hash(`${norm(c.title)}|${c.start ?? ""}|${norm(c.city ?? "")}`)}`;
+}
+function normalize(c, now = /* @__PURE__ */ new Date()) {
+  const title = c.title.trim().replace(/\s+/g, " ");
+  const { start, end } = parseDates(c.dateText, now);
+  const event_type = classifyEventType(title);
+  const audience = event_type === "tournament" ? classifyAudience(title, c.ageText) : "all";
+  return {
+    event_type,
+    audience,
+    title,
+    organizer: c.organizer?.trim() || null,
+    city: c.city?.trim() || null,
+    country: c.country?.trim() || null,
+    venue: c.venue?.trim() || null,
+    start_date: start,
+    end_date: end,
+    reg_deadline: null,
+    age_categories: c.ageText?.trim() || null,
+    disciplines: null,
+    price: c.priceText?.trim() || null,
+    url: c.url?.trim() || null,
+    image: c.image?.trim() || null,
+    source: c.source,
+    source_uid: c.sourceUid ?? null,
+    dedup_key: buildDedupKey({ source: c.source, sourceUid: c.sourceUid, title, start, city: c.city }),
+    raw: c.raw ?? null
+  };
+}
+var decodeEntities = (s) => s.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&laquo;/g, "\xAB").replace(/&raquo;/g, "\xBB").replace(/&nbsp;/g, " ").replace(/&mdash;/g, "\u2014").replace(/&ndash;/g, "\u2013").replace(/&gt;/g, ">").replace(/&lt;/g, "<");
+var metaContent = (html, prop) => {
+  const re = new RegExp(`<meta[^>]+(?:property|name)=["']${prop}["'][^>]+content=["']([^"']+)["']`, "i");
+  const m = html.match(re) || html.match(
+    new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${prop}["']`, "i")
+  );
+  return m ? decodeEntities(m[1]) : void 0;
+};
+var pageTitle = (html) => {
+  const og = metaContent(html, "og:title");
+  if (og) return og;
+  const m = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+  return m ? decodeEntities(m[1].trim()) : void 0;
+};
+function extractHrefs(html, pattern) {
+  const out = /* @__PURE__ */ new Set();
+  for (const m of html.matchAll(pattern)) out.add(m[1]);
+  return [...out];
+}
+async function safeFetchText(ctx, url) {
+  try {
+    const res = await ctx.fetchFn(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; EhoGorBot/1.0; +https://echo-gor)",
+        "Accept-Language": "ru,en;q=0.8"
+      }
+    });
+    if (!res.ok) {
+      ctx.log(`  ${url} \u2192 HTTP ${res.status}`);
+      return null;
+    }
+    return await res.text();
+  } catch (e) {
+    ctx.log(`  ${url} \u2192 \u043E\u0448\u0438\u0431\u043A\u0430: ${e?.message || e}`);
+    return null;
+  }
+}
+var slugOf = (url) => url.split("?")[0].split("/").filter(Boolean).pop() || "";
+var TICKETON_CITIES = [
+  { slug: "almaty", city: "\u0410\u043B\u043C\u0430\u0442\u044B", country: "KZ" },
+  { slug: "astana", city: "\u0410\u0441\u0442\u0430\u043D\u0430", country: "KZ" },
+  { slug: "shymkent", city: "\u0428\u044B\u043C\u043A\u0435\u043D\u0442", country: "KZ" },
+  { slug: "karaganda", city: "\u041A\u0430\u0440\u0430\u0433\u0430\u043D\u0434\u0430", country: "KZ" },
+  { slug: "atyrau", city: "\u0410\u0442\u044B\u0440\u0430\u0443", country: "KZ" },
+  { slug: "aktobe", city: "\u0410\u043A\u0442\u043E\u0431\u0435", country: "KZ" },
+  { slug: "bishkek", city: "\u0411\u0438\u0448\u043A\u0435\u043A", country: "KG" },
+  { slug: "tashkent", city: "\u0422\u0430\u0448\u043A\u0435\u043D\u0442", country: "UZ" },
+  { slug: "dushanbe", city: "\u0414\u0443\u0448\u0430\u043D\u0431\u0435", country: "TJ" }
+];
+function ticketonAdapter(opts) {
+  const cities = opts?.cities ?? TICKETON_CITIES;
+  return {
+    name: "ticketon",
+    enabled: true,
+    applyCaucasusFilter: true,
+    async run(ctx) {
+      const found = [];
+      let detailBudget = ctx.maxDetailFetches;
+      for (const c of cities) {
+        for (const page of ["", "?page=2", "?page=3"]) {
+          const listUrl = `https://ticketon.kz/${c.slug}/concerts${page}`;
+          const html = await safeFetchText(ctx, listUrl);
+          if (!html) continue;
+          const hrefs = extractHrefs(html, /href=["'](\/[a-z-]+\/event\/[^"'?#]+|\/promo\/[^"'?#]+)["']/gi);
+          const candidates = hrefs.filter((h) => CAUCASUS_KEYWORDS_TRANSLIT.some((m) => h.toLowerCase().includes(m)));
+          ctx.log(`ticketon ${c.slug}${page}: \u0441\u0441\u044B\u043B\u043E\u043A ${hrefs.length}, \u043A\u0430\u043D\u0434\u0438\u0434\u0430\u0442\u043E\u0432 ${candidates.length}`);
+          for (const href of candidates) {
+            if (detailBudget-- <= 0) {
+              ctx.log("ticketon: \u043B\u0438\u043C\u0438\u0442 detail-\u0437\u0430\u043F\u0440\u043E\u0441\u043E\u0432");
+              break;
+            }
+            const url = href.startsWith("http") ? href : `https://ticketon.kz${href}`;
+            const detail = await safeFetchText(ctx, url);
+            if (!detail) continue;
+            const title = pageTitle(detail) || slugOf(href).replace(/-/g, " ");
+            if (!isCaucasian(title, href)) continue;
+            const priceM = detail.match(/[Оо]т\s*([\d\s]+)\s*₸/);
+            const dateM = detail.match(/(\d{1,2}\s+[а-яё]+)(?:\s*,?\s*\d{1,2}:\d{2})?/i);
+            found.push({
+              title,
+              url,
+              source: "ticketon",
+              sourceUid: slugOf(href),
+              city: c.city,
+              country: c.country,
+              dateText: dateM?.[1],
+              priceText: priceM ? `\u043E\u0442 ${priceM[1].replace(/\s+/g, " ").trim()} \u20B8` : void 0,
+              image: metaContent(detail, "og:image"),
+              ageText: (title.match(/\b(\d{1,2}\+)\b/) || [])[1],
+              raw: { href, listUrl }
+            });
+          }
+        }
+      }
+      return found;
+    }
+  };
+}
+var KASSIR_CITIES = [
+  { sub: "msk", city: "\u041C\u043E\u0441\u043A\u0432\u0430", country: "RU" },
+  { sub: "spb", city: "\u0421\u0430\u043D\u043A\u0442-\u041F\u0435\u0442\u0435\u0440\u0431\u0443\u0440\u0433", country: "RU" }
+];
+function kassirAdapter(opts) {
+  const cities = opts?.cities ?? KASSIR_CITIES;
+  return {
+    name: "kassir",
+    enabled: true,
+    applyCaucasusFilter: true,
+    async run(ctx) {
+      const found = [];
+      let detailBudget = ctx.maxDetailFetches;
+      for (const c of cities) {
+        const base = `https://${c.sub}.kassir.ru`;
+        for (const sect of ["/bilety-na-koncert", "/bilety-na-koncert/folk", "/bilety-na-koncert/dance"]) {
+          const html = await safeFetchText(ctx, base + sect);
+          if (!html) continue;
+          const hrefs = extractHrefs(html, /href=["']([^"']*\/(?:koncert|shou)\/[^"'?#]+)["']/gi);
+          const candidates = hrefs.filter((h) => CAUCASUS_KEYWORDS_TRANSLIT.some((m) => h.toLowerCase().includes(m)));
+          ctx.log(`kassir ${c.sub}${sect}: \u0441\u0441\u044B\u043B\u043E\u043A ${hrefs.length}, \u043A\u0430\u043D\u0434\u0438\u0434\u0430\u0442\u043E\u0432 ${candidates.length}`);
+          for (const href of candidates) {
+            if (detailBudget-- <= 0) {
+              ctx.log("kassir: \u043B\u0438\u043C\u0438\u0442 detail-\u0437\u0430\u043F\u0440\u043E\u0441\u043E\u0432");
+              break;
+            }
+            const url = href.startsWith("http") ? href : base + href;
+            const detail = await safeFetchText(ctx, url);
+            if (!detail) continue;
+            const title = pageTitle(detail) || slugOf(href).replace(/-/g, " ");
+            if (!isCaucasian(title, href)) continue;
+            const priceM = detail.match(/от\s*([\d\s]+)\s*₽/);
+            const dateM = detail.match(/(\d{1,2}\s+[а-яё]+)/i);
+            found.push({
+              title,
+              url,
+              source: "kassir",
+              sourceUid: slugOf(href),
+              city: c.city,
+              country: c.country,
+              dateText: dateM?.[1],
+              priceText: priceM ? `\u043E\u0442 ${priceM[1].replace(/\s+/g, " ").trim()} \u20BD` : void 0,
+              image: metaContent(detail, "og:image"),
+              ageText: (title.match(/\b(\d{1,2}\+)\b/) || [])[1],
+              raw: { href, base, sect }
+            });
+          }
+        }
+      }
+      return found;
+    }
+  };
+}
+var manualSeed = [
+  // Пример (раскомментируйте и заполните):
+  // {
+  //   title: "Кубок Кавказа по кавказским танцам — дети",
+  //   url: "https://instagram.com/...",
+  //   source: "manual",
+  //   sourceUid: "kubok-kavkaza-2026-deti",
+  //   dateText: "12-14 сентября",
+  //   city: "Махачкала",
+  //   country: "RU",
+  //   organizer: "Федерация кавказского танца",
+  //   ageText: "дети 8-15",
+  // },
+];
+function manualAdapter(seed = manualSeed) {
+  return {
+    name: "manual",
+    enabled: true,
+    applyCaucasusFilter: false,
+    // в ручной список добавляют уже проверенные события
+    async run() {
+      return seed;
+    }
+  };
+}
+function defaultAdapters() {
+  return [ticketonAdapter(), kassirAdapter(), manualAdapter()];
+}
+async function runParser(options = {}) {
+  const adapters = options.adapters ?? defaultAdapters();
+  const fetchFn = options.fetchFn ?? fetch;
+  const log = options.log ?? (() => {
+  });
+  const now = options.now ?? /* @__PURE__ */ new Date();
+  const ctx = { fetchFn, log, maxDetailFetches: options.maxDetailFetches ?? 40 };
+  const result = {
+    ok: true,
+    bySource: {},
+    matched: 0,
+    upserted: 0,
+    byType: { tournament: 0, concert: 0 },
+    events: [],
+    errors: []
+  };
+  const seen = /* @__PURE__ */ new Set();
+  for (const adapter of adapters) {
+    if (!adapter.enabled) continue;
+    try {
+      const candidates = await adapter.run(ctx);
+      result.bySource[adapter.name] = candidates.length;
+      for (const c of candidates) {
+        if (adapter.applyCaucasusFilter && !isCaucasian(c.title, c.sourceUid || c.url)) continue;
+        result.matched++;
+        const ev = normalize(c, now);
+        if (seen.has(ev.dedup_key)) continue;
+        seen.add(ev.dedup_key);
+        result.events.push(ev);
+        result.byType[ev.event_type]++;
+      }
+    } catch (e) {
+      result.ok = false;
+      result.errors.push(`${adapter.name}: ${e?.message || e}`);
+      log(`\u0410\u0434\u0430\u043F\u0442\u0435\u0440 ${adapter.name} \u0443\u043F\u0430\u043B: ${e?.message || e}`);
+    }
+  }
+  if (!options.dryRun && result.events.length) {
+    try {
+      const upsertFn = options.upsert ?? supabaseUpsert;
+      result.upserted = await upsertFn(result.events);
+    } catch (e) {
+      result.ok = false;
+      result.errors.push(`upsert: ${e?.message || e}`);
+    }
+  }
+  return result;
+}
+async function supabaseUpsert(events) {
+  const url = process.env.SUPABASE_URL?.replace(/\/$/, "");
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) throw new Error("Supabase \u043D\u0435 \u0441\u043A\u043E\u043D\u0444\u0438\u0433\u0443\u0440\u0438\u0440\u043E\u0432\u0430\u043D");
+  const rows = events.map(({ status, ...e }) => ({ ...e, updated_at: (/* @__PURE__ */ new Date()).toISOString() }));
+  const res = await fetch(`${url}/rest/v1/dance_events?on_conflict=dedup_key`, {
+    method: "POST",
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+      Prefer: "resolution=merge-duplicates,return=representation"
+    },
+    body: JSON.stringify(rows)
+  });
+  if (!res.ok) throw new Error(await res.text());
+  const data = await res.json();
+  return data.length;
+}
+
 // server/mvpApi.ts
 var orgId2 = "00000000-0000-0000-0000-000000000001";
 var demoBranchAlmaty = "00000000-0000-0000-0000-000000000101";
@@ -757,7 +1209,9 @@ function mapDbUserToTeacher(user) {
     specialties: user.specialization ? [user.specialization] : ["\u041A\u0430\u0432\u043A\u0430\u0437\u0441\u043A\u0438\u0439 \u0442\u0430\u043D\u0435\u0446"],
     phone: user.phone || "",
     bio: "\u041F\u0440\u0435\u043F\u043E\u0434\u0430\u0432\u0430\u0442\u0435\u043B\u044C \u0448\u043A\u043E\u043B\u044B \u042D\u0445\u043E \u0413\u043E\u0440.",
-    experienceYears: 5
+    experienceYears: 5,
+    branchId: user.branch_id || null,
+    role: user.role || "teacher"
   };
 }
 function mapDbStudent(row, attendanceByStudent, subsByStudent) {
@@ -848,7 +1302,7 @@ async function dbBootstrap(session) {
     list.push({ ...sub, plan_name: plan?.name });
     subsByStudent.set(sub.student_id, list);
   });
-  const teacherUsers = users.filter((user) => user.role === "teacher");
+  const teacherUsers = users.filter((user) => user.role === "teacher" && user.status !== "archived");
   const teachers = teacherUsers.map(mapDbUserToTeacher);
   const groupsMapped = groups.map((group) => ({
     id: group.id,
@@ -1249,6 +1703,180 @@ function registerMvpApi(app2) {
       res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u0444\u0438\u043B\u0438\u0430\u043B" });
     }
   });
+  const allowedRoles = ["teacher", "admin", "branch_manager", "owner"];
+  const normalizeRole = (value) => {
+    const role = String(value || "teacher");
+    return allowedRoles.includes(role) ? role : "teacher";
+  };
+  app2.post("/api/mvp/teachers", async (req, res) => {
+    const session = getSession(req);
+    if (!ownerOnly(session, res)) return;
+    const payload = req.body || {};
+    if (!payload.name || !String(payload.name).trim()) {
+      return res.status(400).json({ error: "\u0418\u043C\u044F \u043E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u043E" });
+    }
+    try {
+      const inserted = await supabaseFetch("users", "", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: session.organizationId,
+          branch_id: payload.branchId || null,
+          role: normalizeRole(payload.role),
+          full_name: String(payload.name).trim(),
+          phone: payload.phone || null,
+          email: payload.email || `staff-${Date.now()}@echogor.demo`,
+          password_hash: "demo-only",
+          specialization: payload.specialization || null,
+          status: "active"
+        })
+      });
+      res.status(201).json({ teacher: mapDbUserToTeacher(inserted[0]) });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0437\u0434\u0430\u0442\u044C \u043F\u0440\u0435\u043F\u043E\u0434\u0430\u0432\u0430\u0442\u0435\u043B\u044F" });
+    }
+  });
+  app2.patch("/api/mvp/teachers/:id", async (req, res) => {
+    const session = getSession(req);
+    if (!ownerOnly(session, res)) return;
+    const payload = req.body || {};
+    const updates = {};
+    if (payload.name !== void 0) updates.full_name = String(payload.name).trim();
+    if (payload.phone !== void 0) updates.phone = payload.phone || null;
+    if (payload.specialization !== void 0) updates.specialization = payload.specialization || null;
+    if (payload.branchId !== void 0) updates.branch_id = payload.branchId || null;
+    if (payload.role !== void 0) updates.role = normalizeRole(payload.role);
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: "\u041D\u0435\u0442 \u043F\u043E\u043B\u0435\u0439 \u0434\u043B\u044F \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F" });
+    }
+    try {
+      const rows = await supabaseFetch(
+        "users",
+        `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
+        { method: "PATCH", body: JSON.stringify(updates) }
+      );
+      if (!rows[0]) return res.status(404).json({ error: "\u0421\u043E\u0442\u0440\u0443\u0434\u043D\u0438\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+      res.json({ teacher: mapDbUserToTeacher(rows[0]) });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u043F\u0440\u0435\u043F\u043E\u0434\u0430\u0432\u0430\u0442\u0435\u043B\u044F" });
+    }
+  });
+  app2.delete("/api/mvp/teachers/:id", async (req, res) => {
+    const session = getSession(req);
+    if (!ownerOnly(session, res)) return;
+    try {
+      const rows = await supabaseFetch(
+        "users",
+        `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
+        { method: "PATCH", body: JSON.stringify({ status: "archived" }) }
+      );
+      if (!rows[0]) return res.status(404).json({ error: "\u0421\u043E\u0442\u0440\u0443\u0434\u043D\u0438\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+      res.json({ teacher: mapDbUserToTeacher(rows[0]), archived: true });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u043F\u0440\u0435\u043F\u043E\u0434\u0430\u0432\u0430\u0442\u0435\u043B\u044F" });
+    }
+  });
+  app2.get("/api/mvp/dance-events", async (req, res) => {
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const parts = ["select=*", "order=start_date.asc.nullslast"];
+    const { type, audience, country, status, q } = req.query;
+    if (type) parts.push(`event_type=eq.${type}`);
+    if (audience) parts.push(`audience=eq.${audience}`);
+    if (country) parts.push(`country=in.(${country})`);
+    if (status) parts.push(`status=eq.${status}`);
+    if (q) parts.push(`title=ilike.*${encodeURIComponent(q)}*`);
+    try {
+      const rows = await supabaseFetch("dance_events", parts.join("&"));
+      res.json({ events: rows });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0441\u043E\u0431\u044B\u0442\u0438\u044F" });
+    }
+  });
+  app2.post("/api/mvp/dance-events/parse", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0422\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u0435\u0446 \u043C\u043E\u0436\u0435\u0442 \u0437\u0430\u043F\u0443\u0441\u043A\u0430\u0442\u044C \u043F\u0430\u0440\u0441\u0438\u043D\u0433" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const { dryRun, maxDetailFetches } = req.body || {};
+    try {
+      const result = await runParser({
+        dryRun: Boolean(dryRun),
+        maxDetailFetches: Number(maxDetailFetches) || void 0,
+        log: (m) => console.log("[dance-events]", m)
+      });
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: error.message || "\u041F\u0430\u0440\u0441\u0438\u043D\u0433 \u043D\u0435 \u0432\u044B\u043F\u043E\u043B\u043D\u0435\u043D" });
+    }
+  });
+  app2.post("/api/mvp/dance-events", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0422\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u0435\u0446 \u043C\u043E\u0436\u0435\u0442 \u0434\u043E\u0431\u0430\u0432\u043B\u044F\u0442\u044C \u0441\u043E\u0431\u044B\u0442\u0438\u044F" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const b = req.body || {};
+    if (!b.title) return res.status(400).json({ error: "title \u043E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u0435\u043D" });
+    const candidate = {
+      title: String(b.title),
+      url: b.url || "",
+      source: "manual",
+      sourceUid: b.sourceUid || void 0,
+      dateText: b.dateText || void 0,
+      city: b.city || void 0,
+      country: b.country || void 0,
+      venue: b.venue || void 0,
+      organizer: b.organizer || void 0,
+      priceText: b.price || void 0,
+      image: b.image || void 0,
+      ageText: b.ageText || void 0,
+      raw: b
+    };
+    const ev = normalize(candidate);
+    if (b.eventType) ev.event_type = b.eventType;
+    if (b.audience) ev.audience = b.audience;
+    if (b.regDeadline) ev.reg_deadline = b.regDeadline;
+    if (b.ageCategories) ev.age_categories = b.ageCategories;
+    if (b.disciplines) ev.disciplines = b.disciplines;
+    try {
+      const n = await supabaseUpsert([ev]);
+      res.status(201).json({ event: ev, upserted: n });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C \u0441\u043E\u0431\u044B\u0442\u0438\u0435" });
+    }
+  });
+  app2.patch("/api/mvp/dance-events/:id", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0422\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u0435\u0446 \u043C\u043E\u0436\u0435\u0442 \u043C\u0435\u043D\u044F\u0442\u044C \u0441\u043E\u0431\u044B\u0442\u0438\u044F" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const b = req.body || {};
+    const updates = { updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+    for (const key of ["status", "event_type", "audience", "title", "city", "country", "venue", "organizer", "price", "url", "image", "age_categories", "disciplines"]) {
+      if (b[key] !== void 0) updates[key] = b[key];
+    }
+    for (const key of ["start_date", "end_date", "reg_deadline"]) {
+      if (b[key] !== void 0) updates[key] = b[key] || null;
+    }
+    try {
+      const rows = await supabaseFetch("dance_events", `id=eq.${req.params.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(updates)
+      });
+      if (!rows[0]) return res.status(404).json({ error: "\u0421\u043E\u0431\u044B\u0442\u0438\u0435 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E" });
+      res.json({ event: rows[0] });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0441\u043E\u0431\u044B\u0442\u0438\u0435" });
+    }
+  });
+  app2.get("/api/cron/parse-dance-events", async (req, res) => {
+    const secret = process.env.CRON_SECRET;
+    if (secret && req.headers.authorization !== `Bearer ${secret}`) {
+      return res.status(401).json({ error: "unauthorized" });
+    }
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      const result = await runParser({ log: (m) => console.log("[cron dance-events]", m) });
+      res.json({ ranAt: (/* @__PURE__ */ new Date()).toISOString(), ...result });
+    } catch (error) {
+      res.status(500).json({ error: error.message || "\u041F\u0430\u0440\u0441\u0438\u043D\u0433 \u043D\u0435 \u0432\u044B\u043F\u043E\u043B\u043D\u0435\u043D" });
+    }
+  });
 }
 
 // server/geminiApi.ts
@@ -1323,4 +1951,11 @@ export {
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
+ */
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Точка входа для Vercel Serverless (api/[...path]).
+ * Бандлится в api/[...path].js: `npm run build:api`.
  */

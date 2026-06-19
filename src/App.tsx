@@ -95,6 +95,7 @@ import {
   Group,
   Student,
   Announcement,
+  AnnouncementAudience,
   AuditLog,
   Payment,
   Subscription,
@@ -758,6 +759,35 @@ export default function App() {
     }
   };
 
+  // Announcement CRUD (local state — no backend table yet)
+  const handleCreateAnnouncement = (data: { title: string; content: string; audience: AnnouncementAudience; isImportant: boolean }) => {
+    const newAnn: Announcement = {
+      id: `ann-${Date.now()}`,
+      organizationId: "00000000-0000-0000-0000-000000000001",
+      title: data.title,
+      content: data.content,
+      audience: data.audience,
+      date: new Date().toISOString().slice(0, 10),
+      authorId: "owner-1",
+      authorName: "Асланбек Болотаев",
+      authorRole: "Владелец",
+      likes: 0,
+      isImportant: data.isImportant
+    };
+    setAnnouncements((prev) => [newAnn, ...prev]);
+    addAuditLog("Создание объявления", `Опубликовано: «${data.title}»`);
+  };
+
+  const handleUpdateAnnouncement = (id: string, data: { title?: string; content?: string; audience?: AnnouncementAudience; isImportant?: boolean }) => {
+    setAnnouncements((prev) => prev.map((a) => a.id === id ? { ...a, ...data } : a));
+    addAuditLog("Изменение объявления", `Обновлено объявление (${id})`);
+  };
+
+  const handleDeleteAnnouncement = (id: string) => {
+    setAnnouncements((prev) => prev.filter((a) => a.id !== id));
+    addAuditLog("Удаление объявления", `Объявление удалено (${id})`);
+  };
+
   // Action: Post Payment / subscription extension
   const processPayment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1185,6 +1215,7 @@ export default function App() {
           authorId: activeRole,
           authorName: "Асланбек Болотаев", // Using actual owner's name for consistency
           authorRole: roles.find(r => r.id === activeRole)?.name || "Руководитель",
+          audience: "all",
           isImportant: notifIsImportant,
           likes: 0
         };
@@ -2304,6 +2335,9 @@ export default function App() {
               onCreateTeacher={handleCreateTeacher}
               onUpdateTeacher={handleUpdateTeacher}
               onDeleteTeacher={handleDeleteTeacher}
+              onCreateAnnouncement={handleCreateAnnouncement}
+              onUpdateAnnouncement={handleUpdateAnnouncement}
+              onDeleteAnnouncement={handleDeleteAnnouncement}
             />
           ) : activeRole === "admin" ? (
             <AdminEduErpWorkspace
