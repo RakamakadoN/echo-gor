@@ -922,6 +922,25 @@ async function safeFetchText(ctx, url, stat) {
   }
 }
 var slugOf = (url) => url.split("?")[0].split("/").filter(Boolean).pop() || "";
+function proxiedFetch(base = fetch) {
+  const key = process.env.SCRAPER_API_KEY;
+  const template = process.env.SCRAPER_API_URL;
+  const provider = (process.env.SCRAPER_PROVIDER || "scraperapi").toLowerCase();
+  const render = process.env.SCRAPER_RENDER === "true";
+  if (!key && !template) return base;
+  return async (input, init) => {
+    const target = typeof input === "string" ? input : input?.url ?? String(input);
+    let wrapped;
+    if (template) {
+      wrapped = template.replace("{url}", encodeURIComponent(target)).replace("{key}", key || "");
+    } else if (provider === "scrapingbee") {
+      wrapped = `https://app.scrapingbee.com/api/v1/?api_key=${key}&render_js=${render}&url=${encodeURIComponent(target)}`;
+    } else {
+      wrapped = `https://api.scraperapi.com/?api_key=${key}&url=${encodeURIComponent(target)}${render ? "&render=true" : ""}`;
+    }
+    return base(wrapped, init);
+  };
+}
 var TICKETON_CITIES = [
   { slug: "almaty", city: "\u0410\u043B\u043C\u0430\u0442\u044B", country: "KZ" },
   { slug: "astana", city: "\u0410\u0441\u0442\u0430\u043D\u0430", country: "KZ" },
@@ -944,7 +963,7 @@ function ticketonAdapter(opts) {
       const d = dbg(ctx, "ticketon");
       let detailBudget = ctx.maxDetailFetches;
       for (const c of cities) {
-        for (const page of ["", "?page=2", "?page=3"]) {
+        for (const page of ["", "?page=2"]) {
           const listUrl = `https://ticketon.kz/${c.slug}/concerts${page}`;
           const html = await safeFetchText(ctx, listUrl, d);
           if (!html) continue;
@@ -1003,7 +1022,7 @@ function kassirAdapter(opts) {
       let detailBudget = ctx.maxDetailFetches;
       for (const c of cities) {
         const base = `https://${c.sub}.kassir.ru`;
-        for (const sect of ["/bilety-na-koncert", "/bilety-na-koncert/folk", "/bilety-na-koncert/dance"]) {
+        for (const sect of ["/bilety-na-koncert"]) {
           const html = await safeFetchText(ctx, base + sect, d);
           if (!html) continue;
           const hrefs = extractHrefs(html, /href=["']([^"']*\/(?:koncert|shou)\/[^"'?#]+)["']/gi);
@@ -1075,7 +1094,7 @@ function defaultAdapters() {
 }
 async function runParser(options = {}) {
   const adapters = options.adapters ?? defaultAdapters();
-  const fetchFn = options.fetchFn ?? fetch;
+  const fetchFn = options.fetchFn ?? proxiedFetch(fetch);
   const log = options.log ?? (() => {
   });
   const now = options.now ?? /* @__PURE__ */ new Date();

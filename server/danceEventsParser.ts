@@ -292,6 +292,36 @@ async function safeFetchText(
 
 const slugOf = (url: string) => (url.split("?")[0].split("/").filter(Boolean).pop() || "");
 
+/**
+ * Оборачивает fetch в scraping-прокси (для обхода Cloudflare/бот-защиты агрегаторов).
+ * Активируется переменными окружения:
+ *   SCRAPER_API_KEY   — ключ сервиса (обязателен для активации, если нет SCRAPER_API_URL).
+ *   SCRAPER_PROVIDER  — "scraperapi" (по умолчанию) | "scrapingbee".
+ *   SCRAPER_RENDER    — "true" → включить JS-рендеринг (нужно для Kassir; дороже по кредитам).
+ *   SCRAPER_API_URL   — кастомный шаблон с токенами {url} и {key} (для любого провайдера).
+ * Если ничего не задано — возвращает исходный fetch (прямые запросы).
+ */
+export function proxiedFetch(base: typeof fetch = fetch): typeof fetch {
+  const key = process.env.SCRAPER_API_KEY;
+  const template = process.env.SCRAPER_API_URL;
+  const provider = (process.env.SCRAPER_PROVIDER || "scraperapi").toLowerCase();
+  const render = process.env.SCRAPER_RENDER === "true";
+  if (!key && !template) return base;
+
+  return (async (input: any, init?: any) => {
+    const target = typeof input === "string" ? input : input?.url ?? String(input);
+    let wrapped: string;
+    if (template) {
+      wrapped = template.replace("{url}", encodeURIComponent(target)).replace("{key}", key || "");
+    } else if (provider === "scrapingbee") {
+      wrapped = `https://app.scrapingbee.com/api/v1/?api_key=${key}&render_js=${render}&url=${encodeURIComponent(target)}`;
+    } else {
+      wrapped = `https://api.scraperapi.com/?api_key=${key}&url=${encodeURIComponent(target)}${render ? "&render=true" : ""}`;
+    }
+    return base(wrapped, init);
+  }) as typeof fetch;
+}
+
 // ──────────────────────────────── Адаптеры ──────────────────────────────────
 
 /** Города Ticketon → код страны. */
@@ -323,7 +353,7 @@ export function ticketonAdapter(opts?: { cities?: typeof TICKETON_CITIES }): Sou
       const d = dbg(ctx, "ticketon");
       let detailBudget = ctx.maxDetailFetches;
       for (const c of cities) {
-        for (const page of ["", "?page=2", "?page=3"]) {
+        for (const page of ["", "?page=2"]) {
           const listUrl = `https://ticketon.kz/${c.slug}/concerts${page}`;
           const html = await safeFetchText(ctx, listUrl, d);
           if (!html) continue;
@@ -384,7 +414,7 @@ export function kassirAdapter(opts?: { cities?: typeof KASSIR_CITIES }): SourceA
       let detailBudget = ctx.maxDetailFetches;
       for (const c of cities) {
         const base = `https://${c.sub}.kassir.ru`;
-        for (const sect of ["/bilety-na-koncert", "/bilety-na-koncert/folk", "/bilety-na-koncert/dance"]) {
+        for (const sect of ["/bilety-na-koncert"]) {
           const html = await safeFetchText(ctx, base + sect, d);
           if (!html) continue;
           const hrefs = extractHrefs(html, /href=["']([^"']*\/(?:koncert|shou)\/[^"'?#]+)["']/gi);
@@ -480,7 +510,7 @@ export interface RunOptions {
 /** Полный цикл: собрать → отфильтровать → нормализовать → дедуп → upsert. */
 export async function runParser(options: RunOptions = {}): Promise<ParseResult> {
   const adapters = options.adapters ?? defaultAdapters();
-  const fetchFn = options.fetchFn ?? fetch;
+  const fetchFn = options.fetchFn ?? proxiedFetch(fetch);
   const log = options.log ?? (() => {});
   const now = options.now ?? new Date();
   const debug: Record<string, { links: number; prefiltered: number; fetchErrors: number }> = {};

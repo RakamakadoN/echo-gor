@@ -68,6 +68,14 @@ interface OwnerExecutiveWorkspaceProps {
   onCreateAnnouncement?: (data: { title: string; content: string; audience: AnnouncementAudience; isImportant: boolean }) => void;
   onUpdateAnnouncement?: (id: string, data: { title?: string; content?: string; audience?: AnnouncementAudience; isImportant?: boolean }) => void;
   onDeleteAnnouncement?: (id: string) => void;
+  aiResult?: {
+    executiveSummary: string;
+    branchRisks: Array<{ branchId: string; riskTitle: string; description: string; severity: "high" | "medium" | "low" }>;
+    growthRecommendations: string[];
+    insights: string[];
+  } | null;
+  aiGenerating?: boolean;
+  onTriggerAiReport?: () => void;
 }
 
 type OwnerTab = "dashboard" | "eduerp" | "branches" | "students" | "teachers" | "finance" | "events" | "feed" | "announcements" | "analytics" | "ai" | "settings";
@@ -107,7 +115,10 @@ export function OwnerExecutiveWorkspace({
   onDeleteTeacher,
   onCreateAnnouncement,
   onUpdateAnnouncement,
-  onDeleteAnnouncement
+  onDeleteAnnouncement,
+  aiResult,
+  aiGenerating,
+  onTriggerAiReport
 }: OwnerExecutiveWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<OwnerTab>("dashboard");
   const debt = Math.abs(students.filter((student) => student.balance < 0).reduce((sum, student) => sum + student.balance, 0));
@@ -198,7 +209,7 @@ export function OwnerExecutiveWorkspace({
           {activeTab === "feed" && <DanceEventsFeedView />}
           {activeTab === "announcements" && <OwnerAnnouncementsView announcements={announcements} branches={branches} onCreateAnnouncement={onCreateAnnouncement} onUpdateAnnouncement={onUpdateAnnouncement} onDeleteAnnouncement={onDeleteAnnouncement} />}
           {activeTab === "analytics" && <ExecutiveAnalyticsView branches={branchScorecards} groups={groups} teachers={teachers} students={students} payments={payments} metrics={metrics} />}
-          {activeTab === "ai" && <OwnerAiView branches={branchScorecards} renewals={renewals} debt={debt} />}
+          {activeTab === "ai" && <OwnerAiView branches={branchScorecards} renewals={renewals} debt={debt} aiResult={aiResult} aiGenerating={aiGenerating} onTriggerAiReport={onTriggerAiReport} />}
           {activeTab === "settings" && <NetworkSettingsView branches={branches} teachers={teachers} />}
         </main>
       </div>
@@ -1881,19 +1892,131 @@ function ExecutiveAnalyticsView({
   );
 }
 
-function OwnerAiView({ branches, renewals, debt }: any) {
+const SEVERITY_STYLES: Record<string, string> = {
+  high: "bg-rose-500/15 text-rose-300 border-rose-500/20",
+  medium: "bg-amber-500/15 text-amber-300 border-amber-500/20",
+  low: "bg-emerald-500/15 text-emerald-300 border-emerald-500/20",
+};
+const SEVERITY_LABEL: Record<string, string> = { high: "Высокий", medium: "Средний", low: "Низкий" };
+
+function OwnerAiView({ branches, renewals, debt, aiResult, aiGenerating, onTriggerAiReport }: any) {
   return (
-    <OwnerScreen title="AI Executive Assistant" subtitle="Автоматически находит проблемные филиалы, группы, риски оттока, сильных преподавателей и точки роста.">
+    <OwnerScreen title="AI Executive Assistant" subtitle="Анализирует всю сеть и выдаёт управленческие инсайты: риски филиалов, рекомендации роста, ключевые выводы.">
+      {/* Trigger card */}
       <section className="rounded-[2rem] border border-[#C5A059]/20 bg-gradient-to-br from-[#2A2110] to-[#101010] p-5 md:p-7">
-        <p className="text-[10px] font-black uppercase tracking-[0.28em] text-[#C5A059]">Сводка владельца</p>
-        <h2 className="mt-2 text-2xl font-black text-white">Сегодня сеть требует 4 управленческих решения</h2>
-        <div className="mt-5 grid gap-3 md:grid-cols-2">
-          <Insight severity="Филиал" text={`${branches.find((branch: any) => branch.status !== "healthy")?.city || "Астана"} требует внимания: падение посещаемости младших групп.`} />
-          <Insight severity="Абонементы" text={`${renewals} абонементов заканчиваются в течение недели.`} />
-          <Insight severity="Финансы" text={`Задолженность сети: ${money(debt)}. AI рекомендует отдельную кампанию напоминаний.`} />
-          <Insight severity="Рост" text="Открыть дополнительную группу 8-10 лет в самом загруженном филиале." />
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-[#C5A059]">Сводка владельца</p>
+            <h2 className="mt-1 text-xl font-black text-white md:text-2xl">
+              {aiResult ? "Отчёт сгенерирован" : "Запустить AI-анализ сети"}
+            </h2>
+            <p className="mt-1 text-xs text-slate-400">
+              {aiResult
+                ? "Данные актуальны на момент последней генерации. Нажмите ещё раз для обновления."
+                : `Данные: ${branches.length} филиалов, ${renewals} продлений на этой неделе, задолженность ${money(debt)}.`}
+            </p>
+          </div>
+          <button
+            onClick={onTriggerAiReport}
+            disabled={aiGenerating}
+            className="inline-flex shrink-0 items-center gap-2 rounded-2xl bg-[#C5A059] px-5 py-3 text-xs font-black uppercase tracking-wider text-black transition hover:bg-[#d4b06a] disabled:opacity-60"
+          >
+            {aiGenerating ? (
+              <>
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-black/30 border-t-black" />
+                Анализирую…
+              </>
+            ) : (
+              <>
+                <Sparkles className="h-3.5 w-3.5" />
+                {aiResult ? "Обновить отчёт" : "Сгенерировать отчёт"}
+              </>
+            )}
+          </button>
         </div>
       </section>
+
+      {/* Loading state */}
+      {aiGenerating && !aiResult && (
+        <section className="flex flex-col items-center gap-3 rounded-[2rem] border border-white/10 bg-[#111] py-12 text-center">
+          <span className="h-8 w-8 animate-spin rounded-full border-2 border-slate-700 border-t-[#C5A059]" />
+          <p className="text-xs text-slate-400">Анализирую сеть филиалов…</p>
+        </section>
+      )}
+
+      {/* Results */}
+      {aiResult && (
+        <div className="space-y-4">
+          {/* Executive summary */}
+          <section className="rounded-[2rem] border border-white/10 bg-[#111] p-5 md:p-6">
+            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-[#C5A059]">Резюме AI советника</p>
+            <p className="mt-3 text-sm leading-relaxed text-slate-200">{aiResult.executiveSummary}</p>
+          </section>
+
+          {/* Branch risks */}
+          {aiResult.branchRisks?.length > 0 && (
+            <section className="rounded-[2rem] border border-white/10 bg-[#111] p-5 md:p-6">
+              <p className="mb-3 text-[10px] font-black uppercase tracking-[0.28em] text-[#C5A059]">Риски филиалов</p>
+              <div className="grid gap-3 md:grid-cols-2">
+                {aiResult.branchRisks.map((risk: any, i: number) => (
+                  <div key={i} className="rounded-2xl border border-white/5 bg-black/30 p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-sm font-black text-white">{risk.riskTitle}</p>
+                      <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${SEVERITY_STYLES[risk.severity] || SEVERITY_STYLES.low}`}>
+                        {SEVERITY_LABEL[risk.severity] || risk.severity}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-xs leading-relaxed text-slate-400">{risk.description}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Growth recommendations */}
+          {aiResult.growthRecommendations?.length > 0 && (
+            <section className="rounded-[2rem] border border-white/10 bg-[#111] p-5 md:p-6">
+              <p className="mb-3 text-[10px] font-black uppercase tracking-[0.28em] text-[#C5A059]">Рекомендации роста</p>
+              <ul className="space-y-2">
+                {aiResult.growthRecommendations.map((rec: string, i: number) => (
+                  <li key={i} className="flex gap-2 text-sm leading-relaxed text-slate-300">
+                    <TrendingUp className="mt-0.5 h-4 w-4 shrink-0 text-[#C5A059]" />
+                    {rec}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {/* Insights */}
+          {aiResult.insights?.length > 0 && (
+            <section className="rounded-[2rem] border border-white/10 bg-[#111] p-5 md:p-6">
+              <p className="mb-3 text-[10px] font-black uppercase tracking-[0.28em] text-[#C5A059]">Ключевые выводы</p>
+              <div className="grid gap-3 md:grid-cols-2">
+                {aiResult.insights.map((insight: string, i: number) => (
+                  <div key={i} className="rounded-2xl border border-[#C5A059]/10 bg-[#C5A059]/5 p-4">
+                    <p className="text-sm leading-relaxed text-slate-200">{insight}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+        </div>
+      )}
+
+      {/* Empty state when not yet generated */}
+      {!aiResult && !aiGenerating && (
+        <section className="rounded-[2rem] border border-white/10 bg-[#111] p-5 md:p-7">
+          <p className="text-[10px] font-black uppercase tracking-[0.28em] text-[#C5A059]">Быстрая сводка</p>
+          <h2 className="mt-2 text-xl font-black text-white">Текущее состояние сети</h2>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <Insight severity="Филиал" text={`${branches.find((b: any) => b.status !== "healthy")?.city || branches[0]?.city || "—"} требует внимания: отслеживайте посещаемость.`} />
+            <Insight severity="Абонементы" text={`${renewals} абонементов заканчиваются в течение недели.`} />
+            <Insight severity="Финансы" text={`Задолженность сети: ${money(debt)}. AI рекомендует кампанию напоминаний.`} />
+            <Insight severity="Рост" text="Нажмите «Сгенерировать отчёт» для персонализированного AI-анализа." />
+          </div>
+        </section>
+      )}
     </OwnerScreen>
   );
 }

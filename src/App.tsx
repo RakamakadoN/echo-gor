@@ -2338,6 +2338,9 @@ export default function App() {
               onCreateAnnouncement={handleCreateAnnouncement}
               onUpdateAnnouncement={handleUpdateAnnouncement}
               onDeleteAnnouncement={handleDeleteAnnouncement}
+              aiResult={aiResult}
+              aiGenerating={aiGenerating}
+              onTriggerAiReport={triggerAiReport}
             />
           ) : activeRole === "admin" ? (
             <AdminEduErpWorkspace
