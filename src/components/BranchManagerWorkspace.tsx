@@ -21,7 +21,7 @@ import {
   Users,
   WalletCards
 } from "lucide-react";
-import { Announcement, Attendance, Branch, Competition, Group, Payment, Student, Teacher } from "../types";
+import { Announcement, Attendance, Branch, Competition, Group, Hall, Payment, Student, Teacher } from "../types";
 
 interface BranchManagerWorkspaceProps {
   branchId?: string;
@@ -32,6 +32,16 @@ interface BranchManagerWorkspaceProps {
   payments: Payment[];
   announcements: Announcement[];
   competitions: Competition[];
+  halls?: Hall[];
+  scheduleItems?: any[];
+  scheduleLoading?: boolean;
+  onLoadSchedule?: (filters?: { branchId?: string; groupId?: string; from?: string; to?: string }) => void;
+  onCreateGroup?: (data: any) => Promise<boolean>;
+  onUpdateGroup?: (id: string, data: any) => Promise<boolean>;
+  onDeleteGroup?: (id: string) => Promise<boolean>;
+  onCreateLesson?: (data: any) => Promise<boolean>;
+  onUpdateLesson?: (id: string, data: any) => Promise<boolean>;
+  onDeleteLesson?: (id: string) => Promise<boolean>;
 }
 
 type BranchTab = "dashboard" | "students" | "teachers" | "groups" | "finance" | "announcements" | "quality" | "ai" | "settings";
@@ -56,7 +66,17 @@ export function BranchManagerWorkspace({
   teachers,
   payments,
   announcements,
-  competitions
+  competitions,
+  halls = [],
+  scheduleItems = [],
+  scheduleLoading = false,
+  onLoadSchedule,
+  onCreateGroup,
+  onUpdateGroup,
+  onDeleteGroup,
+  onCreateLesson,
+  onUpdateLesson,
+  onDeleteLesson,
 }: BranchManagerWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<BranchTab>("dashboard");
   const [studentSearch, setStudentSearch] = useState("");

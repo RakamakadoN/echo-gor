@@ -361,6 +361,7 @@ export default function App() {
     } else if (roleId === "parent") {
       setActiveTab("parent-workspace");
       setSelectedStudentId("stud-timur"); // default kids
+      loadParentChildData("stud-timur");
     } else if (roleId === "teacher") {
       setActiveTab("teacher-board");
     } else {
@@ -756,6 +757,160 @@ export default function App() {
     } catch (error: any) {
       setMvpDataError(error.message || "Не удалось удалить филиал");
       return false;
+    }
+  };
+
+  // ─── Groups CRUD ─────────────────────────────────────────────────────────────
+
+  const handleCreateGroup = async (data: {
+    name: string; branchId: string; hallId?: string; teacherId?: string;
+    ageFrom?: number; ageTo?: number; capacity?: number; level?: string;
+    scheduleDays?: string; scheduleTime?: string;
+  }) => {
+    try {
+      const response = await fetch("/api/mvp/groups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await loadMvpBootstrap(activeRole);
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось создать группу");
+      return false;
+    }
+  };
+
+  const handleUpdateGroup = async (id: string, data: Partial<{
+    name: string; branchId: string; hallId: string; teacherId: string;
+    ageFrom: number; ageTo: number; capacity: number; level: string;
+    scheduleDays: string; scheduleTime: string;
+  }>) => {
+    try {
+      const response = await fetch(`/api/mvp/groups/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await loadMvpBootstrap(activeRole);
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось обновить группу");
+      return false;
+    }
+  };
+
+  const handleDeleteGroup = async (id: string) => {
+    try {
+      const response = await fetch(`/api/mvp/groups/${id}`, {
+        method: "DELETE",
+        headers: { "x-demo-role": getMvpRoleHeader() },
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await loadMvpBootstrap(activeRole);
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось удалить группу");
+      return false;
+    }
+  };
+
+  // ─── Schedule CRUD ───────────────────────────────────────────────────────────
+
+  const [scheduleItems, setScheduleItems] = useState<any[]>([]);
+  const [scheduleLoading, setScheduleLoading] = useState(false);
+
+  const loadSchedule = async (filters: { branchId?: string; groupId?: string; from?: string; to?: string } = {}) => {
+    if (mvpDataMode !== "supabase") return; // no-op in mock mode
+    setScheduleLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (filters.branchId) params.set("branchId", filters.branchId);
+      if (filters.groupId) params.set("groupId", filters.groupId);
+      if (filters.from) params.set("from", filters.from);
+      if (filters.to) params.set("to", filters.to);
+      const response = await fetch(`/api/mvp/schedule?${params}`, {
+        headers: { "x-demo-role": getMvpRoleHeader() },
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      setScheduleItems(data.lessons || []);
+    } finally {
+      setScheduleLoading(false);
+    }
+  };
+
+  const handleCreateLesson = async (data: {
+    groupId: string; startsAt: string; endsAt: string;
+    teacherId?: string; hallId?: string; topic?: string; branchId?: string;
+  }) => {
+    try {
+      const response = await fetch("/api/mvp/schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const { lesson } = await response.json();
+      setScheduleItems((prev) => [...prev, lesson].sort((a, b) => a.startsAt.localeCompare(b.startsAt)));
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось создать урок");
+      return false;
+    }
+  };
+
+  const handleUpdateLesson = async (id: string, data: Partial<{
+    startsAt: string; endsAt: string; teacherId: string; hallId: string; status: string; topic: string;
+  }>) => {
+    try {
+      const response = await fetch(`/api/mvp/schedule/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const { lesson } = await response.json();
+      setScheduleItems((prev) => prev.map((item) => (item.id === id ? lesson : item)));
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось обновить урок");
+      return false;
+    }
+  };
+
+  const handleDeleteLesson = async (id: string) => {
+    try {
+      const response = await fetch(`/api/mvp/schedule/${id}`, {
+        method: "DELETE",
+        headers: { "x-demo-role": getMvpRoleHeader() },
+      });
+      if (!response.ok) throw new Error(await response.text());
+      setScheduleItems((prev) => prev.map((item) => (item.id === id ? { ...item, status: "cancelled" } : item)));
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось отменить урок");
+      return false;
+    }
+  };
+
+  // ─── Parent: данные конкретного ребёнка ──────────────────────────────────────
+
+  const [parentChildData, setParentChildData] = useState<{ student: any; payments: any[] } | null>(null);
+
+  const loadParentChildData = async (studentId: string) => {
+    if (mvpDataMode !== "supabase") return;
+    try {
+      const response = await fetch(`/api/mvp/parent/child?studentId=${studentId}`, {
+        headers: { "x-demo-role": getMvpRoleHeader() },
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      setParentChildData(data);
+    } catch {
+      // silent — ParentWorkspace falls back to bootstrap students
     }
   };
 
@@ -2315,6 +2470,16 @@ export default function App() {
               payments={payments}
               announcements={announcements}
               competitions={competitions}
+              halls={halls}
+              scheduleItems={scheduleItems}
+              scheduleLoading={scheduleLoading}
+              onLoadSchedule={loadSchedule}
+              onCreateGroup={handleCreateGroup}
+              onUpdateGroup={handleUpdateGroup}
+              onDeleteGroup={handleDeleteGroup}
+              onCreateLesson={handleCreateLesson}
+              onUpdateLesson={handleUpdateLesson}
+              onDeleteLesson={handleDeleteLesson}
             />
           ) : activeRole === "owner" ? (
             <OwnerExecutiveWorkspace
@@ -2351,17 +2516,30 @@ export default function App() {
               payments={payments}
               announcements={announcements}
               auditLogs={auditLogs}
+              halls={halls}
+              scheduleItems={scheduleItems}
+              scheduleLoading={scheduleLoading}
+              onLoadSchedule={loadSchedule}
+              onCreateGroup={handleCreateGroup}
+              onUpdateGroup={handleUpdateGroup}
+              onDeleteGroup={handleDeleteGroup}
+              onCreateLesson={handleCreateLesson}
+              onUpdateLesson={handleUpdateLesson}
+              onDeleteLesson={handleDeleteLesson}
             />
           ) : (
             <>
               {activeRole === "parent" && (
                 <ParentWorkspace
-                  students={students}
+                  students={parentChildData ? [parentChildData.student] : students}
                   groups={groups}
                   teachers={teachers}
                   announcements={announcements}
                   selectedStudentId={selectedStudentId}
-                  onSelectStudent={setSelectedStudentId}
+                  onSelectStudent={(id) => {
+                    setSelectedStudentId(id);
+                    loadParentChildData(id);
+                  }}
                   onRenewSubscription={(student) => {
                     const activeSub = student.subscriptions?.[0];
                     setPaymentAmount(activeSub ? activeSub.price : 4500);
@@ -2369,7 +2547,6 @@ export default function App() {
                     setPaymentType("subscription");
                     setShowAddPaymentModal(true);
                   }}
-                  readOnlyPreview
                 />
               )}
 

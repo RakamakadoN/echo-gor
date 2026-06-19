@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   BadgePercent,
@@ -30,7 +30,7 @@ import {
   Users,
   WalletCards
 } from "lucide-react";
-import { Announcement, AuditLog, Branch, Group, Payment, Student, Teacher } from "../types";
+import { Announcement, AuditLog, Branch, Group, Hall, Payment, Student, Teacher } from "../types";
 
 interface AdminEduErpWorkspaceProps {
   branches: Branch[];
@@ -40,6 +40,16 @@ interface AdminEduErpWorkspaceProps {
   payments: Payment[];
   announcements: Announcement[];
   auditLogs: AuditLog[];
+  halls?: Hall[];
+  scheduleItems?: any[];
+  scheduleLoading?: boolean;
+  onLoadSchedule?: (filters?: { branchId?: string; groupId?: string; from?: string; to?: string }) => void;
+  onCreateGroup?: (data: any) => Promise<boolean>;
+  onUpdateGroup?: (id: string, data: any) => Promise<boolean>;
+  onDeleteGroup?: (id: string) => Promise<boolean>;
+  onCreateLesson?: (data: any) => Promise<boolean>;
+  onUpdateLesson?: (id: string, data: any) => Promise<boolean>;
+  onDeleteLesson?: (id: string) => Promise<boolean>;
 }
 
 type AdminTab =
@@ -74,7 +84,17 @@ export function AdminEduErpWorkspace({
   teachers,
   payments,
   announcements,
-  auditLogs
+  auditLogs,
+  halls = [],
+  scheduleItems = [],
+  scheduleLoading = false,
+  onLoadSchedule,
+  onCreateGroup,
+  onUpdateGroup,
+  onDeleteGroup,
+  onCreateLesson,
+  onUpdateLesson,
+  onDeleteLesson,
 }: AdminEduErpWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<AdminTab>("dashboard");
   const [search, setSearch] = useState("");
@@ -181,7 +201,23 @@ export function AdminEduErpWorkspace({
             />
           )}
           {activeTab === "journal" && <JournalView groups={groups} students={students} />}
-          {activeTab === "calendar" && <CalendarView groups={groups} teachers={teachers} branches={branches} />}
+          {activeTab === "calendar" && (
+            <CalendarView
+              groups={groups}
+              teachers={teachers}
+              branches={branches}
+              halls={halls}
+              scheduleItems={scheduleItems}
+              scheduleLoading={scheduleLoading}
+              onLoadSchedule={onLoadSchedule}
+              onCreateLesson={onCreateLesson}
+              onUpdateLesson={onUpdateLesson}
+              onDeleteLesson={onDeleteLesson}
+              onCreateGroup={onCreateGroup}
+              onUpdateGroup={onUpdateGroup}
+              onDeleteGroup={onDeleteGroup}
+            />
+          )}
           {activeTab === "billing" && <BillingView students={students} groups={groups} payments={payments} debt={debt} renewals={renewals} />}
           {activeTab === "reports" && <ReportsView branches={branches} groups={groups} todayRevenue={todayRevenue} monthRevenue={monthRevenue} attendanceRate={attendanceRate} />}
           {activeTab === "messages" && <MessagesView announcements={announcements} branches={branches} groups={groups} />}
@@ -644,31 +680,211 @@ function JournalView({ groups, students }: any) {
   );
 }
 
-function CalendarView({ groups, teachers, branches }: any) {
+function CalendarView({ groups, teachers, branches, halls, scheduleItems, scheduleLoading, onLoadSchedule, onCreateLesson, onUpdateLesson, onDeleteLesson, onCreateGroup, onUpdateGroup, onDeleteGroup }: any) {
+  const today = new Date().toISOString().slice(0, 10);
+  const weekAhead = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+
+  const [lessonForm, setLessonForm] = useState({ groupId: "", startsAt: "", endsAt: "", teacherId: "", hallId: "", topic: "" });
+  const [groupForm, setGroupForm] = useState({ name: "", branchId: "", teacherId: "", hallId: "", ageFrom: "", ageTo: "", level: "Начинающие", scheduleDays: "", scheduleTime: "" });
+  const [saving, setSaving] = useState(false);
+  const [activeForm, setActiveForm] = useState<"lesson" | "group" | null>(null);
+
+  useEffect(() => {
+    if (onLoadSchedule) onLoadSchedule({ from: today, to: weekAhead });
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
+
+  const upcoming = (scheduleItems || []).filter((l: any) => l.status !== "cancelled");
+
+  const handleSaveLesson = async () => {
+    if (!lessonForm.groupId || !lessonForm.startsAt || !lessonForm.endsAt) return;
+    setSaving(true);
+    const ok = await onCreateLesson?.({ ...lessonForm });
+    setSaving(false);
+    if (ok) { setLessonForm({ groupId: "", startsAt: "", endsAt: "", teacherId: "", hallId: "", topic: "" }); setActiveForm(null); }
+  };
+
+  const handleSaveGroup = async () => {
+    if (!groupForm.name || !groupForm.branchId) return;
+    setSaving(true);
+    const ok = await onCreateGroup?.({ ...groupForm, ageFrom: groupForm.ageFrom ? Number(groupForm.ageFrom) : undefined, ageTo: groupForm.ageTo ? Number(groupForm.ageTo) : undefined });
+    setSaving(false);
+    if (ok) { setGroupForm({ name: "", branchId: "", teacherId: "", hallId: "", ageFrom: "", ageTo: "", level: "Начинающие", scheduleDays: "", scheduleTime: "" }); setActiveForm(null); }
+  };
+
   return (
     <div className="space-y-5">
-      <SectionHeader kicker="Расписание занятий" title="Календарь событий и регулярных занятий" text="Создание события, назначение преподавателя, выбор дней недели, пробное занятие, применение ко всем или последующим занятиям." actions={["Добавить событие", "Перенести занятие"]} />
-      <div className="grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">
-        <Panel title="Форма события" kicker="Добавить / редактировать">
-          <div className="grid gap-3">
-            <SelectStub label="Филиал" value={branches[0]?.city || "Алматы"} />
-            <SelectStub label="Группа" value={groups[0]?.name || "Группа"} />
-            <SelectStub label="Преподаватель" value={teachers[0]?.name || "Преподаватель"} />
-            <div className="grid grid-cols-2 gap-3">
-              <SelectStub label="Дата" value="02.06.2026" />
-              <SelectStub label="Время" value="18:30" />
-            </div>
-            <ToggleRow label="Доступно пробное занятие" active />
-            <ToggleRow label="Применить ко всем последующим" />
+      <SectionHeader
+        kicker="Расписание занятий"
+        title="Занятия и группы"
+        text="Создавайте уроки и группы, назначайте преподавателей и залы."
+        actions={[]}
+      />
+
+      <div className="flex gap-3 flex-wrap">
+        <button onClick={() => setActiveForm(activeForm === "lesson" ? null : "lesson")} className="flex items-center gap-2 rounded-xl bg-[#C5A059]/15 border border-[#C5A059]/30 px-4 py-2 text-sm font-bold text-[#C5A059] hover:bg-[#C5A059]/25 transition-colors">
+          <Plus className="w-4 h-4" /> Добавить урок
+        </button>
+        <button onClick={() => setActiveForm(activeForm === "group" ? null : "group")} className="flex items-center gap-2 rounded-xl bg-white/5 border border-white/10 px-4 py-2 text-sm font-bold text-slate-300 hover:bg-white/10 transition-colors">
+          <Plus className="w-4 h-4" /> Создать группу
+        </button>
+        <button onClick={() => onLoadSchedule?.({ from: today, to: weekAhead })} className="flex items-center gap-2 rounded-xl bg-white/5 border border-white/10 px-4 py-2 text-sm font-bold text-slate-400 hover:bg-white/10 transition-colors">
+          Обновить
+        </button>
+      </div>
+
+      {activeForm === "lesson" && (
+        <Panel title="Новый урок" kicker="Форма">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Группа *</span>
+              <select value={lessonForm.groupId} onChange={(e) => setLessonForm(f => ({ ...f, groupId: e.target.value }))} className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white">
+                <option value="">Выберите группу</option>
+                {groups.map((g: Group) => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Преподаватель</span>
+              <select value={lessonForm.teacherId} onChange={(e) => setLessonForm(f => ({ ...f, teacherId: e.target.value }))} className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white">
+                <option value="">Из группы</option>
+                {teachers.map((t: Teacher) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Начало *</span>
+              <input type="datetime-local" value={lessonForm.startsAt} onChange={(e) => setLessonForm(f => ({ ...f, startsAt: e.target.value }))} className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Конец *</span>
+              <input type="datetime-local" value={lessonForm.endsAt} onChange={(e) => setLessonForm(f => ({ ...f, endsAt: e.target.value }))} className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Зал</span>
+              <select value={lessonForm.hallId} onChange={(e) => setLessonForm(f => ({ ...f, hallId: e.target.value }))} className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white">
+                <option value="">Без зала</option>
+                {(halls || []).map((h: any) => <option key={h.id} value={h.id}>{h.name}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Тема</span>
+              <input type="text" value={lessonForm.topic} onChange={(e) => setLessonForm(f => ({ ...f, topic: e.target.value }))} placeholder="Напр. «Лезгинка — базовые движения»" className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder-slate-600" />
+            </label>
+          </div>
+          <div className="mt-4 flex gap-3">
+            <button onClick={handleSaveLesson} disabled={saving || !lessonForm.groupId || !lessonForm.startsAt || !lessonForm.endsAt} className="rounded-xl bg-[#C5A059] px-5 py-2 text-sm font-bold text-black disabled:opacity-40 hover:bg-[#D4AF70] transition-colors">
+              {saving ? "Сохранение…" : "Создать урок"}
+            </button>
+            <button onClick={() => setActiveForm(null)} className="rounded-xl bg-white/5 px-5 py-2 text-sm font-bold text-slate-400 hover:bg-white/10 transition-colors">Отмена</button>
           </div>
         </Panel>
-        <Panel title="Неделя филиала" kicker="Залы и группы">
-          <div className="grid gap-3 md:grid-cols-2">
-            {groups.slice(0, 6).map((group: Group) => (
-              <div key={group.id} className="rounded-2xl border border-white/10 bg-black/25 p-4">
-                <p className="text-sm font-black text-white">{group.name}</p>
-                <p className="mt-1 text-xs text-slate-400">{group.days.join(", ")} / {group.time} / {group.ageGroup}</p>
-                <p className="mt-3 text-[10px] font-black uppercase tracking-widest text-[#C5A059]">{group.level}</p>
+      )}
+
+      {activeForm === "group" && (
+        <Panel title="Новая группа" kicker="Форма">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Название *</span>
+              <input type="text" value={groupForm.name} onChange={(e) => setGroupForm(f => ({ ...f, name: e.target.value }))} placeholder="Напр. «Младший ансамбль»" className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder-slate-600" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Филиал *</span>
+              <select value={groupForm.branchId} onChange={(e) => setGroupForm(f => ({ ...f, branchId: e.target.value }))} className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white">
+                <option value="">Выберите филиал</option>
+                {branches.map((b: Branch) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Преподаватель</span>
+              <select value={groupForm.teacherId} onChange={(e) => setGroupForm(f => ({ ...f, teacherId: e.target.value }))} className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white">
+                <option value="">Не выбрано</option>
+                {teachers.map((t: Teacher) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Зал</span>
+              <select value={groupForm.hallId} onChange={(e) => setGroupForm(f => ({ ...f, hallId: e.target.value }))} className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white">
+                <option value="">Не выбрано</option>
+                {(halls || []).map((h: any) => <option key={h.id} value={h.id}>{h.name}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Возраст от</span>
+              <input type="number" value={groupForm.ageFrom} onChange={(e) => setGroupForm(f => ({ ...f, ageFrom: e.target.value }))} min={3} max={99} className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Возраст до</span>
+              <input type="number" value={groupForm.ageTo} onChange={(e) => setGroupForm(f => ({ ...f, ageTo: e.target.value }))} min={3} max={99} className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Уровень</span>
+              <select value={groupForm.level} onChange={(e) => setGroupForm(f => ({ ...f, level: e.target.value }))} className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white">
+                {["Начинающие", "Продолжающие", "Ансамбль", "Профи"].map((l) => <option key={l}>{l}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Дни занятий</span>
+              <input type="text" value={groupForm.scheduleDays} onChange={(e) => setGroupForm(f => ({ ...f, scheduleDays: e.target.value }))} placeholder="Пн, Ср, Пт" className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder-slate-600" />
+            </label>
+            <label className="flex flex-col gap-1 sm:col-span-2">
+              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Время занятий</span>
+              <input type="text" value={groupForm.scheduleTime} onChange={(e) => setGroupForm(f => ({ ...f, scheduleTime: e.target.value }))} placeholder="18:30 – 20:00" className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder-slate-600" />
+            </label>
+          </div>
+          <div className="mt-4 flex gap-3">
+            <button onClick={handleSaveGroup} disabled={saving || !groupForm.name || !groupForm.branchId} className="rounded-xl bg-[#C5A059] px-5 py-2 text-sm font-bold text-black disabled:opacity-40 hover:bg-[#D4AF70] transition-colors">
+              {saving ? "Сохранение…" : "Создать группу"}
+            </button>
+            <button onClick={() => setActiveForm(null)} className="rounded-xl bg-white/5 px-5 py-2 text-sm font-bold text-slate-400 hover:bg-white/10 transition-colors">Отмена</button>
+          </div>
+        </Panel>
+      )}
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        {/* Upcoming lessons */}
+        <Panel title="Ближайшие уроки" kicker={scheduleLoading ? "Загрузка…" : `${upcoming.length} занятий`}>
+          {upcoming.length === 0 ? (
+            <p className="text-sm text-slate-500 py-4 text-center">{scheduleLoading ? "Загрузка расписания…" : "Нет предстоящих занятий. Добавьте урок выше."}</p>
+          ) : (
+            <div className="space-y-3">
+              {upcoming.slice(0, 10).map((lesson: any) => (
+                <div key={lesson.id} className="flex items-start justify-between gap-3 rounded-xl bg-white/5 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-white truncate">{lesson.groupName || "Группа"}</p>
+                    <p className="mt-0.5 text-xs text-slate-400">
+                      {new Date(lesson.startsAt).toLocaleString("ru-RU", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                      {lesson.teacherName && ` · ${lesson.teacherName}`}
+                      {lesson.hallName && ` · ${lesson.hallName}`}
+                    </p>
+                    {lesson.topic && <p className="mt-0.5 text-xs text-[#C5A059]">{lesson.topic}</p>}
+                  </div>
+                  {onDeleteLesson && (
+                    <button onClick={() => onDeleteLesson(lesson.id)} className="flex-shrink-0 rounded-lg bg-red-500/10 px-2 py-1 text-[10px] font-bold text-red-400 hover:bg-red-500/20 transition-colors">
+                      Отменить
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </Panel>
+
+        {/* Groups list */}
+        <Panel title="Группы" kicker={`${groups.length} активных`}>
+          <div className="space-y-3">
+            {groups.map((group: Group) => (
+              <div key={group.id} className="flex items-start justify-between gap-3 rounded-xl bg-black/25 border border-white/10 p-4">
+                <div className="min-w-0">
+                  <p className="text-sm font-black text-white">{group.name}</p>
+                  <p className="mt-1 text-xs text-slate-400">{group.ageGroup} · {group.level}</p>
+                  {(group.days?.length > 0 || group.time) && (
+                    <p className="mt-0.5 text-xs text-slate-500">{group.days?.join(", ")} {group.time}</p>
+                  )}
+                  <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-[#C5A059]">{group.studentCount} учеников</p>
+                </div>
+                {onDeleteGroup && (
+                  <button onClick={() => onDeleteGroup(group.id)} className="flex-shrink-0 rounded-lg bg-red-500/10 px-2 py-1 text-[10px] font-bold text-red-400 hover:bg-red-500/20 transition-colors">
+                    Архив
+                  </button>
+                )}
               </div>
             ))}
           </div>

@@ -870,6 +870,311 @@ export function registerMvpApi(app: express.Express) {
     }
   });
 
+  // ───────────────── Groups CRUD (owner / admin / branch_manager) ─────────────
+
+  function mapDbGroup(row: any, studentCount = 0) {
+    return {
+      id: row.id,
+      organizationId: row.organization_id,
+      branchId: row.branch_id,
+      name: row.name,
+      teacherId: row.teacher_id || "",
+      hallId: row.hall_id || "",
+      scheduleText: [row.schedule_days, row.schedule_time].filter(Boolean).join(" ") || "По расписанию",
+      days: row.schedule_days ? String(row.schedule_days).split(",").map((d: string) => d.trim()) : [],
+      time: row.schedule_time || "",
+      ageGroup: row.age_from != null && row.age_to != null ? `${row.age_from}–${row.age_to} лет` : "Все возрасты",
+      level: row.level || "MVP",
+      studentCount,
+    };
+  }
+
+  const groupAccess = (session: MvpSession, res: express.Response) => {
+    if (!["owner", "admin", "branch_manager"].includes(session.role)) {
+      res.status(403).json({ error: "Недостаточно прав для управления группами" });
+      return false;
+    }
+    if (!supabaseEnabled) {
+      res.status(503).json({ error: "Supabase is not configured" });
+      return false;
+    }
+    return true;
+  };
+
+  app.post("/api/mvp/groups", async (req, res) => {
+    const session = getSession(req);
+    if (!groupAccess(session, res)) return;
+    const payload = req.body || {};
+    if (!payload.name || !payload.branchId) {
+      return res.status(400).json({ error: "name и branchId обязательны" });
+    }
+    if (!canSeeBranch(session, payload.branchId)) {
+      return res.status(403).json({ error: "Branch access denied" });
+    }
+    try {
+      const inserted = await supabaseFetch<any[]>("groups", "", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: session.organizationId,
+          branch_id: payload.branchId,
+          hall_id: payload.hallId || null,
+          teacher_id: payload.teacherId || null,
+          name: String(payload.name).trim(),
+          age_from: payload.ageFrom ?? null,
+          age_to: payload.ageTo ?? null,
+          capacity: payload.capacity ?? null,
+          level: payload.level || "Начинающие",
+          schedule_days: payload.scheduleDays || null,
+          schedule_time: payload.scheduleTime || null,
+          status: "active",
+        }),
+      });
+      res.status(201).json({ group: mapDbGroup(inserted[0]) });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось создать группу" });
+    }
+  });
+
+  app.patch("/api/mvp/groups/:id", async (req, res) => {
+    const session = getSession(req);
+    if (!groupAccess(session, res)) return;
+    const payload = req.body || {};
+    const updates: Record<string, unknown> = {};
+    if (payload.name !== undefined) updates.name = String(payload.name).trim();
+    if (payload.branchId !== undefined) {
+      if (!canSeeBranch(session, payload.branchId)) return res.status(403).json({ error: "Branch access denied" });
+      updates.branch_id = payload.branchId;
+    }
+    if (payload.hallId !== undefined) updates.hall_id = payload.hallId || null;
+    if (payload.teacherId !== undefined) updates.teacher_id = payload.teacherId || null;
+    if (payload.ageFrom !== undefined) updates.age_from = payload.ageFrom ?? null;
+    if (payload.ageTo !== undefined) updates.age_to = payload.ageTo ?? null;
+    if (payload.capacity !== undefined) updates.capacity = payload.capacity ?? null;
+    if (payload.level !== undefined) updates.level = payload.level || null;
+    if (payload.scheduleDays !== undefined) updates.schedule_days = payload.scheduleDays || null;
+    if (payload.scheduleTime !== undefined) updates.schedule_time = payload.scheduleTime || null;
+    if (Object.keys(updates).length === 0) return res.status(400).json({ error: "Нет полей для обновления" });
+    try {
+      const rows = await supabaseFetch<any[]>(
+        "groups",
+        `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
+        { method: "PATCH", body: JSON.stringify(updates) }
+      );
+      if (!rows[0]) return res.status(404).json({ error: "Группа не найдена" });
+      res.json({ group: mapDbGroup(rows[0]) });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось обновить группу" });
+    }
+  });
+
+  app.delete("/api/mvp/groups/:id", async (req, res) => {
+    const session = getSession(req);
+    if (!groupAccess(session, res)) return;
+    try {
+      const rows = await supabaseFetch<any[]>(
+        "groups",
+        `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
+        { method: "PATCH", body: JSON.stringify({ status: "archived" }) }
+      );
+      if (!rows[0]) return res.status(404).json({ error: "Группа не найдена" });
+      res.json({ group: mapDbGroup(rows[0]), archived: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось удалить группу" });
+    }
+  });
+
+  // ───────────────── Schedule (schedule_lessons) CRUD ──────────────────────────
+
+  function mapDbLesson(row: any, extras: { groupName?: string; hallName?: string; teacherName?: string } = {}) {
+    return {
+      id: row.id,
+      branchId: row.branch_id,
+      groupId: row.group_id,
+      groupName: extras.groupName || row.group_name || null,
+      teacherId: row.teacher_id || null,
+      teacherName: extras.teacherName || row.teacher_name || null,
+      hallId: row.hall_id || null,
+      hallName: extras.hallName || row.hall_name || null,
+      startsAt: row.starts_at,
+      endsAt: row.ends_at,
+      status: row.status || "scheduled",
+      topic: row.topic || null,
+    };
+  }
+
+  // GET /api/mvp/schedule?branchId=...&groupId=...&from=YYYY-MM-DD&to=YYYY-MM-DD
+  app.get("/api/mvp/schedule", async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const { branchId, groupId, from, to } = req.query as Record<string, string>;
+    const parts = ["select=*,groups(name),halls(name),users(full_name)", "order=starts_at.asc"];
+    if (branchId) parts.push(`branch_id=eq.${branchId}`);
+    else if (session.role !== "owner" && session.dbBranchId) parts.push(`branch_id=eq.${session.dbBranchId}`);
+    if (groupId) parts.push(`group_id=eq.${groupId}`);
+    if (from) parts.push(`starts_at=gte.${encodeURIComponent(from)}`);
+    if (to) parts.push(`starts_at=lte.${encodeURIComponent(to)}`);
+    // teacher sees only their lessons
+    if (session.role === "teacher") parts.push(`teacher_id=eq.${session.userId}`);
+    try {
+      const rows = await supabaseFetch<any[]>("schedule_lessons", parts.join("&"));
+      const lessons = rows.map((row) =>
+        mapDbLesson(row, {
+          groupName: row.groups?.name,
+          hallName: row.halls?.name,
+          teacherName: row.users?.full_name,
+        })
+      );
+      res.json({ lessons });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось загрузить расписание" });
+    }
+  });
+
+  const scheduleAccess = (session: MvpSession, res: express.Response) => {
+    if (!["owner", "admin", "branch_manager"].includes(session.role)) {
+      res.status(403).json({ error: "Недостаточно прав для управления расписанием" });
+      return false;
+    }
+    if (!supabaseEnabled) {
+      res.status(503).json({ error: "Supabase is not configured" });
+      return false;
+    }
+    return true;
+  };
+
+  app.post("/api/mvp/schedule", async (req, res) => {
+    const session = getSession(req);
+    if (!scheduleAccess(session, res)) return;
+    const payload = req.body || {};
+    if (!payload.groupId || !payload.startsAt || !payload.endsAt) {
+      return res.status(400).json({ error: "groupId, startsAt и endsAt обязательны" });
+    }
+    try {
+      // Resolve branchId from group if not provided
+      let branchId = payload.branchId;
+      if (!branchId) {
+        const groups = await supabaseFetch<any[]>("groups", `select=branch_id&id=eq.${payload.groupId}`);
+        branchId = groups[0]?.branch_id;
+      }
+      if (!canSeeBranch(session, branchId)) return res.status(403).json({ error: "Branch access denied" });
+      const inserted = await supabaseFetch<any[]>("schedule_lessons", "", {
+        method: "POST",
+        body: JSON.stringify({
+          branch_id: branchId,
+          group_id: payload.groupId,
+          teacher_id: payload.teacherId || null,
+          hall_id: payload.hallId || null,
+          starts_at: payload.startsAt,
+          ends_at: payload.endsAt,
+          status: "scheduled",
+          topic: payload.topic || null,
+          created_by: session.userId.startsWith("demo-") ? null : session.userId,
+        }),
+      });
+      res.status(201).json({ lesson: mapDbLesson(inserted[0]) });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось создать урок" });
+    }
+  });
+
+  app.patch("/api/mvp/schedule/:id", async (req, res) => {
+    const session = getSession(req);
+    if (!scheduleAccess(session, res)) return;
+    const payload = req.body || {};
+    const updates: Record<string, unknown> = {};
+    if (payload.startsAt !== undefined) updates.starts_at = payload.startsAt;
+    if (payload.endsAt !== undefined) updates.ends_at = payload.endsAt;
+    if (payload.teacherId !== undefined) updates.teacher_id = payload.teacherId || null;
+    if (payload.hallId !== undefined) updates.hall_id = payload.hallId || null;
+    if (payload.status !== undefined) updates.status = payload.status;
+    if (payload.topic !== undefined) updates.topic = payload.topic || null;
+    if (Object.keys(updates).length === 0) return res.status(400).json({ error: "Нет полей для обновления" });
+    try {
+      const rows = await supabaseFetch<any[]>(
+        "schedule_lessons",
+        `id=eq.${req.params.id}`,
+        { method: "PATCH", body: JSON.stringify(updates) }
+      );
+      if (!rows[0]) return res.status(404).json({ error: "Урок не найден" });
+      res.json({ lesson: mapDbLesson(rows[0]) });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось обновить урок" });
+    }
+  });
+
+  app.delete("/api/mvp/schedule/:id", async (req, res) => {
+    const session = getSession(req);
+    if (!scheduleAccess(session, res)) return;
+    try {
+      const rows = await supabaseFetch<any[]>(
+        "schedule_lessons",
+        `id=eq.${req.params.id}`,
+        { method: "PATCH", body: JSON.stringify({ status: "cancelled" }) }
+      );
+      if (!rows[0]) return res.status(404).json({ error: "Урок не найден" });
+      res.json({ lesson: mapDbLesson(rows[0]), cancelled: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось отменить урок" });
+    }
+  });
+
+  // ───────────────── Parent cabinet: данные конкретного ребёнка ────────────────
+
+  // GET /api/mvp/parent/child?studentId=...
+  // Возвращает профиль ученика + группа + подписки + платежи + посещаемость.
+  // В MVP доступно всем ролям (родитель узнаёт studentId из URL или сессии).
+  app.get("/api/mvp/parent/child", async (req, res) => {
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const { studentId } = req.query as Record<string, string>;
+    if (!studentId) return res.status(400).json({ error: "studentId обязателен" });
+    try {
+      const [studentsRaw, subscriptionsRaw, paymentsRaw, lessons, attendanceRaw, plans] = await Promise.all([
+        supabaseFetch<any[]>("students", `select=*&id=eq.${studentId}&status=neq.archived`),
+        supabaseFetch<any[]>("student_subscriptions", `select=*&student_id=eq.${studentId}&order=starts_on.desc`),
+        supabaseFetch<any[]>("payments", `select=*&student_id=eq.${studentId}&order=paid_at.desc&limit=20`),
+        supabaseFetch<any[]>("schedule_lessons", `select=*&order=starts_at.desc&limit=60`),
+        supabaseFetch<any[]>("attendance", `select=*&student_id=eq.${studentId}`),
+        supabaseFetch<any[]>("subscription_plans", `select=*`),
+      ]);
+      const student = studentsRaw[0];
+      if (!student) return res.status(404).json({ error: "Ученик не найден" });
+
+      const planById = new Map(plans.map((p) => [p.id, p]));
+      const lessonById = new Map(lessons.map((l) => [l.id, l]));
+      const attendanceMap: Record<string, Attendance> = {};
+      attendanceRaw.forEach((row) => {
+        const lesson = lessonById.get(row.lesson_id);
+        if (!lesson) return;
+        const date = toDate(lesson.starts_at);
+        attendanceMap[date] = {
+          date,
+          status: row.status === "unknown" ? "unmarked" : row.status,
+          markedBy: row.marked_by || undefined,
+          note: row.comment || undefined,
+        };
+      });
+      const subsMapped = subscriptionsRaw.map((sub) => {
+        const plan = planById.get(sub.plan_id);
+        return {
+          id: sub.id,
+          studentId: sub.student_id,
+          name: plan?.name || "Абонемент",
+          price: Number(sub.price || 0),
+          lessonsTotal: sub.lessons_total || 0,
+          lessonsLeft: sub.lessons_left || 0,
+          validUntil: sub.ends_on,
+          isAutoRenew: false,
+          status: sub.status === "active" ? "active" : "expired",
+        };
+      });
+      const paymentsMapped = paymentsRaw.map(mapDbPayment);
+      const mapped = mapDbStudent(student, new Map([[studentId, attendanceMap]]), new Map([[studentId, subscriptionsRaw]]));
+      res.json({ student: { ...mapped, subscriptions: subsMapped }, payments: paymentsMapped });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось загрузить данные ребёнка" });
+    }
+  });
+
   // Cron-эндпоинт для Vercel Cron (ежедневный авто-парсинг).
   // Защита: заголовок Authorization: Bearer <CRON_SECRET> (env). Vercel шлёт его автоматически.
   app.get("/api/cron/parse-dance-events", async (req, res) => {
