@@ -1,0 +1,14 @@
+node_modules/
+build/
+dist/
+out/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+.vercel
+.superpowers/
+*.zip
+*.command
+ChatGPT Image *.png

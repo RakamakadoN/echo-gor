@@ -1,0 +1,6 @@
+{
+  "name": "Эхо Гор",
+  "description": "Единая цифровая экосистема и CRM-платформа для сети студий кавказского танца 'Эхо Гор'.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,117 @@
+@import "tailwindcss";
+
+.login-auth-screen input,
+.login-auth-screen button,
+.login-auth-screen label {
+  background: transparent !important;
+  background-color: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+.login-auth-screen input {
+  color: transparent !important;
+  caret-color: #ffffff !important;
+}
+
+.login-auth-screen input::placeholder {
+  color: transparent !important;
+}
+
+:root.day-theme {
+  color-scheme: light;
+}
+
+:root.day-theme body {
+  background: #f4f7fb;
+}
+
+:root.day-theme .day-theme-app {
+  background: #f4f7fb !important;
+  color: #1f2937 !important;
+}
+
+:root.day-theme .day-theme-app header,
+:root.day-theme .day-theme-app aside,
+:root.day-theme .day-theme-app main,
+:root.day-theme .day-theme-app footer,
+:root.day-theme .day-theme-app [class*="bg-[#080808]"],
+:root.day-theme .day-theme-app [class*="bg-[#0A0A0A]"],
+:root.day-theme .day-theme-app [class*="bg-[#0F0F0F]"],
+:root.day-theme .day-theme-app [class*="bg-[#121212]"] {
+  background-color: #f4f7fb !important;
+}
+
+:root.day-theme .day-theme-app [class*="bg-[#161616]"],
+:root.day-theme .day-theme-app [class*="bg-[#171717]"],
+:root.day-theme .day-theme-app [class*="bg-[#1A1A1A]"],
+:root.day-theme .day-theme-app [class*="bg-black"],
+:root.day-theme .day-theme-app [class*="bg-white/"],
+:root.day-theme .day-theme-app [class*="bg-white\\["] {
+  background-color: rgba(255, 255, 255, 0.88) !important;
+}
+
+:root.day-theme .day-theme-app [class*="from-[#"],
+:root.day-theme .day-theme-app [class*="via-[#"],
+:root.day-theme .day-theme-app [class*="to-black"] {
+  --tw-gradient-from: #ffffff !important;
+  --tw-gradient-via: #f8fafc !important;
+  --tw-gradient-to: #eef2f7 !important;
+}
+
+:root.day-theme .day-theme-app [class*="border-white/"],
+:root.day-theme .day-theme-app [class*="border-[#"] {
+  border-color: rgba(15, 23, 42, 0.1) !important;
+}
+
+:root.day-theme .day-theme-app [class*="text-white"] {
+  color: #111827 !important;
+}
+
+:root.day-theme .day-theme-app [class*="text-slate-100"],
+:root.day-theme .day-theme-app [class*="text-slate-200"],
+:root.day-theme .day-theme-app [class*="text-slate-300"] {
+  color: #334155 !important;
+}
+
+:root.day-theme .day-theme-app [class*="text-slate-400"],
+:root.day-theme .day-theme-app [class*="text-slate-500"],
+:root.day-theme .day-theme-app [class*="text-slate-600"] {
+  color: #64748b !important;
+}
+
+:root.day-theme .day-theme-app [class*="shadow-2xl"],
+:root.day-theme .day-theme-app [class*="shadow-xl"] {
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.08) !important;
+}
+
+:root.day-theme .day-theme-app input,
+:root.day-theme .day-theme-app textarea,
+:root.day-theme .day-theme-app select {
+  background: rgba(255, 255, 255, 0.9) !important;
+  color: #111827 !important;
+  border-color: rgba(15, 23, 42, 0.12) !important;
+}
+
+:root.day-theme .day-theme-app input::placeholder,
+:root.day-theme .day-theme-app textarea::placeholder {
+  color: #94a3b8 !important;
+}
+
+:root.day-theme .day-theme-app .login-auth-screen input,
+:root.day-theme .day-theme-app .login-auth-screen button,
+:root.day-theme .day-theme-app .login-auth-screen label {
+  background: transparent !important;
+  background-color: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+:root.day-theme .day-theme-app .login-auth-screen input {
+  color: transparent !important;
+  caret-color: #ffffff !important;
+}
+
+:root.day-theme .day-theme-app .login-auth-screen input::placeholder {
+  color: transparent !important;
+}
