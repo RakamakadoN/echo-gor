@@ -115,3 +115,32 @@
 :root.day-theme .day-theme-app .login-auth-screen input::placeholder {
   color: transparent !important;
 }
+
+/* --- Mobile adaptation helpers --- */
+
+/* Smooth momentum scrolling + a visible thin scrollbar for horizontally
+   scrollable tables on touch devices, so dense tables read as scrollable. */
+.overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 768px) {
+  .overflow-x-auto {
+    scrollbar-width: thin;
+  }
+  .overflow-x-auto::-webkit-scrollbar {
+    height: 6px;
+  }
+  .overflow-x-auto::-webkit-scrollbar-thumb {
+    background: rgba(197, 160, 89, 0.5);
+    border-radius: 9999px;
+  }
+}
+
+/* Prevent accidental page-wide horizontal scroll on small screens. */
+@media (max-width: 768px) {
+  html,
+  body {
+    overflow-x: hidden;
+  }
+}

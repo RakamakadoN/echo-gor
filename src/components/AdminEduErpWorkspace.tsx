@@ -293,7 +293,34 @@ function VisitorsView({ students, groups, branches, teachers, payments, search, 
             <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">Нажмите на посетителя</p>
             <h2 className="mt-1 text-xl font-black text-white">Список посетителей</h2>
           </div>
-          <div className="overflow-x-auto">
+          {/* Mobile card list (md-) */}
+          <div className="space-y-3 p-4 md:hidden">
+            {students.slice(0, 10).map((student: Student) => {
+              const branch = branches.find((item: Branch) => item.id === student.branchId);
+              const group = groups.find((item: Group) => item.id === (student.groupIds?.[0] || (student as any).groupId));
+              const active = selectedStudent?.id === student.id;
+              return (
+                <button
+                  key={student.id}
+                  type="button"
+                  onClick={() => setSelectedStudentId(student.id)}
+                  className={`flex w-full items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.02] p-3 text-left transition active:scale-[0.99] ${active ? "border-[#C5A059]/40 bg-[#C5A059]/10" : ""}`}
+                >
+                  <img src={student.photoUrl} alt="" className="h-12 w-12 shrink-0 rounded-2xl object-cover" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-black text-white">{student.name}</p>
+                    <p className="truncate text-xs text-slate-400">{student.parentPhone} · {branch?.city || "Филиал"} · {group?.name || "Группа"}</p>
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <StatusBadge label={student.balance < 0 ? "Не оплачен" : "Активен"} warning={student.balance < 0} />
+                      <span className={`text-sm font-black ${student.balance < 0 ? "text-rose-300" : "text-emerald-300"}`}>{money(student.balance)}</span>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          {/* Full table (md+) */}
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[940px] text-left text-sm">
               <thead className="bg-white/[0.03] text-[10px] uppercase tracking-widest text-slate-500">
                 <tr>

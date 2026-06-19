@@ -607,6 +607,57 @@ export default function App() {
     }
   };
 
+  // --- Owner: branch management ---
+  const handleCreateBranch = async (data: { name: string; city: string; address?: string; phone?: string }) => {
+    try {
+      const response = await fetch("/api/mvp/branches", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+        body: JSON.stringify(data)
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await loadMvpBootstrap(activeRole);
+      addAuditLog("Создание филиала", `Добавлен филиал ${data.name} (${data.city})`);
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось создать филиал");
+      return false;
+    }
+  };
+
+  const handleUpdateBranch = async (id: string, data: { name?: string; city?: string; address?: string; phone?: string }) => {
+    try {
+      const response = await fetch(`/api/mvp/branches/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+        body: JSON.stringify(data)
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await loadMvpBootstrap(activeRole);
+      addAuditLog("Изменение филиала", `Обновлён филиал ${data.name || id}`);
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось обновить филиал");
+      return false;
+    }
+  };
+
+  const handleDeleteBranch = async (id: string) => {
+    try {
+      const response = await fetch(`/api/mvp/branches/${id}`, {
+        method: "DELETE",
+        headers: { "x-demo-role": getMvpRoleHeader() }
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await loadMvpBootstrap(activeRole);
+      addAuditLog("Удаление филиала", `Филиал архивирован (${id})`);
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось удалить филиал");
+      return false;
+    }
+  };
+
   // Action: Post Payment / subscription extension
   const processPayment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1208,11 +1259,44 @@ export default function App() {
           <img
             src={desktopLoginBg}
             alt="Экран входа Эхогор"
-            className="absolute inset-0 h-full w-full object-cover"
+            className="absolute inset-0 hidden h-full w-full object-cover md:block"
+            referrerPolicy="no-referrer"
+          />
+          <img
+            src={mobileLoginBg}
+            alt="Мобильный экран входа Эхогор"
+            className="absolute inset-0 block h-full w-full object-cover md:hidden"
             referrerPolicy="no-referrer"
           />
 
-          <form onSubmit={handleDesktopLogin} noValidate className="absolute inset-0 z-10">
+          {/* Mobile login controls — transparent hotspots positioned over the portrait mockup */}
+          <div className="absolute inset-0 z-10 md:hidden">
+            <button
+              type="button"
+              aria-label="Войти"
+              onPointerDown={primeLoginVideoAudio}
+              onClick={() => handleDesktopLogin()}
+              className="absolute left-[8.2%] top-[77.6%] h-[5.1%] w-[83.6%] rounded-[24px] outline-none focus:ring-2 focus:ring-white/80 active:bg-white/5"
+            />
+            <button
+              type="button"
+              aria-label="Регистрация"
+              onClick={() => {
+                alert("Регистрация студийных аккаунтов доступна внутри CRM в разделе «Ученики». Для демо нажмите «Войти».");
+              }}
+              className="absolute left-[8.2%] top-[83.7%] h-[5.0%] w-[83.6%] rounded-[22px] outline-none focus:ring-2 focus:ring-[#C5A059]/80 active:bg-white/5"
+            />
+            <button
+              type="button"
+              aria-label="Войти через Google"
+              onClick={() => {
+                setIsLoggingInWithGoogle(true);
+              }}
+              className="absolute left-[8.2%] top-[92.5%] h-[5.0%] w-[83.6%] rounded-[22px] outline-none focus:ring-2 focus:ring-white/80 active:bg-white/5"
+            />
+          </div>
+
+          <form onSubmit={handleDesktopLogin} noValidate className="absolute inset-0 z-10 hidden md:block">
             <input
               type="email"
               aria-label="Электронная почта"
@@ -2098,6 +2182,9 @@ export default function App() {
               announcements={announcements}
               competitions={competitions}
               metrics={metricsSummary}
+              onCreateBranch={handleCreateBranch}
+              onUpdateBranch={handleUpdateBranch}
+              onDeleteBranch={handleDeleteBranch}
             />
           ) : activeRole === "admin" ? (
             <AdminEduErpWorkspace

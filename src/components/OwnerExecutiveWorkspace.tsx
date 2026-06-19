@@ -29,7 +29,11 @@ import {
   Trophy,
   UserRound,
   Users,
-  WalletCards
+  WalletCards,
+  Plus,
+  Pencil,
+  Trash2,
+  X
 } from "lucide-react";
 import { Announcement, Branch, Competition, ExecutiveSummary, Group, Payment, Student, Teacher } from "../types";
 
@@ -42,6 +46,9 @@ interface OwnerExecutiveWorkspaceProps {
   announcements: Announcement[];
   competitions: Competition[];
   metrics: ExecutiveSummary;
+  onCreateBranch?: (data: { name: string; city: string; address?: string; phone?: string }) => Promise<boolean>;
+  onUpdateBranch?: (id: string, data: { name?: string; city?: string; address?: string; phone?: string }) => Promise<boolean>;
+  onDeleteBranch?: (id: string) => Promise<boolean>;
 }
 
 type OwnerTab = "dashboard" | "eduerp" | "branches" | "students" | "teachers" | "finance" | "events" | "announcements" | "analytics" | "ai" | "settings";
@@ -68,7 +75,10 @@ export function OwnerExecutiveWorkspace({
   payments,
   announcements,
   competitions,
-  metrics
+  metrics,
+  onCreateBranch,
+  onUpdateBranch,
+  onDeleteBranch
 }: OwnerExecutiveWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<OwnerTab>("dashboard");
   const debt = Math.abs(students.filter((student) => student.balance < 0).reduce((sum, student) => sum + student.balance, 0));
@@ -151,7 +161,7 @@ export function OwnerExecutiveWorkspace({
             />
           )}
           {activeTab === "eduerp" && <OwnerEduErpView branches={branches} groups={groups} students={students} teachers={teachers} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
-          {activeTab === "branches" && <BranchesView branches={branchScorecards} />}
+          {activeTab === "branches" && <BranchesView branches={branchScorecards} rawBranches={branches} onCreateBranch={onCreateBranch} onUpdateBranch={onUpdateBranch} onDeleteBranch={onDeleteBranch} />}
           {activeTab === "students" && <StudentsNetworkView students={students} branches={branches} />}
           {activeTab === "teachers" && <TeachersNetworkView teachers={teachers} metrics={metrics} />}
           {activeTab === "finance" && <FinanceCenterView branches={branchScorecards} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
@@ -250,15 +260,87 @@ function OwnerDashboard({ branches, activeStudents, newStudentsMonth, teachers, 
   );
 }
 
-function BranchesView({ branches }: { branches: any[] }) {
+function BranchesView({ branches, rawBranches, onCreateBranch, onUpdateBranch, onDeleteBranch }: {
+  branches: any[];
+  rawBranches: Branch[];
+  onCreateBranch?: (data: { name: string; city: string; address?: string; phone?: string }) => Promise<boolean>;
+  onUpdateBranch?: (id: string, data: { name?: string; city?: string; address?: string; phone?: string }) => Promise<boolean>;
+  onDeleteBranch?: (id: string) => Promise<boolean>;
+}) {
+  const empty = { name: "", city: "", address: "", phone: "" };
+  const [adding, setAdding] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState(empty);
+  const [busy, setBusy] = useState(false);
+  const canManage = Boolean(onCreateBranch);
+
+  const startAdd = () => { setEditingId(null); setForm(empty); setAdding(true); };
+  const startEdit = (id: string) => {
+    const b = rawBranches.find((x) => x.id === id);
+    setAdding(false);
+    setEditingId(id);
+    setForm({ name: b?.name || "", city: b?.city || "", address: b?.address || "", phone: b?.phone || "" });
+  };
+  const cancel = () => { setAdding(false); setEditingId(null); setForm(empty); };
+
+  const submit = async () => {
+    if (!form.name.trim() || !form.city.trim()) return;
+    setBusy(true);
+    let ok = false;
+    if (adding && onCreateBranch) ok = await onCreateBranch(form);
+    else if (editingId && onUpdateBranch) ok = await onUpdateBranch(editingId, form);
+    setBusy(false);
+    if (ok) cancel();
+  };
+
+  const remove = async (id: string, label: string) => {
+    if (!onDeleteBranch) return;
+    if (!window.confirm(`Архивировать филиал «${label}»? Данные сохранятся, но филиал скроется из сети.`)) return;
+    await onDeleteBranch(id);
+  };
+
   return (
-    <OwnerScreen title="Филиалы сети" subtitle="Все филиалы, руководители, финансы, посещаемость, удержание и цветовая индикация статуса.">
+    <OwnerScreen title="Филиалы сети" subtitle="Все филиалы, руководители, финансы, посещаемость. Владелец может добавлять, редактировать и архивировать филиалы.">
+      {canManage && (
+        <div className="mb-4 flex items-center justify-between">
+          <p className="text-sm text-slate-400">{rawBranches.length} активных филиалов</p>
+          {!adding && editingId === null && (
+            <button onClick={startAdd} className="inline-flex items-center gap-2 rounded-2xl bg-[#C5A059] px-4 py-2 text-sm font-bold text-black transition hover:bg-[#d4b06a]">
+              <Plus className="h-4 w-4" /> Добавить филиал
+            </button>
+          )}
+        </div>
+      )}
+
+      {(adding || editingId !== null) && (
+        <BranchForm
+          title={adding ? "Новый филиал" : "Редактирование филиала"}
+          form={form}
+          setForm={setForm}
+          busy={busy}
+          onSubmit={submit}
+          onCancel={cancel}
+        />
+      )}
+
       <div className="grid gap-4 xl:grid-cols-3">
         {branches.map((branch) => (
           <article key={branch.branchId} className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
-            <BranchStatus status={branch.status} />
-            <h3 className="mt-4 text-xl font-black text-white">{branch.city}</h3>
-            <p className="mt-1 text-xs text-slate-500">{branch.managerName}</p>
+            <div className="flex items-start justify-between">
+              <BranchStatus status={branch.status} />
+              {canManage && (
+                <div className="flex gap-1">
+                  <button onClick={() => startEdit(branch.branchId)} title="Редактировать" className="rounded-xl border border-white/10 p-2 text-slate-300 transition hover:border-[#C5A059]/40 hover:text-[#C5A059]">
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                  <button onClick={() => remove(branch.branchId, branch.branchName || branch.city)} title="Архивировать" className="rounded-xl border border-white/10 p-2 text-slate-300 transition hover:border-red-500/40 hover:text-red-400">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
+            </div>
+            <h3 className="mt-4 text-xl font-black text-white">{branch.branchName || branch.city}</h3>
+            <p className="mt-1 text-xs text-slate-500">{branch.city} · {branch.managerName}</p>
             <div className="mt-5 grid grid-cols-2 gap-2">
               <MiniMetric label="Ученики" value={branch.studentsCount} />
               <MiniMetric label="Педагоги" value={branch.teachersCount} />
@@ -271,6 +353,47 @@ function BranchesView({ branches }: { branches: any[] }) {
         ))}
       </div>
     </OwnerScreen>
+  );
+}
+
+function BranchForm({ title, form, setForm, busy, onSubmit, onCancel }: {
+  title: string;
+  form: { name: string; city: string; address: string; phone: string };
+  setForm: (f: { name: string; city: string; address: string; phone: string }) => void;
+  busy: boolean;
+  onSubmit: () => void;
+  onCancel: () => void;
+}) {
+  const field = (label: string, key: "name" | "city" | "address" | "phone", placeholder: string) => (
+    <label className="block">
+      <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">{label}</span>
+      <input
+        value={form[key]}
+        onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+        placeholder={placeholder}
+        className="mt-1 w-full rounded-xl border border-white/10 bg-[#0C0C0C] px-3 py-2 text-sm text-white outline-none focus:border-[#C5A059]/50"
+      />
+    </label>
+  );
+  return (
+    <div className="mb-5 rounded-[2rem] border border-[#C5A059]/30 bg-[#161616] p-5">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-black text-white">{title}</h3>
+        <button onClick={onCancel} className="rounded-lg p-1 text-slate-400 hover:text-white"><X className="h-5 w-5" /></button>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        {field("Название", "name", "Эхо Гор Центр")}
+        {field("Город", "city", "Алматы")}
+        {field("Адрес", "address", "ул. Абая, 45")}
+        {field("Телефон", "phone", "+7 (727) 000-00-00")}
+      </div>
+      <div className="mt-4 flex gap-2">
+        <button disabled={busy || !form.name.trim() || !form.city.trim()} onClick={onSubmit} className="rounded-2xl bg-[#C5A059] px-5 py-2 text-sm font-bold text-black transition hover:bg-[#d4b06a] disabled:opacity-50">
+          {busy ? "Сохранение…" : "Сохранить"}
+        </button>
+        <button onClick={onCancel} className="rounded-2xl border border-white/10 px-5 py-2 text-sm font-bold text-slate-300 hover:text-white">Отмена</button>
+      </div>
+    </div>
   );
 }
 

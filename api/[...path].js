@@ -810,7 +810,7 @@ function mapDbPayment(row) {
 async function dbBootstrap(session) {
   const orgFilter = `organization_id=eq.${session.organizationId}`;
   const [branches, halls, users, groups, studentsRaw, paymentsRaw, lessons, attendanceRaw, subscriptionsRaw, plans, financeTransactions] = await Promise.all([
-    supabaseFetch("branches", `select=*&${orgFilter}`),
+    supabaseFetch("branches", `select=*&${orgFilter}&status=neq.archived`),
     supabaseFetch("halls", `select=*`),
     // Halls are filtered by branch in mapping
     supabaseFetch("users", `select=*&${orgFilter}`),
@@ -1122,6 +1122,79 @@ function registerMvpApi(app2) {
       })
     });
     res.status(201).json({ notification: inserted[0] });
+  });
+  const ownerOnly = (session, res) => {
+    if (session.role !== "owner") {
+      res.status(403).json({ error: "\u0422\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u0435\u0446 \u043C\u043E\u0436\u0435\u0442 \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u0442\u044C \u0444\u0438\u043B\u0438\u0430\u043B\u0430\u043C\u0438" });
+      return false;
+    }
+    if (!supabaseEnabled) {
+      res.status(503).json({ error: "Supabase is not configured" });
+      return false;
+    }
+    return true;
+  };
+  app2.post("/api/mvp/branches", async (req, res) => {
+    const session = getSession(req);
+    if (!ownerOnly(session, res)) return;
+    const payload = req.body || {};
+    if (!payload.name || !payload.city) {
+      return res.status(400).json({ error: "name and city are required" });
+    }
+    try {
+      const inserted = await supabaseFetch("branches", "", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: session.organizationId,
+          name: payload.name,
+          city: payload.city,
+          address: payload.address || "",
+          phone: payload.phone || null,
+          status: "active"
+        })
+      });
+      res.status(201).json({ branch: inserted[0] });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0437\u0434\u0430\u0442\u044C \u0444\u0438\u043B\u0438\u0430\u043B" });
+    }
+  });
+  app2.patch("/api/mvp/branches/:id", async (req, res) => {
+    const session = getSession(req);
+    if (!ownerOnly(session, res)) return;
+    const payload = req.body || {};
+    const updates = {};
+    ["name", "city", "address", "phone"].forEach((key) => {
+      if (payload[key] !== void 0) updates[key] = payload[key];
+    });
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: "\u041D\u0435\u0442 \u043F\u043E\u043B\u0435\u0439 \u0434\u043B\u044F \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F" });
+    }
+    try {
+      const rows = await supabaseFetch(
+        "branches",
+        `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
+        { method: "PATCH", body: JSON.stringify(updates) }
+      );
+      if (!rows[0]) return res.status(404).json({ error: "\u0424\u0438\u043B\u0438\u0430\u043B \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+      res.json({ branch: rows[0] });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0444\u0438\u043B\u0438\u0430\u043B" });
+    }
+  });
+  app2.delete("/api/mvp/branches/:id", async (req, res) => {
+    const session = getSession(req);
+    if (!ownerOnly(session, res)) return;
+    try {
+      const rows = await supabaseFetch(
+        "branches",
+        `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
+        { method: "PATCH", body: JSON.stringify({ status: "archived" }) }
+      );
+      if (!rows[0]) return res.status(404).json({ error: "\u0424\u0438\u043B\u0438\u0430\u043B \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+      res.json({ branch: rows[0], archived: true });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u0444\u0438\u043B\u0438\u0430\u043B" });
+    }
   });
 }
 

@@ -190,7 +190,7 @@ async function dbBootstrap(session: MvpSession) {
   const orgFilter = `organization_id=eq.${session.organizationId}`;
   
   const [branches, halls, users, groups, studentsRaw, paymentsRaw, lessons, attendanceRaw, subscriptionsRaw, plans, financeTransactions] = await Promise.all([
-    supabaseFetch<any[]>("branches", `select=*&${orgFilter}`),
+    supabaseFetch<any[]>("branches", `select=*&${orgFilter}&status=neq.archived`),
     supabaseFetch<any[]>("halls", `select=*`), // Halls are filtered by branch in mapping
     supabaseFetch<any[]>("users", `select=*&${orgFilter}`),
     supabaseFetch<any[]>("groups", `select=*&${orgFilter}`),
@@ -543,5 +543,84 @@ export function registerMvpApi(app: express.Express) {
       })
     });
     res.status(201).json({ notification: inserted[0] });
+  });
+
+  // --- Branch management (owner only) ---
+  const ownerOnly = (session: MvpSession, res: express.Response) => {
+    if (session.role !== "owner") {
+      res.status(403).json({ error: "Только владелец может управлять филиалами" });
+      return false;
+    }
+    if (!supabaseEnabled) {
+      res.status(503).json({ error: "Supabase is not configured" });
+      return false;
+    }
+    return true;
+  };
+
+  app.post("/api/mvp/branches", async (req, res) => {
+    const session = getSession(req);
+    if (!ownerOnly(session, res)) return;
+    const payload = req.body || {};
+    if (!payload.name || !payload.city) {
+      return res.status(400).json({ error: "name and city are required" });
+    }
+    try {
+      const inserted = await supabaseFetch<any[]>("branches", "", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: session.organizationId,
+          name: payload.name,
+          city: payload.city,
+          address: payload.address || "",
+          phone: payload.phone || null,
+          status: "active"
+        })
+      });
+      res.status(201).json({ branch: inserted[0] });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось создать филиал" });
+    }
+  });
+
+  app.patch("/api/mvp/branches/:id", async (req, res) => {
+    const session = getSession(req);
+    if (!ownerOnly(session, res)) return;
+    const payload = req.body || {};
+    const updates: Record<string, unknown> = {};
+    (["name", "city", "address", "phone"] as const).forEach((key) => {
+      if (payload[key] !== undefined) updates[key] = payload[key];
+    });
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: "Нет полей для обновления" });
+    }
+    try {
+      const rows = await supabaseFetch<any[]>(
+        "branches",
+        `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
+        { method: "PATCH", body: JSON.stringify(updates) }
+      );
+      if (!rows[0]) return res.status(404).json({ error: "Филиал не найден" });
+      res.json({ branch: rows[0] });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось обновить филиал" });
+    }
+  });
+
+  app.delete("/api/mvp/branches/:id", async (req, res) => {
+    const session = getSession(req);
+    if (!ownerOnly(session, res)) return;
+    try {
+      // Soft delete: archive so dependent records (halls/groups/students) are preserved.
+      const rows = await supabaseFetch<any[]>(
+        "branches",
+        `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
+        { method: "PATCH", body: JSON.stringify({ status: "archived" }) }
+      );
+      if (!rows[0]) return res.status(404).json({ error: "Филиал не найден" });
+      res.json({ branch: rows[0], archived: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось удалить филиал" });
+    }
   });
 }
