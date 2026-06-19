@@ -507,7 +507,7 @@ function NavButton({ tab, active, onClick }: { key?: React.Key; tab: any; active
 function MobileNavButton({ tab, active, onClick }: { key?: React.Key; tab: any; active: boolean; onClick: () => void }) {
   const Icon = tab.icon;
   return (
-    <button onClick={onClick} className={`flex flex-col items-center justify-center gap-1 rounded-2xl py-1.5 text-[9px] font-black uppercase ${active ? "text-[#C5A059]" : "text-slate-500"}`}>
+    <button onClick={onClick} className={`flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-2xl py-2 text-[9px] font-black uppercase ${active ? "text-[#C5A059]" : "text-slate-500"}`}>
       <Icon className={`h-5 w-5 ${active ? "rounded-full bg-[#C5A059]/10 p-0.5" : ""}`} />
       <span>{tab.short}</span>
     </button>

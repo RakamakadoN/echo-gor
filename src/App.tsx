@@ -1819,11 +1819,11 @@ export default function App() {
         </div>
 
         {/* Middle quick simulator bar */}
-        <div className="flex items-center space-x-2 bg-white/5 p-1 rounded-xl border border-white/10 max-h-11">
-          <span className="hidden lg:inline text-[10px] text-slate-400 font-semibold px-2 uppercase tracking-wide">
+        <div className="mx-2 flex min-w-0 items-center space-x-2 overflow-x-auto bg-white/5 p-1 rounded-xl border border-white/10 max-h-11">
+          <span className="hidden lg:inline text-[10px] text-slate-400 font-semibold px-2 uppercase tracking-wide whitespace-nowrap">
             Эмуляция роли:
           </span>
-          <div className="flex space-x-1">
+          <div className="flex space-x-1 flex-nowrap">
             {roles.map((r) => {
               const Icon = r.icon;
               const isSelected = activeRole === r.id;
@@ -1832,7 +1832,7 @@ export default function App() {
                   key={r.id}
                   onClick={() => handleRoleChange(r.id)}
                   id={`role-btn-${r.id}`}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1 transition-all ${
+                  className={`shrink-0 px-2.5 py-2 rounded-lg text-xs font-semibold flex items-center space-x-1 transition-all ${
                     isSelected
                       ? "bg-[#C5A059] text-black font-bold shadow-[0_2px_8px_rgba(197,160,89,0.3)]"
                       : "text-slate-400 hover:text-white hover:bg-white/5"
@@ -1929,14 +1929,27 @@ export default function App() {
         {/* Mobile Nav Drawer */}
         {isMobileMenuOpen && (
           <div className="absolute inset-0 bg-black/80 z-50 flex flex-col p-4 lg:hidden">
-            <div className="flex justify-between items-center mb-6">
+            <div className="flex justify-between items-center mb-4">
               <span className="text-sm font-bold text-[#C5A059] uppercase">Навигация по роли</span>
               <button
                 onClick={() => setIsMobileMenuOpen(false)}
-                className="p-1 text-slate-400 hover:text-white"
+                aria-label="Закрыть меню"
+                className="flex h-11 w-11 items-center justify-center text-slate-400 hover:text-white"
               >
                 <XCircle className="w-6 h-6" />
               </button>
+            </div>
+            {/* Current user identity (hidden in header on mobile) */}
+            <div className="mb-6 flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full border border-[#C5A059] bg-[#161616] text-sm font-bold text-[#C5A059]">
+                Д
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-bold text-white">дияс.рф</p>
+                <p className="truncate text-[10px] uppercase tracking-tighter text-[#C5A059]">
+                  {roles.find((r) => r.id === activeRole)?.badge || "Сотрудник"}
+                </p>
+              </div>
             </div>
             <div className="flex flex-col space-y-2">
               {roles.map((r) => (

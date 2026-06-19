@@ -458,8 +458,8 @@ function ParentNavButton({ tab, active, onClick }: { key?: React.Key; tab: any; 
 function ParentMobileNav({ tab, active, onClick }: { key?: React.Key; tab: any; active: boolean; onClick: () => void }) {
   const Icon = tab.icon;
   return (
-    <button onClick={onClick} className={`flex flex-col items-center justify-center gap-1 rounded-2xl py-1.5 text-[8px] font-black uppercase ${active ? "text-[#C5A059]" : "text-slate-500"}`}>
-      <Icon className="h-4.5 w-4.5" />
+    <button onClick={onClick} className={`flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-2xl py-2 text-[9px] font-black uppercase ${active ? "text-[#C5A059]" : "text-slate-500"}`}>
+      <Icon className="h-5 w-5" />
       <span>{tab.short}</span>
     </button>
   );

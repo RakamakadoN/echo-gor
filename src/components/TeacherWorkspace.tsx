@@ -732,7 +732,7 @@ function NavItem({ icon, label, active, onClick }: { icon: React.ReactNode, labe
   return (
     <button 
       onClick={onClick}
-      className={`flex flex-col items-center justify-center w-16 space-y-1 py-1.5 transition-all ${
+      className={`flex min-h-[52px] flex-col items-center justify-center w-14 sm:w-16 space-y-1 py-2 transition-all ${
         active ? 'text-[#C5A059]' : 'text-slate-500 hover:text-slate-300'
       }`}
     >
