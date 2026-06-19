@@ -133,7 +133,9 @@ function mapDbUserToTeacher(user: any) {
     specialties: user.specialization ? [user.specialization] : ["Кавказский танец"],
     phone: user.phone || "",
     bio: "Преподаватель школы Эхо Гор.",
-    experienceYears: 5
+    experienceYears: 5,
+    branchId: user.branch_id || null,
+    role: user.role || "teacher"
   };
 }
 
@@ -230,7 +232,7 @@ async function dbBootstrap(session: MvpSession) {
     subsByStudent.set(sub.student_id, list);
   });
 
-  const teacherUsers = users.filter((user) => user.role === "teacher");
+  const teacherUsers = users.filter((user) => user.role === "teacher" && user.status !== "archived");
   const teachers = teacherUsers.map(mapDbUserToTeacher);
   const groupsMapped = groups.map((group) => ({
     id: group.id,
@@ -677,6 +679,86 @@ export function registerMvpApi(app: express.Express) {
       res.json({ branch: rows[0], archived: true });
     } catch (error: any) {
       res.status(400).json({ error: error.message || "Не удалось удалить филиал" });
+    }
+  });
+
+  // --- Teacher / staff management (owner only) ---
+  // Teachers are rows in the `users` table with role = "teacher". The owner can also
+  // grant elevated rights by changing the role (admin / branch_manager) and assign a branch.
+  const allowedRoles = ["teacher", "admin", "branch_manager", "owner"] as const;
+  const normalizeRole = (value: unknown) => {
+    const role = String(value || "teacher");
+    return (allowedRoles as readonly string[]).includes(role) ? role : "teacher";
+  };
+
+  app.post("/api/mvp/teachers", async (req, res) => {
+    const session = getSession(req);
+    if (!ownerOnly(session, res)) return;
+    const payload = req.body || {};
+    if (!payload.name || !String(payload.name).trim()) {
+      return res.status(400).json({ error: "Имя обязательно" });
+    }
+    try {
+      const inserted = await supabaseFetch<any[]>("users", "", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: session.organizationId,
+          branch_id: payload.branchId || null,
+          role: normalizeRole(payload.role),
+          full_name: String(payload.name).trim(),
+          phone: payload.phone || null,
+          email: payload.email || `staff-${Date.now()}@echogor.demo`,
+          password_hash: "demo-only",
+          specialization: payload.specialization || null,
+          status: "active"
+        })
+      });
+      res.status(201).json({ teacher: mapDbUserToTeacher(inserted[0]) });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось создать преподавателя" });
+    }
+  });
+
+  app.patch("/api/mvp/teachers/:id", async (req, res) => {
+    const session = getSession(req);
+    if (!ownerOnly(session, res)) return;
+    const payload = req.body || {};
+    const updates: Record<string, unknown> = {};
+    if (payload.name !== undefined) updates.full_name = String(payload.name).trim();
+    if (payload.phone !== undefined) updates.phone = payload.phone || null;
+    if (payload.specialization !== undefined) updates.specialization = payload.specialization || null;
+    if (payload.branchId !== undefined) updates.branch_id = payload.branchId || null;
+    if (payload.role !== undefined) updates.role = normalizeRole(payload.role);
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: "Нет полей для обновления" });
+    }
+    try {
+      const rows = await supabaseFetch<any[]>(
+        "users",
+        `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
+        { method: "PATCH", body: JSON.stringify(updates) }
+      );
+      if (!rows[0]) return res.status(404).json({ error: "Сотрудник не найден" });
+      res.json({ teacher: mapDbUserToTeacher(rows[0]) });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось обновить преподавателя" });
+    }
+  });
+
+  app.delete("/api/mvp/teachers/:id", async (req, res) => {
+    const session = getSession(req);
+    if (!ownerOnly(session, res)) return;
+    try {
+      // Soft delete: archive so groups/lessons history is preserved.
+      const rows = await supabaseFetch<any[]>(
+        "users",
+        `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
+        { method: "PATCH", body: JSON.stringify({ status: "archived" }) }
+      );
+      if (!rows[0]) return res.status(404).json({ error: "Сотрудник не найден" });
+      res.json({ teacher: mapDbUserToTeacher(rows[0]), archived: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось удалить преподавателя" });
     }
   });
 }

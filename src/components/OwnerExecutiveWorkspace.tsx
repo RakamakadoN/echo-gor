@@ -38,6 +38,7 @@ import {
 import { Announcement, Branch, Competition, ExecutiveSummary, Group, Payment, Student, Teacher } from "../types";
 
 type StudentInput = { name?: string; branchId?: string; groupId?: string; teacherId?: string; parentName?: string; parentPhone?: string };
+type TeacherInput = { name?: string; phone?: string; specialization?: string; branchId?: string | null; role?: string };
 
 interface OwnerExecutiveWorkspaceProps {
   branches: Branch[];
@@ -54,6 +55,9 @@ interface OwnerExecutiveWorkspaceProps {
   onCreateStudent?: (data: StudentInput) => Promise<boolean>;
   onUpdateStudent?: (id: string, data: StudentInput) => Promise<boolean>;
   onDeleteStudent?: (id: string) => Promise<boolean>;
+  onCreateTeacher?: (data: TeacherInput) => Promise<boolean>;
+  onUpdateTeacher?: (id: string, data: TeacherInput) => Promise<boolean>;
+  onDeleteTeacher?: (id: string) => Promise<boolean>;
 }
 
 type OwnerTab = "dashboard" | "eduerp" | "branches" | "students" | "teachers" | "finance" | "events" | "announcements" | "analytics" | "ai" | "settings";
@@ -86,7 +90,10 @@ export function OwnerExecutiveWorkspace({
   onDeleteBranch,
   onCreateStudent,
   onUpdateStudent,
-  onDeleteStudent
+  onDeleteStudent,
+  onCreateTeacher,
+  onUpdateTeacher,
+  onDeleteTeacher
 }: OwnerExecutiveWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<OwnerTab>("dashboard");
   const debt = Math.abs(students.filter((student) => student.balance < 0).reduce((sum, student) => sum + student.balance, 0));
@@ -171,7 +178,7 @@ export function OwnerExecutiveWorkspace({
           {activeTab === "eduerp" && <OwnerEduErpView branches={branches} groups={groups} students={students} teachers={teachers} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
           {activeTab === "branches" && <BranchesView branches={branchScorecards} rawBranches={branches} students={students} groups={groups} teachers={teachers} onCreateBranch={onCreateBranch} onUpdateBranch={onUpdateBranch} onDeleteBranch={onDeleteBranch} />}
           {activeTab === "students" && <StudentsNetworkView students={students} branches={branches} groups={groups} teachers={teachers} onCreateStudent={onCreateStudent} onUpdateStudent={onUpdateStudent} onDeleteStudent={onDeleteStudent} />}
-          {activeTab === "teachers" && <TeachersNetworkView teachers={teachers} metrics={metrics} />}
+          {activeTab === "teachers" && <TeachersNetworkView teachers={teachers} metrics={metrics} branches={branches} onCreateTeacher={onCreateTeacher} onUpdateTeacher={onUpdateTeacher} onDeleteTeacher={onDeleteTeacher} />}
           {activeTab === "finance" && <FinanceCenterView branches={branchScorecards} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
           {activeTab === "events" && <EventsView competitions={competitions} branches={branches} />}
           {activeTab === "announcements" && <OwnerAnnouncementsView announcements={announcements} branches={branches} />}
@@ -973,9 +980,58 @@ function StudentForm({ title, form, setForm, branches, groups, teachers, busy, o
   );
 }
 
-function TeachersNetworkView({ teachers, metrics }: { teachers: Teacher[]; metrics: ExecutiveSummary }) {
+const ROLE_LABELS: Record<string, string> = {
+  teacher: "Преподаватель",
+  admin: "Администратор",
+  branch_manager: "Управляющий филиалом",
+  owner: "Владелец"
+};
+
+function TeachersNetworkView({ teachers, metrics, branches, onCreateTeacher, onUpdateTeacher, onDeleteTeacher }: {
+  teachers: Teacher[];
+  metrics: ExecutiveSummary;
+  branches: Branch[];
+  onCreateTeacher?: (data: TeacherInput) => Promise<boolean>;
+  onUpdateTeacher?: (id: string, data: TeacherInput) => Promise<boolean>;
+  onDeleteTeacher?: (id: string) => Promise<boolean>;
+}) {
+  const empty: TeacherInput = { name: "", phone: "", specialization: "", branchId: branches[0]?.id || "", role: "teacher" };
+  const [adding, setAdding] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<TeacherInput>(empty);
+  const [busy, setBusy] = useState(false);
+  const canManage = Boolean(onCreateTeacher);
+
+  const branchName = (id?: string | null) => branches.find((b) => b.id === id)?.name || "— не назначен —";
+  const metricFor = (id: string) => metrics.teacherPerformance.find((m) => m.teacherId === id);
+
+  const startAdd = () => { setEditingId(null); setForm(empty); setAdding(true); };
+  const startEdit = (t: Teacher) => {
+    setAdding(false);
+    setEditingId(t.id);
+    setForm({ name: t.name, phone: t.phone || "", specialization: t.specialties?.[0] || "", branchId: t.branchId || "", role: t.role || "teacher" });
+  };
+  const cancel = () => { setAdding(false); setEditingId(null); setForm(empty); };
+
+  const submit = async () => {
+    if (!form.name?.trim()) return;
+    setBusy(true);
+    let ok = false;
+    if (adding && onCreateTeacher) ok = await onCreateTeacher(form);
+    else if (editingId && onUpdateTeacher) ok = await onUpdateTeacher(editingId, form);
+    setBusy(false);
+    if (ok) cancel();
+  };
+
+  const remove = async (t: Teacher) => {
+    if (!onDeleteTeacher) return;
+    if (!window.confirm(`Архивировать «${t.name}»? История групп и занятий сохранится.`)) return;
+    await onDeleteTeacher(t.id);
+  };
+
   return (
-    <OwnerScreen title="Преподаватели сети" subtitle="Статистика, вовлеченность, благодарности, удержание групп и результаты выступлений.">
+    <OwnerScreen title="Преподаватели сети" subtitle="Статистика и управление персоналом. Владелец может добавлять, редактировать, архивировать сотрудников, назначать филиал и выдавать права (роль).">
+      {/* Performance cards */}
       <div className="grid gap-4 xl:grid-cols-3">
         {metrics.teacherPerformance.map((teacherMetric) => {
           const teacher = teachers.find((item) => item.id === teacherMetric.teacherId);
@@ -993,7 +1049,121 @@ function TeachersNetworkView({ teachers, metrics }: { teachers: Teacher[]; metri
           );
         })}
       </div>
+
+      {/* Management */}
+      {canManage && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-slate-400">{teachers.length} преподавателей в сети</p>
+          {!adding && editingId === null && (
+            <button onClick={startAdd} className="inline-flex items-center gap-2 rounded-2xl bg-[#C5A059] px-4 py-2 text-sm font-bold text-black transition hover:bg-[#d4b06a]">
+              <Plus className="h-4 w-4" /> Добавить преподавателя
+            </button>
+          )}
+        </div>
+      )}
+
+      {(adding || editingId !== null) && (
+        <TeacherForm
+          title={adding ? "Новый преподаватель" : "Редактирование преподавателя"}
+          form={form}
+          setForm={setForm}
+          branches={branches}
+          busy={busy}
+          onSubmit={submit}
+          onCancel={cancel}
+        />
+      )}
+
+      <div className="overflow-hidden rounded-[2rem] border border-white/10 bg-[#121212]">
+        <div className="hidden grid-cols-12 gap-2 border-b border-white/5 px-5 py-3 text-[11px] font-bold uppercase tracking-wider text-slate-500 md:grid">
+          <span className="col-span-3">Преподаватель</span>
+          <span className="col-span-3">Специализация</span>
+          <span className="col-span-3">Филиал</span>
+          <span className="col-span-2">Права</span>
+          <span className="col-span-1 text-right">Действия</span>
+        </div>
+        {teachers.map((t) => {
+          const m = metricFor(t.id);
+          return (
+            <div key={t.id} className="grid grid-cols-2 gap-2 border-b border-white/5 px-5 py-3 text-sm md:grid-cols-12 md:items-center">
+              <div className="col-span-3">
+                <p className="font-bold text-white">{t.name}</p>
+                <p className="text-xs text-slate-500">{t.phone || "—"}{m ? ` · ${m.studentsCount} уч.` : ""}</p>
+              </div>
+              <span className="col-span-3 text-slate-300">{t.specialties?.[0] || "—"}</span>
+              <span className="col-span-3 text-slate-300">{branchName(t.branchId)}</span>
+              <span className="col-span-2">
+                <span className="rounded-lg bg-white/5 px-2 py-1 text-xs font-bold text-[#C5A059]">{ROLE_LABELS[t.role || "teacher"]}</span>
+              </span>
+              {canManage && (
+                <div className="col-span-1 flex justify-end gap-1">
+                  <button onClick={() => startEdit(t)} title="Редактировать" className="rounded-lg border border-white/10 p-1.5 text-slate-300 transition hover:border-[#C5A059]/40 hover:text-[#C5A059]"><Pencil className="h-4 w-4" /></button>
+                  <button onClick={() => remove(t)} title="Архивировать" className="rounded-lg border border-white/10 p-1.5 text-slate-300 transition hover:border-red-500/40 hover:text-red-400"><Trash2 className="h-4 w-4" /></button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {teachers.length === 0 && <p className="px-5 py-6 text-center text-sm text-slate-500">Преподаватели не найдены.</p>}
+      </div>
     </OwnerScreen>
+  );
+}
+
+function TeacherForm({ title, form, setForm, branches, busy, onSubmit, onCancel }: {
+  title: string;
+  form: TeacherInput;
+  setForm: (f: TeacherInput) => void;
+  branches: Branch[];
+  busy: boolean;
+  onSubmit: () => void;
+  onCancel: () => void;
+}) {
+  const inputCls = "mt-1 w-full rounded-xl border border-white/10 bg-[#0C0C0C] px-3 py-2 text-sm text-white outline-none focus:border-[#C5A059]/50";
+  return (
+    <div className="rounded-[2rem] border border-[#C5A059]/30 bg-[#161616] p-5">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-black text-white">{title}</h3>
+        <button onClick={onCancel} className="rounded-lg p-1 text-slate-400 hover:text-white"><X className="h-5 w-5" /></button>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <label className="block">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Имя</span>
+          <input value={form.name || ""} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Имя Фамилия" className={inputCls} />
+        </label>
+        <label className="block">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Телефон</span>
+          <input value={form.phone || ""} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+7 ..." className={inputCls} />
+        </label>
+        <label className="block">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Специализация</span>
+          <input value={form.specialization || ""} onChange={(e) => setForm({ ...form, specialization: e.target.value })} placeholder="Лезгинка, ансамбль…" className={inputCls} />
+        </label>
+        <label className="block">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Филиал</span>
+          <select value={form.branchId || ""} onChange={(e) => setForm({ ...form, branchId: e.target.value })} className={inputCls}>
+            <option value="">— не назначен —</option>
+            {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+        </label>
+        <label className="block md:col-span-2">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Права (роль)</span>
+          <select value={form.role || "teacher"} onChange={(e) => setForm({ ...form, role: e.target.value })} className={inputCls}>
+            <option value="teacher">Преподаватель</option>
+            <option value="admin">Администратор</option>
+            <option value="branch_manager">Управляющий филиалом</option>
+            <option value="owner">Владелец</option>
+          </select>
+          <span className="mt-1 block text-[11px] text-slate-500">Изменение роли с «Преподаватель» переместит сотрудника из списка преподавателей в соответствующий доступ.</span>
+        </label>
+      </div>
+      <div className="mt-4 flex gap-2">
+        <button disabled={busy || !form.name?.trim()} onClick={onSubmit} className="rounded-2xl bg-[#C5A059] px-5 py-2 text-sm font-bold text-black transition hover:bg-[#d4b06a] disabled:opacity-50">
+          {busy ? "Сохранение…" : "Сохранить"}
+        </button>
+        <button onClick={onCancel} className="rounded-2xl border border-white/10 px-5 py-2 text-sm font-bold text-slate-300 hover:text-white">Отмена</button>
+      </div>
+    </div>
   );
 }
 

@@ -657,6 +657,56 @@ export default function App() {
     }
   };
 
+  // --- Owner: teacher / staff management ---
+  type TeacherInput = { name?: string; phone?: string; specialization?: string; branchId?: string | null; role?: string };
+  const handleCreateTeacher = async (data: TeacherInput) => {
+    try {
+      const response = await fetch("/api/mvp/teachers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+        body: JSON.stringify(data)
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await loadMvpBootstrap(activeRole);
+      addAuditLog("Добавление преподавателя", `Добавлен ${data.name} (роль: ${data.role || "teacher"})`);
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось добавить преподавателя");
+      return false;
+    }
+  };
+  const handleUpdateTeacher = async (id: string, data: TeacherInput) => {
+    try {
+      const response = await fetch(`/api/mvp/teachers/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+        body: JSON.stringify(data)
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await loadMvpBootstrap(activeRole);
+      addAuditLog("Изменение преподавателя", `Обновлён ${data.name || id}`);
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось обновить преподавателя");
+      return false;
+    }
+  };
+  const handleDeleteTeacher = async (id: string) => {
+    try {
+      const response = await fetch(`/api/mvp/teachers/${id}`, {
+        method: "DELETE",
+        headers: { "x-demo-role": getMvpRoleHeader() }
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await loadMvpBootstrap(activeRole);
+      addAuditLog("Удаление преподавателя", `Сотрудник архивирован (${id})`);
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось удалить преподавателя");
+      return false;
+    }
+  };
+
   // --- Owner: branch management ---
   const handleCreateBranch = async (data: { name: string; city: string; address?: string; phone?: string }) => {
     try {
@@ -2251,6 +2301,9 @@ export default function App() {
               onCreateStudent={handleCreateStudent}
               onUpdateStudent={handleUpdateStudent}
               onDeleteStudent={handleDeleteStudent}
+              onCreateTeacher={handleCreateTeacher}
+              onUpdateTeacher={handleUpdateTeacher}
+              onDeleteTeacher={handleDeleteTeacher}
             />
           ) : activeRole === "admin" ? (
             <AdminEduErpWorkspace

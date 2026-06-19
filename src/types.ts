@@ -47,6 +47,8 @@ export interface Teacher {
   phone: string;
   bio: string;
   experienceYears: number;
+  branchId?: string | null;
+  role?: "teacher" | "admin" | "branch_manager" | "owner";
 }
 
 export interface Guardian {
