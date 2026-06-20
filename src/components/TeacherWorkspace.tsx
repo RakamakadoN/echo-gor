@@ -21,6 +21,7 @@ interface TeacherWorkspaceProps {
   scheduleItems?: any[];
   scheduleLoading?: boolean;
   onLoadSchedule?: (filters?: { branchId?: string; groupId?: string; from?: string; to?: string }) => void;
+  onToggleAttendance?: (studentId: string, date: string, status: "present" | "absent" | "sick") => void;
 }
 
 // Sub-components: 
@@ -41,9 +42,10 @@ export function TeacherWorkspace({
   scheduleItems = [],
   scheduleLoading = false,
   onLoadSchedule,
+  onToggleAttendance,
 }: TeacherWorkspaceProps) {
-  
-  const [activeTab, setActiveTab] = useState<'today' | 'profile' | 'groups' | 'students' | 'feedback' | 'more'>('today');
+
+  const [activeTab, setActiveTab] = useState<'today' | 'profile' | 'groups' | 'students' | 'journal' | 'feedback' | 'more'>('today');
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
 
@@ -190,6 +192,14 @@ export function TeacherWorkspace({
             </div>
           )}
 
+          {activeTab === 'journal' && (
+            <TeacherJournalView
+              groups={teacherGroups}
+              students={teacherStudents}
+              onToggleAttendance={onToggleAttendance}
+            />
+          )}
+
           {activeTab === 'feedback' && (
             <SafeFeedbackView groups={teacherGroups} students={teacherStudents} />
           )}
@@ -205,8 +215,8 @@ export function TeacherWorkspace({
       <div className="fixed bottom-0 left-0 right-0 z-50 bg-[#0A0A0A]/95 backdrop-blur-xl border-t border-white/10 pb-safe">
         <div className="flex justify-around items-center p-2 max-w-2xl mx-auto">
           <NavItem icon={<Home className="w-5 h-5" />} label="Сегодня" active={activeTab === 'today'} onClick={() => {setActiveTab('today'); setSelectedGroupId(null); setSelectedStudentId(null)}} />
-          <NavItem icon={<User className="w-5 h-5" />} label="Профиль" active={activeTab === 'profile'} onClick={() => {setActiveTab('profile'); setSelectedGroupId(null); setSelectedStudentId(null)}} />
           <NavItem icon={<Users className="w-5 h-5" />} label="Группы" active={activeTab === 'groups' && !selectedGroupId} onClick={() => {setActiveTab('groups'); setSelectedGroupId(null); setSelectedStudentId(null)}} />
+          <NavItem icon={<ClipboardList className="w-5 h-5" />} label="Журнал" active={activeTab === 'journal'} onClick={() => {setActiveTab('journal'); setSelectedGroupId(null); setSelectedStudentId(null)}} />
           <NavItem icon={<CheckSquare className="w-5 h-5" />} label="Ученики" active={activeTab === 'students'} onClick={() => setActiveTab('students')} />
           <NavItem icon={<Star className="w-5 h-5" />} label="Спасибо" active={activeTab === 'feedback'} onClick={() => {setActiveTab('feedback'); setSelectedGroupId(null); setSelectedStudentId(null)}} />
           <NavItem icon={<BrainCircuit className="w-5 h-5" />} label="Notebook" active={activeTab === 'more'} onClick={() => {setActiveTab('more'); setSelectedGroupId(null); setSelectedStudentId(null)}} />
@@ -1321,6 +1331,162 @@ function CompetitionsView({ competitions, students }: any) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// -------------------------------------------------------
+// TEACHER JOURNAL VIEW
+// -------------------------------------------------------
+function TeacherJournalView({ groups, students, onToggleAttendance }: {
+  groups: Group[];
+  students: Student[];
+  onToggleAttendance?: (studentId: string, date: string, status: "present" | "absent" | "sick") => void;
+}) {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const [selectedGroupId, setSelectedGroupId] = useState<string>(groups[0]?.id || "");
+  const [selectedDate, setSelectedDate] = useState<string>(todayStr);
+  const [saving, setSaving] = useState<string | null>(null);
+
+  const selectedGroup = groups.find((g) => g.id === selectedGroupId);
+  const groupStudents = students.filter((s) =>
+    s.groupIds?.includes(selectedGroupId) || (s as any).groupId === selectedGroupId
+  );
+
+  const last7 = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (6 - i));
+    return d.toISOString().slice(0, 10);
+  });
+
+  const statusBg = (status: string) => {
+    if (status === "present") return "bg-emerald-500 text-black";
+    if (status === "absent") return "bg-red-800 text-white";
+    if (status === "sick") return "bg-amber-500 text-black";
+    return "bg-white/5 text-slate-500";
+  };
+
+  const handleMark = async (studentId: string, status: "present" | "absent" | "sick") => {
+    if (!onToggleAttendance) return;
+    setSaving(studentId);
+    await onToggleAttendance(studentId, selectedDate, status);
+    setSaving(null);
+  };
+
+  return (
+    <div className="animate-fade-in space-y-5">
+      <div>
+        <h2 className="text-lg font-bold text-white">Журнал посещаемости</h2>
+        <p className="text-xs text-slate-500 mt-1">Выберите группу и дату — отмечайте П / Н / Б для каждого ученика.</p>
+      </div>
+
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="flex flex-col gap-1 flex-1">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Группа</span>
+          <select
+            value={selectedGroupId}
+            onChange={(e) => setSelectedGroupId(e.target.value)}
+            className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white"
+          >
+            {groups.map((g) => (
+              <option key={g.id} value={g.id}>{g.name}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Дата</span>
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white"
+          />
+        </div>
+      </div>
+
+      {groupStudents.length === 0 ? (
+        <div className="rounded-3xl border border-white/10 bg-white/5 p-10 text-center text-sm text-slate-500">
+          В группе <span className="text-white font-bold">{selectedGroup?.name}</span> нет учеников.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {groupStudents.map((stud) => {
+            const att = stud.attendance?.[selectedDate];
+            const current = att?.status || "unmarked";
+            const isSaving = saving === stud.id;
+            return (
+              <div key={stud.id} className="flex items-center justify-between gap-3 rounded-2xl bg-white/[0.04] border border-white/5 px-4 py-3 hover:border-white/10 transition-colors">
+                <div className="flex items-center gap-3 min-w-0">
+                  <img src={stud.photoUrl} alt={stud.name} className="h-10 w-10 shrink-0 rounded-xl object-cover border border-white/10" />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold text-white">{stud.name}</p>
+                    <p className="text-[10px] text-[#C5A059] uppercase font-bold tracking-wide">{stud.artistLevel}</p>
+                  </div>
+                </div>
+                <div className="flex shrink-0 gap-1.5">
+                  {(["present", "absent", "sick"] as const).map((s) => (
+                    <button
+                      key={s}
+                      disabled={isSaving}
+                      onClick={() => handleMark(stud.id, s)}
+                      className={`rounded-xl px-3 py-2 text-xs font-black transition-all ${
+                        current === s ? statusBg(s) : "bg-white/5 text-slate-400 hover:bg-white/10"
+                      } ${isSaving ? "opacity-50" : ""}`}
+                    >
+                      {s === "present" ? "П" : s === "absent" ? "Н" : "Б"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="flex gap-4 text-[10px] text-slate-500 font-bold uppercase tracking-widest">
+        <span className="flex items-center gap-1"><span className="inline-block w-4 h-4 rounded bg-emerald-500" /> П — присутствовал</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-4 h-4 rounded bg-red-800" /> Н — не явился</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-4 h-4 rounded bg-amber-500" /> Б — болен</span>
+      </div>
+
+      {groupStudents.length > 0 && (
+        <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 overflow-x-auto">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">Последние 7 дней</p>
+          <table className="w-full min-w-[480px] text-xs">
+            <thead>
+              <tr className="text-[10px] uppercase tracking-widest text-slate-500">
+                <th className="pb-2 pr-3 text-left font-bold">Ученик</th>
+                {last7.map((d) => (
+                  <th key={d} className={`pb-2 px-1 text-center font-bold ${d === todayStr ? "text-[#C5A059]" : ""}`}>
+                    {new Date(d + "T12:00:00").toLocaleDateString("ru-RU", { day: "numeric", month: "numeric" })}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {groupStudents.map((stud) => (
+                <tr key={stud.id} className="border-t border-white/5">
+                  <td className="py-2 pr-3 font-bold text-white whitespace-nowrap">{stud.name.split(" ")[0]}</td>
+                  {last7.map((d) => {
+                    const s = stud.attendance?.[d]?.status || "unmarked";
+                    return (
+                      <td key={d} className={`py-2 px-1 text-center ${d === todayStr ? "bg-[#C5A059]/5 rounded" : ""}`}>
+                        <span className={`inline-flex h-6 w-6 items-center justify-center rounded-lg text-[10px] font-black ${
+                          s === "present" ? "bg-emerald-500 text-black" :
+                          s === "absent" ? "bg-red-800 text-white" :
+                          s === "sick" ? "bg-amber-500 text-black" : "text-slate-700"
+                        }`}>
+                          {s === "present" ? "П" : s === "absent" ? "Н" : s === "sick" ? "Б" : "·"}
+                        </span>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

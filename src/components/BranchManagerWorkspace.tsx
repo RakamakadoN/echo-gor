@@ -43,9 +43,10 @@ interface BranchManagerWorkspaceProps {
   onCreateLesson?: (data: any) => Promise<boolean>;
   onUpdateLesson?: (id: string, data: any) => Promise<boolean>;
   onDeleteLesson?: (id: string) => Promise<boolean>;
+  onToggleAttendance?: (studentId: string, date: string, status: "present" | "absent" | "sick") => void;
 }
 
-type BranchTab = "dashboard" | "students" | "teachers" | "groups" | "schedule" | "finance" | "announcements" | "quality" | "ai" | "settings";
+type BranchTab = "dashboard" | "students" | "teachers" | "groups" | "schedule" | "journal" | "finance" | "announcements" | "quality" | "ai" | "settings";
 
 const branchTabs: { id: BranchTab; label: string; short: string; icon: React.ElementType }[] = [
   { id: "dashboard", label: "Dashboard", short: "Главная", icon: Activity },
@@ -53,6 +54,7 @@ const branchTabs: { id: BranchTab; label: string; short: string; icon: React.Ele
   { id: "teachers", label: "Преподаватели", short: "Педагоги", icon: GraduationCap },
   { id: "groups", label: "Группы", short: "Группы", icon: BookOpen },
   { id: "schedule", label: "Расписание", short: "Расписание", icon: CalendarDays },
+  { id: "journal", label: "Журнал", short: "Журнал", icon: BookOpen },
   { id: "finance", label: "Финансы", short: "Финансы", icon: Coins },
   { id: "announcements", label: "Объявления", short: "Связь", icon: Megaphone },
   { id: "quality", label: "Качество филиала", short: "Качество", icon: ShieldCheck },
@@ -79,6 +81,7 @@ export function BranchManagerWorkspace({
   onCreateLesson,
   onUpdateLesson,
   onDeleteLesson,
+  onToggleAttendance,
 }: BranchManagerWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<BranchTab>("dashboard");
   const [studentSearch, setStudentSearch] = useState("");
@@ -194,6 +197,13 @@ export function BranchManagerWorkspace({
               onCreateLesson={onCreateLesson}
               onUpdateLesson={onUpdateLesson}
               onDeleteLesson={onDeleteLesson}
+            />
+          )}
+          {activeTab === "journal" && (
+            <BranchJournalView
+              groups={branchGroups}
+              students={branchStudents}
+              onToggleAttendance={onToggleAttendance}
             />
           )}
           {activeTab === "finance" && <FinanceView payments={branchPayments} students={branchStudents} monthRevenue={monthRevenue} debt={debt} renewals={renewals} />}
@@ -802,6 +812,160 @@ function ScheduleView({ branchId, groups, teachers, halls, scheduleItems, schedu
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// -------------------------------------------------------
+// BRANCH JOURNAL VIEW
+// -------------------------------------------------------
+function BranchJournalView({ groups, students, onToggleAttendance }: {
+  groups: Group[];
+  students: Student[];
+  onToggleAttendance?: (studentId: string, date: string, status: "present" | "absent" | "sick") => void;
+}) {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const [selectedGroupId, setSelectedGroupId] = useState<string>(groups[0]?.id || "");
+  const [selectedDate, setSelectedDate] = useState<string>(todayStr);
+  const [saving, setSaving] = useState<string | null>(null);
+
+  const selectedGroup = groups.find((g) => g.id === selectedGroupId);
+  const groupStudents = students.filter((s) =>
+    s.groupIds?.includes(selectedGroupId) || (s as any).groupId === selectedGroupId
+  );
+
+  const last7 = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (6 - i));
+    return d.toISOString().slice(0, 10);
+  });
+
+  const statusBg = (s: string) =>
+    s === "present" ? "bg-emerald-500 text-black" :
+    s === "absent" ? "bg-red-800 text-white" :
+    s === "sick" ? "bg-amber-500 text-black" : "bg-white/5 text-slate-500";
+
+  const handleMark = async (studentId: string, status: "present" | "absent" | "sick") => {
+    if (!onToggleAttendance) return;
+    setSaving(studentId);
+    await onToggleAttendance(studentId, selectedDate, status);
+    setSaving(null);
+  };
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-xl font-bold text-white">Журнал посещаемости</h2>
+        <p className="text-xs text-slate-500 mt-1">Отметки по группе и дате. Сохраняются в облако автоматически.</p>
+      </div>
+
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="flex flex-col gap-1 flex-1">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Группа</span>
+          <select
+            value={selectedGroupId}
+            onChange={(e) => setSelectedGroupId(e.target.value)}
+            className="rounded-xl bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-white"
+          >
+            {groups.map((g) => (
+              <option key={g.id} value={g.id}>{g.name}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Дата</span>
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="rounded-xl bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-white"
+          />
+        </div>
+      </div>
+
+      {groupStudents.length === 0 ? (
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-8 text-center text-sm text-slate-500">
+          В группе <span className="text-white font-bold">{selectedGroup?.name}</span> нет учеников.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {groupStudents.map((stud) => {
+            const att = stud.attendance?.[selectedDate];
+            const current = att?.status || "unmarked";
+            const isSaving = saving === stud.id;
+            return (
+              <div key={stud.id} className="flex items-center justify-between gap-3 rounded-2xl bg-white/[0.03] border border-white/5 px-4 py-3 hover:border-white/10 transition-colors">
+                <div className="flex items-center gap-3 min-w-0">
+                  <img src={stud.photoUrl} alt={stud.name} className="h-9 w-9 shrink-0 rounded-xl object-cover border border-white/10" />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold text-white">{stud.name}</p>
+                    <p className="text-[10px] text-slate-500">{stud.artistLevel}</p>
+                  </div>
+                </div>
+                <div className="flex shrink-0 gap-1.5">
+                  {(["present", "absent", "sick"] as const).map((s) => (
+                    <button
+                      key={s}
+                      disabled={isSaving}
+                      onClick={() => handleMark(stud.id, s)}
+                      className={`rounded-xl px-2.5 py-1.5 text-[10px] font-black transition-all ${
+                        current === s ? statusBg(s) : "bg-white/5 text-slate-400 hover:bg-white/10"
+                      } ${isSaving ? "opacity-50" : ""}`}
+                    >
+                      {s === "present" ? "П" : s === "absent" ? "Н" : "Б"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="flex gap-4 text-[10px] text-slate-500 font-bold uppercase tracking-widest">
+        <span className="flex items-center gap-1"><span className="inline-block w-4 h-4 rounded bg-emerald-500" /> П — присутствовал</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-4 h-4 rounded bg-red-800" /> Н — не явился</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-4 h-4 rounded bg-amber-500" /> Б — болен</span>
+      </div>
+
+      {groupStudents.length > 0 && (
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 overflow-x-auto">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">Сводка за 7 дней</p>
+          <table className="w-full min-w-[500px] text-xs">
+            <thead>
+              <tr className="text-[10px] uppercase tracking-widest text-slate-500">
+                <th className="pb-2 pr-3 text-left font-bold">Ученик</th>
+                {last7.map((d) => (
+                  <th key={d} className={`pb-2 px-1 text-center font-bold ${d === todayStr ? "text-[#C5A059]" : ""}`}>
+                    {new Date(d + "T12:00:00").toLocaleDateString("ru-RU", { day: "numeric", month: "numeric" })}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {groupStudents.map((stud) => (
+                <tr key={stud.id} className="border-t border-white/5">
+                  <td className="py-2 pr-3 font-bold text-white whitespace-nowrap">{stud.name}</td>
+                  {last7.map((d) => {
+                    const s = stud.attendance?.[d]?.status || "unmarked";
+                    return (
+                      <td key={d} className={`py-2 px-1 text-center ${d === todayStr ? "bg-[#C5A059]/5 rounded" : ""}`}>
+                        <span className={`inline-flex h-6 w-6 items-center justify-center rounded-lg text-[10px] font-black ${
+                          s === "present" ? "bg-emerald-500 text-black" :
+                          s === "absent" ? "bg-red-800 text-white" :
+                          s === "sick" ? "bg-amber-500 text-black" : "text-slate-700"
+                        }`}>
+                          {s === "present" ? "П" : s === "absent" ? "Н" : s === "sick" ? "Б" : "·"}
+                        </span>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

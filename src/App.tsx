@@ -2462,6 +2462,7 @@ export default function App() {
                scheduleItems={scheduleItems}
                scheduleLoading={scheduleLoading}
                onLoadSchedule={loadSchedule}
+               onToggleAttendance={toggleAttendance}
              />
           ) : activeRole === "branch" ? (
             <BranchManagerWorkspace
@@ -2483,6 +2484,7 @@ export default function App() {
               onCreateLesson={handleCreateLesson}
               onUpdateLesson={handleUpdateLesson}
               onDeleteLesson={handleDeleteLesson}
+              onToggleAttendance={toggleAttendance}
             />
           ) : activeRole === "owner" ? (
             <OwnerExecutiveWorkspace
@@ -2539,6 +2541,7 @@ export default function App() {
               onCreateLesson={handleCreateLesson}
               onUpdateLesson={handleUpdateLesson}
               onDeleteLesson={handleDeleteLesson}
+              onToggleAttendance={toggleAttendance}
             />
           ) : (
             <>
@@ -4564,7 +4567,7 @@ export default function App() {
 
                 <div className="space-y-2">
                   {filteredStudents.map((stud) => {
-                    const todayDate = "2026-06-01";
+                    const todayDate = new Date().toISOString().slice(0, 10);
                     const att = stud.attendance[todayDate] || { status: "unmarked" };
 
                     return (

@@ -50,6 +50,7 @@ interface AdminEduErpWorkspaceProps {
   onCreateLesson?: (data: any) => Promise<boolean>;
   onUpdateLesson?: (id: string, data: any) => Promise<boolean>;
   onDeleteLesson?: (id: string) => Promise<boolean>;
+  onToggleAttendance?: (studentId: string, date: string, status: "present" | "absent" | "sick") => void;
 }
 
 type AdminTab =
@@ -95,6 +96,7 @@ export function AdminEduErpWorkspace({
   onCreateLesson,
   onUpdateLesson,
   onDeleteLesson,
+  onToggleAttendance,
 }: AdminEduErpWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<AdminTab>("dashboard");
   const [search, setSearch] = useState("");
@@ -200,7 +202,14 @@ export function AdminEduErpWorkspace({
               setBranchFilter={setBranchFilter}
             />
           )}
-          {activeTab === "journal" && <JournalView groups={groups} students={students} />}
+          {activeTab === "journal" && (
+            <JournalView
+              groups={groups}
+              students={students}
+              branches={branches}
+              onToggleAttendance={onToggleAttendance}
+            />
+          )}
           {activeTab === "calendar" && (
             <CalendarView
               groups={groups}
@@ -648,34 +657,172 @@ function StudentDetailPanel({ student, group, branch, teacher, payments }: { stu
   );
 }
 
-function JournalView({ groups, students }: any) {
-  const dates = ["02.06", "04.06", "06.06", "09.06"];
+function JournalView({ groups, students, branches, onToggleAttendance }: any) {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const [selectedGroupId, setSelectedGroupId] = useState<string>(groups[0]?.id || "");
+  const [selectedDate, setSelectedDate] = useState<string>(todayStr);
+  const [saving, setSaving] = useState<string | null>(null); // studentId being saved
+
+  const selectedGroup = groups.find((g: Group) => g.id === selectedGroupId);
+  const groupStudents = students.filter((s: Student) =>
+    s.groupIds?.includes(selectedGroupId) || (s as any).groupId === selectedGroupId
+  );
+
+  // Build last-7-days dates for the summary columns
+  const last7 = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (6 - i));
+    return d.toISOString().slice(0, 10);
+  });
+
+  const statusColor = (status: string) => {
+    if (status === "present") return "bg-emerald-500 text-black";
+    if (status === "absent") return "bg-red-800 text-white";
+    if (status === "sick") return "bg-amber-500 text-black";
+    return "bg-white/10 text-slate-500";
+  };
+  const statusLabel = (status: string) => {
+    if (status === "present") return "П";
+    if (status === "absent") return "Н";
+    if (status === "sick") return "Б";
+    return "·";
+  };
+
+  const handleToggle = async (studentId: string, status: "present" | "absent" | "sick") => {
+    if (!onToggleAttendance) return;
+    setSaving(studentId);
+    await onToggleAttendance(studentId, selectedDate, status);
+    setSaving(null);
+  };
+
   return (
     <div className="space-y-5">
-      <SectionHeader kicker="Журнал" title="Посещаемость, справки и отметки занятий" text="Фильтр по филиалу, группе и месяцу. Преподаватель отмечает посещения, администратор видит статус журнала и прикрепленные справки." actions={["Загрузить справку", "Сохранить журнал"]} />
-      <Panel title="Журнал группы" kicker="Июнь 2026">
-        <div className="mb-4 grid gap-3 md:grid-cols-3">
-          <SelectStub label="Филиал" value="Алматы" />
-          <SelectStub label="Группа" value={groups[0]?.name || "Ансамбль"} />
-          <SelectStub label="Месяц" value="Июнь 2026" />
+      <SectionHeader
+        kicker="Журнал посещаемости"
+        title="Отметки занятий по группам"
+        text="Выберите группу и дату. Отмечайте присутствие, отсутствие или болезнь для каждого ученика."
+        actions={[]}
+      />
+
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3">
+        <div className="flex flex-col gap-1">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Группа</span>
+          <select
+            value={selectedGroupId}
+            onChange={(e) => setSelectedGroupId(e.target.value)}
+            className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white min-w-[200px]"
+          >
+            {groups.map((g: Group) => (
+              <option key={g.id} value={g.id}>{g.name}</option>
+            ))}
+          </select>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-left text-sm">
-            <thead className="text-[10px] uppercase tracking-widest text-slate-500">
-              <tr><th className="p-3">Посетитель</th>{dates.map((date) => <th key={date} className="p-3">{date}</th>)}<th className="p-3">Справка</th></tr>
-            </thead>
-            <tbody>
-              {students.slice(0, 6).map((student: Student, index: number) => (
-                <tr key={student.id} className="border-t border-white/5">
-                  <td className="p-3 font-bold text-white">{student.name}</td>
-                  {dates.map((date, dateIndex) => <td key={date} className="p-3"><StatusDot ok={(index + dateIndex) % 4 !== 0} /></td>)}
-                  <td className="p-3 text-xs text-slate-400">{index % 3 === 0 ? "Загружена" : "Нет"}</td>
+        <div className="flex flex-col gap-1">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Дата занятия</span>
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white"
+          />
+        </div>
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[1fr_1.4fr]">
+        {/* Attendance marking panel */}
+        <Panel title={`Отметки: ${selectedDate}`} kicker={selectedGroup?.name || "Группа"}>
+          {groupStudents.length === 0 ? (
+            <p className="py-6 text-center text-sm text-slate-500">В группе нет учеников или группа не выбрана.</p>
+          ) : (
+            <div className="space-y-2">
+              {groupStudents.map((student: Student) => {
+                const att = student.attendance?.[selectedDate];
+                const current = att?.status || "unmarked";
+                const isSaving = saving === student.id;
+                return (
+                  <div key={student.id} className="flex items-center justify-between gap-3 rounded-2xl bg-black/30 border border-white/5 px-4 py-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <img src={student.photoUrl} alt={student.name} className="h-9 w-9 shrink-0 rounded-xl object-cover" />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold text-white">{student.name}</p>
+                        <p className="text-[10px] text-slate-500">{student.parentPhone}</p>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 gap-1.5">
+                      {(["present", "absent", "sick"] as const).map((s) => (
+                        <button
+                          key={s}
+                          disabled={isSaving}
+                          onClick={() => handleToggle(student.id, s)}
+                          className={`rounded-lg px-2.5 py-1.5 text-[10px] font-black transition-all ${
+                            current === s ? statusColor(s) : "bg-white/5 text-slate-500 hover:bg-white/10"
+                          } ${isSaving ? "opacity-50" : ""}`}
+                        >
+                          {s === "present" ? "П" : s === "absent" ? "Н" : "Б"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <div className="mt-4 flex gap-4 text-[10px] text-slate-500 font-bold uppercase tracking-widest">
+            <span className="flex items-center gap-1"><span className="inline-block w-4 h-4 rounded bg-emerald-500" /> П — Присутствовал</span>
+            <span className="flex items-center gap-1"><span className="inline-block w-4 h-4 rounded bg-red-800" /> Н — Не явился</span>
+            <span className="flex items-center gap-1"><span className="inline-block w-4 h-4 rounded bg-amber-500" /> Б — Болен</span>
+          </div>
+        </Panel>
+
+        {/* 7-day summary table */}
+        <Panel title="Сводка за 7 дней" kicker={selectedGroup?.name || "Группа"}>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[520px] text-left text-xs">
+              <thead>
+                <tr className="text-[10px] uppercase tracking-widest text-slate-500">
+                  <th className="pb-3 pr-4 font-bold">Ученик</th>
+                  {last7.map((d) => (
+                    <th key={d} className={`pb-3 px-1 text-center font-bold ${d === todayStr ? "text-[#C5A059]" : ""}`}>
+                      {new Date(d + "T12:00:00").toLocaleDateString("ru-RU", { day: "numeric", month: "numeric" })}
+                    </th>
+                  ))}
+                  <th className="pb-3 pl-4 font-bold text-right">%</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Panel>
+              </thead>
+              <tbody>
+                {groupStudents.map((student: Student) => {
+                  const total = last7.filter((d) => student.attendance?.[d]?.status !== "unmarked" && student.attendance?.[d]).length;
+                  const present = last7.filter((d) => student.attendance?.[d]?.status === "present").length;
+                  const rate = total ? Math.round((present / total) * 100) : null;
+                  return (
+                    <tr key={student.id} className="border-t border-white/5">
+                      <td className="py-2.5 pr-4 font-bold text-white whitespace-nowrap">{student.name}</td>
+                      {last7.map((d) => {
+                        const s = student.attendance?.[d]?.status || "unmarked";
+                        return (
+                          <td key={d} className={`py-2.5 px-1 text-center ${d === todayStr ? "bg-[#C5A059]/5 rounded" : ""}`}>
+                            <span className={`inline-flex h-6 w-6 items-center justify-center rounded-lg text-[10px] font-black ${
+                              s !== "unmarked" ? statusColor(s) : "text-slate-600"
+                            }`}>
+                              {statusLabel(s)}
+                            </span>
+                          </td>
+                        );
+                      })}
+                      <td className="py-2.5 pl-4 text-right font-bold">
+                        {rate !== null
+                          ? <span className={rate >= 80 ? "text-emerald-400" : rate >= 60 ? "text-amber-400" : "text-red-400"}>{rate}%</span>
+                          : <span className="text-slate-600">—</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
+      </div>
     </div>
   );
 }
