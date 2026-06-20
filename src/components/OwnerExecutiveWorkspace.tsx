@@ -1413,7 +1413,8 @@ function StudentsNetworkView({ students, branches, groups, teachers, onCreateStu
           <span className="col-span-1 text-right">Действия</span>
         </div>
         {filtered.map((s) => (
-          <div key={s.id} onClick={() => setSelectedId(s.id)} className={`grid cursor-pointer grid-cols-2 gap-2 border-b border-white/5 px-5 py-3 text-sm transition hover:bg-[#C5A059]/10 md:grid-cols-12 md:items-center ${selectedId === s.id ? "bg-[#C5A059]/15" : ""}`}>
+          <React.Fragment key={s.id}>
+          <div onClick={() => setSelectedId(selectedId === s.id ? null : s.id)} className={`grid cursor-pointer grid-cols-2 gap-2 border-b border-white/5 px-5 py-3 text-sm transition hover:bg-[#C5A059]/10 md:grid-cols-12 md:items-center ${selectedId === s.id ? "bg-[#C5A059]/15" : ""}`}>
             <div className="col-span-3">
               <p className="font-bold text-white">{s.name}</p>
               <p className="text-xs text-slate-500">{s.parentName} · {s.parentPhone || "—"}</p>
@@ -1433,21 +1434,23 @@ function StudentsNetworkView({ students, branches, groups, teachers, onCreateStu
               </div>
             )}
           </div>
+          {selectedId === s.id && (
+            <div className="border-b border-white/5 bg-black/20 px-4 py-4">
+              <StudentManagementCard
+                student={s}
+                group={groups.find((g) => s.groupIds?.includes(g.id))}
+                branch={branches.find((b) => b.id === s.branchId)}
+                teacher={teachers.find((t) => t.id === s.teacherId)}
+                onClose={() => setSelectedId(null)}
+                onEdit={canManage ? () => startEdit(s) : undefined}
+                onDelete={onDeleteStudent ? () => remove(s) : undefined}
+              />
+            </div>
+          )}
+          </React.Fragment>
         ))}
         {filtered.length === 0 && <p className="px-5 py-6 text-center text-sm text-slate-500">Ученики не найдены.</p>}
       </div>
-
-      {selectedStudent && (
-        <StudentManagementCard
-          student={selectedStudent}
-          group={groups.find((g) => selectedStudent.groupIds?.includes(g.id))}
-          branch={branches.find((b) => b.id === selectedStudent.branchId)}
-          teacher={teachers.find((t) => t.id === selectedStudent.teacherId)}
-          onClose={() => setSelectedId(null)}
-          onEdit={canManage ? () => startEdit(selectedStudent) : undefined}
-          onDelete={onDeleteStudent ? () => remove(selectedStudent) : undefined}
-        />
-      )}
 
       <div className="overflow-hidden rounded-[2rem] border border-rose-500/20 bg-[#140f10]">
         <div className="flex items-center justify-between gap-3 border-b border-rose-500/15 px-5 py-4">
