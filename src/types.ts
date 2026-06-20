@@ -71,6 +71,9 @@ export interface Group {
   days: string[]; // e.g., ["Пн", "Ср", "Пт"]
   time: string; // e.g., "18:30"
   ageGroup: string; // e.g., "7-12 лет", "16+ лет"
+  ageFrom?: number | null;
+  ageTo?: number | null;
+  capacity?: number; // вместимость группы (для расчёта заполняемости)
   level: string; // e.g., "Начинающие", "Продолжающие", "Ансамбль"
   studentCount: number;
 }
@@ -182,6 +185,8 @@ export interface Student {
   attendance: { [date: string]: Attendance }; // keyed by date (YYYY-MM-DD)
   subscriptions: Subscription[];
   paymentStatus?: string;
+  createdAt?: string; // дата регистрации ученика (ISO), для метрики «новые ученики»
+  status?: string; // статус из БД: lead|trial|active|paused|debt|left|archived
 }
 
 export type AnnouncementAudience = "all" | "branches" | "teachers" | "parents" | "students";

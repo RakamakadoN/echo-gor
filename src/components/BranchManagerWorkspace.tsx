@@ -23,6 +23,7 @@ import {
   WalletCards
 } from "lucide-react";
 import { Announcement, AnnouncementAudience, Attendance, Branch, Competition, Group, Hall, Payment, Student, Teacher } from "../types";
+import StudentManagementCard from "./StudentManagementCard";
 
 interface BranchManagerWorkspaceProps {
   branchId?: string;
@@ -330,7 +331,9 @@ function StudentsView({ students, groups, teachers = [], branchId, search, onSea
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const canManage = Boolean(onCreateStudent || onUpdateStudent);
+  const selectedStudent = students.find((item) => item.id === selectedId) || null;
 
   const openCreate = () => { setEditingId(null); setForm(emptyForm); setShowForm(true); };
   const openEdit = (student: Student) => {
@@ -421,12 +424,23 @@ function StudentsView({ students, groups, teachers = [], branchId, search, onSea
         </div>
       )}
 
+      {selectedStudent && (
+        <StudentManagementCard
+          student={selectedStudent}
+          group={groups.find((item) => item.id === (selectedStudent.groupIds?.[0] || (selectedStudent as any).groupId))}
+          teacher={teachers.find((item) => item.id === selectedStudent.teacherId)}
+          onClose={() => setSelectedId(null)}
+          onEdit={canManage ? () => openEdit(selectedStudent) : undefined}
+          onDelete={onDeleteStudent ? () => handleDelete(selectedStudent) : undefined}
+        />
+      )}
+
       <div className="grid gap-3 lg:grid-cols-2">
         {students.map((student) => {
           const group = groups.find((item) => item.id === (student.groupIds?.[0] || (student as any).groupId));
           const debt = student.balance < 0;
           return (
-            <article key={student.id} className="rounded-3xl border border-white/10 bg-[#121212] p-4">
+            <article key={student.id} onClick={() => setSelectedId(student.id)} className={`cursor-pointer rounded-3xl border bg-[#121212] p-4 transition hover:border-[#C5A059]/40 ${selectedId === student.id ? "border-[#C5A059]/50" : "border-white/10"}`}>
               <div className="flex gap-3">
                 <img src={student.photoUrl} alt={student.name} className="h-14 w-14 rounded-2xl object-cover" />
                 <div className="min-w-0 flex-1">
@@ -446,9 +460,9 @@ function StudentsView({ students, groups, teachers = [], branchId, search, onSea
                   </div>
                   {canManage && (
                     <div className="mt-4 flex gap-2">
-                      <button onClick={() => openEdit(student)} className="rounded-lg bg-white/5 px-3 py-1.5 text-[10px] font-bold text-slate-300 transition-colors hover:bg-white/10">Редактировать</button>
+                      <button onClick={(e) => { e.stopPropagation(); openEdit(student); }} className="rounded-lg bg-white/5 px-3 py-1.5 text-[10px] font-bold text-slate-300 transition-colors hover:bg-white/10">Редактировать</button>
                       {onDeleteStudent && (
-                        <button onClick={() => handleDelete(student)} className="rounded-lg bg-red-500/10 px-3 py-1.5 text-[10px] font-bold text-red-400 transition-colors hover:bg-red-500/20">В корзину</button>
+                        <button onClick={(e) => { e.stopPropagation(); handleDelete(student); }} className="rounded-lg bg-red-500/10 px-3 py-1.5 text-[10px] font-bold text-red-400 transition-colors hover:bg-red-500/20">В корзину</button>
                       )}
                     </div>
                   )}

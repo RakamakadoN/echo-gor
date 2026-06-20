@@ -7,6 +7,7 @@ import {
   Home, ClipboardList, Download
 } from 'lucide-react';
 import { Group, Student, Competition, Announcement, Homework } from '../types';
+import StudentManagementCard from './StudentManagementCard';
 import { motion, AnimatePresence } from 'motion/react';
 // @ts-ignore
 import teacherProfileCard from '../assets/images/teacher_profile_card.png';
@@ -155,9 +156,10 @@ export function TeacherWorkspace({
 
           {/* STUDENTS VIEW (Or specific student details) */}
           {activeTab === 'students' && selectedStudentId && (
-            <StudentDetailsView 
+            <StudentDetailsView
               studentId={selectedStudentId}
               students={students}
+              groups={groups}
               onBack={() => setSelectedStudentId(null)}
             />
           )}
@@ -1043,17 +1045,21 @@ function GroupDetailsView({ groupId, groups, students, onBack, onNavigateToStude
   );
 }
 
-function StudentDetailsView({ studentId, students, onBack }: any) {
+function StudentDetailsView({ studentId, students, groups = [], onBack }: any) {
   const student = students.find((s: any) => s.id === studentId);
   const [activeSegment, setActiveSegment] = useState<'info' | 'ai' | 'homework'>('info');
 
   if (!student) return null;
+
+  const studentGroup = groups.find((g: Group) => g.id === (student.groupIds?.[0] || (student as any).groupId));
 
   return (
     <div className="animate-fade-in space-y-6">
       <button onClick={onBack} className="text-[#C5A059] text-xs font-bold uppercase tracking-wider flex items-center hover:text-white transition-colors">
         ← Назад
       </button>
+
+      <StudentManagementCard student={student} group={studentGroup} onClose={onBack} />
 
       {/* Student Hero Header */}
       <div className="flex flex-col md:flex-row gap-6 bg-gradient-to-br from-[#1A1A1A] to-black border border-white/10 rounded-[2rem] p-6 shadow-2xl relative overflow-hidden">

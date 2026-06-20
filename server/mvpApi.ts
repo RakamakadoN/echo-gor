@@ -94,6 +94,27 @@ async function supabaseFetch<T>(table: string, query = "select=*", init: Request
 
 const toDate = (value?: string | null) => value ? value.slice(0, 10) : new Date().toISOString().slice(0, 10);
 
+// Журналирование смены статуса ученика (forward-collector для воронки лидов).
+// Тихо игнорирует ошибки: сбор аналитики не должен ломать основной CRUD.
+async function logStatusEvent(session: MvpSession, studentId: string, toStatus: string | null | undefined, fromStatus: string | null | undefined, branchId?: string | null) {
+  if (!supabaseEnabled || !toStatus || toStatus === fromStatus) return;
+  try {
+    await supabaseFetch("student_status_events", "", {
+      method: "POST",
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({
+        organization_id: session.organizationId,
+        branch_id: branchId || null,
+        student_id: studentId,
+        from_status: fromStatus || null,
+        to_status: toStatus,
+        source: "api",
+        created_by: session.fullName || session.role
+      })
+    });
+  } catch { /* no-op */ }
+}
+
 function fallbackPayload(session: MvpSession) {
   const branchFiltered = session.role === "owner"
     ? initialBranches
@@ -158,6 +179,8 @@ function mapDbStudent(row: any, attendanceByStudent: Map<string, Record<string, 
     branchId: row.branch_id,
     groupIds: row.group_id ? [row.group_id] : [],
     teacherId: row.teacher_id || "",
+    createdAt: row.created_at || undefined,
+    status: row.status || undefined,
     parentName: row.parent_name || "Родитель",
     parentPhone: row.parent_phone || "",
     balance: row.status === "debt" ? -1 : 0,
@@ -253,6 +276,9 @@ async function dbBootstrap(session: MvpSession) {
     days: [],
     time: "",
     ageGroup: group.age_from && group.age_to ? `${group.age_from}-${group.age_to} лет` : "Все возрасты",
+    ageFrom: group.age_from ?? null,
+    ageTo: group.age_to ?? null,
+    capacity: group.capacity ?? 0,
     level: "MVP",
     studentCount: studentsRaw.filter((student) => student.group_id === group.id).length
   }));
@@ -351,6 +377,93 @@ export function registerMvpApi(app: express.Express) {
     }
   });
 
+  // --- Главный дашборд владельца: доп. данные из forward-collector таблиц ---
+  // Снапшоты (YoY) + дневная воронка из журнала статус-событий. Пустые таблицы
+  // отдают пустые структуры — фронт деградирует в «нет данных / накапливается».
+  app.get("/api/mvp/owner/extras", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "Только владелец" });
+    if (!supabaseEnabled) return res.json({ snapshots: [], funnelToday: null, funnelYesterday: null });
+    try {
+      const orgFilter = `organization_id=eq.${session.organizationId}`;
+      const today = new Date().toISOString().slice(0, 10);
+      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      const dayStart = (d: string) => `${d}T00:00:00`;
+      const dayEnd = (d: string) => `${d}T23:59:59`;
+      const [snapsRaw, evToday, evYest] = await Promise.all([
+        supabaseFetch<any[]>("metrics_snapshots", `select=*&${orgFilter}&order=period_month.asc`),
+        supabaseFetch<any[]>("student_status_events", `select=to_status&${orgFilter}&occurred_at=gte.${dayStart(today)}&occurred_at=lte.${dayEnd(today)}`),
+        supabaseFetch<any[]>("student_status_events", `select=to_status&${orgFilter}&occurred_at=gte.${dayStart(yesterday)}&occurred_at=lte.${dayEnd(yesterday)}`)
+      ]);
+      const snapshots = snapsRaw.map((s) => ({
+        periodMonth: toDate(s.period_month), branchId: s.branch_id,
+        revenue: Number(s.revenue || 0), activeSubscriptions: s.active_subscriptions || 0,
+        avgCheck: Number(s.avg_check || 0), retentionRate: Number(s.retention_rate || 0),
+        attendanceRate: Number(s.attendance_rate || 0), newStudents: s.new_students || 0
+      }));
+      const funnel = (rows: any[]) => ({
+        leads: rows.filter((r) => r.to_status === "lead").length,
+        trialBooked: rows.filter((r) => r.to_status === "trial").length,
+        trialCame: rows.filter((r) => r.to_status === "trial").length,
+        bought: rows.filter((r) => r.to_status === "active").length
+      });
+      res.json({ snapshots, funnelToday: funnel(evToday), funnelYesterday: funnel(evYest) });
+    } catch (error: any) {
+      res.status(503).json({ snapshots: [], funnelToday: null, funnelYesterday: null, error: error.message });
+    }
+  });
+
+  // Записать снапшот текущего месяца (сеть + по филиалам). Накапливает историю для YoY.
+  app.post("/api/mvp/owner/snapshot", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "Только владелец" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      const orgFilter = `organization_id=eq.${session.organizationId}`;
+      const now = new Date();
+      const monthPrefix = now.toISOString().slice(0, 7);
+      const periodMonth = `${monthPrefix}-01`;
+      const [branches, students, payments, subs] = await Promise.all([
+        supabaseFetch<any[]>("branches", `select=id&${orgFilter}&status=neq.archived`),
+        supabaseFetch<any[]>("students", `select=id,branch_id,status,created_at&${orgFilter}&status=neq.archived`),
+        supabaseFetch<any[]>("payments", `select=amount,branch_id,paid_at,status&${orgFilter}`),
+        supabaseFetch<any[]>("student_subscriptions", `select=branch_id,status`)
+      ]);
+      const paidThisMonth = payments.filter((p) => p.status === "paid" && String(p.paid_at || "").slice(0, 7) === monthPrefix);
+      const build = (branchId: string | null) => {
+        const bs = branchId ? students.filter((s) => s.branch_id === branchId) : students;
+        const bp = branchId ? paidThisMonth.filter((p) => p.branch_id === branchId) : paidThisMonth;
+        const bsub = branchId ? subs.filter((s) => s.branch_id === branchId) : subs;
+        const revenue = bp.reduce((s, p) => s + Number(p.amount || 0), 0);
+        const activeSubs = bsub.filter((s) => s.status === "active").length;
+        const activeStud = bs.filter((s) => s.status === "active").length;
+        return {
+          organization_id: session.organizationId, branch_id: branchId, period_month: periodMonth,
+          revenue, active_students: activeStud, active_subscriptions: activeSubs,
+          avg_check: bp.length ? Math.round(revenue / bp.length) : 0,
+          retention_rate: bs.length ? Math.round((activeStud / bs.length) * 100) : 0,
+          attendance_rate: 0,
+          new_students: bs.filter((s) => String(s.created_at || "").slice(0, 7) === monthPrefix).length,
+          payments_count: bp.length, computed_at: now.toISOString()
+        };
+      };
+      const rows = [build(null), ...branches.map((b) => build(b.id))];
+      // Идемпотентно: удаляем снапшоты текущего месяца, затем вставляем свежие.
+      await supabaseFetch("metrics_snapshots", `organization_id=eq.${session.organizationId}&period_month=eq.${periodMonth}`, {
+        method: "DELETE",
+        headers: { Prefer: "return=minimal" }
+      });
+      await supabaseFetch("metrics_snapshots", "", {
+        method: "POST",
+        headers: { Prefer: "return=minimal" },
+        body: JSON.stringify(rows)
+      });
+      res.json({ ok: true, written: rows.length, periodMonth });
+    } catch (error: any) {
+      res.status(503).json({ error: error.message });
+    }
+  });
+
   app.get("/api/mvp/video/templates", (_req, res) => {
     res.json({ templates: listVideoTemplates() });
   });
@@ -415,10 +528,11 @@ export function registerMvpApi(app: express.Express) {
         teacher_id: payload.teacherId || null,
         parent_name: payload.parentName || null,
         parent_phone: payload.parentPhone || null,
-        status: "active",
+        status: payload.status || "active",
         comment: payload.comment || null
       })
     });
+    await logStatusEvent(session, inserted[0]?.id, inserted[0]?.status, null, payload.branchId);
     res.status(201).json({ student: inserted[0] });
   });
 
@@ -442,16 +556,24 @@ export function registerMvpApi(app: express.Express) {
     if (payload.teacherId !== undefined) updates.teacher_id = payload.teacherId || null;
     if (payload.parentName !== undefined) updates.parent_name = payload.parentName || null;
     if (payload.parentPhone !== undefined) updates.parent_phone = payload.parentPhone || null;
+    if (payload.status !== undefined) updates.status = payload.status;
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({ error: "Нет полей для обновления" });
     }
     try {
+      // Прежний статус — чтобы зафиксировать переход в журнале воронки.
+      let prevStatus: string | undefined;
+      if (payload.status !== undefined) {
+        const before = await supabaseFetch<any[]>("students", `select=status,branch_id&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`);
+        prevStatus = before[0]?.status;
+      }
       const rows = await supabaseFetch<any[]>(
         "students",
         `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
         { method: "PATCH", body: JSON.stringify(updates) }
       );
       if (!rows[0]) return res.status(404).json({ error: "Ученик не найден" });
+      if (payload.status !== undefined) await logStatusEvent(session, rows[0].id, rows[0].status, prevStatus, rows[0].branch_id);
       res.json({ student: rows[0] });
     } catch (error: any) {
       res.status(400).json({ error: error.message || "Не удалось обновить ученика" });

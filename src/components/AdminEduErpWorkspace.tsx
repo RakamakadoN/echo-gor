@@ -31,6 +31,7 @@ import {
   WalletCards
 } from "lucide-react";
 import { Announcement, AnnouncementAudience, AuditLog, Branch, Group, Hall, Payment, Student, Teacher } from "../types";
+import StudentManagementCard from "./StudentManagementCard";
 
 // --- Лёгкая система всплывающих уведомлений (toast) ---
 // Даёт видимый отклик кнопкам, у которых пока нет полноценного бэкенда,
@@ -576,12 +577,12 @@ function VisitorsView({ students, groups, branches, teachers, payments, search, 
         </section>
 
         {selectedStudent && (
-          <StudentDetailPanel
+          <StudentManagementCard
             student={selectedStudent}
             group={groups.find((group: Group) => group.id === (selectedStudent.groupIds?.[0] || (selectedStudent as any).groupId))}
             branch={branches.find((branch: Branch) => branch.id === selectedStudent.branchId)}
             teacher={teachers.find((teacher: Teacher) => teacher.id === selectedStudent.teacherId)}
-            payments={payments.filter((payment: Payment) => payment.studentId === selectedStudent.id)}
+            onClose={() => setSelectedStudentId("")}
             onEdit={canManage ? () => openEdit(selectedStudent) : undefined}
             onDelete={onDeleteStudent ? () => handleDelete(selectedStudent) : undefined}
             onOpenPayment={onOpenPayment ? () => onOpenPayment(selectedStudent) : undefined}

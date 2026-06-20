@@ -45,8 +45,11 @@ import {
 } from "lucide-react";
 import { Announcement, AnnouncementAudience, Branch, Competition, ExecutiveSummary, Group, Payment, Student, Teacher } from "../types";
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
+  LineChart as RLineChart, Line, Legend, AreaChart, Area
 } from "recharts";
+import StudentManagementCard from "./StudentManagementCard";
+import { computeOwnerDashboard, type DashFilters, type PeriodKey, type LevelKey, type DashExtras, type Delta } from "../ownerDashboardAnalytics";
 
 type StudentInput = { name?: string; branchId?: string; groupId?: string; teacherId?: string; parentName?: string; parentPhone?: string };
 type TrashStudent = { id: string; name: string; branchId: string; parentName: string; parentPhone: string; requestedBy: string; requestedAt: string; reason: string };
@@ -236,19 +239,16 @@ export function OwnerExecutiveWorkspace({
 
           {activeTab === "dashboard" && (
             <OwnerDashboard
-              branches={branchScorecards}
-              activeStudents={activeStudents}
-              newStudentsMonth={newStudentsMonth}
-              teachers={teachers}
-              groups={groups}
-              attendanceToday={metrics.overallAttendanceRate}
-              monthRevenue={monthRevenue}
-              todayRevenue={todayRevenue}
-              debt={debt}
-              renewals={renewals}
-              eventsCount={eventsCount}
-              churnRate={metrics.churnRate}
+              rawBranches={branches}
+              rawStudents={students}
+              rawGroups={groups}
+              rawTeachers={teachers}
+              rawPayments={payments}
+              branchScorecards={branchScorecards}
               onNavigate={(tab: OwnerTab) => setActiveTab(tab)}
+              onTriggerAiReport={onTriggerAiReport}
+              aiResult={aiResult}
+              aiGenerating={aiGenerating}
             />
           )}
           {activeTab === "eduerp" && <OwnerEduErpView branches={branches} groups={groups} students={students} teachers={teachers} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
@@ -291,212 +291,494 @@ export function OwnerExecutiveWorkspace({
   );
 }
 
-function OwnerDashboard({ branches, activeStudents, newStudentsMonth, teachers, groups, attendanceToday, monthRevenue, todayRevenue, debt, renewals, eventsCount, churnRate = 0, onNavigate }: any) {
+function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawPayments, branchScorecards, onNavigate, onTriggerAiReport, aiResult, aiGenerating }: any) {
   const go = (tab: string) => onNavigate?.(tab);
+  const [period, setPeriod] = useState<PeriodKey>("month");
+  const [level, setLevel] = useState<LevelKey>("network");
+  const [branchId, setBranchId] = useState<string>("");
+  const [groupId, setGroupId] = useState<string>("");
+  const [teacherId, setTeacherId] = useState<string>("");
+  const [customStart, setCustomStart] = useState<string>("");
+  const [customEnd, setCustomEnd] = useState<string>("");
+  const [extras, setExtras] = useState<DashExtras>({});
 
-  // --- Производные показатели из реальных данных ---
-  const branchList: any[] = Array.isArray(branches) ? branches : [];
-  const riskBranches = branchList.filter((b) => b.status === "warning" || b.status === "critical");
-  const healthyCount = branchList.filter((b) => b.status === "healthy").length;
-  const overloadedGroups = groups.filter((g: any) => (g.studentCount ?? 0) >= 16).length;
-  const retentionRate = Math.max(0, Math.round(100 - (churnRate || 0)));
-  const avgLoad = teachers.length ? Math.round(groups.length / teachers.length * 10) / 10 : 0;
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/mvp/owner/extras", { headers: { "x-demo-role": "owner" } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (alive && d) setExtras(d); })
+      .catch(() => {});
+    // Зафиксировать снапшот текущего месяца — накопление истории для YoY.
+    fetch("/api/mvp/owner/snapshot", { method: "POST", headers: { "x-demo-role": "owner" } }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
-  const sortedByRevenue = [...branchList].sort((a, b) => (b.revenue ?? 0) - (a.revenue ?? 0));
-  const topBranch = sortedByRevenue[0];
-  const worstAttendance = [...branchList].sort((a, b) => (a.attendanceRate ?? 0) - (b.attendanceRate ?? 0))[0];
+  const filters: DashFilters = { period, level, branchId, groupId, teacherId, customStart, customEnd };
+  const m = useMemo(
+    () => computeOwnerDashboard(
+      { students: rawStudents || [], payments: rawPayments || [], groups: rawGroups || [], branches: rawBranches || [], teachers: rawTeachers || [] },
+      filters, new Date(), extras
+    ),
+    [rawStudents, rawPayments, rawGroups, rawBranches, rawTeachers, period, level, branchId, groupId, teacherId, customStart, customEnd, extras]
+  );
+
+  const periods: { id: PeriodKey; label: string }[] = [
+    { id: "today", label: "Сегодня" }, { id: "yesterday", label: "Вчера" }, { id: "week", label: "Неделя" },
+    { id: "month", label: "Месяц" }, { id: "quarter", label: "Квартал" }, { id: "year", label: "Год" }, { id: "custom", label: "Период" }
+  ];
+  const levels: { id: LevelKey; label: string }[] = [
+    { id: "network", label: "Вся сеть" }, { id: "branch", label: "Филиал" }, { id: "group", label: "Группа" }, { id: "teacher", label: "Педагог" }
+  ];
 
   const now = new Date();
   const hour = now.getHours();
   const greeting = hour < 6 ? "Доброй ночи" : hour < 12 ? "Доброе утро" : hour < 18 ? "Добрый день" : "Добрый вечер";
-  const dateLabel = now.toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" });
-
-  // --- Приоритеты дня (только то, что действительно требует внимания) ---
-  const priorities: { tone: "rose" | "amber" | "gold"; icon: React.ElementType; title: string; sub: string; tab: string }[] = [];
-  if (debt > 0) priorities.push({ tone: "rose", icon: WalletCards, title: money(debt), sub: "задолженность учеников", tab: "finance" });
-  if (renewals > 0) priorities.push({ tone: "amber", icon: RefreshCw, title: `${renewals} продлений`, sub: "абонементы на исходе", tab: "students" });
-  if (riskBranches.length > 0) priorities.push({ tone: "amber", icon: AlertTriangle, title: `${riskBranches.length} ${riskBranches.length === 1 ? "филиал" : "филиала"} в зоне риска`, sub: riskBranches.map((b) => b.city).join(", "), tab: "branches" });
-  if (overloadedGroups > 0) priorities.push({ tone: "gold", icon: Users, title: `${overloadedGroups} групп перегружены`, sub: "16+ учеников — нужен набор педагогов", tab: "schedule" });
-
-  // --- Инсайты AI-брифа из реальных данных ---
-  const insights: { severity: string; text: string }[] = [];
-  if (topBranch) insights.push({ severity: "Лидер", text: `Филиал ${topBranch.city} даёт максимум выручки: ${money(topBranch.revenue)} и ${topBranch.attendanceRate}% посещаемости.` });
-  if (worstAttendance && worstAttendance.attendanceRate < 82) insights.push({ severity: "Риск", text: `В филиале ${worstAttendance.city} посещаемость ${worstAttendance.attendanceRate}% — ниже нормы, проверьте расписание и педагогов.` });
-  if (renewals > 0) insights.push({ severity: "Продления", text: `У ${renewals} учеников заканчиваются абонементы в ближайшие дни — самое время для звонка.` });
-  insights.push({ severity: "Удержание", text: `Retention сети ${retentionRate}%, отток ${(churnRate || 0).toFixed(1)}%. ${newStudentsMonth} новых за месяц.` });
-
-  const monthPlan = Math.round(monthRevenue * 1.35); // ориентир плана; прогресс к цели
-  const monthProgress = monthPlan ? Math.min(100, Math.round((monthRevenue / monthPlan) * 100)) : 0;
-
-  const quickActions = [
-    { icon: UserRound, label: "Добавить ученика", tab: "students" },
-    { icon: Building2, label: "Новый филиал", tab: "branches" },
-    { icon: Megaphone, label: "Объявление", tab: "announcements" },
-    { icon: Sparkles, label: "AI-отчёт", tab: "ai" }
-  ];
-
-  const chartData = sortedByRevenue.slice(0, 6).map((b) => ({ name: b.city, revenue: b.revenue ?? 0, status: b.status }));
-  const chartColor = (status: string) => (status === "critical" ? "#fb7185" : status === "warning" ? "#fbbf24" : "#C5A059");
 
   return (
     <div className="space-y-5">
-      {/* HERO */}
-      <section className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-gradient-to-br from-[#171717] via-[#101318] to-black p-5 md:p-7">
-        <div className="absolute right-[-80px] top-[-80px] h-80 w-80 rounded-full bg-[#C5A059]/10 blur-3xl" />
-        <div className="relative flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
-          <div className="min-w-0">
+      {/* 1. ФИЛЬТРЫ */}
+      <section className="rounded-[2rem] border border-white/10 bg-gradient-to-br from-[#171717] via-[#101318] to-black p-5 md:p-6">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+          <div>
             <p className="text-[10px] font-black uppercase tracking-[0.28em] text-[#C5A059]">{greeting}, владелец</p>
-            <h1 className="mt-2 text-3xl font-black text-white md:text-4xl">Сводка по сети</h1>
-            <p className="mt-2 text-sm capitalize text-slate-400">{dateLabel}</p>
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              {quickActions.map((a) => (
-                <button
-                  key={a.label}
-                  onClick={() => go(a.tab)}
-                  className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-3.5 py-2 text-xs font-bold text-slate-200 transition hover:border-[#C5A059]/40 hover:bg-[#C5A059]/10 hover:text-white"
-                >
-                  <a.icon className="h-4 w-4 text-[#C5A059]" />
-                  {a.label}
+            <h1 className="mt-1.5 text-2xl font-black text-white md:text-3xl">Главный экран сети</h1>
+            <p className="mt-1 text-sm text-slate-400">{m.scope.label} · {m.ranges.cur.label} · {m.scope.students} учеников</p>
+          </div>
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {periods.map((p) => (
+                <button key={p.id} onClick={() => setPeriod(p.id)}
+                  className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${period === p.id ? "bg-[#C5A059] text-black" : "border border-white/10 bg-white/[0.04] text-slate-300 hover:border-[#C5A059]/40"}`}>
+                  {p.label}
                 </button>
               ))}
             </div>
-          </div>
-          <div className="w-full shrink-0 rounded-[1.75rem] border border-[#C5A059]/25 bg-[#C5A059]/10 p-4 xl:w-[300px]">
-            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">Сводка за 30 секунд</p>
-            <div className="mt-3 grid grid-cols-2 gap-3">
-              <MiniMetric label="Сегодня" value={money(todayRevenue)} />
-              <MiniMetric label="Проблемы" value={priorities.length} />
-              <MiniMetric label="Филиалов ✓" value={`${healthyCount}/${branchList.length}`} />
-              <MiniMetric label="Удержание" value={`${retentionRate}%`} />
+            <div className="flex flex-wrap items-center gap-1.5">
+              {levels.map((l) => (
+                <button key={l.id} onClick={() => { setLevel(l.id); }}
+                  className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${level === l.id ? "bg-white/15 text-white ring-1 ring-[#C5A059]/40" : "border border-white/10 bg-white/[0.04] text-slate-400 hover:text-white"}`}>
+                  {l.label}
+                </button>
+              ))}
+              {level === "branch" && (
+                <FilterSelect value={branchId} onChange={setBranchId} placeholder="Выбрать филиал"
+                  options={(rawBranches || []).map((b: Branch) => ({ value: b.id, label: b.name || b.city }))} />
+              )}
+              {level === "group" && (
+                <FilterSelect value={groupId} onChange={setGroupId} placeholder="Выбрать группу"
+                  options={(rawGroups || []).map((g: Group) => ({ value: g.id, label: g.name }))} />
+              )}
+              {level === "teacher" && (
+                <FilterSelect value={teacherId} onChange={setTeacherId} placeholder="Выбрать педагога"
+                  options={(rawTeachers || []).map((t: Teacher) => ({ value: t.id, label: t.name }))} />
+              )}
             </div>
+            {period === "custom" && (
+              <div className="flex items-center gap-2">
+                <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)}
+                  className="rounded-xl border border-white/10 bg-black/40 px-2.5 py-1.5 text-xs text-slate-200" />
+                <span className="text-slate-500">—</span>
+                <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)}
+                  className="rounded-xl border border-white/10 bg-black/40 px-2.5 py-1.5 text-xs text-slate-200" />
+              </div>
+            )}
           </div>
         </div>
       </section>
 
-      {/* ПРИОРИТЕТЫ ДНЯ */}
-      {priorities.length > 0 ? (
-        <section>
-          <div className="mb-2 flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-[#C5A059]" />
-            <h2 className="text-sm font-black uppercase tracking-wider text-slate-300">Требуют внимания сегодня</h2>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {priorities.map((p, i) => <PriorityCard key={i} tone={p.tone} icon={p.icon} title={p.title} sub={p.sub} onClick={() => go(p.tab)} />)}
-          </div>
-        </section>
+      {/* 2. ОСНОВНЫЕ ПОКАЗАТЕЛИ */}
+      <SectionTitle icon={BarChart3} title="Основные показатели" />
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <BigKpi label="Выручка" value={money(m.revenue.total)} onClick={() => go("finance")}
+          rows={[
+            { k: "К пред. периоду", v: <DeltaBadge pct={m.revenue.momPct} /> },
+            { k: "Год к году", v: <DeltaBadge pct={m.revenue.yoyPct} /> },
+            { k: "Сегодня / вчера", v: <span className="text-slate-200">{money(m.revenue.today)} / {money(m.revenue.yesterday)}</span> },
+            { k: "Новые / пост. / верн.", v: <span className="text-slate-200 text-[11px]">{money(m.revenue.new)} · {money(m.revenue.regular)} · {money(m.revenue.returning)}</span> }
+          ]} />
+        <BigKpi label="Активные абонементы" value={m.activeSubs.count} onClick={() => go("students")}
+          rows={[
+            { k: "К пред. месяцу", v: <DeltaBadge pct={m.activeSubs.momPct} /> },
+            { k: "Год к году", v: <DeltaBadge pct={m.activeSubs.yoyPct} /> }
+          ]} />
+        <BigKpi label="Заполняемость" value={m.occupancy.pct === null ? "—" : `${m.occupancy.pct}%`} onClick={() => go("schedule")}
+          rows={[
+            { k: "Мест занято", v: <span className="text-slate-200">{m.occupancy.filled} / {m.occupancy.capacity || "—"}</span> },
+            ...(m.occupancy.byBranch.slice(0, 2).map((b) => ({ k: b.name, v: <span className="text-slate-300">{b.pct === null ? "—" : b.pct + "%"}</span> })))
+          ]} />
+        <BigKpi label="Удержание (мес→мес)" value={m.retention.pct === null ? "—" : `${m.retention.pct}%`} onClick={() => go("analytics")}
+          rows={[
+            { k: "Активны / всего", v: <span className="text-slate-200">{m.retention.activeStudents} / {m.retention.totalStudents}</span> },
+            { k: "К пред. месяцу", v: <DeltaBadge pct={m.retention.momPct} /> },
+            { k: "Год к году", v: <DeltaBadge pct={m.retention.yoyPct} /> }
+          ]} />
+      </div>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <BigKpi label="Средний чек" value={m.avgCheck.all === null ? "—" : money(m.avgCheck.all)} onClick={() => go("finance")}
+          rows={[
+            { k: "Новые", v: <span className="text-slate-200">{m.avgCheck.new === null ? "—" : money(m.avgCheck.new)}</span> },
+            { k: "Постоянные", v: <span className="text-slate-200">{m.avgCheck.regular === null ? "—" : money(m.avgCheck.regular)}</span> },
+            { k: "Вернувшиеся", v: <span className="text-slate-200">{m.avgCheck.returning === null ? "—" : money(m.avgCheck.returning)}</span> },
+            { k: "К пред. периоду", v: <DeltaBadge pct={m.avgCheck.momPct} /> }
+          ]} />
+        <BigKpi label="Должники" value={m.debtors.total} tone={m.debtors.total > 0 ? "rose" : "emerald"} onClick={() => go("finance")}
+          rows={m.debtors.aging
+            ? [
+                { k: "1–7 дней", v: <span className="text-slate-200">{m.debtors.aging.d1_7}</span> },
+                { k: "8–14 дней", v: <span className="text-slate-200">{m.debtors.aging.d8_14}</span> },
+                { k: "> 14 дней", v: <span className="text-slate-200">{m.debtors.aging.d14plus}</span> }
+              ]
+            : [
+                { k: "Сумма долга", v: <span className="text-slate-200">{m.debtors.debtAmount ? money(m.debtors.debtAmount) : "—"}</span> },
+                { k: "Разбивка по дням", v: <span className="text-slate-500 text-[11px]">накапливается</span> }
+              ]} />
+        <BigKpi label="Записи на будущее" value={m.futureEnrollments.total} onClick={() => go("students")}
+          rows={[
+            ...(m.futureEnrollments.byBranch.slice(0, 2).map((b) => ({ k: b.name, v: <span className="text-slate-200">{b.n}</span> }))),
+            { k: m.futureEnrollments.isProxy ? "Лиды + пробные (прокси)" : "По возрастам", v: <span className="text-slate-500 text-[11px]">{m.futureEnrollments.byAge.map((a) => `${a.label}:${a.n}`).join(" ") || "—"}</span> }
+          ]} />
+        <BigKpi label="Новые ученики" value={m.newStudents.hasData ? m.newStudents.period : "—"} tone="gold" onClick={() => go("students")}
+          rows={[
+            { k: "Сегодня", v: <span className="text-slate-200">{m.newStudents.hasData ? m.newStudents.today : "—"}</span> },
+            { k: "За период", v: <span className="text-slate-200">{m.newStudents.hasData ? m.newStudents.period : "нет данных"}</span> }
+          ]} />
+      </div>
+
+      {/* 3. РИСКИ */}
+      <SectionTitle icon={AlertTriangle} title="Риски" hint="Что требует решения прямо сейчас" />
+      {m.risks.length > 0 ? (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {m.risks.map((r) => <RiskTile key={r.id} severity={r.severity} title={r.title} detail={r.detail} onClick={() => go("branches")} />)}
+        </div>
       ) : (
-        <section className="flex items-center gap-3 rounded-3xl border border-emerald-500/20 bg-emerald-500/10 p-4">
+        <div className="flex items-center gap-3 rounded-3xl border border-emerald-500/20 bg-emerald-500/10 p-4">
           <CheckCircle className="h-6 w-6 text-emerald-400" />
-          <p className="text-sm font-bold text-emerald-200">Всё под контролем — острых задач по сети нет.</p>
-        </section>
+          <p className="text-sm font-bold text-emerald-200">Острых рисков нет — показатели в норме.</p>
+        </div>
       )}
-
-      {/* ПЕРВИЧНЫЕ KPI */}
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <OwnerKpi label="Выручка сегодня" value={money(todayRevenue)} tone="gold" icon={Coins} detail={`${newStudentsMonth} новых учеников за месяц`} onClick={() => go("finance")} />
-        <section className="rounded-3xl border border-[#C5A059]/20 bg-[#161616] p-4 transition hover:border-[#C5A059]/40 cursor-pointer" onClick={() => go("finance")}>
-          <div className="flex items-center justify-between">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Выручка месяца</p>
-            <TrendingUp className="h-4 w-4 text-[#C5A059]" />
-          </div>
-          <p className="mt-2 text-2xl font-black text-[#C5A059]">{money(monthRevenue)}</p>
-          <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-            <div className="h-full rounded-full bg-[#C5A059]" style={{ width: `${monthProgress}%` }} />
-          </div>
-          <p className="mt-1 text-xs text-slate-500">{monthProgress}% к ориентиру плана</p>
-        </section>
-        <OwnerKpi label="Активные ученики" value={activeStudents} tone="white" icon={Users} detail={`+${newStudentsMonth} за месяц`} onClick={() => go("students")} />
-        <OwnerKpi label="Посещаемость сегодня" value={`${attendanceToday}%`} tone={attendanceToday >= 82 ? "emerald" : "rose"} icon={Activity} detail={attendanceToday >= 82 ? "норма выдержана" : "ниже целевых 82%"} onClick={() => go("analytics")} />
+      <div className="grid gap-3 sm:grid-cols-3">
+        <RenewCard days="3 дня" n={m.renewals.d3} tone="rose" />
+        <RenewCard days="7 дней" n={m.renewals.d7} tone="amber" />
+        <RenewCard days="14 дней" n={m.renewals.d14} tone="gold" />
       </div>
 
-      {/* ВТОРИЧНЫЕ KPI */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-        <OwnerKpi label="Филиалы" value={branchList.length} tone="white" detail={`${healthyCount} в норме`} onClick={() => go("branches")} compact />
-        <OwnerKpi label="Преподаватели" value={teachers.length} tone="white" detail={`${avgLoad} групп/чел`} onClick={() => go("teachers")} compact />
-        <OwnerKpi label="Группы" value={groups.length} tone="white" detail={overloadedGroups > 0 ? `${overloadedGroups} перегружены` : "загрузка в норме"} onClick={() => go("schedule")} compact />
-        <OwnerKpi label="Долги" value={money(debt)} tone={debt > 0 ? "rose" : "emerald"} detail={`${renewals} продлений`} onClick={() => go("finance")} compact />
-        <OwnerKpi label="Концерты" value={eventsCount} tone="emerald" detail="на сцене" onClick={() => go("events")} compact />
-        <OwnerKpi label="Удержание" value={`${retentionRate}%`} tone="emerald" detail={`отток ${(churnRate || 0).toFixed(1)}%`} onClick={() => go("analytics")} compact />
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[1fr_0.9fr]">
-        {/* AI BRIEF */}
-        <section className="rounded-[2rem] border border-[#C5A059]/20 bg-[#C5A059]/10 p-5">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-start gap-3">
-              <div className="rounded-2xl bg-[#C5A059] p-3 text-black"><Sparkles className="h-5 w-5" /></div>
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">AI Executive Brief</p>
-                <h2 className="mt-1 text-xl font-black text-white">{riskBranches.length > 0 ? `Сеть растёт, ${riskBranches.length} ${riskBranches.length === 1 ? "филиал требует" : "филиала требуют"} внимания` : "Сеть в здоровом состоянии"}</h2>
-              </div>
-            </div>
-            <button onClick={() => go("ai")} className="hidden shrink-0 items-center gap-1 rounded-2xl border border-[#C5A059]/30 bg-black/20 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-[#C5A059] transition hover:bg-[#C5A059] hover:text-black sm:inline-flex">
-              Полный отчёт <ArrowRight className="h-3.5 w-3.5" />
-            </button>
-          </div>
-          <div className="mt-5 grid gap-3 md:grid-cols-2">
-            {insights.map((ins, i) => <Insight key={i} severity={ins.severity} text={ins.text} />)}
-          </div>
-        </section>
-
-        {/* КАРТА ФИЛИАЛОВ */}
-        <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-black text-white">Карта филиалов</h2>
-            <button onClick={() => go("branches")} className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-[#C5A059] transition hover:text-white">
-              Все <ChevronRight className="h-3.5 w-3.5" />
-            </button>
-          </div>
-          <div className="mt-3 flex items-center gap-4 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-            <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-400" />Норма</span>
-            <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-amber-400" />Внимание</span>
-            <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-rose-500" />Риск</span>
-          </div>
-          <div className="mt-3 space-y-2.5">
-            {sortedByRevenue.map((branch: any) => (
-              <button key={branch.branchId} onClick={() => go("branches")} className="w-full text-left">
-                <BranchRow branch={branch} />
-              </button>
-            ))}
-          </div>
-        </section>
-      </div>
-
-      {/* ВЫРУЧКА ПО ФИЛИАЛАМ */}
-      {chartData.length > 0 && (
-        <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-black text-white">Выручка по филиалам</h2>
-            <button onClick={() => go("analytics")} className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-[#C5A059] transition hover:text-white">
-              Аналитика <ChevronRight className="h-3.5 w-3.5" />
-            </button>
-          </div>
-          <div className="mt-4 h-56 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
-                <XAxis dataKey="name" tick={{ fill: "#94a3b8", fontSize: 11, fontWeight: 700 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => `${Math.round(v / 1000)}к`} width={36} />
-                <Tooltip
-                  cursor={{ fill: "rgba(197,160,89,0.08)" }}
-                  contentStyle={{ background: "#161616", border: "1px solid rgba(197,160,89,0.3)", borderRadius: 12, color: "#fff", fontSize: 12 }}
-                  formatter={(v: any) => [money(Number(v)), "Выручка"]}
-                />
-                <Bar dataKey="revenue" radius={[8, 8, 0, 0]} maxBarSize={56}>
-                  {chartData.map((entry, i) => <Cell key={i} fill={chartColor(entry.status)} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </section>
-      )}
-
-      {/* ИТОГОВЫЕ ПАНЕЛИ — кликабельные */}
+      {/* 4. ВОРОНКА ПРОДАЖ */}
+      <SectionTitle icon={Filter} title="Воронка продаж" />
       <div className="grid gap-4 xl:grid-cols-3">
-        <ExecutivePanel icon={<WalletCards />} title="Финансовая динамика" text={`Выручка месяца ${money(monthRevenue)}, ${monthProgress}% к плану, удержание ${retentionRate}%.`} onClick={() => go("finance")} />
-        <ExecutivePanel icon={<AlertTriangle />} title="Требуют внимания" text={priorities.length > 0 ? priorities.map((p) => p.title).join(" • ") : "Острых проблем нет — сеть стабильна."} onClick={() => go("branches")} />
-        <ExecutivePanel icon={<TrendingUp />} title="Точки роста" text={`${overloadedGroups > 0 ? `Открыть группы там, где перегруз (${overloadedGroups}). ` : ""}Усилить набор: ${newStudentsMonth} новых за месяц.`} onClick={() => go("analytics")} />
+        <FunnelDayCard title="Сегодня" data={m.funnel.today} />
+        <FunnelDayCard title="Вчера" data={m.funnel.yesterday} />
+        <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+          <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">За текущий месяц</p>
+          <div className="mt-3 space-y-2.5">
+            <FunnelStage label="Лиды" n={m.funnel.month.leads} conv={null} />
+            <FunnelStage label="Записались" n={m.funnel.month.signed} conv={m.funnel.month.convSigned} />
+            <FunnelStage label="Пришли" n={m.funnel.month.came} conv={m.funnel.month.convCame} />
+            <FunnelStage label="Купили" n={m.funnel.month.bought} conv={m.funnel.month.convBought} />
+          </div>
+          <p className="mt-3 text-[11px] text-slate-500">Этапы оцениваются по статусам учеников; точная дневная воронка накапливается из событий.</p>
+        </section>
       </div>
+
+      {/* 5. ГРАФИКИ */}
+      <SectionTitle icon={LineChart} title="Графики" />
+      <div className="grid gap-4 xl:grid-cols-2">
+        <ChartCard title="Выручка по месяцам" subtitle="текущий и прошлый год">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={m.charts.revenueByMonth} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+              <XAxis dataKey="month" tick={{ fill: "#94a3b8", fontSize: 10 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => `${Math.round(v / 1000)}к`} width={36} />
+              <Tooltip contentStyle={tooltipStyle} formatter={(v: any, n: any) => [money(Number(v)), n === "cur" ? "Тек. год" : "Прош. год"]} />
+              <Legend formatter={(v) => (v === "cur" ? "Тек. год" : "Прош. год")} wrapperStyle={{ fontSize: 11 }} />
+              <Bar dataKey="cur" fill="#C5A059" radius={[6, 6, 0, 0]} maxBarSize={22} />
+              <Bar dataKey="prev" fill="#3f3f46" radius={[6, 6, 0, 0]} maxBarSize={22} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+        <ChartCard title="Средний чек по месяцам" subtitle="текущий и прошлый год">
+          <ResponsiveContainer width="100%" height="100%">
+            <RLineChart data={m.charts.avgCheckByMonth} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+              <XAxis dataKey="month" tick={{ fill: "#94a3b8", fontSize: 10 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => `${Math.round(v / 1000)}к`} width={36} />
+              <Tooltip contentStyle={tooltipStyle} formatter={(v: any, n: any) => [money(Number(v)), n === "cur" ? "Тек. год" : "Прош. год"]} />
+              <Line type="monotone" dataKey="cur" stroke="#C5A059" strokeWidth={2.5} dot={false} connectNulls />
+              <Line type="monotone" dataKey="prev" stroke="#52525b" strokeWidth={2} dot={false} connectNulls />
+            </RLineChart>
+          </ResponsiveContainer>
+        </ChartCard>
+        <ChartCard title="Активные абонементы по месяцам" subtitle="накапливается из снапшотов" empty={m.charts.subsByMonth.every((p) => p.value === null)}>
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={m.charts.subsByMonth} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+              <XAxis dataKey="month" tick={{ fill: "#94a3b8", fontSize: 10 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} width={28} />
+              <Tooltip contentStyle={tooltipStyle} formatter={(v: any) => [v, "Абонементы"]} />
+              <Area type="monotone" dataKey="value" stroke="#C5A059" fill="#C5A059" fillOpacity={0.15} strokeWidth={2.5} connectNulls />
+            </AreaChart>
+          </ResponsiveContainer>
+        </ChartCard>
+        <ChartCard title="Удержание по дням" subtitle="за последние 30 дней (по посещаемости)" empty={!m.charts.retentionByDay}>
+          <ResponsiveContainer width="100%" height="100%">
+            <RLineChart data={m.charts.retentionByDay || []} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+              <XAxis dataKey="day" tick={{ fill: "#94a3b8", fontSize: 9 }} axisLine={false} tickLine={false} interval={4} />
+              <YAxis tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} domain={[0, 100]} width={30} tickFormatter={(v) => `${v}%`} />
+              <Tooltip contentStyle={tooltipStyle} formatter={(v: any) => [`${v}%`, "Посещаемость"]} />
+              <Line type="monotone" dataKey="value" stroke="#34d399" strokeWidth={2.5} dot={false} connectNulls />
+            </RLineChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      </div>
+
+      {/* 6. AI EXECUTIVE BRIEF */}
+      <section className="rounded-[2rem] border border-[#C5A059]/20 bg-[#C5A059]/10 p-5">
+        <div className="flex items-start gap-3">
+          <div className="rounded-2xl bg-[#C5A059] p-3 text-black"><Sparkles className="h-5 w-5" /></div>
+          <div className="min-w-0">
+            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">AI Executive Brief · Итоги за 30 секунд</p>
+            <ul className="mt-3 space-y-1.5">
+              {m.brief.map((t, i) => <li key={i} className="flex gap-2 text-sm text-slate-100"><span className="text-[#C5A059]">•</span><span>{t}</span></li>)}
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      {/* 7 + 8. ТРЕБУЮТ ВНИМАНИЯ + ТОЧКИ РОСТА */}
+      <div className="grid gap-4 xl:grid-cols-2">
+        <ListPanel icon={AlertTriangle} tone="rose" title="Требуют внимания" items={m.attention} />
+        <ListPanel icon={TrendingUp} tone="emerald" title="Точки роста" items={m.growth} />
+      </div>
+
+      {/* 10. РЕЙТИНГИ */}
+      <SectionTitle icon={Trophy} title="Рейтинги" hint="Топ-5" />
+      <div className="grid gap-4 xl:grid-cols-3">
+        <RatingCard title="Филиалы" onClick={() => go("branches")}
+          rows={m.ratings.branches.map((b) => ({ name: b.name, main: money(b.revenue), sub: `удерж. ${b.retention ?? "—"}% · чек ${b.avgCheck ? money(b.avgCheck) : "—"}`, delta: b.growthPct }))} />
+        <RatingCard title="Педагоги" onClick={() => go("teachers")}
+          rows={m.ratings.teachers.map((t) => ({ name: t.name, main: `${t.students} уч.`, sub: `удерж. ${t.retention ?? "—"}% · ${money(t.revenue)}`, delta: null }))} />
+        <RatingCard title="Группы" onClick={() => go("schedule")}
+          rows={m.ratings.groups.map((g) => ({ name: g.name, main: money(g.revenue), sub: `запол. ${g.occupancy ?? "—"}% · удерж. ${g.retention ?? "—"}%`, delta: null }))} />
+      </div>
+
+      {/* 11. AI-АНАЛИЗ МЕСЯЦА */}
+      <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+        <div className="flex items-center justify-between gap-3">
+          <SectionTitle icon={FileText} title="AI-анализ месяца" hint="Финансы · продажи · удержание · заполняемость · проблемы · рекомендации" inline />
+          <button onClick={() => onTriggerAiReport?.()} disabled={aiGenerating}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-2xl border border-[#C5A059]/30 bg-[#C5A059]/10 px-3.5 py-2 text-[11px] font-black uppercase tracking-wider text-[#C5A059] transition hover:bg-[#C5A059] hover:text-black disabled:opacity-50">
+            <Sparkles className="h-3.5 w-3.5" /> {aiGenerating ? "Генерация…" : "Сформировать (Gemini)"}
+          </button>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <AnalysisBlock title="Финансы" lines={[
+            `Выручка: ${money(m.revenue.total)}`,
+            `К пред. периоду: ${m.revenue.momPct === null ? "нет данных" : m.revenue.momPct + "%"}`,
+            `Год к году: ${m.revenue.yoyPct === null ? "нет данных" : m.revenue.yoyPct + "%"}`,
+            `Средний чек: ${m.avgCheck.all === null ? "—" : money(m.avgCheck.all)}`
+          ]} />
+          <AnalysisBlock title="Продажи" lines={[
+            `Новые ученики: ${m.newStudents.hasData ? m.newStudents.period : "нет данных"}`,
+            `Воронка: ${m.funnel.month.leads}→${m.funnel.month.signed}→${m.funnel.month.came}→${m.funnel.month.bought}`,
+            `Конверсия в покупку: ${m.funnel.month.convBought === null ? "—" : m.funnel.month.convBought + "%"}`
+          ]} />
+          <AnalysisBlock title="Удержание" lines={[
+            `Удержание: ${m.retention.pct === null ? "—" : m.retention.pct + "%"}`,
+            `Отток: ${m.retention.pct === null ? "—" : (100 - m.retention.pct) + "%"}`,
+            `Активны: ${m.retention.activeStudents} из ${m.retention.totalStudents}`
+          ]} />
+          <AnalysisBlock title="Заполняемость" lines={[
+            `Загрузка: ${m.occupancy.pct === null ? "—" : m.occupancy.pct + "%"}`,
+            `Перегруженные: ${m.risks.filter((r) => r.id === "overload").length ? "есть" : "нет"}`,
+            `Полупустые: ${m.risks.filter((r) => r.id === "empty").length ? "есть" : "нет"}`
+          ]} />
+          <AnalysisBlock title="Лучшие показатели" lines={[
+            `Педагог: ${m.ratings.teachers[0]?.name || "—"}`,
+            `Группа: ${m.ratings.groups[0]?.name || "—"}`,
+            `Филиал: ${m.ratings.branches[0]?.name || "—"}`
+          ]} />
+          <AnalysisBlock title="Проблемы и рекомендации" lines={[
+            ...(m.attention.slice(0, 2)),
+            ...(m.growth.slice(0, 2))
+          ]} />
+        </div>
+        {aiResult?.executiveSummary && (
+          <div className="mt-4 rounded-2xl border border-[#C5A059]/20 bg-black/30 p-4">
+            <p className="text-[10px] font-black uppercase tracking-wider text-[#C5A059]">Gemini</p>
+            <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-200">{aiResult.executiveSummary}</p>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+// ---------- презентационные компоненты дашборда ----------
+const tooltipStyle = { background: "#161616", border: "1px solid rgba(197,160,89,0.3)", borderRadius: 12, color: "#fff", fontSize: 12 } as const;
+
+function FilterSelect({ value, onChange, options, placeholder }: { value: string; onChange: (v: string) => void; options: { value: string; label: string }[]; placeholder: string }) {
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)}
+      className="rounded-xl border border-[#C5A059]/30 bg-black/40 px-3 py-1.5 text-xs font-bold text-slate-100 outline-none">
+      <option value="">{placeholder}</option>
+      {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+    </select>
+  );
+}
+
+function SectionTitle({ icon: Icon, title, hint, inline }: { icon: React.ElementType; title: string; hint?: string; inline?: boolean }) {
+  return (
+    <div className={inline ? "flex items-center gap-2" : "mt-1 flex items-center gap-2"}>
+      <Icon className="h-4 w-4 text-[#C5A059]" />
+      <h2 className="text-sm font-black uppercase tracking-wider text-slate-200">{title}</h2>
+      {hint && <span className="hidden text-xs text-slate-500 sm:inline">· {hint}</span>}
+    </div>
+  );
+}
+
+function DeltaBadge({ pct, invert = false }: { pct: number | null; invert?: boolean }) {
+  if (pct === null || pct === undefined) return <span className="text-[11px] text-slate-500">нет данных</span>;
+  const good = invert ? pct <= 0 : pct >= 0;
+  const Icon = pct >= 0 ? ArrowUpRight : ArrowDownRight;
+  return (
+    <span className={`inline-flex items-center gap-0.5 text-xs font-bold ${good ? "text-emerald-400" : "text-rose-400"}`}>
+      <Icon className="h-3.5 w-3.5" />{Math.abs(pct)}%
+    </span>
+  );
+}
+
+function BigKpi({ label, value, rows, tone = "gold", onClick }: { label: string; value: React.ReactNode; rows: { k: string; v: React.ReactNode }[]; tone?: "gold" | "white" | "rose" | "emerald"; onClick?: () => void }) {
+  const valColor = tone === "rose" ? "text-rose-400" : tone === "emerald" ? "text-emerald-400" : tone === "white" ? "text-white" : "text-[#C5A059]";
+  return (
+    <section onClick={onClick} className="cursor-pointer rounded-[1.75rem] border border-white/10 bg-[#141414] p-4 transition hover:border-[#C5A059]/40">
+      <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{label}</p>
+      <p className={`mt-1.5 text-2xl font-black ${valColor}`}>{value}</p>
+      <div className="mt-3 space-y-1.5 border-t border-white/5 pt-3">
+        {rows.map((r, i) => (
+          <div key={i} className="flex items-center justify-between gap-2">
+            <span className="truncate text-[11px] text-slate-500">{r.k}</span>
+            <span className="shrink-0 text-xs font-bold">{r.v}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function RiskTile({ severity, title, detail, onClick }: { key?: React.Key; severity: "high" | "mid" | "low"; title: string; detail: string; onClick?: () => void }) {
+  const styles = severity === "high" ? "border-rose-500/30 bg-rose-500/10" : severity === "mid" ? "border-amber-400/30 bg-amber-400/10" : "border-white/10 bg-white/[0.03]";
+  const dot = severity === "high" ? "bg-rose-500" : severity === "mid" ? "bg-amber-400" : "bg-slate-500";
+  return (
+    <button onClick={onClick} className={`flex items-start gap-3 rounded-2xl border p-4 text-left transition hover:brightness-125 ${styles}`}>
+      <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${dot}`} />
+      <div className="min-w-0">
+        <p className="text-sm font-black text-white">{title}</p>
+        <p className="mt-0.5 text-xs text-slate-400">{detail}</p>
+      </div>
+    </button>
+  );
+}
+
+function RenewCard({ days, n, tone }: { days: string; n: number; tone: "rose" | "amber" | "gold" }) {
+  const c = tone === "rose" ? "text-rose-400" : tone === "amber" ? "text-amber-400" : "text-[#C5A059]";
+  return (
+    <div className="rounded-2xl border border-white/10 bg-[#141414] p-4">
+      <div className="flex items-center gap-2 text-slate-400"><RefreshCw className="h-4 w-4" /><span className="text-xs font-bold uppercase tracking-wider">Продление за {days}</span></div>
+      <p className={`mt-2 text-3xl font-black ${c}`}>{n}</p>
+      <p className="text-[11px] text-slate-500">учеников к продлению</p>
+    </div>
+  );
+}
+
+function FunnelDayCard({ title, data }: { title: string; data: { leads: number; trialBooked: number; trialCame: number; bought: number } | null }) {
+  return (
+    <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+      <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">{title}</p>
+      {data ? (
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          <MiniMetric label="Лиды" value={data.leads} />
+          <MiniMetric label="Запись на пробный" value={data.trialBooked} />
+          <MiniMetric label="Пришли на пробный" value={data.trialCame} />
+          <MiniMetric label="Купили впервые" value={data.bought} />
+        </div>
+      ) : (
+        <p className="mt-4 text-sm text-slate-500">Накапливается из событий статусов.</p>
+      )}
+    </section>
+  );
+}
+
+function FunnelStage({ label, n, conv }: { label: string; n: number; conv: number | null }) {
+  return (
+    <div className="flex items-center justify-between rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2">
+      <span className="text-sm font-bold text-slate-200">{label}</span>
+      <span className="flex items-center gap-3">
+        <span className="text-base font-black text-white">{n}</span>
+        {conv !== null && <span className="rounded-lg bg-[#C5A059]/15 px-2 py-0.5 text-[11px] font-bold text-[#C5A059]">{conv}%</span>}
+      </span>
+    </div>
+  );
+}
+
+function ChartCard({ title, subtitle, children, empty }: { title: string; subtitle?: string; children: React.ReactNode; empty?: boolean }) {
+  return (
+    <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+      <h3 className="text-base font-black text-white">{title}</h3>
+      {subtitle && <p className="text-[11px] text-slate-500">{subtitle}</p>}
+      <div className="relative mt-3 h-56 w-full">
+        {empty && <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-black/30 text-xs text-slate-500">Данные накапливаются</div>}
+        {children}
+      </div>
+    </section>
+  );
+}
+
+function ListPanel({ icon: Icon, tone, title, items }: { icon: React.ElementType; tone: "rose" | "emerald"; title: string; items: string[] }) {
+  const c = tone === "rose" ? "text-rose-400" : "text-emerald-400";
+  return (
+    <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+      <div className={`flex items-center gap-2 ${c}`}><Icon className="h-4 w-4" /><h2 className="text-sm font-black uppercase tracking-wider">{title}</h2></div>
+      <ul className="mt-3 space-y-2">
+        {items.map((t, i) => <li key={i} className="flex gap-2 text-sm text-slate-200"><span className={c}>•</span><span>{t}</span></li>)}
+      </ul>
+    </section>
+  );
+}
+
+function RatingCard({ title, rows, onClick }: { title: string; rows: { name: string; main: string; sub: string; delta: number | null }[]; onClick?: () => void }) {
+  return (
+    <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+      <div className="flex items-center justify-between">
+        <h3 className="text-base font-black text-white">{title}</h3>
+        <button onClick={onClick} className="text-[10px] font-black uppercase tracking-wider text-[#C5A059] hover:text-white">Все ›</button>
+      </div>
+      <div className="mt-3 space-y-2">
+        {rows.length === 0 && <p className="text-sm text-slate-500">Нет данных</p>}
+        {rows.map((r, i) => (
+          <div key={i} className="flex items-center gap-3 rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-[#C5A059]/15 text-xs font-black text-[#C5A059]">{i + 1}</span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-bold text-white">{r.name}</p>
+              <p className="truncate text-[11px] text-slate-500">{r.sub}</p>
+            </div>
+            <div className="shrink-0 text-right">
+              <p className="text-sm font-black text-[#C5A059]">{r.main}</p>
+              {r.delta !== null && <DeltaBadge pct={r.delta} />}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AnalysisBlock({ title, lines }: { title: string; lines: string[] }) {
+  return (
+    <div className="rounded-2xl border border-white/5 bg-white/[0.03] p-4">
+      <p className="text-[10px] font-black uppercase tracking-wider text-[#C5A059]">{title}</p>
+      <ul className="mt-2 space-y-1">
+        {lines.filter(Boolean).map((l, i) => <li key={i} className="text-xs text-slate-300">{l}</li>)}
+      </ul>
     </div>
   );
 }
@@ -948,40 +1230,15 @@ function OwnerEduErpView({ branches, groups, students, teachers, payments, month
         </section>
 
         {selectedStudent && (
-          <aside className="rounded-[2rem] border border-[#C5A059]/20 bg-gradient-to-br from-[#171717] to-[#0A0A0A] p-5 xl:sticky xl:top-5 xl:self-start">
-            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">Карточка посетителя EduERP</p>
-            <h3 className="mt-1 text-2xl font-black text-white">{selectedStudent.name}</h3>
-            <p className="mt-1 text-sm text-slate-400">{selectedBranch?.city || "Филиал"} / {selectedGroup?.name || "Группа"}</p>
-            <div className="mt-5 grid grid-cols-2 gap-2">
-              <MiniMetric label="Баланс" value={money(selectedStudent.balance)} />
-              <MiniMetric label="Занятий" value={`${selectedSubscription?.lessonsLeft ?? 0}/${selectedSubscription?.lessonsTotal ?? 0}`} />
-              <MiniMetric label="Преподаватель" value={selectedTeacher?.name?.split(" ")[0] || "Нет"} />
-              <MiniMetric label="Статус" value={selectedStudent.balance < 0 ? "Долг" : "ОК"} />
-            </div>
-            <div className="mt-5 grid gap-3">
-              <OwnerMiniTable
-                title="Счета"
-                headers={["Номер", "Сумма", "Статус"]}
-                rows={[["INV-06", money(Math.max(0, 45000 + selectedStudent.balance)), selectedStudent.balance < 0 ? "К отправке" : "Оплачен"], ["INV-05", money(45000), "Оплачен"]]}
-              />
-              <OwnerMiniTable
-                title="Баланс"
-                headers={["Операция", "Расход", "Приход"]}
-                rows={[["Абонемент", selectedStudent.balance < 0 ? money(Math.abs(selectedStudent.balance)) : "0 ₸", selectedStudent.balance > 0 ? money(selectedStudent.balance) : "0 ₸"], ["Корректировка", "0 ₸", "0 ₸"]]}
-              />
-              <OwnerMiniTable
-                title="Задачи и рассылки"
-                headers={["Тип", "Дедлайн", "Статус"]}
-                rows={[["Проверить продление", "08.06.2026", selectedStudent.balance < 0 ? "Срочно" : "План"], ["SMS счет", "Сегодня", selectedStudent.balance < 0 ? "Готов" : "Не нужен"]]}
-              />
-            </div>
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              <OwnerAction icon={Receipt} label="Счет" primary />
-              <OwnerAction icon={Send} label="Рассылка" />
-              <OwnerAction icon={CheckCircle} label="Задача" />
-              <OwnerAction icon={FileText} label="История" />
-            </div>
-          </aside>
+          <div className="xl:sticky xl:top-5 xl:self-start">
+            <StudentManagementCard
+              student={selectedStudent}
+              group={selectedGroup}
+              branch={selectedBranch}
+              teacher={selectedTeacher}
+              onClose={() => setSelectedStudentId("")}
+            />
+          </div>
         )}
       </div>
 
