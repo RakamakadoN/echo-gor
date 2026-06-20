@@ -30,7 +30,55 @@ import {
   Users,
   WalletCards
 } from "lucide-react";
-import { Announcement, AuditLog, Branch, Group, Hall, Payment, Student, Teacher } from "../types";
+import { Announcement, AnnouncementAudience, AuditLog, Branch, Group, Hall, Payment, Student, Teacher } from "../types";
+
+// --- Лёгкая система всплывающих уведомлений (toast) ---
+// Даёт видимый отклик кнопкам, у которых пока нет полноценного бэкенда,
+// чтобы интерфейс не выглядел «сломанным».
+let toastHandler: ((message: string) => void) | null = null;
+function notify(message: string) {
+  if (toastHandler) toastHandler(message);
+  else if (typeof window !== "undefined") console.info("[EduErp]", message);
+}
+
+function ToastHost() {
+  const [toasts, setToasts] = useState<{ id: number; message: string }[]>([]);
+  useEffect(() => {
+    toastHandler = (message: string) => {
+      const id = Date.now() + Math.random();
+      setToasts((prev) => [...prev, { id, message }]);
+      setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 2800);
+    };
+    return () => { toastHandler = null; };
+  }, []);
+  return (
+    <div className="pointer-events-none fixed bottom-5 right-5 z-[200] flex flex-col gap-2">
+      {toasts.map((t) => (
+        <div key={t.id} className="pointer-events-auto rounded-2xl border border-[#C5A059]/30 bg-[#161616] px-4 py-3 text-sm font-bold text-slate-100 shadow-xl shadow-black/50">
+          {t.message}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Экспорт произвольной таблицы в CSV (открывается в Excel/Numbers).
+function exportCsv(filename: string, headers: string[], rows: (string | number)[][]) {
+  const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
+  const csv = [headers, ...rows].map((row) => row.map(esc).join(",")).join("\r\n");
+  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+  notify(`Экспорт готов: ${filename}`);
+}
+
+// Открыть телефон / WhatsApp по номеру родителя.
+const telHref = (phone?: string) => `tel:${(phone || "").replace(/[^\d+]/g, "")}`;
+const waHref = (phone?: string) => `https://wa.me/${(phone || "").replace(/[^\d]/g, "")}`;
 
 interface AdminEduErpWorkspaceProps {
   branches: Branch[];
@@ -51,6 +99,11 @@ interface AdminEduErpWorkspaceProps {
   onUpdateLesson?: (id: string, data: any) => Promise<boolean>;
   onDeleteLesson?: (id: string) => Promise<boolean>;
   onToggleAttendance?: (studentId: string, date: string, status: "present" | "absent" | "sick") => void;
+  onCreateStudent?: (data: any) => Promise<boolean>;
+  onUpdateStudent?: (id: string, data: any) => Promise<boolean>;
+  onDeleteStudent?: (id: string) => Promise<boolean>;
+  onCreateAnnouncement?: (data: { title: string; content: string; audience: AnnouncementAudience; isImportant: boolean }) => void;
+  onOpenPayment?: (student: Student) => void;
 }
 
 type AdminTab =
@@ -97,6 +150,11 @@ export function AdminEduErpWorkspace({
   onUpdateLesson,
   onDeleteLesson,
   onToggleAttendance,
+  onCreateStudent,
+  onUpdateStudent,
+  onDeleteStudent,
+  onCreateAnnouncement,
+  onOpenPayment,
 }: AdminEduErpWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<AdminTab>("dashboard");
   const [search, setSearch] = useState("");
@@ -115,20 +173,27 @@ export function AdminEduErpWorkspace({
     });
   }, [branchFilter, search, students]);
 
-  const monthRevenue = payments.reduce((sum, payment) => sum + payment.amount, 0) + 2850000;
-  const todayRevenue = payments.filter((payment) => payment.date === "2026-06-01").reduce((sum, payment) => sum + payment.amount, 0) + 184000;
-  const debt = Math.abs(students.filter((student) => student.balance < 0).reduce((sum, student) => sum + student.balance, 0)) + 126000;
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const monthPrefix = todayStr.slice(0, 7);
+  const monthRevenue = payments
+    .filter((payment) => (payment.date || "").startsWith(monthPrefix))
+    .reduce((sum, payment) => sum + payment.amount, 0);
+  const todayRevenue = payments.filter((payment) => payment.date === todayStr).reduce((sum, payment) => sum + payment.amount, 0);
+  const debt = Math.abs(students.filter((student) => student.balance < 0).reduce((sum, student) => sum + student.balance, 0));
   const renewals = students.filter((student) => student.subscriptions.some((subscription) => subscription.lessonsLeft <= 2 || subscription.status !== "active"));
-  const attendanceRate = Math.round(
-    students.reduce((sum, student) => {
-      const records = Object.values(student.attendance || {});
-      if (!records.length) return sum + 82;
-      return sum + Math.round((records.filter((record) => record.status === "present").length / records.length) * 100);
-    }, 0) / Math.max(1, students.length)
-  );
+  const attendanceRate = students.length
+    ? Math.round(
+        students.reduce((sum, student) => {
+          const records = Object.values(student.attendance || {});
+          if (!records.length) return sum;
+          return sum + Math.round((records.filter((record) => record.status === "present").length / records.length) * 100);
+        }, 0) / Math.max(1, students.length)
+      )
+    : 0;
 
   return (
     <div className="min-h-full bg-[#080808] text-slate-200">
+      <ToastHost />
       <div className="mx-auto flex max-w-[1560px] gap-0 lg:gap-5">
         <aside className="sticky top-0 hidden h-[calc(100vh-64px)] w-76 shrink-0 border-r border-white/5 bg-[#0F0F0F] p-4 lg:block">
           <section className="rounded-[2rem] border border-[#C5A059]/25 bg-gradient-to-br from-[#2B2315] to-[#111] p-4">
@@ -200,6 +265,11 @@ export function AdminEduErpWorkspace({
               branchFilter={branchFilter}
               setSearch={setSearch}
               setBranchFilter={setBranchFilter}
+              adminBranchId={branches[0]?.id || ""}
+              onCreateStudent={onCreateStudent}
+              onUpdateStudent={onUpdateStudent}
+              onDeleteStudent={onDeleteStudent}
+              onOpenPayment={onOpenPayment}
             />
           )}
           {activeTab === "journal" && (
@@ -227,9 +297,9 @@ export function AdminEduErpWorkspace({
               onDeleteGroup={onDeleteGroup}
             />
           )}
-          {activeTab === "billing" && <BillingView students={students} groups={groups} payments={payments} debt={debt} renewals={renewals} />}
+          {activeTab === "billing" && <BillingView students={students} groups={groups} branches={branches} payments={payments} debt={debt} renewals={renewals} onOpenPayment={onOpenPayment} />}
           {activeTab === "reports" && <ReportsView branches={branches} groups={groups} todayRevenue={todayRevenue} monthRevenue={monthRevenue} attendanceRate={attendanceRate} />}
-          {activeTab === "messages" && <MessagesView announcements={announcements} branches={branches} groups={groups} />}
+          {activeTab === "messages" && <MessagesView announcements={announcements} branches={branches} groups={groups} onCreateAnnouncement={onCreateAnnouncement} />}
           {activeTab === "tasks" && <TasksView auditLogs={auditLogs} students={students} />}
           {activeTab === "org" && <OrganizationView branches={branches} groups={groups} teachers={teachers} />}
           {activeTab === "settings" && <SettingsView branches={branches} groups={groups} />}
@@ -249,10 +319,10 @@ function DashboardView({ branches, groups, students, teachers, todayRevenue, mon
   const kpis = [
     { label: "Выручка сегодня", value: money(todayRevenue), detail: "касса филиалов", tone: "gold" },
     { label: "Выручка месяца", value: money(monthRevenue), detail: "абонементы и разовые", tone: "gold" },
-    { label: "Посетители", value: students.length + 2063, detail: "активная база", tone: "white" },
+    { label: "Посетители", value: students.length, detail: "активная база", tone: "white" },
     { label: "Посещаемость", value: `${attendanceRate}%`, detail: "по журналам", tone: "emerald" },
     { label: "Долги", value: money(debt), detail: "нужны счета", tone: "rose" },
-    { label: "Продления", value: Math.max(renewals.length, 37), detail: "в ближайшие 7 дней", tone: "rose" },
+    { label: "Продления", value: renewals.length, detail: "в ближайшие 7 дней", tone: "rose" },
     { label: "Группы", value: groups.length, detail: `${teachers.length} преподавателей`, tone: "white" },
     { label: "Филиалы", value: branches.length, detail: "Казахстан", tone: "white" }
   ];
@@ -272,9 +342,9 @@ function DashboardView({ branches, groups, students, teachers, todayRevenue, mon
           <div className="rounded-[1.75rem] border border-[#C5A059]/25 bg-[#C5A059]/10 p-4">
             <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">AI операционный помощник</p>
             <div className="mt-3 space-y-2 text-sm text-slate-200">
-              <InsightLine text="37 абонементов требуют продления на этой неделе." />
+              <InsightLine text={`${renewals.length} абонементов требуют продления в ближайшее время.`} />
               <InsightLine text="Счета можно отправить группам с долгом через SMS и email." />
-              <InsightLine text="Журнал за сегодня ожидает отметок в 3 группах." />
+              <InsightLine text="Журнал за сегодня ожидает отметок по группам." />
             </div>
           </div>
         </div>
@@ -307,9 +377,51 @@ function DashboardView({ branches, groups, students, teachers, todayRevenue, mon
   );
 }
 
-function VisitorsView({ students, groups, branches, teachers, payments, search, branchFilter, setSearch, setBranchFilter }: any) {
+function VisitorsView({ students, groups, branches, teachers, payments, search, branchFilter, setSearch, setBranchFilter, adminBranchId, onCreateStudent, onUpdateStudent, onDeleteStudent, onOpenPayment }: any) {
   const [selectedStudentId, setSelectedStudentId] = useState(students[0]?.id || "");
   const selectedStudent = students.find((student: Student) => student.id === selectedStudentId) || students[0];
+
+  const emptyForm = { name: "", age: "", groupId: "", teacherId: "", parentName: "", parentPhone: "" };
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState(emptyForm);
+  const [saving, setSaving] = useState(false);
+  const canManage = Boolean(onCreateStudent || onUpdateStudent);
+
+  const openCreate = () => { setEditingId(null); setForm(emptyForm); setShowForm(true); };
+  const openEdit = (student: Student) => {
+    setEditingId(student.id);
+    setForm({
+      name: student.name || "",
+      age: student.age ? String(student.age) : "",
+      groupId: student.groupIds?.[0] || (student as any).groupId || "",
+      teacherId: student.teacherId || "",
+      parentName: student.parentName || "",
+      parentPhone: student.parentPhone || ""
+    });
+    setShowForm(true);
+  };
+  const handleSave = async () => {
+    if (!form.name.trim()) return;
+    setSaving(true);
+    const payload: any = {
+      name: form.name.trim(),
+      branchId: adminBranchId || branches[0]?.id,
+      age: form.age ? Number(form.age) : undefined,
+      groupId: form.groupId || undefined,
+      teacherId: form.teacherId || undefined,
+      parentName: form.parentName || undefined,
+      parentPhone: form.parentPhone || undefined
+    };
+    const ok = editingId ? await onUpdateStudent?.(editingId, payload) : await onCreateStudent?.(payload);
+    setSaving(false);
+    if (ok) { setShowForm(false); setEditingId(null); setForm(emptyForm); }
+  };
+  const handleDelete = async (student: Student) => {
+    if (!onDeleteStudent) return;
+    if (!window.confirm(`Переместить ученика «${student.name}» в корзину? Окончательное удаление подтвердит владелец сети.`)) return;
+    await onDeleteStudent(student.id);
+  };
 
   return (
     <div className="space-y-5">
@@ -317,10 +429,10 @@ function VisitorsView({ students, groups, branches, teachers, payments, search, 
         kicker="Посетители"
         title="CRM учеников и родителей"
         text="Аналог раздела Посетители: фильтры, таблица, карточка, создание задач, импорт, статусы, платежные правила и рассылки."
-        actions={["Добавить", "Импорт", "Создать задачу"]}
+        actions={["Импорт", "Создать задачу"]}
       />
       <div className="rounded-[2rem] border border-white/10 bg-[#111] p-4">
-        <div className="grid gap-3 md:grid-cols-[1fr_220px_160px]">
+        <div className="grid gap-3 md:grid-cols-[1fr_220px_auto]">
           <div className="relative">
             <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
             <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Найти посетителя, родителя или телефон" className="w-full rounded-2xl border border-white/10 bg-black/30 py-3 pl-11 pr-4 text-sm text-white outline-none focus:border-[#C5A059]" />
@@ -329,9 +441,55 @@ function VisitorsView({ students, groups, branches, teachers, payments, search, 
             <option value="all">Все филиалы</option>
             {branches.map((branch: Branch) => <option key={branch.id} value={branch.id}>{branch.city}</option>)}
           </select>
-          <button className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#C5A059] px-4 py-3 text-sm font-black text-black"><Filter className="h-4 w-4" /> Фильтр</button>
+          {canManage && (
+            <button onClick={showForm ? () => setShowForm(false) : openCreate} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#C5A059] px-4 py-3 text-sm font-black text-black"><Plus className="h-4 w-4" /> {showForm ? "Скрыть" : "Новый ученик"}</button>
+          )}
         </div>
       </div>
+
+      {showForm && canManage && (
+        <div className="rounded-[2rem] border border-white/10 bg-[#111] p-5 space-y-4">
+          <p className="text-sm font-black text-white">{editingId ? "Редактировать ученика" : "Новый ученик"}</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Имя ученика *</span>
+              <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Имя и фамилия" className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-slate-600" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Возраст</span>
+              <input type="number" value={form.age} onChange={(e) => setForm((f) => ({ ...f, age: e.target.value }))} placeholder="Напр. 9" className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-slate-600" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Группа</span>
+              <select value={form.groupId} onChange={(e) => setForm((f) => ({ ...f, groupId: e.target.value }))} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white">
+                <option value="">Без группы</option>
+                {groups.map((g: Group) => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Преподаватель</span>
+              <select value={form.teacherId} onChange={(e) => setForm((f) => ({ ...f, teacherId: e.target.value }))} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white">
+                <option value="">Из группы</option>
+                {teachers.map((t: Teacher) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Родитель</span>
+              <input value={form.parentName} onChange={(e) => setForm((f) => ({ ...f, parentName: e.target.value }))} placeholder="ФИО родителя" className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-slate-600" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Телефон родителя</span>
+              <input value={form.parentPhone} onChange={(e) => setForm((f) => ({ ...f, parentPhone: e.target.value }))} placeholder="+7 ..." className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-slate-600" />
+            </label>
+          </div>
+          <div className="flex gap-3">
+            <button onClick={handleSave} disabled={saving || !form.name.trim()} className="rounded-xl bg-[#C5A059] px-5 py-2 text-sm font-bold text-black transition-colors hover:bg-[#D4AF70] disabled:opacity-40">
+              {saving ? "Сохранение…" : editingId ? "Сохранить" : "Добавить ученика"}
+            </button>
+            <button onClick={() => { setShowForm(false); setEditingId(null); setForm(emptyForm); }} className="rounded-xl bg-white/5 px-5 py-2 text-sm font-bold text-slate-400 transition-colors hover:bg-white/10">Отмена</button>
+          </div>
+        </div>
+      )}
       <div className="grid gap-4 xl:grid-cols-[1fr_430px]">
         <section className="overflow-hidden rounded-[2rem] border border-white/10 bg-[#111]">
           <div className="border-b border-white/10 px-5 py-4">
@@ -397,9 +555,9 @@ function VisitorsView({ students, groups, branches, teachers, payments, search, 
                       <td className="p-4 text-slate-400">{student.parentPhone}</td>
                       <td className="p-4">
                         <div className="flex gap-1.5">
-                          <ContactIcon icon={Phone} />
-                          <ContactIcon icon={MessageCircle} />
-                          <ContactIcon icon={Send} />
+                          <ContactIcon icon={Phone} title="Позвонить" href={telHref(student.parentPhone)} />
+                          <ContactIcon icon={MessageCircle} title="WhatsApp" href={waHref(student.parentPhone)} />
+                          <ContactIcon icon={Send} title="SMS" href={`sms:${(student.parentPhone || "").replace(/[^\d+]/g, "")}`} />
                         </div>
                       </td>
                       <td className="p-4 text-slate-400">{student.parentName}</td>
@@ -424,6 +582,9 @@ function VisitorsView({ students, groups, branches, teachers, payments, search, 
             branch={branches.find((branch: Branch) => branch.id === selectedStudent.branchId)}
             teacher={teachers.find((teacher: Teacher) => teacher.id === selectedStudent.teacherId)}
             payments={payments.filter((payment: Payment) => payment.studentId === selectedStudent.id)}
+            onEdit={canManage ? () => openEdit(selectedStudent) : undefined}
+            onDelete={onDeleteStudent ? () => handleDelete(selectedStudent) : undefined}
+            onOpenPayment={onOpenPayment ? () => onOpenPayment(selectedStudent) : undefined}
           />
         )}
       </div>
@@ -431,7 +592,7 @@ function VisitorsView({ students, groups, branches, teachers, payments, search, 
   );
 }
 
-function StudentDetailPanel({ student, group, branch, teacher, payments }: { student: Student; group?: Group; branch?: Branch; teacher?: Teacher; payments: Payment[] }) {
+function StudentDetailPanel({ student, group, branch, teacher, payments, onEdit, onDelete, onOpenPayment }: { student: Student; group?: Group; branch?: Branch; teacher?: Teacher; payments: Payment[]; onEdit?: () => void; onDelete?: () => void; onOpenPayment?: () => void }) {
   const [detailTab, setDetailTab] = useState<"profile" | "invoices" | "balance" | "subscriptions" | "attendance" | "tasks" | "messages" | "parents">("profile");
   const attendanceRecords = Object.values(student.attendance || {});
   const presentCount = attendanceRecords.filter((record) => record.status === "present").length;
@@ -494,14 +655,23 @@ function StudentDetailPanel({ student, group, branch, teacher, payments }: { stu
       </div>
 
       <div className="mt-5 flex flex-wrap gap-2">
-        <ActionButton icon={Plus} label="ПУ" />
-        <ActionButton icon={CalendarDays} label="O" />
-        <ActionButton icon={BadgePercent} label="1" />
-        <ActionButton icon={BadgePercent} label="U" />
-        <ActionButton icon={Phone} label="Позвонить" />
-        <ActionButton icon={MessageCircle} label="WhatsApp" />
-        <ActionButton icon={Receipt} label="Счет" primary />
-        <ActionButton icon={CheckCircle} label="Задача" />
+        {onOpenPayment && (
+          <button onClick={onOpenPayment} className="inline-flex items-center gap-2 rounded-xl bg-[#C5A059] px-3 py-2 text-xs font-black text-black transition hover:bg-[#D4AF70]">
+            <Receipt className="h-3.5 w-3.5" /> Принять оплату
+          </button>
+        )}
+        {onEdit && (
+          <button onClick={onEdit} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-black text-slate-200 transition hover:bg-white/10">
+            <Settings className="h-3.5 w-3.5" /> Редактировать
+          </button>
+        )}
+        {onDelete && (
+          <button onClick={onDelete} className="inline-flex items-center gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-black text-rose-300 transition hover:bg-rose-500/20">
+            В корзину
+          </button>
+        )}
+        <ActionButton icon={Phone} label="Позвонить" onClick={() => window.open(telHref(student.parentPhone))} />
+        <ActionButton icon={MessageCircle} label="WhatsApp" onClick={() => window.open(waHref(student.parentPhone), "_blank")} />
       </div>
 
       <div className="mt-5 overflow-x-auto">
@@ -569,7 +739,7 @@ function StudentDetailPanel({ student, group, branch, teacher, payments }: { stu
               <ActionButton icon={FileText} label="Корректировка" />
               <ActionButton icon={Coins} label="Пополнить" primary />
               <ActionButton icon={WalletCards} label="Возврат" />
-              <ActionButton icon={FileSpreadsheet} label="Экспорт" />
+              <ActionButton icon={FileSpreadsheet} label="Экспорт" onClick={() => exportCsv(`balance-${student.name}.csv`, ["Идентификатор", "Тип операции", "Номер", "Расход/Приход", "Баланс"], balanceRows.map((row, index) => [`B-${student.id}-${index + 1}`, row[2], row[0], row[1], money(student.balance)]))} />
             </div>
             <div className="mt-3 rounded-2xl border border-[#C5A059]/20 bg-[#C5A059]/10 p-3 text-xs leading-relaxed text-slate-300">
               Баланс собирает пополнения, возвраты, оплату абонемента, разовые оплаты, корректировки и резерв баланса.
@@ -1041,30 +1211,77 @@ function CalendarView({ groups, teachers, branches, halls, scheduleItems, schedu
   );
 }
 
-function BillingView({ students, groups, payments, debt, renewals }: any) {
+const PAYMENT_METHOD_LABELS: Record<string, string> = { card: "Карта", cash: "Наличные", transfer: "Перевод", kaspi: "Kaspi" };
+const PAYMENT_TYPE_LABELS: Record<string, string> = { subscription: "Абонемент", single: "Разовое", uniform: "Форма", concert: "Концерт" };
+
+function BillingView({ students, groups, branches, payments, debt, renewals, onOpenPayment }: any) {
+  const collected = payments.reduce((sum: number, payment: Payment) => sum + payment.amount, 0);
+  const debtors = students.filter((student: Student) => student.balance < 0);
+  const recentPayments = [...payments].sort((a: Payment, b: Payment) => (a.date < b.date ? 1 : -1)).slice(0, 8);
+  const studentName = (id: string) => students.find((s: Student) => s.id === id)?.name || "—";
+  const branchName = (id: string) => branches.find((b: Branch) => b.id === id)?.city || "Филиал";
+
   return (
     <div className="space-y-5">
-      <SectionHeader kicker="Стоимость" title="Абонементы, счета, скидки и промокоды" text="Абонементы, продления, массовое выставление счетов, история платежей, реестр операций, скидки, промокоды и справки." actions={["Показать счета", "Отправить", "Добавить оплату"]} />
+      <SectionHeader kicker="Стоимость" title="Абонементы, счета, скидки и промокоды" text="Абонементы, продления, массовое выставление счетов, история платежей, реестр операций, скидки, промокоды и справки." actions={["Показать счета", "Отправить"]} />
       <div className="grid gap-3 md:grid-cols-4">
-        <KpiCard label="Долг" value={money(debt)} detail="к взысканию" tone="rose" />
-        <KpiCard label="Продления" value={Math.max(renewals.length, 37)} detail="неделя" tone="gold" />
-        <KpiCard label="Платежи" value={payments.length + 214} detail="реестр операций" tone="white" />
-        <KpiCard label="Абонементы" value="8" detail="типов доступно" tone="emerald" />
+        <KpiCard label="Долг" value={money(debt)} detail={`${debtors.length} должников`} tone="rose" />
+        <KpiCard label="Продления" value={renewals.length} detail="скоро истекают" tone="gold" />
+        <KpiCard label="Платежей" value={payments.length} detail="в базе филиала" tone="white" />
+        <KpiCard label="Собрано" value={money(collected)} detail="по платежам" tone="emerald" />
       </div>
-      <DataTable
-        headers={["Филиал", "Группа", "Посетитель", "Абонемент", "Посещение", "Итого", "Скидка", "SMS", "Email"]}
-        rows={students.slice(0, 7).map((student: Student) => [
-          "Алматы",
-          groups.find((group: Group) => group.id === (student.groupIds?.[0] || (student as any).groupId))?.name || "Группа",
-          student.name,
-          student.subscriptions[0]?.name || "Стандарт",
-          `${student.subscriptions[0]?.lessonsLeft || 0} занятий`,
-          money(Math.max(0, 45000 + student.balance)),
-          student.balance < 0 ? "0" : "10%",
-          "Да",
-          "Да"
-        ])}
-      />
+
+      <section className="overflow-hidden rounded-[2rem] border border-white/10 bg-[#111]">
+        <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">Должники</p>
+            <h2 className="mt-1 text-xl font-black text-white">Ученики с отрицательным балансом</h2>
+          </div>
+        </div>
+        {debtors.length === 0 ? (
+          <p className="px-5 py-6 text-sm text-slate-400">Долгов нет — все ученики оплачены.</p>
+        ) : (
+          <div className="divide-y divide-white/5">
+            {debtors.map((student: Student) => {
+              const group = groups.find((g: Group) => g.id === (student.groupIds?.[0] || (student as any).groupId));
+              return (
+                <div key={student.id} className="flex flex-wrap items-center gap-3 px-5 py-3">
+                  <img src={student.photoUrl} alt="" className="h-10 w-10 rounded-2xl object-cover" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-black text-white">{student.name}</p>
+                    <p className="truncate text-xs text-slate-400">{group?.name || "Без группы"} · {student.parentPhone}</p>
+                  </div>
+                  <span className="text-sm font-black text-rose-300">{money(student.balance)}</span>
+                  {onOpenPayment && (
+                    <button onClick={() => onOpenPayment(student)} className="inline-flex items-center gap-2 rounded-xl bg-[#C5A059] px-3 py-2 text-xs font-black text-black transition hover:bg-[#D4AF70]">
+                      <Receipt className="h-3.5 w-3.5" /> Принять оплату
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <div>
+        <p className="mb-2 text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">История платежей</p>
+        {recentPayments.length === 0 ? (
+          <div className="rounded-[2rem] border border-white/10 bg-[#111] px-5 py-6 text-sm text-slate-400">Платежей пока нет.</div>
+        ) : (
+          <DataTable
+            headers={["Дата", "Посетитель", "Филиал", "Тип", "Способ", "Сумма"]}
+            rows={recentPayments.map((payment: Payment) => [
+              payment.date,
+              studentName(payment.studentId),
+              branchName(payment.branchId),
+              PAYMENT_TYPE_LABELS[payment.type] || payment.type,
+              PAYMENT_METHOD_LABELS[payment.method] || payment.method,
+              money(payment.amount)
+            ])}
+          />
+        )}
+      </div>
     </div>
   );
 }
@@ -1100,24 +1317,66 @@ function ReportsView({ branches, groups, todayRevenue, monthRevenue, attendanceR
   );
 }
 
-function MessagesView({ announcements, branches, groups }: any) {
+const ANNOUNCEMENT_AUDIENCE_OPTIONS: { value: AnnouncementAudience; label: string }[] = [
+  { value: "parents", label: "Родители" },
+  { value: "students", label: "Ученики" },
+  { value: "all", label: "Все" },
+  { value: "teachers", label: "Преподаватели" }
+];
+
+function MessagesView({ announcements, onCreateAnnouncement }: any) {
+  const [title, setTitle] = useState("");
+  const [content, setContent] = useState("");
+  const [audience, setAudience] = useState<AnnouncementAudience>("parents");
+  const [isImportant, setIsImportant] = useState(false);
+  const canPost = Boolean(onCreateAnnouncement);
+
+  const handleSend = () => {
+    if (!canPost || !title.trim() || !content.trim()) return;
+    onCreateAnnouncement({ title: title.trim(), content: content.trim(), audience, isImportant });
+    setTitle("");
+    setContent("");
+    setIsImportant(false);
+  };
+
   return (
     <div className="space-y-5">
-      <SectionHeader kicker="Рассылки" title="Сценарии, шаблоны и история сообщений" text="Шаблоны рассылок, будущая отправка, SMS/email/push, массовые объявления и история статусов доставки." actions={["Создать сценарий", "Запланировать"]} />
-      <div className="grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">
-        <Panel title="Новая рассылка" kicker="Безопасная коммуникация">
+      <SectionHeader kicker="Рассылки" title="Сценарии, шаблоны и история сообщений" text="Шаблоны рассылок, будущая отправка, SMS/email/push, массовые объявления и история статусов доставки." actions={["Запланировать"]} />
+      <div className="grid gap-4 xl:grid-cols-[0.85fr_1.15fr]">
+        <Panel title="Новое объявление" kicker="Публикация в ленту">
           <div className="grid gap-3">
-            <SelectStub label="Аудитория" value="Родители филиала" />
-            <SelectStub label="Филиал" value={branches[0]?.city || "Алматы"} />
-            <SelectStub label="Группа" value={groups[0]?.name || "Все группы"} />
-            <SelectStub label="Канал" value="Push + SMS + Email" />
-            <div className="rounded-2xl border border-white/10 bg-black/25 p-4 text-sm text-slate-300">Напоминание о продлении абонемента и расписании занятий.</div>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Заголовок *</span>
+              <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Напр. «Продление абонементов»" className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-sm text-white placeholder-slate-600" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Текст *</span>
+              <textarea value={content} onChange={(e) => setContent(e.target.value)} rows={4} placeholder="Текст сообщения для родителей и учеников" className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-sm text-white placeholder-slate-600" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Аудитория</span>
+              <select value={audience} onChange={(e) => setAudience(e.target.value as AnnouncementAudience)} className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-sm text-white">
+                {ANNOUNCEMENT_AUDIENCE_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+              </select>
+            </label>
+            <label className="flex items-center gap-2 text-sm text-slate-300">
+              <input type="checkbox" checked={isImportant} onChange={(e) => setIsImportant(e.target.checked)} className="h-4 w-4 accent-[#C5A059]" />
+              Отметить как важное
+            </label>
+            <button onClick={handleSend} disabled={!canPost || !title.trim() || !content.trim()} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#C5A059] px-4 py-2.5 text-sm font-black text-black transition hover:bg-[#D4AF70] disabled:opacity-40">
+              <Send className="h-4 w-4" /> Опубликовать
+            </button>
+            {!canPost && <p className="text-xs text-slate-500">Публикация недоступна в этом режиме.</p>}
           </div>
         </Panel>
-        <DataTable
-          headers={["Дата", "Предмет", "Сообщение", "Статус", "Инициатор"]}
-          rows={announcements.slice(0, 6).map((item: Announcement) => [item.date, item.title, item.content.slice(0, 44) + "...", "Успешно", item.authorName])}
-        />
+        {announcements.length === 0 ? (
+          <div className="rounded-[2rem] border border-white/10 bg-[#111] px-5 py-6 text-sm text-slate-400">Объявлений пока нет.</div>
+        ) : (
+          <DataTable
+            headers={["Дата", "Предмет", "Сообщение", "Важное", "Инициатор"]}
+            rows={announcements.slice(0, 8).map((item: Announcement) => [item.date, item.title, item.content.slice(0, 44) + (item.content.length > 44 ? "…" : ""), item.isImportant ? "Да" : "—", item.authorName])}
+          />
+        )}
       </div>
     </div>
   );
@@ -1216,7 +1475,7 @@ function SectionHeader({ kicker, title, text, actions }: { kicker: string; title
         </div>
         <div className="flex flex-wrap gap-2">
           {actions.map((action, index) => (
-            <button key={action} className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-black uppercase tracking-wider ${index === 0 ? "bg-[#C5A059] text-black" : "border border-white/10 bg-white/5 text-slate-200"}`}>
+            <button key={action} onClick={() => notify(`${action} — функция в разработке`)} className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-black uppercase tracking-wider transition hover:opacity-90 ${index === 0 ? "bg-[#C5A059] text-black" : "border border-white/10 bg-white/5 text-slate-200"}`}>
               {index === 0 ? <Plus className="h-4 w-4" /> : <FileSpreadsheet className="h-4 w-4" />}
               {action}
             </button>
@@ -1357,11 +1616,20 @@ function StatusDot({ ok }: { ok: boolean }) {
   return <span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-black uppercase ${ok ? "bg-emerald-500/15 text-emerald-300" : "bg-rose-500/15 text-rose-300"}`}>{ok ? "Был" : "Нет"}</span>;
 }
 
-function ContactIcon({ icon: Icon }: { icon: React.ElementType }) {
+function ContactIcon({ icon: Icon, href, title, onClick }: { icon: React.ElementType; href?: string; title?: string; onClick?: () => void }) {
+  const className = "inline-flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-[#C5A059] transition hover:border-[#C5A059]/40 hover:bg-[#C5A059]/10";
+  const stop = (e: React.MouseEvent) => e.stopPropagation();
+  if (href) {
+    return (
+      <a href={href} target="_blank" rel="noreferrer" title={title} onClick={stop} className={className}>
+        <Icon className="h-3.5 w-3.5" />
+      </a>
+    );
+  }
   return (
-    <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-[#C5A059]">
+    <button type="button" title={title} onClick={(e) => { stop(e); (onClick ?? (() => notify(`${title || "Контакт"} — функция в разработке`)))(); }} className={className}>
       <Icon className="h-3.5 w-3.5" />
-    </span>
+    </button>
   );
 }
 
@@ -1403,9 +1671,9 @@ function DetailBlock({ icon: Icon, label, value, sub }: { icon: React.ElementTyp
   );
 }
 
-function ActionButton({ icon: Icon, label, primary = false }: { icon: React.ElementType; label: string; primary?: boolean }) {
+function ActionButton({ icon: Icon, label, primary = false, onClick }: { icon: React.ElementType; label: string; primary?: boolean; onClick?: () => void }) {
   return (
-    <button className={`inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-black uppercase tracking-wider transition ${primary ? "bg-[#C5A059] text-black" : "border border-white/10 bg-white/[0.04] text-slate-200 hover:bg-white/10"}`}>
+    <button onClick={onClick ?? (() => notify(`${label} — функция в разработке`))} className={`inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-black uppercase tracking-wider transition ${primary ? "bg-[#C5A059] text-black" : "border border-white/10 bg-white/[0.04] text-slate-200 hover:bg-white/10"}`}>
       <Icon className="h-3.5 w-3.5" />
       {label}
     </button>

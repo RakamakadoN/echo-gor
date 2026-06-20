@@ -2665,6 +2665,22 @@ export default function App() {
               onUpdateLesson={handleUpdateLesson}
               onDeleteLesson={handleDeleteLesson}
               onToggleAttendance={toggleAttendance}
+              onCreateStudent={handleCreateStudent}
+              onUpdateStudent={handleUpdateStudent}
+              onDeleteStudent={handleDeleteStudent}
+              onCreateAnnouncement={handleCreateAnnouncement}
+              onOpenPayment={(student: Student) => {
+                setSelectedStudentId(student.id);
+                const activeSub = student.subscriptions?.[0];
+                setPaymentAmount(activeSub ? activeSub.price : 4500);
+                setPaymentDesc(
+                  student.balance < 0
+                    ? `Погашение долга: ${student.name}`
+                    : `Оплата абонемента: ${student.name}`
+                );
+                setPaymentType("subscription");
+                setShowAddPaymentModal(true);
+              }}
             />
           ) : (
             <>
