@@ -796,11 +796,13 @@ export function registerMvpApi(app: express.Express) {
     const session = getSession(req);
     if (session.role !== "owner") return res.status(403).json({ error: "Только владелец может запускать парсинг" });
     if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
-    const { dryRun, maxDetailFetches } = req.body || {};
+    const { dryRun, maxDetailFetches, sources, maxMs } = req.body || {};
     try {
       const result = await runParser({
         dryRun: Boolean(dryRun),
         maxDetailFetches: Number(maxDetailFetches) || undefined,
+        sources: Array.isArray(sources) && sources.length ? sources : undefined,
+        maxMs: Number(maxMs) || 45000, // под лимит serverless-функции
         log: (m) => console.log("[dance-events]", m),
       });
       res.json(result);
@@ -1184,7 +1186,7 @@ export function registerMvpApi(app: express.Express) {
     }
     if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
     try {
-      const result = await runParser({ log: (m) => console.log("[cron dance-events]", m) });
+      const result = await runParser({ maxMs: 55000, log: (m) => console.log("[cron dance-events]", m) });
       res.json({ ranAt: new Date().toISOString(), ...result });
     } catch (error: any) {
       res.status(500).json({ error: error.message || "Парсинг не выполнен" });

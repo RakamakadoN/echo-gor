@@ -66,8 +66,15 @@ export interface AdapterContext {
   log: (msg: string) => void;
   /** Ограничение detail-запросов на источник, чтобы не перегружать. */
   maxDetailFetches: number;
+  /** Абсолютный дедлайн (Date.now()), после которого адаптеры прекращают новые запросы. */
+  deadlineMs?: number;
   /** Диагностика: счётчики по источникам (всего ссылок, прошло пред-фильтр, ошибок сети). */
   debug?: Record<string, { links: number; prefiltered: number; fetchErrors: number }>;
+}
+
+/** Истёк ли дедлайн раннера. */
+function past(ctx: AdapterContext): boolean {
+  return !!ctx.deadlineMs && Date.now() > ctx.deadlineMs;
 }
 
 function dbg(ctx: AdapterContext, name: string) {
@@ -353,7 +360,9 @@ export function ticketonAdapter(opts?: { cities?: typeof TICKETON_CITIES }): Sou
       const d = dbg(ctx, "ticketon");
       let detailBudget = ctx.maxDetailFetches;
       for (const c of cities) {
+        if (past(ctx)) { ctx.log("ticketon: дедлайн"); break; }
         for (const page of ["", "?page=2"]) {
+          if (past(ctx)) break;
           const listUrl = `https://ticketon.kz/${c.slug}/concerts${page}`;
           const html = await safeFetchText(ctx, listUrl, d);
           if (!html) continue;
@@ -413,8 +422,10 @@ export function kassirAdapter(opts?: { cities?: typeof KASSIR_CITIES }): SourceA
       const d = dbg(ctx, "kassir");
       let detailBudget = ctx.maxDetailFetches;
       for (const c of cities) {
+        if (past(ctx)) { ctx.log("kassir: дедлайн"); break; }
         const base = `https://${c.sub}.kassir.ru`;
         for (const sect of ["/bilety-na-koncert"]) {
+          if (past(ctx)) break;
           const html = await safeFetchText(ctx, base + sect, d);
           if (!html) continue;
           const hrefs = extractHrefs(html, /href=["']([^"']*\/(?:koncert|shou)\/[^"'?#]+)["']/gi);
@@ -504,17 +515,25 @@ export interface RunOptions {
   maxDetailFetches?: number;
   now?: Date;
   dryRun?: boolean;       // не писать в БД, только вернуть события
+  sources?: string[];     // выполнить только адаптеры с этими именами (напр. ["ticketon"])
+  maxMs?: number;         // мягкий дедлайн раннера (по умолчанию 50000), чтобы не упереться в лимит serverless
   upsert?: (events: NormalizedEvent[]) => Promise<number>;
 }
 
 /** Полный цикл: собрать → отфильтровать → нормализовать → дедуп → upsert. */
 export async function runParser(options: RunOptions = {}): Promise<ParseResult> {
-  const adapters = options.adapters ?? defaultAdapters();
+  let adapters = options.adapters ?? defaultAdapters();
+  if (options.sources?.length) adapters = adapters.filter((a) => options.sources!.includes(a.name));
   const fetchFn = options.fetchFn ?? proxiedFetch(fetch);
   const log = options.log ?? (() => {});
   const now = options.now ?? new Date();
   const debug: Record<string, { links: number; prefiltered: number; fetchErrors: number }> = {};
-  const ctx: AdapterContext = { fetchFn, log, maxDetailFetches: options.maxDetailFetches ?? 40, debug };
+  const ctx: AdapterContext = {
+    fetchFn, log,
+    maxDetailFetches: options.maxDetailFetches ?? 40,
+    deadlineMs: Date.now() + (options.maxMs ?? 50000),
+    debug,
+  };
 
   const result: ParseResult = {
     ok: true, bySource: {}, matched: 0, upserted: 0,
@@ -524,6 +543,7 @@ export async function runParser(options: RunOptions = {}): Promise<ParseResult> 
   const seen = new Set<string>();
   for (const adapter of adapters) {
     if (!adapter.enabled) continue;
+    if (past(ctx)) { result.errors.push(`${adapter.name}: пропущен (дедлайн)`); continue; }
     try {
       const candidates = await adapter.run(ctx);
       result.bySource[adapter.name] = candidates.length;

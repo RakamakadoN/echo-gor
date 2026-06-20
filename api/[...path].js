@@ -674,6 +674,9 @@ var simulateQueue = (id) => {
 };
 
 // server/danceEventsParser.ts
+function past(ctx) {
+  return !!ctx.deadlineMs && Date.now() > ctx.deadlineMs;
+}
 function dbg(ctx, name) {
   if (!ctx.debug) return null;
   return ctx.debug[name] ??= { links: 0, prefiltered: 0, fetchErrors: 0 };
@@ -963,7 +966,12 @@ function ticketonAdapter(opts) {
       const d = dbg(ctx, "ticketon");
       let detailBudget = ctx.maxDetailFetches;
       for (const c of cities) {
+        if (past(ctx)) {
+          ctx.log("ticketon: \u0434\u0435\u0434\u043B\u0430\u0439\u043D");
+          break;
+        }
         for (const page of ["", "?page=2"]) {
+          if (past(ctx)) break;
           const listUrl = `https://ticketon.kz/${c.slug}/concerts${page}`;
           const html = await safeFetchText(ctx, listUrl, d);
           if (!html) continue;
@@ -1021,8 +1029,13 @@ function kassirAdapter(opts) {
       const d = dbg(ctx, "kassir");
       let detailBudget = ctx.maxDetailFetches;
       for (const c of cities) {
+        if (past(ctx)) {
+          ctx.log("kassir: \u0434\u0435\u0434\u043B\u0430\u0439\u043D");
+          break;
+        }
         const base = `https://${c.sub}.kassir.ru`;
         for (const sect of ["/bilety-na-koncert"]) {
+          if (past(ctx)) break;
           const html = await safeFetchText(ctx, base + sect, d);
           if (!html) continue;
           const hrefs = extractHrefs(html, /href=["']([^"']*\/(?:koncert|shou)\/[^"'?#]+)["']/gi);
@@ -1093,13 +1106,20 @@ function defaultAdapters() {
   return [ticketonAdapter(), kassirAdapter(), manualAdapter()];
 }
 async function runParser(options = {}) {
-  const adapters = options.adapters ?? defaultAdapters();
+  let adapters = options.adapters ?? defaultAdapters();
+  if (options.sources?.length) adapters = adapters.filter((a) => options.sources.includes(a.name));
   const fetchFn = options.fetchFn ?? proxiedFetch(fetch);
   const log = options.log ?? (() => {
   });
   const now = options.now ?? /* @__PURE__ */ new Date();
   const debug = {};
-  const ctx = { fetchFn, log, maxDetailFetches: options.maxDetailFetches ?? 40, debug };
+  const ctx = {
+    fetchFn,
+    log,
+    maxDetailFetches: options.maxDetailFetches ?? 40,
+    deadlineMs: Date.now() + (options.maxMs ?? 5e4),
+    debug
+  };
   const result = {
     ok: true,
     bySource: {},
@@ -1113,6 +1133,10 @@ async function runParser(options = {}) {
   const seen = /* @__PURE__ */ new Set();
   for (const adapter of adapters) {
     if (!adapter.enabled) continue;
+    if (past(ctx)) {
+      result.errors.push(`${adapter.name}: \u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D (\u0434\u0435\u0434\u043B\u0430\u0439\u043D)`);
+      continue;
+    }
     try {
       const candidates = await adapter.run(ctx);
       result.bySource[adapter.name] = candidates.length;
@@ -1833,11 +1857,14 @@ function registerMvpApi(app2) {
     const session = getSession(req);
     if (session.role !== "owner") return res.status(403).json({ error: "\u0422\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u0435\u0446 \u043C\u043E\u0436\u0435\u0442 \u0437\u0430\u043F\u0443\u0441\u043A\u0430\u0442\u044C \u043F\u0430\u0440\u0441\u0438\u043D\u0433" });
     if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
-    const { dryRun, maxDetailFetches } = req.body || {};
+    const { dryRun, maxDetailFetches, sources, maxMs } = req.body || {};
     try {
       const result = await runParser({
         dryRun: Boolean(dryRun),
         maxDetailFetches: Number(maxDetailFetches) || void 0,
+        sources: Array.isArray(sources) && sources.length ? sources : void 0,
+        maxMs: Number(maxMs) || 45e3,
+        // под лимит serverless-функции
         log: (m) => console.log("[dance-events]", m)
       });
       res.json(result);
@@ -1902,6 +1929,286 @@ function registerMvpApi(app2) {
       res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0441\u043E\u0431\u044B\u0442\u0438\u0435" });
     }
   });
+  function mapDbGroup(row, studentCount = 0) {
+    return {
+      id: row.id,
+      organizationId: row.organization_id,
+      branchId: row.branch_id,
+      name: row.name,
+      teacherId: row.teacher_id || "",
+      hallId: row.hall_id || "",
+      scheduleText: [row.schedule_days, row.schedule_time].filter(Boolean).join(" ") || "\u041F\u043E \u0440\u0430\u0441\u043F\u0438\u0441\u0430\u043D\u0438\u044E",
+      days: row.schedule_days ? String(row.schedule_days).split(",").map((d) => d.trim()) : [],
+      time: row.schedule_time || "",
+      ageGroup: row.age_from != null && row.age_to != null ? `${row.age_from}\u2013${row.age_to} \u043B\u0435\u0442` : "\u0412\u0441\u0435 \u0432\u043E\u0437\u0440\u0430\u0441\u0442\u044B",
+      level: row.level || "MVP",
+      studentCount
+    };
+  }
+  const groupAccess = (session, res) => {
+    if (!["owner", "admin", "branch_manager"].includes(session.role)) {
+      res.status(403).json({ error: "\u041D\u0435\u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E \u043F\u0440\u0430\u0432 \u0434\u043B\u044F \u0443\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u0438\u044F \u0433\u0440\u0443\u043F\u043F\u0430\u043C\u0438" });
+      return false;
+    }
+    if (!supabaseEnabled) {
+      res.status(503).json({ error: "Supabase is not configured" });
+      return false;
+    }
+    return true;
+  };
+  app2.post("/api/mvp/groups", async (req, res) => {
+    const session = getSession(req);
+    if (!groupAccess(session, res)) return;
+    const payload = req.body || {};
+    if (!payload.name || !payload.branchId) {
+      return res.status(400).json({ error: "name \u0438 branchId \u043E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u044B" });
+    }
+    if (!canSeeBranch(session, payload.branchId)) {
+      return res.status(403).json({ error: "Branch access denied" });
+    }
+    try {
+      const inserted = await supabaseFetch("groups", "", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: session.organizationId,
+          branch_id: payload.branchId,
+          hall_id: payload.hallId || null,
+          teacher_id: payload.teacherId || null,
+          name: String(payload.name).trim(),
+          age_from: payload.ageFrom ?? null,
+          age_to: payload.ageTo ?? null,
+          capacity: payload.capacity ?? null,
+          level: payload.level || "\u041D\u0430\u0447\u0438\u043D\u0430\u044E\u0449\u0438\u0435",
+          schedule_days: payload.scheduleDays || null,
+          schedule_time: payload.scheduleTime || null,
+          status: "active"
+        })
+      });
+      res.status(201).json({ group: mapDbGroup(inserted[0]) });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0437\u0434\u0430\u0442\u044C \u0433\u0440\u0443\u043F\u043F\u0443" });
+    }
+  });
+  app2.patch("/api/mvp/groups/:id", async (req, res) => {
+    const session = getSession(req);
+    if (!groupAccess(session, res)) return;
+    const payload = req.body || {};
+    const updates = {};
+    if (payload.name !== void 0) updates.name = String(payload.name).trim();
+    if (payload.branchId !== void 0) {
+      if (!canSeeBranch(session, payload.branchId)) return res.status(403).json({ error: "Branch access denied" });
+      updates.branch_id = payload.branchId;
+    }
+    if (payload.hallId !== void 0) updates.hall_id = payload.hallId || null;
+    if (payload.teacherId !== void 0) updates.teacher_id = payload.teacherId || null;
+    if (payload.ageFrom !== void 0) updates.age_from = payload.ageFrom ?? null;
+    if (payload.ageTo !== void 0) updates.age_to = payload.ageTo ?? null;
+    if (payload.capacity !== void 0) updates.capacity = payload.capacity ?? null;
+    if (payload.level !== void 0) updates.level = payload.level || null;
+    if (payload.scheduleDays !== void 0) updates.schedule_days = payload.scheduleDays || null;
+    if (payload.scheduleTime !== void 0) updates.schedule_time = payload.scheduleTime || null;
+    if (Object.keys(updates).length === 0) return res.status(400).json({ error: "\u041D\u0435\u0442 \u043F\u043E\u043B\u0435\u0439 \u0434\u043B\u044F \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F" });
+    try {
+      const rows = await supabaseFetch(
+        "groups",
+        `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
+        { method: "PATCH", body: JSON.stringify(updates) }
+      );
+      if (!rows[0]) return res.status(404).json({ error: "\u0413\u0440\u0443\u043F\u043F\u0430 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430" });
+      res.json({ group: mapDbGroup(rows[0]) });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0433\u0440\u0443\u043F\u043F\u0443" });
+    }
+  });
+  app2.delete("/api/mvp/groups/:id", async (req, res) => {
+    const session = getSession(req);
+    if (!groupAccess(session, res)) return;
+    try {
+      const rows = await supabaseFetch(
+        "groups",
+        `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
+        { method: "PATCH", body: JSON.stringify({ status: "archived" }) }
+      );
+      if (!rows[0]) return res.status(404).json({ error: "\u0413\u0440\u0443\u043F\u043F\u0430 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430" });
+      res.json({ group: mapDbGroup(rows[0]), archived: true });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u0433\u0440\u0443\u043F\u043F\u0443" });
+    }
+  });
+  function mapDbLesson(row, extras = {}) {
+    return {
+      id: row.id,
+      branchId: row.branch_id,
+      groupId: row.group_id,
+      groupName: extras.groupName || row.group_name || null,
+      teacherId: row.teacher_id || null,
+      teacherName: extras.teacherName || row.teacher_name || null,
+      hallId: row.hall_id || null,
+      hallName: extras.hallName || row.hall_name || null,
+      startsAt: row.starts_at,
+      endsAt: row.ends_at,
+      status: row.status || "scheduled",
+      topic: row.topic || null
+    };
+  }
+  app2.get("/api/mvp/schedule", async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const { branchId, groupId, from, to } = req.query;
+    const parts = ["select=*,groups(name),halls(name),users(full_name)", "order=starts_at.asc"];
+    if (branchId) parts.push(`branch_id=eq.${branchId}`);
+    else if (session.role !== "owner" && session.dbBranchId) parts.push(`branch_id=eq.${session.dbBranchId}`);
+    if (groupId) parts.push(`group_id=eq.${groupId}`);
+    if (from) parts.push(`starts_at=gte.${encodeURIComponent(from)}`);
+    if (to) parts.push(`starts_at=lte.${encodeURIComponent(to)}`);
+    if (session.role === "teacher") parts.push(`teacher_id=eq.${session.userId}`);
+    try {
+      const rows = await supabaseFetch("schedule_lessons", parts.join("&"));
+      const lessons = rows.map(
+        (row) => mapDbLesson(row, {
+          groupName: row.groups?.name,
+          hallName: row.halls?.name,
+          teacherName: row.users?.full_name
+        })
+      );
+      res.json({ lessons });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0440\u0430\u0441\u043F\u0438\u0441\u0430\u043D\u0438\u0435" });
+    }
+  });
+  const scheduleAccess = (session, res) => {
+    if (!["owner", "admin", "branch_manager"].includes(session.role)) {
+      res.status(403).json({ error: "\u041D\u0435\u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E \u043F\u0440\u0430\u0432 \u0434\u043B\u044F \u0443\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u0438\u044F \u0440\u0430\u0441\u043F\u0438\u0441\u0430\u043D\u0438\u0435\u043C" });
+      return false;
+    }
+    if (!supabaseEnabled) {
+      res.status(503).json({ error: "Supabase is not configured" });
+      return false;
+    }
+    return true;
+  };
+  app2.post("/api/mvp/schedule", async (req, res) => {
+    const session = getSession(req);
+    if (!scheduleAccess(session, res)) return;
+    const payload = req.body || {};
+    if (!payload.groupId || !payload.startsAt || !payload.endsAt) {
+      return res.status(400).json({ error: "groupId, startsAt \u0438 endsAt \u043E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u044B" });
+    }
+    try {
+      let branchId = payload.branchId;
+      if (!branchId) {
+        const groups = await supabaseFetch("groups", `select=branch_id&id=eq.${payload.groupId}`);
+        branchId = groups[0]?.branch_id;
+      }
+      if (!canSeeBranch(session, branchId)) return res.status(403).json({ error: "Branch access denied" });
+      const inserted = await supabaseFetch("schedule_lessons", "", {
+        method: "POST",
+        body: JSON.stringify({
+          branch_id: branchId,
+          group_id: payload.groupId,
+          teacher_id: payload.teacherId || null,
+          hall_id: payload.hallId || null,
+          starts_at: payload.startsAt,
+          ends_at: payload.endsAt,
+          status: "scheduled",
+          topic: payload.topic || null,
+          created_by: session.userId.startsWith("demo-") ? null : session.userId
+        })
+      });
+      res.status(201).json({ lesson: mapDbLesson(inserted[0]) });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0437\u0434\u0430\u0442\u044C \u0443\u0440\u043E\u043A" });
+    }
+  });
+  app2.patch("/api/mvp/schedule/:id", async (req, res) => {
+    const session = getSession(req);
+    if (!scheduleAccess(session, res)) return;
+    const payload = req.body || {};
+    const updates = {};
+    if (payload.startsAt !== void 0) updates.starts_at = payload.startsAt;
+    if (payload.endsAt !== void 0) updates.ends_at = payload.endsAt;
+    if (payload.teacherId !== void 0) updates.teacher_id = payload.teacherId || null;
+    if (payload.hallId !== void 0) updates.hall_id = payload.hallId || null;
+    if (payload.status !== void 0) updates.status = payload.status;
+    if (payload.topic !== void 0) updates.topic = payload.topic || null;
+    if (Object.keys(updates).length === 0) return res.status(400).json({ error: "\u041D\u0435\u0442 \u043F\u043E\u043B\u0435\u0439 \u0434\u043B\u044F \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F" });
+    try {
+      const rows = await supabaseFetch(
+        "schedule_lessons",
+        `id=eq.${req.params.id}`,
+        { method: "PATCH", body: JSON.stringify(updates) }
+      );
+      if (!rows[0]) return res.status(404).json({ error: "\u0423\u0440\u043E\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+      res.json({ lesson: mapDbLesson(rows[0]) });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0443\u0440\u043E\u043A" });
+    }
+  });
+  app2.delete("/api/mvp/schedule/:id", async (req, res) => {
+    const session = getSession(req);
+    if (!scheduleAccess(session, res)) return;
+    try {
+      const rows = await supabaseFetch(
+        "schedule_lessons",
+        `id=eq.${req.params.id}`,
+        { method: "PATCH", body: JSON.stringify({ status: "cancelled" }) }
+      );
+      if (!rows[0]) return res.status(404).json({ error: "\u0423\u0440\u043E\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+      res.json({ lesson: mapDbLesson(rows[0]), cancelled: true });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043C\u0435\u043D\u0438\u0442\u044C \u0443\u0440\u043E\u043A" });
+    }
+  });
+  app2.get("/api/mvp/parent/child", async (req, res) => {
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const { studentId } = req.query;
+    if (!studentId) return res.status(400).json({ error: "studentId \u043E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u0435\u043D" });
+    try {
+      const [studentsRaw, subscriptionsRaw, paymentsRaw, lessons, attendanceRaw, plans] = await Promise.all([
+        supabaseFetch("students", `select=*&id=eq.${studentId}&status=neq.archived`),
+        supabaseFetch("student_subscriptions", `select=*&student_id=eq.${studentId}&order=starts_on.desc`),
+        supabaseFetch("payments", `select=*&student_id=eq.${studentId}&order=paid_at.desc&limit=20`),
+        supabaseFetch("schedule_lessons", `select=*&order=starts_at.desc&limit=60`),
+        supabaseFetch("attendance", `select=*&student_id=eq.${studentId}`),
+        supabaseFetch("subscription_plans", `select=*`)
+      ]);
+      const student = studentsRaw[0];
+      if (!student) return res.status(404).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+      const planById = new Map(plans.map((p) => [p.id, p]));
+      const lessonById = new Map(lessons.map((l) => [l.id, l]));
+      const attendanceMap = {};
+      attendanceRaw.forEach((row) => {
+        const lesson = lessonById.get(row.lesson_id);
+        if (!lesson) return;
+        const date = toDate(lesson.starts_at);
+        attendanceMap[date] = {
+          date,
+          status: row.status === "unknown" ? "unmarked" : row.status,
+          markedBy: row.marked_by || void 0,
+          note: row.comment || void 0
+        };
+      });
+      const subsMapped = subscriptionsRaw.map((sub) => {
+        const plan = planById.get(sub.plan_id);
+        return {
+          id: sub.id,
+          studentId: sub.student_id,
+          name: plan?.name || "\u0410\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442",
+          price: Number(sub.price || 0),
+          lessonsTotal: sub.lessons_total || 0,
+          lessonsLeft: sub.lessons_left || 0,
+          validUntil: sub.ends_on,
+          isAutoRenew: false,
+          status: sub.status === "active" ? "active" : "expired"
+        };
+      });
+      const paymentsMapped = paymentsRaw.map(mapDbPayment);
+      const mapped = mapDbStudent(student, /* @__PURE__ */ new Map([[studentId, attendanceMap]]), /* @__PURE__ */ new Map([[studentId, subscriptionsRaw]]));
+      res.json({ student: { ...mapped, subscriptions: subsMapped }, payments: paymentsMapped });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0434\u0430\u043D\u043D\u044B\u0435 \u0440\u0435\u0431\u0451\u043D\u043A\u0430" });
+    }
+  });
   app2.get("/api/cron/parse-dance-events", async (req, res) => {
     const secret = process.env.CRON_SECRET;
     if (secret && req.headers.authorization !== `Bearer ${secret}`) {
@@ -1909,7 +2216,7 @@ function registerMvpApi(app2) {
     }
     if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
     try {
-      const result = await runParser({ log: (m) => console.log("[cron dance-events]", m) });
+      const result = await runParser({ maxMs: 55e3, log: (m) => console.log("[cron dance-events]", m) });
       res.json({ ranAt: (/* @__PURE__ */ new Date()).toISOString(), ...result });
     } catch (error) {
       res.status(500).json({ error: error.message || "\u041F\u0430\u0440\u0441\u0438\u043D\u0433 \u043D\u0435 \u0432\u044B\u043F\u043E\u043B\u043D\u0435\u043D" });

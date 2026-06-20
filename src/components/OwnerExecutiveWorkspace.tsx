@@ -19,6 +19,10 @@ import {
   LineChart,
   MapPin,
   ExternalLink,
+  ArrowUpRight,
+  ArrowDownRight,
+  ArrowRight,
+  ChevronRight,
   RefreshCw,
   Ticket,
   Megaphone,
@@ -219,6 +223,8 @@ export function OwnerExecutiveWorkspace({
               debt={debt}
               renewals={renewals}
               eventsCount={eventsCount}
+              churnRate={metrics.churnRate}
+              onNavigate={(tab: OwnerTab) => setActiveTab(tab)}
             />
           )}
           {activeTab === "eduerp" && <OwnerEduErpView branches={branches} groups={groups} students={students} teachers={teachers} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
@@ -261,81 +267,233 @@ export function OwnerExecutiveWorkspace({
   );
 }
 
-function OwnerDashboard({ branches, activeStudents, newStudentsMonth, teachers, groups, attendanceToday, monthRevenue, todayRevenue, debt, renewals, eventsCount }: any) {
-  const kpis = [
-    { label: "Выручка сегодня", value: money(todayRevenue), tone: "gold", detail: "+18% к среде" },
-    { label: "Выручка месяца", value: money(monthRevenue), tone: "gold", detail: "план 74%" },
-    { label: "Активные ученики", value: activeStudents, tone: "white", detail: `${newStudentsMonth} новых за месяц` },
-    { label: "Посещаемость сегодня", value: `${attendanceToday}%`, tone: "emerald", detail: "месяц 82%" },
-    { label: "Филиалов", value: branches.length, tone: "white", detail: "3 активны" },
-    { label: "Преподавателей", value: teachers.length, tone: "white", detail: "загрузка 86%" },
-    { label: "Групп", value: groups.length, tone: "white", detail: "7 перегружены" },
-    { label: "Долги", value: money(debt), tone: "rose", detail: `${renewals} продлений` },
-    { label: "Концерты", value: eventsCount, tone: "emerald", detail: "4 в подготовке" },
-    { label: "Мероприятия", value: eventsCount + 6, tone: "white", detail: "месяц" },
-    { label: "Новые продажи", value: "31", tone: "emerald", detail: "за 7 дней" },
-    { label: "Повторные продажи", value: "71%", tone: "emerald", detail: "retention sales" }
+function OwnerDashboard({ branches, activeStudents, newStudentsMonth, teachers, groups, attendanceToday, monthRevenue, todayRevenue, debt, renewals, eventsCount, churnRate = 0, onNavigate }: any) {
+  const go = (tab: string) => onNavigate?.(tab);
+
+  // --- Производные показатели из реальных данных ---
+  const branchList: any[] = Array.isArray(branches) ? branches : [];
+  const riskBranches = branchList.filter((b) => b.status === "warning" || b.status === "critical");
+  const healthyCount = branchList.filter((b) => b.status === "healthy").length;
+  const overloadedGroups = groups.filter((g: any) => (g.studentCount ?? 0) >= 16).length;
+  const retentionRate = Math.max(0, Math.round(100 - (churnRate || 0)));
+  const avgLoad = teachers.length ? Math.round(groups.length / teachers.length * 10) / 10 : 0;
+
+  const sortedByRevenue = [...branchList].sort((a, b) => (b.revenue ?? 0) - (a.revenue ?? 0));
+  const topBranch = sortedByRevenue[0];
+  const worstAttendance = [...branchList].sort((a, b) => (a.attendanceRate ?? 0) - (b.attendanceRate ?? 0))[0];
+
+  const now = new Date();
+  const hour = now.getHours();
+  const greeting = hour < 6 ? "Доброй ночи" : hour < 12 ? "Доброе утро" : hour < 18 ? "Добрый день" : "Добрый вечер";
+  const dateLabel = now.toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" });
+
+  // --- Приоритеты дня (только то, что действительно требует внимания) ---
+  const priorities: { tone: "rose" | "amber" | "gold"; icon: React.ElementType; title: string; sub: string; tab: string }[] = [];
+  if (debt > 0) priorities.push({ tone: "rose", icon: WalletCards, title: money(debt), sub: "задолженность учеников", tab: "finance" });
+  if (renewals > 0) priorities.push({ tone: "amber", icon: RefreshCw, title: `${renewals} продлений`, sub: "абонементы на исходе", tab: "students" });
+  if (riskBranches.length > 0) priorities.push({ tone: "amber", icon: AlertTriangle, title: `${riskBranches.length} ${riskBranches.length === 1 ? "филиал" : "филиала"} в зоне риска`, sub: riskBranches.map((b) => b.city).join(", "), tab: "branches" });
+  if (overloadedGroups > 0) priorities.push({ tone: "gold", icon: Users, title: `${overloadedGroups} групп перегружены`, sub: "16+ учеников — нужен набор педагогов", tab: "schedule" });
+
+  // --- Инсайты AI-брифа из реальных данных ---
+  const insights: { severity: string; text: string }[] = [];
+  if (topBranch) insights.push({ severity: "Лидер", text: `Филиал ${topBranch.city} даёт максимум выручки: ${money(topBranch.revenue)} и ${topBranch.attendanceRate}% посещаемости.` });
+  if (worstAttendance && worstAttendance.attendanceRate < 82) insights.push({ severity: "Риск", text: `В филиале ${worstAttendance.city} посещаемость ${worstAttendance.attendanceRate}% — ниже нормы, проверьте расписание и педагогов.` });
+  if (renewals > 0) insights.push({ severity: "Продления", text: `У ${renewals} учеников заканчиваются абонементы в ближайшие дни — самое время для звонка.` });
+  insights.push({ severity: "Удержание", text: `Retention сети ${retentionRate}%, отток ${(churnRate || 0).toFixed(1)}%. ${newStudentsMonth} новых за месяц.` });
+
+  const monthPlan = Math.round(monthRevenue * 1.35); // ориентир плана; прогресс к цели
+  const monthProgress = monthPlan ? Math.min(100, Math.round((monthRevenue / monthPlan) * 100)) : 0;
+
+  const quickActions = [
+    { icon: UserRound, label: "Добавить ученика", tab: "students" },
+    { icon: Building2, label: "Новый филиал", tab: "branches" },
+    { icon: Megaphone, label: "Объявление", tab: "announcements" },
+    { icon: Sparkles, label: "AI-отчёт", tab: "ai" }
   ];
+
+  const chartData = sortedByRevenue.slice(0, 6).map((b) => ({ name: b.city, revenue: b.revenue ?? 0, status: b.status }));
+  const chartColor = (status: string) => (status === "critical" ? "#fb7185" : status === "warning" ? "#fbbf24" : "#C5A059");
 
   return (
     <div className="space-y-5">
+      {/* HERO */}
       <section className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-gradient-to-br from-[#171717] via-[#101318] to-black p-5 md:p-7">
         <div className="absolute right-[-80px] top-[-80px] h-80 w-80 rounded-full bg-[#C5A059]/10 blur-3xl" />
-        <div className="relative grid gap-5 xl:grid-cols-[1fr_420px] xl:items-end">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-[#C5A059]">Executive Network Dashboard</p>
-            <h1 className="mt-2 text-3xl font-black text-white md:text-5xl">Dance Academy OS</h1>
-            <p className="mt-3 max-w-3xl text-sm leading-relaxed text-slate-400">
-              CEO-центр управления всей сетью: финансы, филиалы, ученики, преподаватели, мероприятия, риски и решения на сегодня.
-            </p>
+        <div className="relative flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+          <div className="min-w-0">
+            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-[#C5A059]">{greeting}, владелец</p>
+            <h1 className="mt-2 text-3xl font-black text-white md:text-4xl">Сводка по сети</h1>
+            <p className="mt-2 text-sm capitalize text-slate-400">{dateLabel}</p>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              {quickActions.map((a) => (
+                <button
+                  key={a.label}
+                  onClick={() => go(a.tab)}
+                  className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-3.5 py-2 text-xs font-bold text-slate-200 transition hover:border-[#C5A059]/40 hover:bg-[#C5A059]/10 hover:text-white"
+                >
+                  <a.icon className="h-4 w-4 text-[#C5A059]" />
+                  {a.label}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="rounded-[1.75rem] border border-[#C5A059]/25 bg-[#C5A059]/10 p-4">
-            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">30 секунд владельца</p>
+          <div className="w-full shrink-0 rounded-[1.75rem] border border-[#C5A059]/25 bg-[#C5A059]/10 p-4 xl:w-[300px]">
+            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">Сводка за 30 секунд</p>
             <div className="mt-3 grid grid-cols-2 gap-3">
               <MiniMetric label="Сегодня" value={money(todayRevenue)} />
-              <MiniMetric label="Проблемы" value="3" />
-              <MiniMetric label="Рост" value="+18%" />
-              <MiniMetric label="AI задач" value="7" />
+              <MiniMetric label="Проблемы" value={priorities.length} />
+              <MiniMetric label="Филиалов ✓" value={`${healthyCount}/${branchList.length}`} />
+              <MiniMetric label="Удержание" value={`${retentionRate}%`} />
             </div>
           </div>
         </div>
       </section>
 
+      {/* ПРИОРИТЕТЫ ДНЯ */}
+      {priorities.length > 0 ? (
+        <section>
+          <div className="mb-2 flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-[#C5A059]" />
+            <h2 className="text-sm font-black uppercase tracking-wider text-slate-300">Требуют внимания сегодня</h2>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {priorities.map((p, i) => <PriorityCard key={i} tone={p.tone} icon={p.icon} title={p.title} sub={p.sub} onClick={() => go(p.tab)} />)}
+          </div>
+        </section>
+      ) : (
+        <section className="flex items-center gap-3 rounded-3xl border border-emerald-500/20 bg-emerald-500/10 p-4">
+          <CheckCircle className="h-6 w-6 text-emerald-400" />
+          <p className="text-sm font-bold text-emerald-200">Всё под контролем — острых задач по сети нет.</p>
+        </section>
+      )}
+
+      {/* ПЕРВИЧНЫЕ KPI */}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {kpis.map((kpi: any) => <OwnerKpi key={kpi.label} {...kpi} />)}
+        <OwnerKpi label="Выручка сегодня" value={money(todayRevenue)} tone="gold" icon={Coins} detail={`${newStudentsMonth} новых учеников за месяц`} onClick={() => go("finance")} />
+        <section className="rounded-3xl border border-[#C5A059]/20 bg-[#161616] p-4 transition hover:border-[#C5A059]/40 cursor-pointer" onClick={() => go("finance")}>
+          <div className="flex items-center justify-between">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Выручка месяца</p>
+            <TrendingUp className="h-4 w-4 text-[#C5A059]" />
+          </div>
+          <p className="mt-2 text-2xl font-black text-[#C5A059]">{money(monthRevenue)}</p>
+          <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+            <div className="h-full rounded-full bg-[#C5A059]" style={{ width: `${monthProgress}%` }} />
+          </div>
+          <p className="mt-1 text-xs text-slate-500">{monthProgress}% к ориентиру плана</p>
+        </section>
+        <OwnerKpi label="Активные ученики" value={activeStudents} tone="white" icon={Users} detail={`+${newStudentsMonth} за месяц`} onClick={() => go("students")} />
+        <OwnerKpi label="Посещаемость сегодня" value={`${attendanceToday}%`} tone={attendanceToday >= 82 ? "emerald" : "rose"} icon={Activity} detail={attendanceToday >= 82 ? "норма выдержана" : "ниже целевых 82%"} onClick={() => go("analytics")} />
+      </div>
+
+      {/* ВТОРИЧНЫЕ KPI */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+        <OwnerKpi label="Филиалы" value={branchList.length} tone="white" detail={`${healthyCount} в норме`} onClick={() => go("branches")} compact />
+        <OwnerKpi label="Преподаватели" value={teachers.length} tone="white" detail={`${avgLoad} групп/чел`} onClick={() => go("teachers")} compact />
+        <OwnerKpi label="Группы" value={groups.length} tone="white" detail={overloadedGroups > 0 ? `${overloadedGroups} перегружены` : "загрузка в норме"} onClick={() => go("schedule")} compact />
+        <OwnerKpi label="Долги" value={money(debt)} tone={debt > 0 ? "rose" : "emerald"} detail={`${renewals} продлений`} onClick={() => go("finance")} compact />
+        <OwnerKpi label="Концерты" value={eventsCount} tone="emerald" detail="на сцене" onClick={() => go("events")} compact />
+        <OwnerKpi label="Удержание" value={`${retentionRate}%`} tone="emerald" detail={`отток ${(churnRate || 0).toFixed(1)}%`} onClick={() => go("analytics")} compact />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[1fr_0.9fr]">
+        {/* AI BRIEF */}
         <section className="rounded-[2rem] border border-[#C5A059]/20 bg-[#C5A059]/10 p-5">
-          <div className="flex items-start gap-3">
-            <div className="rounded-2xl bg-[#C5A059] p-3 text-black"><Sparkles className="h-5 w-5" /></div>
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">AI Executive Morning Brief</p>
-              <h2 className="mt-1 text-xl font-black text-white">Сеть растет, но два филиала требуют внимания</h2>
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="rounded-2xl bg-[#C5A059] p-3 text-black"><Sparkles className="h-5 w-5" /></div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">AI Executive Brief</p>
+                <h2 className="mt-1 text-xl font-black text-white">{riskBranches.length > 0 ? `Сеть растёт, ${riskBranches.length} ${riskBranches.length === 1 ? "филиал требует" : "филиала требуют"} внимания` : "Сеть в здоровом состоянии"}</h2>
+              </div>
             </div>
+            <button onClick={() => go("ai")} className="hidden shrink-0 items-center gap-1 rounded-2xl border border-[#C5A059]/30 bg-black/20 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-[#C5A059] transition hover:bg-[#C5A059] hover:text-black sm:inline-flex">
+              Полный отчёт <ArrowRight className="h-3.5 w-3.5" />
+            </button>
           </div>
           <div className="mt-5 grid gap-3 md:grid-cols-2">
-            <Insight severity="Рост" text="Филиал Алматы показал рост выручки на 12% за неделю." />
-            <Insight severity="Риск" text="В филиале Астана снизилась посещаемость младших групп." />
-            <Insight severity="Продления" text="У 37 учеников заканчиваются абонементы в течение 7 дней." />
-            <Insight severity="Команда" text="Преподаватель Аслан показал лучший результат месяца по вовлеченности." />
+            {insights.map((ins, i) => <Insight key={i} severity={ins.severity} text={ins.text} />)}
           </div>
         </section>
 
+        {/* КАРТА ФИЛИАЛОВ */}
         <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
-          <h2 className="text-lg font-black text-white">Карта филиалов</h2>
-          <div className="mt-4 space-y-3">
-            {branches.map((branch: any) => <BranchRow key={branch.branchId} branch={branch} />)}
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-black text-white">Карта филиалов</h2>
+            <button onClick={() => go("branches")} className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-[#C5A059] transition hover:text-white">
+              Все <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <div className="mt-3 flex items-center gap-4 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-400" />Норма</span>
+            <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-amber-400" />Внимание</span>
+            <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-rose-500" />Риск</span>
+          </div>
+          <div className="mt-3 space-y-2.5">
+            {sortedByRevenue.map((branch: any) => (
+              <button key={branch.branchId} onClick={() => go("branches")} className="w-full text-left">
+                <BranchRow branch={branch} />
+              </button>
+            ))}
           </div>
         </section>
       </div>
 
+      {/* ВЫРУЧКА ПО ФИЛИАЛАМ */}
+      {chartData.length > 0 && (
+        <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-black text-white">Выручка по филиалам</h2>
+            <button onClick={() => go("analytics")} className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-[#C5A059] transition hover:text-white">
+              Аналитика <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <div className="mt-4 h-56 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+                <XAxis dataKey="name" tick={{ fill: "#94a3b8", fontSize: 11, fontWeight: 700 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => `${Math.round(v / 1000)}к`} width={36} />
+                <Tooltip
+                  cursor={{ fill: "rgba(197,160,89,0.08)" }}
+                  contentStyle={{ background: "#161616", border: "1px solid rgba(197,160,89,0.3)", borderRadius: 12, color: "#fff", fontSize: 12 }}
+                  formatter={(v: any) => [money(Number(v)), "Выручка"]}
+                />
+                <Bar dataKey="revenue" radius={[8, 8, 0, 0]} maxBarSize={56}>
+                  {chartData.map((entry, i) => <Cell key={i} fill={chartColor(entry.status)} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </section>
+      )}
+
+      {/* ИТОГОВЫЕ ПАНЕЛИ — кликабельные */}
       <div className="grid gap-4 xl:grid-cols-3">
-        <ExecutivePanel icon={<WalletCards />} title="Финансовая динамика" text="Месяц +18%, средний чек 42 000 ₸, повторные продажи 71%." />
-        <ExecutivePanel icon={<AlertTriangle />} title="Требуют внимания" text="Младшая группа Астана, 14 должников в Шымкенте, перегруз преподавателей." />
-        <ExecutivePanel icon={<TrendingUp />} title="Точки роста" text="Открыть группу 8-10 лет в Алматы и усилить набор в девичье направление." />
+        <ExecutivePanel icon={<WalletCards />} title="Финансовая динамика" text={`Выручка месяца ${money(monthRevenue)}, ${monthProgress}% к плану, удержание ${retentionRate}%.`} onClick={() => go("finance")} />
+        <ExecutivePanel icon={<AlertTriangle />} title="Требуют внимания" text={priorities.length > 0 ? priorities.map((p) => p.title).join(" • ") : "Острых проблем нет — сеть стабильна."} onClick={() => go("branches")} />
+        <ExecutivePanel icon={<TrendingUp />} title="Точки роста" text={`${overloadedGroups > 0 ? `Открыть группы там, где перегруз (${overloadedGroups}). ` : ""}Усилить набор: ${newStudentsMonth} новых за месяц.`} onClick={() => go("analytics")} />
       </div>
     </div>
+  );
+}
+
+function PriorityCard({ tone, icon: Icon, title, sub, onClick }: { key?: React.Key; tone: "rose" | "amber" | "gold"; icon: React.ElementType; title: string; sub: string; tab?: string; onClick: () => void }) {
+  const styles = {
+    rose: "border-rose-500/30 bg-rose-500/10 text-rose-300",
+    amber: "border-amber-400/30 bg-amber-400/10 text-amber-300",
+    gold: "border-[#C5A059]/30 bg-[#C5A059]/10 text-[#C5A059]"
+  }[tone];
+  return (
+    <button onClick={onClick} className={`group flex items-center gap-3 rounded-3xl border p-4 text-left transition hover:brightness-125 ${styles}`}>
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-black/30">
+        <Icon className="h-5 w-5" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-base font-black text-white">{title}</p>
+        <p className="truncate text-xs text-slate-400">{sub}</p>
+      </div>
+      <ChevronRight className="h-4 w-4 shrink-0 opacity-50 transition group-hover:translate-x-0.5 group-hover:opacity-100" />
+    </button>
   );
 }
 
@@ -1343,10 +1501,17 @@ function DanceEventsFeedView() {
     setParsing(true);
     setParseMsg(null);
     try {
+      // Кнопка гоняет только быстрый Ticketon (SSR). Тяжёлый Kassir (JS-рендеринг) — в ночном cron.
       const res = await fetch("/api/mvp/dance-events/parse", {
-        method: "POST", headers: ownerHeaders, body: JSON.stringify({}),
+        method: "POST", headers: ownerHeaders, body: JSON.stringify({ sources: ["ticketon"] }),
       });
-      const r = await res.json();
+      const text = await res.text();
+      let r: any;
+      try { r = JSON.parse(text); } catch {
+        throw new Error(res.status === 504 || /timeout|error occurred/i.test(text)
+          ? "Источник долго отвечает (таймаут). Полный сбор идёт ночью по расписанию."
+          : `Сервер вернул не-JSON (${res.status}).`);
+      }
       if (!res.ok) throw new Error(r.error || "Парсинг не выполнен");
       setParseMsg(`Найдено: ${r.matched}, добавлено/обновлено: ${r.upserted} (турниров ${r.byType?.tournament ?? 0}, концертов ${r.byType?.concert ?? 0}).`);
       await load();
@@ -2105,12 +2270,16 @@ function OwnerMobileNav({ tab, active, onClick }: { key?: React.Key; tab: any; a
   );
 }
 
-function OwnerKpi({ label, value, detail, tone = "white" }: { key?: React.Key; label: string; value: React.ReactNode; detail: string; tone?: string }) {
+function OwnerKpi({ label, value, detail, tone = "white", icon: Icon, onClick, compact = false }: { key?: React.Key; label: string; value: React.ReactNode; detail: string; tone?: string; icon?: React.ElementType; onClick?: () => void; compact?: boolean }) {
   const color = tone === "gold" ? "text-[#C5A059]" : tone === "emerald" ? "text-emerald-400" : tone === "rose" ? "text-rose-400" : "text-white";
+  const interactive = onClick ? "cursor-pointer hover:border-[#C5A059]/40 hover:bg-[#1b1b1b]" : "";
   return (
-    <section className="rounded-3xl border border-white/10 bg-[#161616] p-4">
-      <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{label}</p>
-      <p className={`mt-2 text-2xl font-black ${color}`}>{value}</p>
+    <section onClick={onClick} className={`group rounded-3xl border border-white/10 bg-[#161616] p-4 transition ${interactive}`}>
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{label}</p>
+        {Icon && <Icon className="h-4 w-4 text-slate-600 transition group-hover:text-[#C5A059]" />}
+      </div>
+      <p className={`mt-2 font-black ${compact ? "text-xl" : "text-2xl"} ${color}`}>{value}</p>
       <p className="mt-1 text-xs text-slate-500">{detail}</p>
     </section>
   );
@@ -2161,10 +2330,14 @@ function BranchStatus({ status }: { status: "healthy" | "warning" | "critical" }
   return <span className={`h-3 w-3 shrink-0 rounded-full shadow-lg ${styles[status]}`} />;
 }
 
-function ExecutivePanel({ icon, title, text }: { key?: React.Key; icon: React.ReactNode; title: string; text: string }) {
+function ExecutivePanel({ icon, title, text, onClick }: { key?: React.Key; icon: React.ReactNode; title: string; text: string; onClick?: () => void }) {
+  const interactive = onClick ? "cursor-pointer transition hover:border-[#C5A059]/30 hover:bg-[#161616]" : "";
   return (
-    <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
-      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#C5A059]/15 text-[#C5A059]">{icon}</div>
+    <section onClick={onClick} className={`group rounded-[2rem] border border-white/10 bg-[#121212] p-5 ${interactive}`}>
+      <div className="flex items-center justify-between">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#C5A059]/15 text-[#C5A059]">{icon}</div>
+        {onClick && <ArrowUpRight className="h-4 w-4 text-slate-600 transition group-hover:text-[#C5A059]" />}
+      </div>
       <h3 className="mt-4 text-lg font-black text-white">{title}</h3>
       <p className="mt-2 text-sm leading-relaxed text-slate-400">{text}</p>
     </section>
