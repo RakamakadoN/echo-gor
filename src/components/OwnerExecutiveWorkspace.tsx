@@ -1307,7 +1307,9 @@ function StudentsNetworkView({ students, branches, groups, teachers, onCreateStu
   const [form, setForm] = useState<StudentInput>(empty);
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const canManage = Boolean(onCreateStudent);
+  const selectedStudent = students.find((s) => s.id === selectedId) || null;
 
   const hasActiveSub = (s: Student) => (s.subscriptions || []).some((sub) => sub.status === "active");
   const noSub = students.filter((s) => !hasActiveSub(s)).length;
@@ -1411,7 +1413,7 @@ function StudentsNetworkView({ students, branches, groups, teachers, onCreateStu
           <span className="col-span-1 text-right">Действия</span>
         </div>
         {filtered.map((s) => (
-          <div key={s.id} className="grid grid-cols-2 gap-2 border-b border-white/5 px-5 py-3 text-sm md:grid-cols-12 md:items-center">
+          <div key={s.id} onClick={() => setSelectedId(s.id)} className={`grid cursor-pointer grid-cols-2 gap-2 border-b border-white/5 px-5 py-3 text-sm transition hover:bg-[#C5A059]/10 md:grid-cols-12 md:items-center ${selectedId === s.id ? "bg-[#C5A059]/15" : ""}`}>
             <div className="col-span-3">
               <p className="font-bold text-white">{s.name}</p>
               <p className="text-xs text-slate-500">{s.parentName} · {s.parentPhone || "—"}</p>
@@ -1426,14 +1428,26 @@ function StudentsNetworkView({ students, branches, groups, teachers, onCreateStu
             </span>
             {canManage && (
               <div className="col-span-1 flex justify-end gap-1">
-                <button onClick={() => startEdit(s)} title="Редактировать" className="rounded-lg border border-white/10 p-1.5 text-slate-300 transition hover:border-[#C5A059]/40 hover:text-[#C5A059]"><Pencil className="h-4 w-4" /></button>
-                <button onClick={() => remove(s)} title="Архивировать" className="rounded-lg border border-white/10 p-1.5 text-slate-300 transition hover:border-red-500/40 hover:text-red-400"><Trash2 className="h-4 w-4" /></button>
+                <button onClick={(e) => { e.stopPropagation(); startEdit(s); }} title="Редактировать" className="rounded-lg border border-white/10 p-1.5 text-slate-300 transition hover:border-[#C5A059]/40 hover:text-[#C5A059]"><Pencil className="h-4 w-4" /></button>
+                <button onClick={(e) => { e.stopPropagation(); remove(s); }} title="Архивировать" className="rounded-lg border border-white/10 p-1.5 text-slate-300 transition hover:border-red-500/40 hover:text-red-400"><Trash2 className="h-4 w-4" /></button>
               </div>
             )}
           </div>
         ))}
         {filtered.length === 0 && <p className="px-5 py-6 text-center text-sm text-slate-500">Ученики не найдены.</p>}
       </div>
+
+      {selectedStudent && (
+        <StudentManagementCard
+          student={selectedStudent}
+          group={groups.find((g) => selectedStudent.groupIds?.includes(g.id))}
+          branch={branches.find((b) => b.id === selectedStudent.branchId)}
+          teacher={teachers.find((t) => t.id === selectedStudent.teacherId)}
+          onClose={() => setSelectedId(null)}
+          onEdit={canManage ? () => startEdit(selectedStudent) : undefined}
+          onDelete={onDeleteStudent ? () => remove(selectedStudent) : undefined}
+        />
+      )}
 
       <div className="overflow-hidden rounded-[2rem] border border-rose-500/20 bg-[#140f10]">
         <div className="flex items-center justify-between gap-3 border-b border-rose-500/15 px-5 py-4">
