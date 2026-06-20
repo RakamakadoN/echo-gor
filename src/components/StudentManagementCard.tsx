@@ -21,6 +21,7 @@ import {
   X,
   Trash2,
   CreditCard,
+  CheckCircle2,
 } from "lucide-react";
 import { Branch, Group, Student, Teacher } from "../types";
 
@@ -31,13 +32,19 @@ export interface StudentManagementCardProps {
   teacher?: Teacher;
   /** Подзаголовок-крошки слева сверху, по умолчанию «Все ученики / {группа}» */
   breadcrumbRoot?: string;
+  /** Полные списки для формы перевода ученика */
+  allGroups?: Group[];
+  allBranches?: Branch[];
+  allTeachers?: Teacher[];
   onClose?: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
   onOpenPayment?: () => void;
   onSellSubscription?: () => void;
-  onTrial?: () => void;
-  onTransfer?: () => void;
+  /** Запись на пробный урок (UI-форма; вызывается при сохранении) */
+  onTrial?: (payload: { date: string; time: string; note: string }) => Promise<boolean> | boolean | void;
+  /** Перевод ученика в другую группу/филиал/к другому педагогу */
+  onTransfer?: (payload: { groupId?: string; branchId?: string; teacherId?: string }) => Promise<boolean> | boolean | void;
 }
 
 type TabId =
@@ -81,6 +88,9 @@ export default function StudentManagementCard({
   branch,
   teacher,
   breadcrumbRoot = "Все ученики",
+  allGroups = [],
+  allBranches = [],
+  allTeachers = [],
   onClose,
   onEdit,
   onDelete,
@@ -90,6 +100,49 @@ export default function StudentManagementCard({
   onTransfer,
 }: StudentManagementCardProps) {
   const [tab, setTab] = useState<TabId>("general");
+  const [panel, setPanel] = useState<null | "trial" | "transfer">(null);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<string | null>(null);
+
+  const [trialForm, setTrialForm] = useState({ date: "", time: "", note: "" });
+  const [transferForm, setTransferForm] = useState({
+    groupId: student.groupIds?.[0] || "",
+    branchId: student.branchId || "",
+    teacherId: student.teacherId || "",
+  });
+
+  const sellHandler = onSellSubscription || onOpenPayment;
+
+  const togglePanel = (next: "trial" | "transfer") => {
+    setDone(null);
+    setPanel((prev) => (prev === next ? null : next));
+  };
+
+  const submitTrial = async () => {
+    setBusy(true);
+    try {
+      if (onTrial) await onTrial(trialForm);
+      setDone(`Пробный урок записан${trialForm.date ? `: ${trialForm.date}${trialForm.time ? `, ${trialForm.time}` : ""}` : ""}`);
+      setPanel(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitTransfer = async () => {
+    if (!onTransfer) return;
+    setBusy(true);
+    try {
+      const ok = await onTransfer(transferForm);
+      if (ok !== false) {
+        const groupName = allGroups.find((g) => g.id === transferForm.groupId)?.name;
+        setDone(`Ученик переведён${groupName ? ` в «${groupName}»` : ""}`);
+        setPanel(null);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const subscription =
     student.subscriptions?.find((item) => item.status === "active") ||
@@ -190,15 +243,21 @@ export default function StudentManagementCard({
 
         {/* Кнопки действий */}
         <div className="mt-5 flex flex-wrap gap-2">
+          {sellHandler && (
+            <button
+              onClick={() => sellHandler()}
+              className="inline-flex items-center gap-2 rounded-xl bg-rose-500 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-rose-600"
+            >
+              <Plus className="h-4 w-4" /> Продать абонемент
+            </button>
+          )}
           <button
-            onClick={onSellSubscription || onOpenPayment}
-            className="inline-flex items-center gap-2 rounded-xl bg-rose-500 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-rose-600"
-          >
-            <Plus className="h-4 w-4" /> Продать абонемент
-          </button>
-          <button
-            onClick={onTrial}
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
+            onClick={() => togglePanel("trial")}
+            className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-bold transition ${
+              panel === "trial"
+                ? "border-rose-300 bg-rose-50 text-rose-600"
+                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+            }`}
           >
             <Calendar className="h-4 w-4 text-slate-400" /> Пробный урок
           </button>
@@ -210,12 +269,18 @@ export default function StudentManagementCard({
           >
             <MessageCircle className="h-4 w-4" /> WhatsApp
           </a>
-          <button
-            onClick={onTransfer}
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
-          >
-            <ArrowLeftRight className="h-4 w-4 text-slate-400" /> Перевести
-          </button>
+          {onTransfer && (
+            <button
+              onClick={() => togglePanel("transfer")}
+              className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-bold transition ${
+                panel === "transfer"
+                  ? "border-rose-300 bg-rose-50 text-rose-600"
+                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              <ArrowLeftRight className="h-4 w-4 text-slate-400" /> Перевести
+            </button>
+          )}
           {onEdit && (
             <button
               onClick={onEdit}
@@ -233,6 +298,137 @@ export default function StudentManagementCard({
             </button>
           )}
         </div>
+
+        {/* Подтверждение действия */}
+        {done && (
+          <div className="mt-3 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700">
+            <CheckCircle2 className="h-4 w-4" /> {done}
+          </div>
+        )}
+
+        {/* Форма: пробный урок */}
+        {panel === "trial" && (
+          <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <p className="mb-3 text-sm font-bold text-slate-700">Запись на пробный урок</p>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-slate-500">Дата</span>
+                <input
+                  type="date"
+                  value={trialForm.date}
+                  onChange={(e) => setTrialForm((f) => ({ ...f, date: e.target.value }))}
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-slate-500">Время</span>
+                <input
+                  type="time"
+                  value={trialForm.time}
+                  onChange={(e) => setTrialForm((f) => ({ ...f, time: e.target.value }))}
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-slate-500">Заметка</span>
+                <input
+                  type="text"
+                  value={trialForm.note}
+                  onChange={(e) => setTrialForm((f) => ({ ...f, note: e.target.value }))}
+                  placeholder="Комментарий"
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder-slate-400"
+                />
+              </label>
+            </div>
+            <div className="mt-3 flex gap-2">
+              <button
+                onClick={submitTrial}
+                disabled={busy || !trialForm.date}
+                className="rounded-xl bg-rose-500 px-4 py-2 text-sm font-bold text-white transition hover:bg-rose-600 disabled:opacity-40"
+              >
+                {busy ? "Сохранение…" : "Записать"}
+              </button>
+              <button
+                onClick={() => setPanel(null)}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-500 transition hover:bg-slate-50"
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Форма: перевод ученика */}
+        {panel === "transfer" && onTransfer && (
+          <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <p className="mb-3 text-sm font-bold text-slate-700">Перевод ученика</p>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-slate-500">Группа</span>
+                <select
+                  value={transferForm.groupId}
+                  onChange={(e) => setTransferForm((f) => ({ ...f, groupId: e.target.value }))}
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
+                >
+                  <option value="">Без группы</option>
+                  {allGroups.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {allBranches.length > 0 && (
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-semibold text-slate-500">Филиал</span>
+                  <select
+                    value={transferForm.branchId}
+                    onChange={(e) => setTransferForm((f) => ({ ...f, branchId: e.target.value }))}
+                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
+                  >
+                    {allBranches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {allTeachers.length > 0 && (
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-semibold text-slate-500">Педагог</span>
+                  <select
+                    value={transferForm.teacherId}
+                    onChange={(e) => setTransferForm((f) => ({ ...f, teacherId: e.target.value }))}
+                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
+                  >
+                    <option value="">Не назначен</option>
+                    {allTeachers.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+            </div>
+            <div className="mt-3 flex gap-2">
+              <button
+                onClick={submitTransfer}
+                disabled={busy}
+                className="rounded-xl bg-rose-500 px-4 py-2 text-sm font-bold text-white transition hover:bg-rose-600 disabled:opacity-40"
+              >
+                {busy ? "Перевод…" : "Перевести"}
+              </button>
+              <button
+                onClick={() => setPanel(null)}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-500 transition hover:bg-slate-50"
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Вкладки */}
         <div className="mt-5 flex gap-5 overflow-x-auto border-b border-slate-100">

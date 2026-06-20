@@ -582,10 +582,14 @@ function VisitorsView({ students, groups, branches, teachers, payments, search, 
             group={groups.find((group: Group) => group.id === (selectedStudent.groupIds?.[0] || (selectedStudent as any).groupId))}
             branch={branches.find((branch: Branch) => branch.id === selectedStudent.branchId)}
             teacher={teachers.find((teacher: Teacher) => teacher.id === selectedStudent.teacherId)}
+            allGroups={groups}
+            allBranches={branches}
+            allTeachers={teachers}
             onClose={() => setSelectedStudentId("")}
             onEdit={canManage ? () => openEdit(selectedStudent) : undefined}
             onDelete={onDeleteStudent ? () => handleDelete(selectedStudent) : undefined}
             onOpenPayment={onOpenPayment ? () => onOpenPayment(selectedStudent) : undefined}
+            onTransfer={onUpdateStudent ? (payload: any) => onUpdateStudent(selectedStudent.id, payload) : undefined}
           />
         )}
       </div>

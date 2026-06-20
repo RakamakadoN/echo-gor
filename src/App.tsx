@@ -660,6 +660,20 @@ export default function App() {
     }
   };
 
+  // Открыть глобальную модалку оплаты с предзаполнением под ученика («Продать абонемент» / «Принять оплату»).
+  const openPaymentForStudent = (student: Student) => {
+    setSelectedStudentId(student.id);
+    const activeSub = student.subscriptions?.[0];
+    setPaymentAmount(activeSub ? activeSub.price : 4500);
+    setPaymentDesc(
+      student.balance < 0
+        ? `Погашение долга: ${student.name}`
+        : `Оплата абонемента: ${student.name}`
+    );
+    setPaymentType("subscription");
+    setShowAddPaymentModal(true);
+  };
+
   // --- Корзина учеников (владелец подтверждает удаление) ---
   const [studentTrash, setStudentTrash] = useState<any[]>([]);
 
@@ -2585,6 +2599,7 @@ export default function App() {
               students={students}
               teachers={teachers}
               payments={payments}
+              onOpenPayment={openPaymentForStudent}
               announcements={announcements}
               competitions={competitions}
               halls={halls}
@@ -2619,6 +2634,7 @@ export default function App() {
               onCreateStudent={handleCreateStudent}
               onUpdateStudent={handleUpdateStudent}
               onDeleteStudent={handleDeleteStudent}
+              onOpenPayment={openPaymentForStudent}
               studentTrash={studentTrash}
               onRestoreStudent={handleRestoreStudent}
               onConfirmDeleteStudent={handleConfirmDeleteStudent}
@@ -2669,18 +2685,7 @@ export default function App() {
               onUpdateStudent={handleUpdateStudent}
               onDeleteStudent={handleDeleteStudent}
               onCreateAnnouncement={handleCreateAnnouncement}
-              onOpenPayment={(student: Student) => {
-                setSelectedStudentId(student.id);
-                const activeSub = student.subscriptions?.[0];
-                setPaymentAmount(activeSub ? activeSub.price : 4500);
-                setPaymentDesc(
-                  student.balance < 0
-                    ? `Погашение долга: ${student.name}`
-                    : `Оплата абонемента: ${student.name}`
-                );
-                setPaymentType("subscription");
-                setShowAddPaymentModal(true);
-              }}
+              onOpenPayment={openPaymentForStudent}
             />
           ) : (
             <>

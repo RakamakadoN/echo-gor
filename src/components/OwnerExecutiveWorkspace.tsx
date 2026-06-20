@@ -81,6 +81,7 @@ interface OwnerExecutiveWorkspaceProps {
   onCreateStudent?: (data: StudentInput) => Promise<boolean>;
   onUpdateStudent?: (id: string, data: StudentInput) => Promise<boolean>;
   onDeleteStudent?: (id: string) => Promise<boolean>;
+  onOpenPayment?: (student: Student) => void;
   studentTrash?: TrashStudent[];
   onRestoreStudent?: (id: string) => Promise<boolean>;
   onConfirmDeleteStudent?: (id: string) => Promise<boolean>;
@@ -146,6 +147,7 @@ export function OwnerExecutiveWorkspace({
   onCreateStudent,
   onUpdateStudent,
   onDeleteStudent,
+  onOpenPayment,
   studentTrash = [],
   onRestoreStudent,
   onConfirmDeleteStudent,
@@ -253,7 +255,7 @@ export function OwnerExecutiveWorkspace({
           )}
           {activeTab === "eduerp" && <OwnerEduErpView branches={branches} groups={groups} students={students} teachers={teachers} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
           {activeTab === "branches" && <BranchesView branches={branchScorecards} rawBranches={branches} students={students} groups={groups} teachers={teachers} onCreateBranch={onCreateBranch} onUpdateBranch={onUpdateBranch} onDeleteBranch={onDeleteBranch} />}
-          {activeTab === "students" && <StudentsNetworkView students={students} branches={branches} groups={groups} teachers={teachers} onCreateStudent={onCreateStudent} onUpdateStudent={onUpdateStudent} onDeleteStudent={onDeleteStudent} studentTrash={studentTrash} onRestoreStudent={onRestoreStudent} onConfirmDeleteStudent={onConfirmDeleteStudent} />}
+          {activeTab === "students" && <StudentsNetworkView students={students} branches={branches} groups={groups} teachers={teachers} onCreateStudent={onCreateStudent} onUpdateStudent={onUpdateStudent} onDeleteStudent={onDeleteStudent} onOpenPayment={onOpenPayment} studentTrash={studentTrash} onRestoreStudent={onRestoreStudent} onConfirmDeleteStudent={onConfirmDeleteStudent} />}
           {activeTab === "teachers" && <TeachersNetworkView teachers={teachers} metrics={metrics} branches={branches} onCreateTeacher={onCreateTeacher} onUpdateTeacher={onUpdateTeacher} onDeleteTeacher={onDeleteTeacher} />}
           {activeTab === "finance" && <FinanceCenterView branches={branchScorecards} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
           {activeTab === "schedule" && (
@@ -1236,6 +1238,9 @@ function OwnerEduErpView({ branches, groups, students, teachers, payments, month
               group={selectedGroup}
               branch={selectedBranch}
               teacher={selectedTeacher}
+              allGroups={groups}
+              allBranches={branches}
+              allTeachers={teachers}
               onClose={() => setSelectedStudentId("")}
             />
           </div>
@@ -1289,7 +1294,7 @@ function OwnerEduErpView({ branches, groups, students, teachers, payments, month
   );
 }
 
-function StudentsNetworkView({ students, branches, groups, teachers, onCreateStudent, onUpdateStudent, onDeleteStudent, studentTrash = [], onRestoreStudent, onConfirmDeleteStudent }: {
+function StudentsNetworkView({ students, branches, groups, teachers, onCreateStudent, onUpdateStudent, onDeleteStudent, onOpenPayment, studentTrash = [], onRestoreStudent, onConfirmDeleteStudent }: {
   students: Student[];
   branches: Branch[];
   groups: Group[];
@@ -1297,6 +1302,7 @@ function StudentsNetworkView({ students, branches, groups, teachers, onCreateStu
   onCreateStudent?: (data: StudentInput) => Promise<boolean>;
   onUpdateStudent?: (id: string, data: StudentInput) => Promise<boolean>;
   onDeleteStudent?: (id: string) => Promise<boolean>;
+  onOpenPayment?: (student: Student) => void;
   studentTrash?: TrashStudent[];
   onRestoreStudent?: (id: string) => Promise<boolean>;
   onConfirmDeleteStudent?: (id: string) => Promise<boolean>;
@@ -1441,9 +1447,14 @@ function StudentsNetworkView({ students, branches, groups, teachers, onCreateStu
                 group={groups.find((g) => s.groupIds?.includes(g.id))}
                 branch={branches.find((b) => b.id === s.branchId)}
                 teacher={teachers.find((t) => t.id === s.teacherId)}
+                allGroups={groups}
+                allBranches={branches}
+                allTeachers={teachers}
                 onClose={() => setSelectedId(null)}
                 onEdit={canManage ? () => startEdit(s) : undefined}
                 onDelete={onDeleteStudent ? () => remove(s) : undefined}
+                onOpenPayment={onOpenPayment ? () => onOpenPayment(s) : undefined}
+                onTransfer={onUpdateStudent ? (payload) => onUpdateStudent(s.id, payload) : undefined}
               />
             </div>
           )}

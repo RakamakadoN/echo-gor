@@ -48,6 +48,7 @@ interface BranchManagerWorkspaceProps {
   onUpdateStudent?: (id: string, data: any) => Promise<boolean>;
   onDeleteStudent?: (id: string) => Promise<boolean>;
   onCreateAnnouncement?: (data: { title: string; content: string; audience: AnnouncementAudience; isImportant: boolean }) => void;
+  onOpenPayment?: (student: Student) => void;
   onToggleAttendance?: (studentId: string, date: string, status: "present" | "absent" | "sick") => void;
 }
 
@@ -90,6 +91,7 @@ export function BranchManagerWorkspace({
   onUpdateStudent,
   onDeleteStudent,
   onCreateAnnouncement,
+  onOpenPayment,
   onToggleAttendance,
 }: BranchManagerWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<BranchTab>("dashboard");
@@ -200,6 +202,7 @@ export function BranchManagerWorkspace({
               onCreateStudent={onCreateStudent}
               onUpdateStudent={onUpdateStudent}
               onDeleteStudent={onDeleteStudent}
+              onOpenPayment={onOpenPayment}
             />
           )}
           {activeTab === "teachers" && <TeachersView teachers={branchTeachers} groups={branchGroups} students={branchStudents} />}
@@ -315,7 +318,7 @@ function DashboardView({ branch, metrics, attendanceWeek, attendanceMonth, group
   );
 }
 
-function StudentsView({ students, groups, teachers = [], branchId, search, onSearch, onCreateStudent, onUpdateStudent, onDeleteStudent }: {
+function StudentsView({ students, groups, teachers = [], branchId, search, onSearch, onCreateStudent, onUpdateStudent, onDeleteStudent, onOpenPayment }: {
   students: Student[];
   groups: Group[];
   teachers?: Teacher[];
@@ -325,6 +328,7 @@ function StudentsView({ students, groups, teachers = [], branchId, search, onSea
   onCreateStudent?: (data: any) => Promise<boolean>;
   onUpdateStudent?: (id: string, data: any) => Promise<boolean>;
   onDeleteStudent?: (id: string) => Promise<boolean>;
+  onOpenPayment?: (student: Student) => void;
 }) {
   const emptyForm = { name: "", groupId: "", teacherId: "", parentName: "", parentPhone: "" };
   const [showForm, setShowForm] = useState(false);
@@ -429,9 +433,13 @@ function StudentsView({ students, groups, teachers = [], branchId, search, onSea
           student={selectedStudent}
           group={groups.find((item) => item.id === (selectedStudent.groupIds?.[0] || (selectedStudent as any).groupId))}
           teacher={teachers.find((item) => item.id === selectedStudent.teacherId)}
+          allGroups={groups}
+          allTeachers={teachers}
           onClose={() => setSelectedId(null)}
           onEdit={canManage ? () => openEdit(selectedStudent) : undefined}
           onDelete={onDeleteStudent ? () => handleDelete(selectedStudent) : undefined}
+          onOpenPayment={onOpenPayment ? () => onOpenPayment(selectedStudent) : undefined}
+          onTransfer={onUpdateStudent ? (payload) => onUpdateStudent(selectedStudent.id, payload) : undefined}
         />
       )}
 
