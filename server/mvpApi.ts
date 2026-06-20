@@ -204,7 +204,7 @@ async function dbBootstrap(session: MvpSession) {
     supabaseFetch<any[]>("halls", `select=*`), // Halls are filtered by branch in mapping
     supabaseFetch<any[]>("users", `select=*&${orgFilter}`),
     supabaseFetch<any[]>("groups", `select=*&${orgFilter}`),
-    supabaseFetch<any[]>("students", `select=*&${orgFilter}&status=neq.archived`),
+    supabaseFetch<any[]>("students", `select=*&${orgFilter}&status=neq.archived&deletion_requested_at=is.null`),
     supabaseFetch<any[]>("payments", `select=*&${orgFilter}&order=paid_at.desc`),
     supabaseFetch<any[]>("schedule_lessons", `select=*&order=starts_at.desc`), // Cross-org lessons are unlikely but we keep mapping safe
     supabaseFetch<any[]>("attendance", "select=*"),
@@ -458,17 +458,104 @@ export function registerMvpApi(app: express.Express) {
     }
   });
 
+  // DELETE = заявка на удаление: ученик перемещается в корзину.
+  // Окончательное удаление (archived) подтверждает только владелец через /confirm-delete.
   app.delete("/api/mvp/students/:id", async (req, res) => {
     const session = getSession(req);
     if (!supabaseEnabled) {
       return res.status(503).json({ error: "Supabase is not configured" });
     }
     try {
-      // Soft delete: archive so payments/attendance history is preserved.
+      const existing = await supabaseFetch<any[]>(
+        "students",
+        `select=id,branch_id&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`
+      );
+      if (!existing[0]) return res.status(404).json({ error: "Ученик не найден" });
+      if (!canSeeBranch(session, existing[0].branch_id)) {
+        return res.status(403).json({ error: "Branch access denied" });
+      }
+      const requestedBy = ({ owner: "Владелец", branch_manager: "Руководитель филиала", admin: "Администратор", teacher: "Преподаватель" } as Record<string, string>)[session.role] || session.role;
       const rows = await supabaseFetch<any[]>(
         "students",
         `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
-        { method: "PATCH", body: JSON.stringify({ status: "archived" }) }
+        { method: "PATCH", body: JSON.stringify({
+          deletion_requested_at: new Date().toISOString(),
+          deletion_requested_by: requestedBy,
+          deletion_reason: (req.body && req.body.reason) || null
+        }) }
+      );
+      res.json({ student: rows[0], trashed: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось переместить ученика в корзину" });
+    }
+  });
+
+  // Корзина учеников — только владелец сети.
+  app.get("/api/mvp/students/trash", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") {
+      return res.status(403).json({ error: "Только владелец видит корзину учеников" });
+    }
+    if (!supabaseEnabled) {
+      return res.status(503).json({ error: "Supabase is not configured" });
+    }
+    try {
+      const rows = await supabaseFetch<any[]>(
+        "students",
+        `select=*&organization_id=eq.${session.organizationId}&status=neq.archived&deletion_requested_at=not.is.null&order=deletion_requested_at.desc`
+      );
+      const students = rows.map((row) => ({
+        id: row.id,
+        name: [row.first_name, row.last_name].filter(Boolean).join(" ") || row.full_name || "Ученик",
+        branchId: row.branch_id,
+        parentName: row.parent_name || "",
+        parentPhone: row.parent_phone || "",
+        requestedBy: row.deletion_requested_by || "—",
+        requestedAt: row.deletion_requested_at,
+        reason: row.deletion_reason || ""
+      }));
+      res.json({ students });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось загрузить корзину" });
+    }
+  });
+
+  // Восстановить из корзины — только владелец.
+  app.post("/api/mvp/students/:id/restore", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") {
+      return res.status(403).json({ error: "Только владелец может восстанавливать учеников" });
+    }
+    if (!supabaseEnabled) {
+      return res.status(503).json({ error: "Supabase is not configured" });
+    }
+    try {
+      const rows = await supabaseFetch<any[]>(
+        "students",
+        `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
+        { method: "PATCH", body: JSON.stringify({ deletion_requested_at: null, deletion_requested_by: null, deletion_reason: null }) }
+      );
+      if (!rows[0]) return res.status(404).json({ error: "Ученик не найден" });
+      res.json({ student: rows[0], restored: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось восстановить ученика" });
+    }
+  });
+
+  // Подтвердить удаление (архивирование) — только владелец.
+  app.post("/api/mvp/students/:id/confirm-delete", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") {
+      return res.status(403).json({ error: "Только владелец может подтвердить удаление" });
+    }
+    if (!supabaseEnabled) {
+      return res.status(503).json({ error: "Supabase is not configured" });
+    }
+    try {
+      const rows = await supabaseFetch<any[]>(
+        "students",
+        `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
+        { method: "PATCH", body: JSON.stringify({ status: "archived", deletion_requested_at: null }) }
       );
       if (!rows[0]) return res.status(404).json({ error: "Ученик не найден" });
       res.json({ student: rows[0], archived: true });

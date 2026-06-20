@@ -49,6 +49,7 @@ import {
 } from "recharts";
 
 type StudentInput = { name?: string; branchId?: string; groupId?: string; teacherId?: string; parentName?: string; parentPhone?: string };
+type TrashStudent = { id: string; name: string; branchId: string; parentName: string; parentPhone: string; requestedBy: string; requestedAt: string; reason: string };
 type TeacherInput = { name?: string; phone?: string; specialization?: string; branchId?: string | null; role?: string };
 type CompetitionInput = {
   title?: string;
@@ -77,6 +78,9 @@ interface OwnerExecutiveWorkspaceProps {
   onCreateStudent?: (data: StudentInput) => Promise<boolean>;
   onUpdateStudent?: (id: string, data: StudentInput) => Promise<boolean>;
   onDeleteStudent?: (id: string) => Promise<boolean>;
+  studentTrash?: TrashStudent[];
+  onRestoreStudent?: (id: string) => Promise<boolean>;
+  onConfirmDeleteStudent?: (id: string) => Promise<boolean>;
   onCreateTeacher?: (data: TeacherInput) => Promise<boolean>;
   onUpdateTeacher?: (id: string, data: TeacherInput) => Promise<boolean>;
   onDeleteTeacher?: (id: string) => Promise<boolean>;
@@ -139,6 +143,9 @@ export function OwnerExecutiveWorkspace({
   onCreateStudent,
   onUpdateStudent,
   onDeleteStudent,
+  studentTrash = [],
+  onRestoreStudent,
+  onConfirmDeleteStudent,
   onCreateTeacher,
   onUpdateTeacher,
   onDeleteTeacher,
@@ -246,7 +253,7 @@ export function OwnerExecutiveWorkspace({
           )}
           {activeTab === "eduerp" && <OwnerEduErpView branches={branches} groups={groups} students={students} teachers={teachers} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
           {activeTab === "branches" && <BranchesView branches={branchScorecards} rawBranches={branches} students={students} groups={groups} teachers={teachers} onCreateBranch={onCreateBranch} onUpdateBranch={onUpdateBranch} onDeleteBranch={onDeleteBranch} />}
-          {activeTab === "students" && <StudentsNetworkView students={students} branches={branches} groups={groups} teachers={teachers} onCreateStudent={onCreateStudent} onUpdateStudent={onUpdateStudent} onDeleteStudent={onDeleteStudent} />}
+          {activeTab === "students" && <StudentsNetworkView students={students} branches={branches} groups={groups} teachers={teachers} onCreateStudent={onCreateStudent} onUpdateStudent={onUpdateStudent} onDeleteStudent={onDeleteStudent} studentTrash={studentTrash} onRestoreStudent={onRestoreStudent} onConfirmDeleteStudent={onConfirmDeleteStudent} />}
           {activeTab === "teachers" && <TeachersNetworkView teachers={teachers} metrics={metrics} branches={branches} onCreateTeacher={onCreateTeacher} onUpdateTeacher={onUpdateTeacher} onDeleteTeacher={onDeleteTeacher} />}
           {activeTab === "finance" && <FinanceCenterView branches={branchScorecards} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
           {activeTab === "schedule" && (
@@ -1025,7 +1032,7 @@ function OwnerEduErpView({ branches, groups, students, teachers, payments, month
   );
 }
 
-function StudentsNetworkView({ students, branches, groups, teachers, onCreateStudent, onUpdateStudent, onDeleteStudent }: {
+function StudentsNetworkView({ students, branches, groups, teachers, onCreateStudent, onUpdateStudent, onDeleteStudent, studentTrash = [], onRestoreStudent, onConfirmDeleteStudent }: {
   students: Student[];
   branches: Branch[];
   groups: Group[];
@@ -1033,6 +1040,9 @@ function StudentsNetworkView({ students, branches, groups, teachers, onCreateStu
   onCreateStudent?: (data: StudentInput) => Promise<boolean>;
   onUpdateStudent?: (id: string, data: StudentInput) => Promise<boolean>;
   onDeleteStudent?: (id: string) => Promise<boolean>;
+  studentTrash?: TrashStudent[];
+  onRestoreStudent?: (id: string) => Promise<boolean>;
+  onConfirmDeleteStudent?: (id: string) => Promise<boolean>;
 }) {
   const empty = { name: "", parentName: "", parentPhone: "", branchId: branches[0]?.id || "", groupId: "", teacherId: "" };
   const [adding, setAdding] = useState(false);
@@ -1071,8 +1081,24 @@ function StudentsNetworkView({ students, branches, groups, teachers, onCreateStu
 
   const remove = async (s: Student) => {
     if (!onDeleteStudent) return;
-    if (!window.confirm(`Архивировать ученика «${s.name}»? История оплат и посещений сохранится.`)) return;
+    if (!window.confirm(`Переместить ученика «${s.name}» в корзину? Окончательно удалить можно будет в корзине ниже.`)) return;
     await onDeleteStudent(s.id);
+  };
+
+  const [trashBusy, setTrashBusy] = useState<string | null>(null);
+  const branchNameById = (id: string) => branches.find((b) => b.id === id)?.name || "—";
+  const restore = async (t: TrashStudent) => {
+    if (!onRestoreStudent) return;
+    setTrashBusy(t.id);
+    await onRestoreStudent(t.id);
+    setTrashBusy(null);
+  };
+  const confirmDelete = async (t: TrashStudent) => {
+    if (!onConfirmDeleteStudent) return;
+    if (!window.confirm(`Окончательно удалить ученика «${t.name}»? Карточка будет архивирована, история оплат и посещений сохранится.`)) return;
+    setTrashBusy(t.id);
+    await onConfirmDeleteStudent(t.id);
+    setTrashBusy(null);
   };
 
   const filtered = students.filter((s) =>
@@ -1150,6 +1176,41 @@ function StudentsNetworkView({ students, branches, groups, teachers, onCreateStu
           </div>
         ))}
         {filtered.length === 0 && <p className="px-5 py-6 text-center text-sm text-slate-500">Ученики не найдены.</p>}
+      </div>
+
+      <div className="overflow-hidden rounded-[2rem] border border-rose-500/20 bg-[#140f10]">
+        <div className="flex items-center justify-between gap-3 border-b border-rose-500/15 px-5 py-4">
+          <div className="flex items-center gap-3">
+            <div className="rounded-2xl bg-rose-500/15 p-2.5 text-rose-400"><Trash2 className="h-5 w-5" /></div>
+            <div>
+              <h3 className="font-black text-white">Корзина учеников</h3>
+              <p className="text-xs text-slate-500">Заявки на удаление от руководителей филиалов. Подтверждает только владелец.</p>
+            </div>
+          </div>
+          <span className={`rounded-full px-3 py-1 text-xs font-black ${studentTrash.length ? "bg-rose-500/15 text-rose-400" : "bg-white/5 text-slate-500"}`}>{studentTrash.length}</span>
+        </div>
+
+        {studentTrash.length === 0 ? (
+          <p className="px-5 py-6 text-center text-sm text-slate-500">Корзина пуста — заявок на удаление нет.</p>
+        ) : (
+          studentTrash.map((t) => (
+            <div key={t.id} className="grid grid-cols-1 gap-3 border-b border-white/5 px-5 py-3 text-sm md:grid-cols-12 md:items-center">
+              <div className="md:col-span-4">
+                <p className="font-bold text-white">{t.name}</p>
+                <p className="text-xs text-slate-500">{t.parentName || "—"} · {t.parentPhone || "—"}</p>
+              </div>
+              <span className="text-slate-300 md:col-span-2">{branchNameById(t.branchId)}</span>
+              <div className="md:col-span-3">
+                <p className="text-xs text-slate-400">Заявка: <span className="text-slate-200">{t.requestedBy}</span></p>
+                {t.requestedAt && <p className="text-[11px] text-slate-600">{new Date(t.requestedAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>}
+              </div>
+              <div className="flex justify-end gap-2 md:col-span-3">
+                <button onClick={() => restore(t)} disabled={trashBusy === t.id} className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-400 transition hover:bg-emerald-500/20 disabled:opacity-40">Восстановить</button>
+                <button onClick={() => confirmDelete(t)} disabled={trashBusy === t.id} className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-bold text-rose-400 transition hover:bg-rose-500/20 disabled:opacity-40">{trashBusy === t.id ? "…" : "Удалить"}</button>
+              </div>
+            </div>
+          ))
+        )}
       </div>
     </OwnerScreen>
   );

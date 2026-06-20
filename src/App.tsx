@@ -643,6 +643,7 @@ export default function App() {
       return false;
     }
   };
+  // «Удаление» = заявка в корзину. Окончательно удаляет владелец через confirm-delete.
   const handleDeleteStudent = async (id: string) => {
     try {
       const response = await fetch(`/api/mvp/students/${id}`, {
@@ -651,13 +652,67 @@ export default function App() {
       });
       if (!response.ok) throw new Error(await response.text());
       await loadMvpBootstrap(activeRole);
-      addAuditLog("Удаление ученика", `Ученик архивирован (${id})`);
+      addAuditLog("Заявка на удаление", `Ученик перемещён в корзину (${id})`);
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось переместить ученика в корзину");
+      return false;
+    }
+  };
+
+  // --- Корзина учеников (владелец подтверждает удаление) ---
+  const [studentTrash, setStudentTrash] = useState<any[]>([]);
+
+  const loadStudentTrash = async () => {
+    try {
+      const response = await fetch("/api/mvp/students/trash", {
+        headers: { "x-demo-role": getMvpRoleHeader("owner") }
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      setStudentTrash(data.students || []);
+    } catch {
+      // тихо: корзина просто останется пустой
+    }
+  };
+
+  const handleRestoreStudent = async (id: string) => {
+    try {
+      const response = await fetch(`/api/mvp/students/${id}/restore`, {
+        method: "POST",
+        headers: { "x-demo-role": getMvpRoleHeader("owner") }
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await loadStudentTrash();
+      await loadMvpBootstrap(activeRole);
+      addAuditLog("Восстановление ученика", `Ученик возвращён из корзины (${id})`);
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось восстановить ученика");
+      return false;
+    }
+  };
+
+  const handleConfirmDeleteStudent = async (id: string) => {
+    try {
+      const response = await fetch(`/api/mvp/students/${id}/confirm-delete`, {
+        method: "POST",
+        headers: { "x-demo-role": getMvpRoleHeader("owner") }
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await loadStudentTrash();
+      await loadMvpBootstrap(activeRole);
+      addAuditLog("Удаление ученика", `Владелец подтвердил удаление (${id})`);
       return true;
     } catch (error: any) {
       setMvpDataError(error.message || "Не удалось удалить ученика");
       return false;
     }
   };
+
+  useEffect(() => {
+    if (activeRole === "owner") loadStudentTrash();
+  }, [activeRole]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- Owner: teacher / staff management ---
   type TeacherInput = { name?: string; phone?: string; specialization?: string; branchId?: string | null; role?: string };
@@ -2542,6 +2597,10 @@ export default function App() {
               onCreateLesson={handleCreateLesson}
               onUpdateLesson={handleUpdateLesson}
               onDeleteLesson={handleDeleteLesson}
+              onCreateStudent={handleCreateStudent}
+              onUpdateStudent={handleUpdateStudent}
+              onDeleteStudent={handleDeleteStudent}
+              onCreateAnnouncement={handleCreateAnnouncement}
               onToggleAttendance={toggleAttendance}
             />
           ) : activeRole === "owner" ? (
@@ -2560,6 +2619,9 @@ export default function App() {
               onCreateStudent={handleCreateStudent}
               onUpdateStudent={handleUpdateStudent}
               onDeleteStudent={handleDeleteStudent}
+              studentTrash={studentTrash}
+              onRestoreStudent={handleRestoreStudent}
+              onConfirmDeleteStudent={handleConfirmDeleteStudent}
               onCreateTeacher={handleCreateTeacher}
               onUpdateTeacher={handleUpdateTeacher}
               onDeleteTeacher={handleDeleteTeacher}

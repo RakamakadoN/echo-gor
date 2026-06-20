@@ -22,7 +22,7 @@ import {
   Users,
   WalletCards
 } from "lucide-react";
-import { Announcement, Attendance, Branch, Competition, Group, Hall, Payment, Student, Teacher } from "../types";
+import { Announcement, AnnouncementAudience, Attendance, Branch, Competition, Group, Hall, Payment, Student, Teacher } from "../types";
 
 interface BranchManagerWorkspaceProps {
   branchId?: string;
@@ -43,6 +43,10 @@ interface BranchManagerWorkspaceProps {
   onCreateLesson?: (data: any) => Promise<boolean>;
   onUpdateLesson?: (id: string, data: any) => Promise<boolean>;
   onDeleteLesson?: (id: string) => Promise<boolean>;
+  onCreateStudent?: (data: any) => Promise<boolean>;
+  onUpdateStudent?: (id: string, data: any) => Promise<boolean>;
+  onDeleteStudent?: (id: string) => Promise<boolean>;
+  onCreateAnnouncement?: (data: { title: string; content: string; audience: AnnouncementAudience; isImportant: boolean }) => void;
   onToggleAttendance?: (studentId: string, date: string, status: "present" | "absent" | "sick") => void;
 }
 
@@ -81,6 +85,10 @@ export function BranchManagerWorkspace({
   onCreateLesson,
   onUpdateLesson,
   onDeleteLesson,
+  onCreateStudent,
+  onUpdateStudent,
+  onDeleteStudent,
+  onCreateAnnouncement,
   onToggleAttendance,
 }: BranchManagerWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<BranchTab>("dashboard");
@@ -181,10 +189,31 @@ export function BranchManagerWorkspace({
             />
           )}
           {activeTab === "students" && (
-            <StudentsView students={filteredStudents} groups={branchGroups} search={studentSearch} onSearch={setStudentSearch} />
+            <StudentsView
+              students={filteredStudents}
+              groups={branchGroups}
+              teachers={branchTeachers}
+              branchId={branch.id}
+              search={studentSearch}
+              onSearch={setStudentSearch}
+              onCreateStudent={onCreateStudent}
+              onUpdateStudent={onUpdateStudent}
+              onDeleteStudent={onDeleteStudent}
+            />
           )}
           {activeTab === "teachers" && <TeachersView teachers={branchTeachers} groups={branchGroups} students={branchStudents} />}
-          {activeTab === "groups" && <GroupsView groups={branchGroups} teachers={branchTeachers} students={branchStudents} />}
+          {activeTab === "groups" && (
+            <GroupsView
+              groups={branchGroups}
+              teachers={branchTeachers}
+              students={branchStudents}
+              halls={halls}
+              branchId={branch.id}
+              onCreateGroup={onCreateGroup}
+              onUpdateGroup={onUpdateGroup}
+              onDeleteGroup={onDeleteGroup}
+            />
+          )}
           {activeTab === "schedule" && (
             <ScheduleView
               branchId={branch.id}
@@ -207,7 +236,7 @@ export function BranchManagerWorkspace({
             />
           )}
           {activeTab === "finance" && <FinanceView payments={branchPayments} students={branchStudents} monthRevenue={monthRevenue} debt={debt} renewals={renewals} />}
-          {activeTab === "announcements" && <AnnouncementsView announcements={branchAnnouncements} groups={branchGroups} />}
+          {activeTab === "announcements" && <AnnouncementsView announcements={branchAnnouncements} groups={branchGroups} onCreateAnnouncement={onCreateAnnouncement} />}
           {activeTab === "quality" && <QualityView attendanceWeek={attendanceWeek} attendanceMonth={attendanceMonth} teachers={branchTeachers} groups={branchGroups} />}
           {activeTab === "ai" && <AIAssistantView riskStudents={riskStudents} renewals={renewals} groups={branchGroups} debt={debt} />}
           {activeTab === "settings" && <SettingsView branch={branch} teachers={branchTeachers} groups={branchGroups} />}
@@ -285,15 +314,113 @@ function DashboardView({ branch, metrics, attendanceWeek, attendanceMonth, group
   );
 }
 
-function StudentsView({ students, groups, search, onSearch }: { students: Student[]; groups: Group[]; search: string; onSearch: (value: string) => void }) {
+function StudentsView({ students, groups, teachers = [], branchId, search, onSearch, onCreateStudent, onUpdateStudent, onDeleteStudent }: {
+  students: Student[];
+  groups: Group[];
+  teachers?: Teacher[];
+  branchId: string;
+  search: string;
+  onSearch: (value: string) => void;
+  onCreateStudent?: (data: any) => Promise<boolean>;
+  onUpdateStudent?: (id: string, data: any) => Promise<boolean>;
+  onDeleteStudent?: (id: string) => Promise<boolean>;
+}) {
+  const emptyForm = { name: "", groupId: "", teacherId: "", parentName: "", parentPhone: "" };
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState(emptyForm);
+  const [saving, setSaving] = useState(false);
+  const canManage = Boolean(onCreateStudent || onUpdateStudent);
+
+  const openCreate = () => { setEditingId(null); setForm(emptyForm); setShowForm(true); };
+  const openEdit = (student: Student) => {
+    setEditingId(student.id);
+    setForm({
+      name: student.name,
+      groupId: student.groupIds?.[0] || (student as any).groupId || "",
+      teacherId: student.teacherId || "",
+      parentName: student.parentName || "",
+      parentPhone: student.parentPhone || ""
+    });
+    setShowForm(true);
+  };
+
+  const handleSave = async () => {
+    if (!form.name.trim()) return;
+    setSaving(true);
+    const payload: any = {
+      name: form.name.trim(),
+      branchId,
+      groupId: form.groupId || undefined,
+      teacherId: form.teacherId || undefined,
+      parentName: form.parentName || undefined,
+      parentPhone: form.parentPhone || undefined
+    };
+    const ok = editingId ? await onUpdateStudent?.(editingId, payload) : await onCreateStudent?.(payload);
+    setSaving(false);
+    if (ok) { setShowForm(false); setEditingId(null); setForm(emptyForm); }
+  };
+
+  const handleDelete = async (student: Student) => {
+    if (!onDeleteStudent) return;
+    if (!window.confirm(`Переместить ученика «${student.name}» в корзину? Окончательное удаление подтвердит владелец сети.`)) return;
+    await onDeleteStudent(student.id);
+  };
+
   return (
     <Screen title="Ученики филиала" subtitle="Поиск, фильтрация, посещаемость, оплаты, достижения и переводы между группами.">
-      <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-3">
-        <div className="flex items-center gap-2 rounded-2xl bg-black/30 px-3 py-2">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-1 items-center gap-2 rounded-2xl border border-white/10 bg-black/30 px-3 py-2">
           <Search className="h-4 w-4 text-slate-500" />
           <input value={search} onChange={(event) => onSearch(event.target.value)} placeholder="Поиск по ученику, родителю или телефону" className="w-full bg-transparent text-sm text-white outline-none placeholder:text-slate-600" />
         </div>
+        {canManage && (
+          <button onClick={showForm ? () => setShowForm(false) : openCreate} className="flex items-center gap-2 rounded-xl border border-[#C5A059]/30 bg-[#C5A059]/15 px-4 py-2 text-sm font-bold text-[#C5A059] transition-colors hover:bg-[#C5A059]/25">
+            <Plus className="h-4 w-4" /> {showForm ? "Скрыть" : "Новый ученик"}
+          </button>
+        )}
       </div>
+
+      {showForm && (
+        <div className="rounded-3xl border border-white/10 bg-[#111] p-5 space-y-4">
+          <p className="text-sm font-black text-white">{editingId ? "Редактировать ученика" : "Новый ученик"}</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Имя ученика *</span>
+              <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Имя и фамилия" className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-slate-600" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Группа</span>
+              <select value={form.groupId} onChange={(e) => setForm((f) => ({ ...f, groupId: e.target.value }))} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white">
+                <option value="">Без группы</option>
+                {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Преподаватель</span>
+              <select value={form.teacherId} onChange={(e) => setForm((f) => ({ ...f, teacherId: e.target.value }))} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white">
+                <option value="">Из группы</option>
+                {teachers.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Родитель</span>
+              <input value={form.parentName} onChange={(e) => setForm((f) => ({ ...f, parentName: e.target.value }))} placeholder="ФИО родителя" className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-slate-600" />
+            </label>
+            <label className="flex flex-col gap-1 sm:col-span-2">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Телефон родителя</span>
+              <input value={form.parentPhone} onChange={(e) => setForm((f) => ({ ...f, parentPhone: e.target.value }))} placeholder="+7 ..." className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-slate-600" />
+            </label>
+          </div>
+          <div className="flex gap-3">
+            <button onClick={handleSave} disabled={saving || !form.name.trim()} className="rounded-xl bg-[#C5A059] px-5 py-2 text-sm font-bold text-black transition-colors hover:bg-[#D4AF70] disabled:opacity-40">
+              {saving ? "Сохранение…" : editingId ? "Сохранить" : "Добавить ученика"}
+            </button>
+            <button onClick={() => { setShowForm(false); setEditingId(null); setForm(emptyForm); }} className="rounded-xl bg-white/5 px-5 py-2 text-sm font-bold text-slate-400 transition-colors hover:bg-white/10">Отмена</button>
+          </div>
+        </div>
+      )}
+
       <div className="grid gap-3 lg:grid-cols-2">
         {students.map((student) => {
           const group = groups.find((item) => item.id === (student.groupIds?.[0] || (student as any).groupId));
@@ -317,6 +444,14 @@ function StudentsView({ students, groups, search, onSearch }: { students: Studen
                     <MiniStat label="Баланс" value={formatMoney(student.balance)} />
                     <MiniStat label="Путь" value={student.artistLevelPoints} />
                   </div>
+                  {canManage && (
+                    <div className="mt-4 flex gap-2">
+                      <button onClick={() => openEdit(student)} className="rounded-lg bg-white/5 px-3 py-1.5 text-[10px] font-bold text-slate-300 transition-colors hover:bg-white/10">Редактировать</button>
+                      {onDeleteStudent && (
+                        <button onClick={() => handleDelete(student)} className="rounded-lg bg-red-500/10 px-3 py-1.5 text-[10px] font-bold text-red-400 transition-colors hover:bg-red-500/20">В корзину</button>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </article>
@@ -358,9 +493,129 @@ function TeachersView({ teachers, groups, students }: { teachers: Teacher[]; gro
   );
 }
 
-function GroupsView({ groups, teachers, students }: { groups: Group[]; teachers: Teacher[]; students: Student[] }) {
+function GroupsView({ groups, teachers, students, halls = [], branchId, onCreateGroup, onUpdateGroup, onDeleteGroup }: {
+  groups: Group[];
+  teachers: Teacher[];
+  students: Student[];
+  halls?: Hall[];
+  branchId: string;
+  onCreateGroup?: (data: any) => Promise<boolean>;
+  onUpdateGroup?: (id: string, data: any) => Promise<boolean>;
+  onDeleteGroup?: (id: string) => Promise<boolean>;
+}) {
+  const emptyForm = { name: "", teacherId: "", hallId: "", ageFrom: "", ageTo: "", capacity: "", level: "", scheduleDays: "", scheduleTime: "" };
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<Record<string, string>>(emptyForm);
+  const [saving, setSaving] = useState(false);
+  const canManage = Boolean(onCreateGroup || onUpdateGroup);
+
+  const openCreate = () => { setEditingId(null); setForm(emptyForm); setShowForm(true); };
+  const openEdit = (group: Group) => {
+    const [from, to] = (group.ageGroup.match(/\d+/g) || []);
+    setEditingId(group.id);
+    setForm({
+      name: group.name,
+      teacherId: group.teacherId || "",
+      hallId: group.hallId || "",
+      ageFrom: from || "",
+      ageTo: to || "",
+      capacity: "",
+      level: group.level && group.level !== "MVP" ? group.level : "",
+      scheduleDays: group.days?.join(", ") || "",
+      scheduleTime: group.time || ""
+    });
+    setShowForm(true);
+  };
+
+  const handleSave = async () => {
+    if (!form.name.trim()) return;
+    setSaving(true);
+    const payload: any = {
+      name: form.name.trim(),
+      branchId,
+      teacherId: form.teacherId || undefined,
+      hallId: form.hallId || undefined,
+      ageFrom: form.ageFrom ? Number(form.ageFrom) : undefined,
+      ageTo: form.ageTo ? Number(form.ageTo) : undefined,
+      capacity: form.capacity ? Number(form.capacity) : undefined,
+      level: form.level || undefined,
+      scheduleDays: form.scheduleDays || undefined,
+      scheduleTime: form.scheduleTime || undefined
+    };
+    const ok = editingId ? await onUpdateGroup?.(editingId, payload) : await onCreateGroup?.(payload);
+    setSaving(false);
+    if (ok) { setShowForm(false); setEditingId(null); setForm(emptyForm); }
+  };
+
+  const handleDelete = async (group: Group) => {
+    if (!onDeleteGroup) return;
+    if (!window.confirm(`Удалить группу «${group.name}»? Действие архивирует группу.`)) return;
+    await onDeleteGroup(group.id);
+  };
+
   return (
     <Screen title="Группы филиала" subtitle="Загрузка групп, расписание, преподаватели и состав учеников.">
+      {canManage && (
+        <div className="flex justify-end">
+          <button onClick={showForm ? () => setShowForm(false) : openCreate} className="flex items-center gap-2 rounded-xl border border-[#C5A059]/30 bg-[#C5A059]/15 px-4 py-2 text-sm font-bold text-[#C5A059] transition-colors hover:bg-[#C5A059]/25">
+            <Plus className="h-4 w-4" /> {showForm ? "Скрыть форму" : "Новая группа"}
+          </button>
+        </div>
+      )}
+
+      {showForm && (
+        <div className="rounded-3xl border border-white/10 bg-[#111] p-5 space-y-4">
+          <p className="text-sm font-black text-white">{editingId ? "Редактировать группу" : "Новая группа"}</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Название *</span>
+              <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Напр. «Старший ансамбль»" className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-slate-600" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Преподаватель</span>
+              <select value={form.teacherId} onChange={(e) => setForm((f) => ({ ...f, teacherId: e.target.value }))} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white">
+                <option value="">Не назначен</option>
+                {teachers.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Зал</span>
+              <select value={form.hallId} onChange={(e) => setForm((f) => ({ ...f, hallId: e.target.value }))} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white">
+                <option value="">Без зала</option>
+                {halls.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Уровень</span>
+              <input value={form.level} onChange={(e) => setForm((f) => ({ ...f, level: e.target.value }))} placeholder="Начинающие / Ансамбль" className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-slate-600" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Возраст с</span>
+              <input type="number" value={form.ageFrom} onChange={(e) => setForm((f) => ({ ...f, ageFrom: e.target.value }))} placeholder="7" className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-slate-600" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Возраст до</span>
+              <input type="number" value={form.ageTo} onChange={(e) => setForm((f) => ({ ...f, ageTo: e.target.value }))} placeholder="12" className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-slate-600" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Дни</span>
+              <input value={form.scheduleDays} onChange={(e) => setForm((f) => ({ ...f, scheduleDays: e.target.value }))} placeholder="Пн, Ср, Пт" className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-slate-600" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Время</span>
+              <input value={form.scheduleTime} onChange={(e) => setForm((f) => ({ ...f, scheduleTime: e.target.value }))} placeholder="18:30" className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-slate-600" />
+            </label>
+          </div>
+          <div className="flex gap-3">
+            <button onClick={handleSave} disabled={saving || !form.name.trim()} className="rounded-xl bg-[#C5A059] px-5 py-2 text-sm font-bold text-black transition-colors hover:bg-[#D4AF70] disabled:opacity-40">
+              {saving ? "Сохранение…" : editingId ? "Сохранить" : "Создать группу"}
+            </button>
+            <button onClick={() => { setShowForm(false); setEditingId(null); setForm(emptyForm); }} className="rounded-xl bg-white/5 px-5 py-2 text-sm font-bold text-slate-400 transition-colors hover:bg-white/10">Отмена</button>
+          </div>
+        </div>
+      )}
+
       <div className="grid gap-4 lg:grid-cols-2">
         {groups.map((group) => {
           const teacher = teachers.find((item) => item.id === group.teacherId);
@@ -383,6 +638,14 @@ function GroupsView({ groups, teachers, students }: { groups: Group[]; teachers:
                 <div className="h-2 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-[#C5A059]" style={{ width: `${capacity}%` }} /></div>
               </div>
               <p className="mt-3 text-xs text-slate-500">В группе: {students.filter((student) => student.groupIds?.includes(group.id)).length} карточек учеников в филиале.</p>
+              {canManage && (
+                <div className="mt-4 flex gap-2">
+                  <button onClick={() => openEdit(group)} className="rounded-lg bg-white/5 px-3 py-1.5 text-[10px] font-bold text-slate-300 transition-colors hover:bg-white/10">Редактировать</button>
+                  {onDeleteGroup && (
+                    <button onClick={() => handleDelete(group)} className="rounded-lg bg-red-500/10 px-3 py-1.5 text-[10px] font-bold text-red-400 transition-colors hover:bg-red-500/20">Удалить</button>
+                  )}
+                </div>
+              )}
             </article>
           );
         })}
@@ -414,25 +677,67 @@ function FinanceView({ payments, students, monthRevenue, debt, renewals }: any) 
   );
 }
 
-function AnnouncementsView({ announcements, groups }: { announcements: Announcement[]; groups: Group[] }) {
+function AnnouncementsView({ announcements, groups, onCreateAnnouncement }: {
+  announcements: Announcement[];
+  groups: Group[];
+  onCreateAnnouncement?: (data: { title: string; content: string; audience: AnnouncementAudience; isImportant: boolean }) => void;
+}) {
   const types = ["Концерт", "Репетиция", "Фестиваль", "Изменение расписания", "Важная информация", "Организационные вопросы"];
+  const audiences: { id: AnnouncementAudience; label: string; hint: string }[] = [
+    { id: "teachers", label: "Преподаватели", hint: "Все педагоги филиала" },
+    { id: "parents", label: "Родители", hint: `${groups.length} групп` },
+    { id: "students", label: "Ученики", hint: "По группам и возрасту" }
+  ];
+  const [title, setTitle] = useState("");
+  const [content, setContent] = useState("");
+  const [type, setType] = useState(types[0]);
+  const [audience, setAudience] = useState<AnnouncementAudience>("parents");
+  const [isImportant, setIsImportant] = useState(false);
+
+  const canPost = Boolean(onCreateAnnouncement);
+
+  const handlePost = () => {
+    if (!onCreateAnnouncement || !title.trim() || !content.trim()) return;
+    onCreateAnnouncement({ title: `${type}: ${title.trim()}`, content: content.trim(), audience, isImportant });
+    setTitle(""); setContent(""); setIsImportant(false);
+  };
+
   return (
     <Screen title="Объявления филиала" subtitle="Публикации преподавателям, родителям и ученикам своего филиала.">
       <section className="rounded-[2rem] border border-[#C5A059]/20 bg-[#C5A059]/10 p-5">
         <h3 className="font-black text-white">Новое объявление</h3>
         <div className="mt-4 grid gap-2 sm:grid-cols-3">
-          {types.map((type) => <button key={type} className="rounded-2xl border border-white/10 bg-black/25 px-3 py-3 text-xs font-bold text-slate-200">{type}</button>)}
+          {types.map((t) => (
+            <button key={t} onClick={() => setType(t)} className={`rounded-2xl border px-3 py-3 text-xs font-bold transition-colors ${type === t ? "border-[#C5A059]/50 bg-[#C5A059]/20 text-[#C5A059]" : "border-white/10 bg-black/25 text-slate-200 hover:bg-black/40"}`}>{t}</button>
+          ))}
         </div>
         <div className="mt-4 grid gap-2 sm:grid-cols-3">
-          <Audience label="Преподаватели" value="Все педагоги филиала" />
-          <Audience label="Родители" value={`${groups.length} групп`} />
-          <Audience label="Ученики" value="По группам и возрасту" />
+          {audiences.map((a) => (
+            <button key={a.id} onClick={() => setAudience(a.id)} className={`rounded-2xl border p-3 text-left transition-colors ${audience === a.id ? "border-[#C5A059]/50 bg-[#C5A059]/15" : "border-white/10 bg-black/25 hover:bg-black/40"}`}>
+              <p className="text-sm font-black text-white">{a.label}</p>
+              <p className="mt-1 text-xs text-slate-500">{a.hint}</p>
+            </button>
+          ))}
+        </div>
+        <div className="mt-4 space-y-3">
+          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Заголовок объявления" className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white placeholder-slate-600" />
+          <textarea value={content} onChange={(e) => setContent(e.target.value)} rows={3} placeholder="Текст объявления для выбранной аудитории" className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white placeholder-slate-600" />
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <label className="flex items-center gap-2 text-xs font-bold text-slate-300">
+              <input type="checkbox" checked={isImportant} onChange={(e) => setIsImportant(e.target.checked)} className="h-4 w-4 accent-[#C5A059]" />
+              Важное (закрепить вверху)
+            </label>
+            <button onClick={handlePost} disabled={!canPost || !title.trim() || !content.trim()} className="flex items-center gap-2 rounded-xl bg-[#C5A059] px-5 py-2 text-sm font-bold text-black transition-colors hover:bg-[#D4AF70] disabled:opacity-40">
+              <Megaphone className="h-4 w-4" /> Опубликовать
+            </button>
+          </div>
         </div>
       </section>
       <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
         <h3 className="font-black text-white">История объявлений</h3>
         <div className="mt-4 space-y-3">
-          {announcements.slice(0, 5).map((item) => <EventRow key={item.id} title={item.title} date={item.date} meta={item.content} />)}
+          {announcements.length === 0 && <p className="text-sm text-slate-500">Пока нет объявлений. Опубликуйте первое выше.</p>}
+          {announcements.slice(0, 6).map((item) => <EventRow key={item.id} title={item.title} date={item.date} meta={item.content} />)}
         </div>
       </section>
     </Screen>
