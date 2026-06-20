@@ -555,12 +555,23 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
       {/* 10. РЕЙТИНГИ */}
       <SectionTitle icon={Trophy} title="Рейтинги" hint="Топ-5" />
       <div className="grid gap-4 xl:grid-cols-3">
-        <RatingCard title="Филиалы" onClick={() => go("branches")}
-          rows={m.ratings.branches.map((b) => ({ name: b.name, main: money(b.revenue), sub: `удерж. ${b.retention ?? "—"}% · чек ${b.avgCheck ? money(b.avgCheck) : "—"}`, delta: b.growthPct }))} />
-        <RatingCard title="Педагоги" onClick={() => go("teachers")}
-          rows={m.ratings.teachers.map((t) => ({ name: t.name, main: `${t.students} уч.`, sub: `удерж. ${t.retention ?? "—"}% · ${money(t.revenue)}`, delta: null }))} />
-        <RatingCard title="Группы" onClick={() => go("schedule")}
-          rows={m.ratings.groups.map((g) => ({ name: g.name, main: money(g.revenue), sub: `запол. ${g.occupancy ?? "—"}% · удерж. ${g.retention ?? "—"}%`, delta: null }))} />
+        <RatingTabs title="Филиалы" onClick={() => go("branches")} tabs={[
+          { label: "Выручка", rows: m.ratings.branches.byRevenue.map((b) => ({ name: b.name, main: money(b.revenue), sub: `удерж. ${b.retention ?? "—"}% · чек ${b.avgCheck ? money(b.avgCheck) : "—"}`, delta: b.growthPct })) },
+          { label: "Удержание", rows: m.ratings.branches.byRetention.map((b) => ({ name: b.name, main: b.retention === null ? "—" : `${b.retention}%`, sub: `выручка ${money(b.revenue)}`, delta: null })) },
+          { label: "Чек", rows: m.ratings.branches.byAvgCheck.map((b) => ({ name: b.name, main: b.avgCheck ? money(b.avgCheck) : "—", sub: `выручка ${money(b.revenue)}`, delta: null })) },
+          { label: "Рост", rows: m.ratings.branches.byGrowth.map((b) => ({ name: b.name, main: b.growthPct === null ? "—" : `${b.growthPct}%`, sub: `выручка ${money(b.revenue)}`, delta: b.growthPct })) }
+        ]} />
+        <RatingTabs title="Педагоги" onClick={() => go("teachers")} tabs={[
+          { label: "Ученики", rows: m.ratings.teachers.byStudents.map((t) => ({ name: t.name, main: `${t.students} уч.`, sub: `удерж. ${t.retention ?? "—"}% · ${money(t.revenue)}`, delta: null })) },
+          { label: "Удержание", rows: m.ratings.teachers.byRetention.map((t) => ({ name: t.name, main: t.retention === null ? "—" : `${t.retention}%`, sub: `${t.students} уч.`, delta: null })) },
+          { label: "Выручка", rows: m.ratings.teachers.byRevenue.map((t) => ({ name: t.name, main: money(t.revenue), sub: `${t.students} уч. · удерж. ${t.retention ?? "—"}%`, delta: null })) },
+          { label: "Прирост", rows: m.ratings.teachers.byGrowth.map((t) => ({ name: t.name, main: t.growthPct === null ? "—" : `${t.growthPct}%`, sub: `${t.students} уч.`, delta: t.growthPct })) }
+        ]} />
+        <RatingTabs title="Группы" onClick={() => go("schedule")} tabs={[
+          { label: "Выручка", rows: m.ratings.groups.byRevenue.map((g) => ({ name: g.name, main: money(g.revenue), sub: `запол. ${g.occupancy ?? "—"}% · удерж. ${g.retention ?? "—"}%`, delta: null })) },
+          { label: "Заполняемость", rows: m.ratings.groups.byOccupancy.map((g) => ({ name: g.name, main: g.occupancy === null ? "—" : `${g.occupancy}%`, sub: `выручка ${money(g.revenue)}`, delta: null })) },
+          { label: "Удержание", rows: m.ratings.groups.byRetention.map((g) => ({ name: g.name, main: g.retention === null ? "—" : `${g.retention}%`, sub: `выручка ${money(g.revenue)}`, delta: null })) }
+        ]} />
       </div>
 
       {/* 11. AI-АНАЛИЗ МЕСЯЦА */}
@@ -595,9 +606,9 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
             `Полупустые: ${m.risks.filter((r) => r.id === "empty").length ? "есть" : "нет"}`
           ]} />
           <AnalysisBlock title="Лучшие показатели" lines={[
-            `Педагог: ${m.ratings.teachers[0]?.name || "—"}`,
-            `Группа: ${m.ratings.groups[0]?.name || "—"}`,
-            `Филиал: ${m.ratings.branches[0]?.name || "—"}`
+            `Педагог: ${m.ratings.teachers.byRetention[0]?.name || "—"}`,
+            `Группа: ${m.ratings.groups.byRevenue[0]?.name || "—"}`,
+            `Филиал: ${m.ratings.branches.byRevenue[0]?.name || "—"}`
           ]} />
           <AnalysisBlock title="Проблемы и рекомендации" lines={[
             ...(m.attention.slice(0, 2)),
@@ -747,12 +758,23 @@ function ListPanel({ icon: Icon, tone, title, items }: { icon: React.ElementType
   );
 }
 
-function RatingCard({ title, rows, onClick }: { title: string; rows: { name: string; main: string; sub: string; delta: number | null }[]; onClick?: () => void }) {
+type RatingRow = { name: string; main: string; sub: string; delta: number | null };
+function RatingTabs({ title, tabs, onClick }: { title: string; tabs: { label: string; rows: RatingRow[] }[]; onClick?: () => void }) {
+  const [active, setActive] = useState(0);
+  const rows = tabs[active]?.rows || [];
   return (
     <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
       <div className="flex items-center justify-between">
         <h3 className="text-base font-black text-white">{title}</h3>
         <button onClick={onClick} className="text-[10px] font-black uppercase tracking-wider text-[#C5A059] hover:text-white">Все ›</button>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1">
+        {tabs.map((t, i) => (
+          <button key={t.label} onClick={() => setActive(i)}
+            className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition ${active === i ? "bg-[#C5A059] text-black" : "bg-white/[0.04] text-slate-400 hover:text-white"}`}>
+            {t.label}
+          </button>
+        ))}
       </div>
       <div className="mt-3 space-y-2">
         {rows.length === 0 && <p className="text-sm text-slate-500">Нет данных</p>}

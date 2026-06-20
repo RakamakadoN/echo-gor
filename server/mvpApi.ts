@@ -390,10 +390,13 @@ export function registerMvpApi(app: express.Express) {
       const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
       const dayStart = (d: string) => `${d}T00:00:00`;
       const dayEnd = (d: string) => `${d}T23:59:59`;
-      const [snapsRaw, evToday, evYest] = await Promise.all([
+      const [snapsRaw, evToday, evYest, invoicesRaw, futureSubs, studentsLite] = await Promise.all([
         supabaseFetch<any[]>("metrics_snapshots", `select=*&${orgFilter}&order=period_month.asc`),
         supabaseFetch<any[]>("student_status_events", `select=to_status&${orgFilter}&occurred_at=gte.${dayStart(today)}&occurred_at=lte.${dayEnd(today)}`),
-        supabaseFetch<any[]>("student_status_events", `select=to_status&${orgFilter}&occurred_at=gte.${dayStart(yesterday)}&occurred_at=lte.${dayEnd(yesterday)}`)
+        supabaseFetch<any[]>("student_status_events", `select=to_status&${orgFilter}&occurred_at=gte.${dayStart(yesterday)}&occurred_at=lte.${dayEnd(yesterday)}`),
+        supabaseFetch<any[]>("invoices", `select=due_on,status&${orgFilter}&due_on=lt.${today}&status=in.(sent,overdue)`),
+        supabaseFetch<any[]>("student_subscriptions", `select=student_id,branch_id,starts_on&starts_on=gt.${today}`),
+        supabaseFetch<any[]>("students", `select=id,branch_id,birthday&${orgFilter}&status=neq.archived`)
       ]);
       const snapshots = snapsRaw.map((s) => ({
         periodMonth: toDate(s.period_month), branchId: s.branch_id,
@@ -407,7 +410,40 @@ export function registerMvpApi(app: express.Express) {
         trialCame: rows.filter((r) => r.to_status === "trial").length,
         bought: rows.filter((r) => r.to_status === "active").length
       });
-      res.json({ snapshots, funnelToday: funnel(evToday), funnelYesterday: funnel(evYest) });
+
+      // Должники по срокам просрочки — из реальных счетов (если они есть).
+      const ageDays = (d: string) => Math.floor((Date.now() - new Date(d).getTime()) / 86400000);
+      let debtorAging: { d1_7: number; d8_14: number; d14plus: number } | null = null;
+      if (invoicesRaw.length) {
+        debtorAging = { d1_7: 0, d8_14: 0, d14plus: 0 };
+        invoicesRaw.forEach((inv) => {
+          if (!inv.due_on) return;
+          const a = ageDays(inv.due_on);
+          if (a >= 1 && a <= 7) debtorAging!.d1_7 += 1;
+          else if (a >= 8 && a <= 14) debtorAging!.d8_14 += 1;
+          else if (a > 14) debtorAging!.d14plus += 1;
+        });
+      }
+
+      // Записи на будущий период — абонементы с датой старта позже сегодня.
+      let futureEnrollments: { total: number; byBranch: Record<string, number>; byAge: Record<string, number> } | null = null;
+      if (futureSubs.length) {
+        const stById = new Map(studentsLite.map((s) => [s.id, s]));
+        const ageOf = (bd?: string | null) => (bd ? Math.max(0, new Date().getFullYear() - new Date(bd).getFullYear()) : null);
+        const bucket = (a: number | null) => (a === null ? "—" : a <= 6 ? "до 6" : a <= 9 ? "7–9" : a <= 12 ? "10–12" : a <= 15 ? "13–15" : "16+");
+        const byBranch: Record<string, number> = {};
+        const byAge: Record<string, number> = {};
+        futureSubs.forEach((sub) => {
+          const st = stById.get(sub.student_id);
+          const br = sub.branch_id || st?.branch_id;
+          if (br) byBranch[br] = (byBranch[br] || 0) + 1;
+          const b = bucket(ageOf(st?.birthday));
+          byAge[b] = (byAge[b] || 0) + 1;
+        });
+        futureEnrollments = { total: futureSubs.length, byBranch, byAge };
+      }
+
+      res.json({ snapshots, funnelToday: funnel(evToday), funnelYesterday: funnel(evYest), debtorAging, futureEnrollments });
     } catch (error: any) {
       res.status(503).json({ snapshots: [], funnelToday: null, funnelYesterday: null, error: error.message });
     }

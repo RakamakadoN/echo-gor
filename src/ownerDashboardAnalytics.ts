@@ -175,8 +175,24 @@ function attendanceRate(students: Student[], r?: DateRange) {
 }
 
 const hasActiveSub = (s: Student) => (s.subscriptions || []).some((sub) => sub.status === "active");
+const retentionOf = (subset: Student[]) => subset.length ? Math.round((subset.filter(hasActiveSub).length / subset.length) * 100) : null;
+const RETENTION_NORM = 70; // норма удержания, %
+// топ-N по числовому критерию, null-значения всегда в конце
+function topBy<T>(arr: T[], val: (x: T) => number | null, n = 5): T[] {
+  return [...arr].sort((a, b) => {
+    const av = val(a), bv = val(b);
+    if (av === null && bv === null) return 0;
+    if (av === null) return 1;
+    if (bv === null) return -1;
+    return bv - av;
+  }).slice(0, n);
+}
 
 // ---------- основной расчёт ----------
+export interface BranchRating { id: string; name: string; revenue: number; retention: number | null; avgCheck: number | null; growthPct: number | null }
+export interface TeacherRating { id: string; name: string; students: number; retention: number | null; revenue: number; growthPct: number | null }
+export interface GroupRating { id: string; name: string; revenue: number; occupancy: number | null; retention: number | null }
+
 export interface OwnerDashboardModel {
   filters: DashFilters;
   ranges: ReturnType<typeof resolveRanges>;
@@ -210,9 +226,9 @@ export interface OwnerDashboardModel {
   growth: string[];
   brief: string[];
   ratings: {
-    branches: { id: string; name: string; revenue: number; retention: number | null; avgCheck: number | null; growthPct: number | null }[];
-    teachers: { id: string; name: string; students: number; retention: number | null; revenue: number }[];
-    groups: { id: string; name: string; revenue: number; occupancy: number | null; retention: number | null }[];
+    branches: { byRevenue: BranchRating[]; byRetention: BranchRating[]; byAvgCheck: BranchRating[]; byGrowth: BranchRating[] };
+    teachers: { byStudents: TeacherRating[]; byRetention: TeacherRating[]; byRevenue: TeacherRating[]; byGrowth: TeacherRating[] };
+    groups: { byRevenue: GroupRating[]; byOccupancy: GroupRating[]; byRetention: GroupRating[] };
   };
 }
 
@@ -381,6 +397,21 @@ export function computeOwnerDashboard(
   if (yoyHas && curRev.all < yoyRev.all * 0.9) risks.push({ id: "revdropy", severity: "mid", title: "Падение выручки год-к-году", detail: `${delta(curRev.all, yoyRev.all).pct}% к прошлому году` });
   if (prevAvg !== null && avgAll !== null && avgAll < prevAvg * 0.9) risks.push({ id: "checkdrop", severity: "mid", title: "Падение среднего чека", detail: `${delta(avgAll, prevAvg).pct}% относительно периода «${ranges.prev.label}»` });
   occByBranch.filter((b) => b.pct !== null && b.pct < 50).forEach((b) => risks.push({ id: "lowocc-" + b.id, severity: "low", title: `Низкая заполняемость: ${b.name}`, detail: `${b.pct}% — ниже нормы` }));
+  // низкое удержание (ниже нормы) — филиалы и педагоги
+  branches.forEach((b) => {
+    const bs = students.filter((s) => s.branchId === b.id);
+    const r = retentionOf(bs);
+    if (r !== null && bs.length >= 3 && r < RETENTION_NORM) risks.push({ id: "lowret-b-" + b.id, severity: "mid", title: `Низкое удержание: ${b.name || b.city}`, detail: `${r}% — ниже нормы ${RETENTION_NORM}%` });
+  });
+  teachers.forEach((t) => {
+    const ts = students.filter((s) => s.teacherId === t.id);
+    const r = retentionOf(ts);
+    if (r !== null && ts.length >= 3 && r < RETENTION_NORM) risks.push({ id: "lowret-t-" + t.id, severity: "low", title: `Низкое удержание у педагога ${t.name}`, detail: `${r}% — ниже нормы ${RETENTION_NORM}%` });
+  });
+  // падение посещаемости относительно предыдущего периода
+  const attCur = attendanceRate(students, ranges.cur);
+  const attPrev = attendanceRate(students, ranges.prev);
+  if (attCur !== null && attPrev !== null && attCur < attPrev * 0.9) risks.push({ id: "attdrop", severity: "mid", title: "Падение посещаемости", detail: `${delta(attCur, attPrev).pct}% относительно периода «${ranges.prev.label}»` });
 
   // --- рейтинги ---
   const revByBranch = (id: string, r?: DateRange) => payments.filter((p) => isPaid(p) && p.branchId === id && (!r || inRange(p.date, r))).reduce((s, p) => s + p.amount, 0);
@@ -392,35 +423,54 @@ export function computeOwnerDashboard(
     const ps = payments.filter((p) => isPaid(p) && p.branchId === id && inRange(p.date, ranges.cur));
     return ps.length ? Math.round(ps.reduce((s, p) => s + p.amount, 0) / ps.length) : null;
   };
-  const branchRatings = branches.map((b) => ({
+  const revByStudents = (ids: Set<string>, r?: DateRange) => payments.filter((p) => isPaid(p) && ids.has(p.studentId) && (!r || inRange(p.date, r))).reduce((s, p) => s + p.amount, 0);
+
+  const branchBase = branches.map((b) => ({
     id: b.id, name: b.name || b.city,
     revenue: revByBranch(b.id, ranges.cur),
     retention: retByBranch(b.id),
     avgCheck: avgByBranch(b.id),
     growthPct: delta(revByBranch(b.id, ranges.cur), revByBranch(b.id, ranges.prev) || null).pct
-  })).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
+  }));
+  const branchRatings = {
+    byRevenue: topBy(branchBase, (x) => x.revenue),
+    byRetention: topBy(branchBase, (x) => x.retention),
+    byAvgCheck: topBy(branchBase, (x) => x.avgCheck),
+    byGrowth: topBy(branchBase, (x) => x.growthPct)
+  };
 
-  const revByStudents = (ids: Set<string>) => payments.filter((p) => isPaid(p) && ids.has(p.studentId) && inRange(p.date, ranges.cur)).reduce((s, p) => s + p.amount, 0);
-  const teacherRatings = teachers.map((t) => {
+  const teacherBase = teachers.map((t) => {
     const ts = students.filter((s) => s.teacherId === t.id);
     const ids = new Set(ts.map((s) => s.id));
     return {
       id: t.id, name: t.name, students: ts.length,
-      retention: ts.length ? Math.round((ts.filter(hasActiveSub).length / ts.length) * 100) : null,
-      revenue: revByStudents(ids)
+      retention: retentionOf(ts),
+      revenue: revByStudents(ids, ranges.cur),
+      growthPct: delta(revByStudents(ids, ranges.cur), revByStudents(ids, ranges.prev) || null).pct
     };
-  }).filter((t) => t.students > 0).sort((a, b) => b.students - a.students).slice(0, 5);
+  }).filter((t) => t.students > 0);
+  const teacherRatings = {
+    byStudents: topBy(teacherBase, (x) => x.students),
+    byRetention: topBy(teacherBase, (x) => x.retention),
+    byRevenue: topBy(teacherBase, (x) => x.revenue),
+    byGrowth: topBy(teacherBase, (x) => x.growthPct)
+  };
 
-  const groupRatings = groups.map((g) => {
+  const groupBase = groups.map((g) => {
     const gs = students.filter((s) => (s.groupIds || []).includes(g.id));
     const ids = new Set(gs.map((s) => s.id));
     return {
       id: g.id, name: g.name,
-      revenue: revByStudents(ids),
+      revenue: revByStudents(ids, ranges.cur),
       occupancy: g.capacity ? Math.round((g.studentCount / g.capacity) * 100) : null,
-      retention: gs.length ? Math.round((gs.filter(hasActiveSub).length / gs.length) * 100) : null
+      retention: retentionOf(gs)
     };
-  }).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
+  });
+  const groupRatings = {
+    byRevenue: topBy(groupBase, (x) => x.revenue),
+    byOccupancy: topBy(groupBase, (x) => x.occupancy),
+    byRetention: topBy(groupBase, (x) => x.retention)
+  };
 
   // --- AI-блоки (правила) ---
   const momRevPct = prevHas ? delta(curRev.all, prevRev.all).pct : null;
@@ -439,9 +489,9 @@ export function computeOwnerDashboard(
 
   const growth: string[] = [];
   halfEmpty.forEach((g) => growth.push(`Свободные места в группе «${g.name}» (${g.capacity ? Math.round(g.studentCount / g.capacity * 100) : 0}%) — усилить набор.`));
-  const topTeacher = teacherRatings.filter((t) => t.retention !== null).sort((a, b) => (b.retention! - a.retention!))[0];
-  if (topTeacher) growth.push(`Лучшее удержание у педагога ${topTeacher.name} (${topTeacher.retention}%) — масштабировать подход.`);
-  const topBranch = branchRatings[0];
+  const topTeacher = teacherRatings.byRetention[0];
+  if (topTeacher && topTeacher.retention !== null) growth.push(`Лучшее удержание у педагога ${topTeacher.name} (${topTeacher.retention}%) — масштабировать подход.`);
+  const topBranch = branchRatings.byRevenue[0];
   if (topBranch) growth.push(`Филиал ${topBranch.name} — лидер по выручке (${topBranch.revenue.toLocaleString("ru-RU")} ₸).`);
   if (over100.length > 0) growth.push(`Перегруженные группы (${over100.length}) — кандидаты на открытие параллельных групп / набор педагогов.`);
   if (growth.length === 0) growth.push("Резервы роста: расширять успешные группы и удерживать заполняемость.");
