@@ -248,5 +248,7 @@ export interface Competition {
   registeredGroupIds: string[]; // Ensemble group IDs planned
   status: "registering" | "rehearsals" | "completed";
   rehearsalSlots?: { [groupId: string]: string[] }; // Map of groupId to list of day-time descriptions
+  responsibleTeacherId?: string; // Преподаватель, ответственный за концерт
+  participantStudentIds?: string[]; // Ученики, участвующие в концерте
 }
 

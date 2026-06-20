@@ -50,6 +50,17 @@ import {
 
 type StudentInput = { name?: string; branchId?: string; groupId?: string; teacherId?: string; parentName?: string; parentPhone?: string };
 type TeacherInput = { name?: string; phone?: string; specialization?: string; branchId?: string | null; role?: string };
+type CompetitionInput = {
+  title?: string;
+  date?: string;
+  location?: string;
+  level?: "regional" | "republican";
+  scope?: "kazakhstan" | "cis";
+  status?: "registering" | "rehearsals" | "completed";
+  prizePool?: string;
+  responsibleTeacherId?: string;
+  participantStudentIds?: string[];
+};
 
 interface OwnerExecutiveWorkspaceProps {
   branches: Branch[];
@@ -72,6 +83,9 @@ interface OwnerExecutiveWorkspaceProps {
   onCreateAnnouncement?: (data: { title: string; content: string; audience: AnnouncementAudience; isImportant: boolean }) => void;
   onUpdateAnnouncement?: (id: string, data: { title?: string; content?: string; audience?: AnnouncementAudience; isImportant?: boolean }) => void;
   onDeleteAnnouncement?: (id: string) => void;
+  onCreateCompetition?: (data: CompetitionInput) => Promise<boolean>;
+  onUpdateCompetition?: (id: string, data: CompetitionInput) => Promise<boolean>;
+  onDeleteCompetition?: (id: string) => Promise<boolean>;
   aiResult?: {
     executiveSummary: string;
     branchRisks: Array<{ branchId: string; riskTitle: string; description: string; severity: "high" | "medium" | "low" }>;
@@ -131,6 +145,9 @@ export function OwnerExecutiveWorkspace({
   onCreateAnnouncement,
   onUpdateAnnouncement,
   onDeleteAnnouncement,
+  onCreateCompetition,
+  onUpdateCompetition,
+  onDeleteCompetition,
   aiResult,
   aiGenerating,
   onTriggerAiReport,
@@ -249,7 +266,7 @@ export function OwnerExecutiveWorkspace({
               onDeleteLesson={onDeleteLesson}
             />
           )}
-          {activeTab === "events" && <EventsView competitions={competitions} branches={branches} />}
+          {activeTab === "events" && <EventsView competitions={competitions} branches={branches} students={students} teachers={teachers} onCreateCompetition={onCreateCompetition} onUpdateCompetition={onUpdateCompetition} onDeleteCompetition={onDeleteCompetition} />}
           {activeTab === "feed" && <DanceEventsFeedView />}
           {activeTab === "announcements" && <OwnerAnnouncementsView announcements={announcements} branches={branches} onCreateAnnouncement={onCreateAnnouncement} onUpdateAnnouncement={onUpdateAnnouncement} onDeleteAnnouncement={onDeleteAnnouncement} />}
           {activeTab === "analytics" && <ExecutiveAnalyticsView branches={branchScorecards} groups={groups} teachers={teachers} students={students} payments={payments} metrics={metrics} />}
@@ -1409,19 +1426,310 @@ function FinanceCenterView({ branches, payments, monthRevenue, todayRevenue, deb
   );
 }
 
-function EventsView({ competitions, branches }: { competitions: Competition[]; branches: Branch[] }) {
+type CompFormState = {
+  title: string;
+  date: string;
+  location: string;
+  level: "regional" | "republican";
+  scope: "kazakhstan" | "cis";
+  status: "registering" | "rehearsals" | "completed";
+  prizePool: string;
+  responsibleTeacherId: string;
+  participantStudentIds: string[];
+};
+
+const emptyCompForm: CompFormState = {
+  title: "",
+  date: new Date().toISOString().slice(0, 10),
+  location: "",
+  level: "regional",
+  scope: "kazakhstan",
+  status: "registering",
+  prizePool: "",
+  responsibleTeacherId: "",
+  participantStudentIds: []
+};
+
+const compStatusLabel: Record<string, { text: string; cls: string }> = {
+  registering: { text: "Идёт регистрация", cls: "bg-sky-500/15 text-sky-300" },
+  rehearsals: { text: "Репетиции", cls: "bg-amber-400/15 text-amber-300" },
+  completed: { text: "Завершён", cls: "bg-emerald-500/15 text-emerald-300" }
+};
+
+function EventsView({ competitions, branches, students, teachers, onCreateCompetition, onUpdateCompetition, onDeleteCompetition }: {
+  competitions: Competition[];
+  branches: Branch[];
+  students: Student[];
+  teachers: Teacher[];
+  onCreateCompetition?: (data: CompetitionInput) => Promise<boolean>;
+  onUpdateCompetition?: (id: string, data: CompetitionInput) => Promise<boolean>;
+  onDeleteCompetition?: (id: string) => Promise<boolean>;
+}) {
+  const canManage = Boolean(onCreateCompetition || onUpdateCompetition || onDeleteCompetition);
+  const [adding, setAdding] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<CompFormState>(emptyCompForm);
+  const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+
+  const teacherName = (id?: string) => teachers.find((t) => t.id === id)?.name;
+  const studentName = (id: string) => students.find((s) => s.id === id)?.name || "Ученик";
+
+  const startAdd = () => { setEditingId(null); setForm(emptyCompForm); setAdding(true); };
+  const startEdit = (c: Competition) => {
+    setAdding(false);
+    setEditingId(c.id);
+    setForm({
+      title: c.title,
+      date: c.date,
+      location: c.location,
+      level: c.level,
+      scope: c.scope,
+      status: c.status,
+      prizePool: c.prizePool || "",
+      responsibleTeacherId: c.responsibleTeacherId || "",
+      participantStudentIds: c.participantStudentIds || []
+    });
+  };
+  const cancel = () => { setAdding(false); setEditingId(null); setForm(emptyCompForm); };
+
+  const submit = async () => {
+    if (!form.title.trim() || !form.location.trim()) return;
+    setBusy(true);
+    const payload: CompetitionInput = { ...form, responsibleTeacherId: form.responsibleTeacherId || undefined };
+    const ok = adding
+      ? await onCreateCompetition?.(payload)
+      : editingId
+        ? await onUpdateCompetition?.(editingId, payload)
+        : false;
+    setBusy(false);
+    if (ok) cancel();
+  };
+
+  const remove = async (id: string) => {
+    setBusy(true);
+    const ok = await onDeleteCompetition?.(id);
+    setBusy(false);
+    if (ok) setConfirmDelete(null);
+  };
+
   return (
-    <OwnerScreen title="Концерты и мероприятия" subtitle="Календарь концертов, фестивали, конкурсы, участие филиалов, преподавателей и учеников.">
+    <OwnerScreen title="Концерты и мероприятия" subtitle="Создавайте концерты, назначайте ответственного преподавателя и участников-учеников. Полное управление сетью.">
+      {canManage && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-slate-400">{competitions.length} концертов в сети</p>
+          {!adding && editingId === null && (
+            <button onClick={startAdd} className="inline-flex items-center gap-2 rounded-2xl bg-[#C5A059] px-4 py-2 text-sm font-bold text-black transition hover:bg-[#d4b06a]">
+              <Plus className="h-4 w-4" /> Создать концерт
+            </button>
+          )}
+        </div>
+      )}
+
+      {(adding || editingId !== null) && (
+        <CompetitionForm
+          title={adding ? "Новый концерт" : "Редактирование концерта"}
+          form={form}
+          setForm={setForm}
+          teachers={teachers}
+          students={students}
+          busy={busy}
+          onSubmit={submit}
+          onCancel={cancel}
+        />
+      )}
+
+      {competitions.length === 0 && !adding && (
+        <div className="rounded-[2rem] border border-dashed border-white/15 bg-[#121212] p-10 text-center">
+          <Trophy className="mx-auto h-10 w-10 text-[#C5A059]/60" />
+          <p className="mt-3 text-sm font-bold text-white">Концертов пока нет</p>
+          <p className="mt-1 text-xs text-slate-500">Нажмите «Создать концерт», чтобы добавить первое мероприятие.</p>
+        </div>
+      )}
+
       <div className="grid gap-4 lg:grid-cols-2">
-        {competitions.map((event) => (
-          <article key={event.id} className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
-            <p className="text-[10px] font-black uppercase tracking-wider text-[#C5A059]">{event.date} • {event.location}</p>
-            <h3 className="mt-2 text-lg font-black text-white">{event.title}</h3>
-            <p className="mt-2 text-sm text-slate-400">Участвуют филиалы: {branches.slice(0, 2).map((branch) => branch.city).join(", ")}.</p>
-          </article>
-        ))}
+        {competitions.map((event) => {
+          const resp = teacherName(event.responsibleTeacherId);
+          const participants = event.participantStudentIds || [];
+          const st = compStatusLabel[event.status] || compStatusLabel.registering;
+          return (
+            <article key={event.id} className="flex flex-col rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-[#C5A059]">{event.date} • {event.location}</p>
+                  <h3 className="mt-2 text-lg font-black text-white">{event.title}</h3>
+                </div>
+                <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${st.cls}`}>{st.text}</span>
+              </div>
+
+              <div className="mt-4 space-y-3 text-sm">
+                <div className="flex items-center gap-2.5 rounded-2xl border border-white/5 bg-black/25 p-3">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#C5A059]/15 text-[#C5A059]"><GraduationCap className="h-4 w-4" /></div>
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Ответственный</p>
+                    <p className="truncate font-bold text-white">{resp || "Не назначен"}</p>
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-white/5 bg-black/25 p-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Участники</p>
+                    <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-black text-slate-300">{participants.length}</span>
+                  </div>
+                  {participants.length > 0 ? (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {participants.slice(0, 8).map((sid) => (
+                        <span key={sid} className="rounded-full bg-[#C5A059]/10 px-2.5 py-1 text-[11px] font-bold text-[#C5A059]">{studentName(sid)}</span>
+                      ))}
+                      {participants.length > 8 && <span className="rounded-full bg-white/5 px-2.5 py-1 text-[11px] font-bold text-slate-400">+{participants.length - 8}</span>}
+                    </div>
+                  ) : (
+                    <p className="mt-1 text-xs text-slate-500">Ученики ещё не назначены</p>
+                  )}
+                </div>
+              </div>
+
+              {canManage && (
+                <div className="mt-4 flex items-center gap-2 border-t border-white/5 pt-3">
+                  <button onClick={() => startEdit(event)} className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-bold text-slate-200 transition hover:bg-white/10">
+                    <Pencil className="h-3.5 w-3.5" /> Изменить
+                  </button>
+                  {confirmDelete === event.id ? (
+                    <span className="inline-flex items-center gap-2">
+                      <button onClick={() => remove(event.id)} disabled={busy} className="rounded-xl bg-rose-500/90 px-3 py-1.5 text-xs font-black text-white transition hover:bg-rose-500 disabled:opacity-50">Удалить</button>
+                      <button onClick={() => setConfirmDelete(null)} className="rounded-xl border border-white/10 px-3 py-1.5 text-xs font-bold text-slate-300">Отмена</button>
+                    </span>
+                  ) : (
+                    <button onClick={() => setConfirmDelete(event.id)} className="inline-flex items-center gap-1.5 rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-1.5 text-xs font-bold text-rose-300 transition hover:bg-rose-500/20">
+                      <Trash2 className="h-3.5 w-3.5" /> Удалить
+                    </button>
+                  )}
+                </div>
+              )}
+            </article>
+          );
+        })}
       </div>
     </OwnerScreen>
+  );
+}
+
+function CompetitionForm({ title, form, setForm, teachers, students, busy, onSubmit, onCancel }: {
+  title: string;
+  form: CompFormState;
+  setForm: React.Dispatch<React.SetStateAction<CompFormState>>;
+  teachers: Teacher[];
+  students: Student[];
+  busy: boolean;
+  onSubmit: () => void;
+  onCancel: () => void;
+}) {
+  const [studentSearch, setStudentSearch] = useState("");
+  const set = (patch: Partial<CompFormState>) => setForm((prev) => ({ ...prev, ...patch }));
+  const toggleStudent = (id: string) => set({
+    participantStudentIds: form.participantStudentIds.includes(id)
+      ? form.participantStudentIds.filter((x) => x !== id)
+      : [...form.participantStudentIds, id]
+  });
+
+  const filtered = students.filter((s) => s.name.toLowerCase().includes(studentSearch.trim().toLowerCase()));
+  const inputCls = "w-full rounded-2xl border border-white/10 bg-black/30 px-3.5 py-2.5 text-sm text-white placeholder:text-slate-600 outline-none focus:border-[#C5A059]/50";
+  const labelCls = "text-[10px] font-black uppercase tracking-wider text-slate-500";
+
+  return (
+    <section className="rounded-[2rem] border border-[#C5A059]/25 bg-[#141414] p-5">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-black text-white">{title}</h3>
+        <button onClick={onCancel} className="rounded-xl border border-white/10 p-1.5 text-slate-400 transition hover:bg-white/10 hover:text-white"><X className="h-4 w-4" /></button>
+      </div>
+
+      <div className="mt-4 grid gap-4 md:grid-cols-2">
+        <label className="space-y-1.5 md:col-span-2">
+          <span className={labelCls}>Название концерта *</span>
+          <input className={inputCls} value={form.title} onChange={(e) => set({ title: e.target.value })} placeholder="Гала-концерт «Эхо гор»" />
+        </label>
+        <label className="space-y-1.5">
+          <span className={labelCls}>Дата</span>
+          <input type="date" className={inputCls} value={form.date} onChange={(e) => set({ date: e.target.value })} />
+        </label>
+        <label className="space-y-1.5">
+          <span className={labelCls}>Место / город *</span>
+          <input className={inputCls} value={form.location} onChange={(e) => set({ location: e.target.value })} placeholder="Алматы, Дворец Республики" />
+        </label>
+        <label className="space-y-1.5">
+          <span className={labelCls}>Статус</span>
+          <select className={inputCls} value={form.status} onChange={(e) => set({ status: e.target.value as CompFormState["status"] })}>
+            <option value="registering">Идёт регистрация</option>
+            <option value="rehearsals">Репетиции</option>
+            <option value="completed">Завершён</option>
+          </select>
+        </label>
+        <label className="space-y-1.5">
+          <span className={labelCls}>Уровень</span>
+          <select className={inputCls} value={form.level} onChange={(e) => set({ level: e.target.value as CompFormState["level"] })}>
+            <option value="regional">Региональный</option>
+            <option value="republican">Республиканский</option>
+          </select>
+        </label>
+        <label className="space-y-1.5">
+          <span className={labelCls}>Призовой фонд / награды</span>
+          <input className={inputCls} value={form.prizePool} onChange={(e) => set({ prizePool: e.target.value })} placeholder="Дипломы лауреатов" />
+        </label>
+        <label className="space-y-1.5">
+          <span className={labelCls}>Ответственный преподаватель</span>
+          <select className={inputCls} value={form.responsibleTeacherId} onChange={(e) => set({ responsibleTeacherId: e.target.value })}>
+            <option value="">— Не назначен —</option>
+            {teachers.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        </label>
+      </div>
+
+      {/* Участники-ученики */}
+      <div className="mt-4">
+        <div className="flex items-center justify-between">
+          <span className={labelCls}>Участники-ученики</span>
+          <span className="text-[11px] font-bold text-[#C5A059]">Выбрано: {form.participantStudentIds.length}</span>
+        </div>
+        <div className="mt-2 flex items-center gap-2 rounded-2xl border border-white/10 bg-black/30 px-3">
+          <Search className="h-4 w-4 text-slate-500" />
+          <input className="w-full bg-transparent py-2.5 text-sm text-white placeholder:text-slate-600 outline-none" value={studentSearch} onChange={(e) => setStudentSearch(e.target.value)} placeholder="Поиск ученика по имени…" />
+        </div>
+        {form.participantStudentIds.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {form.participantStudentIds.map((id) => {
+              const s = students.find((x) => x.id === id);
+              return (
+                <button key={id} onClick={() => toggleStudent(id)} className="inline-flex items-center gap-1 rounded-full bg-[#C5A059]/15 px-2.5 py-1 text-[11px] font-bold text-[#C5A059] transition hover:bg-[#C5A059]/25">
+                  {s?.name || "Ученик"} <X className="h-3 w-3" />
+                </button>
+              );
+            })}
+          </div>
+        )}
+        <div className="mt-2 max-h-56 overflow-y-auto rounded-2xl border border-white/10 bg-black/20 p-1.5">
+          {filtered.length === 0 ? (
+            <p className="p-3 text-center text-xs text-slate-500">Ничего не найдено</p>
+          ) : filtered.map((s) => {
+            const checked = form.participantStudentIds.includes(s.id);
+            return (
+              <button key={s.id} onClick={() => toggleStudent(s.id)} className={`flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-sm transition ${checked ? "bg-[#C5A059]/10 text-white" : "text-slate-300 hover:bg-white/5"}`}>
+                <span className="flex items-center gap-2.5">
+                  <span className={`flex h-4 w-4 items-center justify-center rounded border ${checked ? "border-[#C5A059] bg-[#C5A059] text-black" : "border-white/20"}`}>{checked && <CheckCircle className="h-3 w-3" />}</span>
+                  <span className="font-bold">{s.name}</span>
+                </span>
+                <span className="text-[11px] text-slate-500">{s.age} лет</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="mt-5 flex items-center gap-3">
+        <button onClick={onSubmit} disabled={busy || !form.title.trim() || !form.location.trim()} className="inline-flex items-center gap-2 rounded-2xl bg-[#C5A059] px-5 py-2.5 text-sm font-black text-black transition hover:bg-[#d4b06a] disabled:opacity-50">
+          {busy ? "Сохранение…" : "Сохранить"}
+        </button>
+        <button onClick={onCancel} className="rounded-2xl border border-white/10 px-5 py-2.5 text-sm font-bold text-slate-300 transition hover:bg-white/5">Отмена</button>
+      </div>
+    </section>
   );
 }
 

@@ -1178,6 +1178,64 @@ export default function App() {
     );
   };
 
+  // ── Owner CRUD концертов (локальный стейт) ──
+  type OwnerCompetitionInput = {
+    title?: string;
+    date?: string;
+    location?: string;
+    level?: "regional" | "republican";
+    scope?: "kazakhstan" | "cis";
+    status?: "registering" | "rehearsals" | "completed";
+    prizePool?: string;
+    responsibleTeacherId?: string;
+    participantStudentIds?: string[];
+  };
+
+  const handleOwnerCreateCompetition = async (data: OwnerCompetitionInput): Promise<boolean> => {
+    if (!data.title || !data.location) return false;
+    const newComp: Competition = {
+      id: `comp-${Date.now()}`,
+      title: data.title,
+      date: data.date || new Date().toISOString().slice(0, 10),
+      level: data.level || "regional",
+      scope: data.scope || "kazakhstan",
+      location: data.location,
+      prizePool: data.prizePool || "Дипломы лауреатов",
+      registeredGroupIds: [],
+      status: data.status || "registering",
+      rehearsalSlots: {},
+      responsibleTeacherId: data.responsibleTeacherId,
+      participantStudentIds: data.participantStudentIds || []
+    };
+    setCompetitions(prev => [newComp, ...prev]);
+    addAuditLog("Создан концерт", `Добавлен концерт "${newComp.title}" (${newComp.location})`);
+    return true;
+  };
+
+  const handleOwnerUpdateCompetition = async (id: string, data: OwnerCompetitionInput): Promise<boolean> => {
+    setCompetitions(prev => prev.map(c => c.id === id ? {
+      ...c,
+      ...(data.title !== undefined ? { title: data.title } : {}),
+      ...(data.date !== undefined ? { date: data.date } : {}),
+      ...(data.location !== undefined ? { location: data.location } : {}),
+      ...(data.level !== undefined ? { level: data.level } : {}),
+      ...(data.scope !== undefined ? { scope: data.scope } : {}),
+      ...(data.status !== undefined ? { status: data.status } : {}),
+      ...(data.prizePool !== undefined ? { prizePool: data.prizePool } : {}),
+      ...(data.responsibleTeacherId !== undefined ? { responsibleTeacherId: data.responsibleTeacherId } : {}),
+      ...(data.participantStudentIds !== undefined ? { participantStudentIds: data.participantStudentIds } : {})
+    } : c));
+    addAuditLog("Изменён концерт", `Обновлён концерт ${id}`);
+    return true;
+  };
+
+  const handleOwnerDeleteCompetition = async (id: string): Promise<boolean> => {
+    const comp = competitions.find(c => c.id === id);
+    setCompetitions(prev => prev.filter(c => c.id !== id));
+    addAuditLog("Удалён концерт", `Удалён концерт "${comp?.title || id}"`);
+    return true;
+  };
+
   const handleRegisterGroupForComp = (compId: string, groupId: string) => {
     if (!groupId) return;
     setCompetitions(prev => prev.map(c => {
@@ -2508,6 +2566,9 @@ export default function App() {
               onCreateAnnouncement={handleCreateAnnouncement}
               onUpdateAnnouncement={handleUpdateAnnouncement}
               onDeleteAnnouncement={handleDeleteAnnouncement}
+              onCreateCompetition={handleOwnerCreateCompetition}
+              onUpdateCompetition={handleOwnerUpdateCompetition}
+              onDeleteCompetition={handleOwnerDeleteCompetition}
               aiResult={aiResult}
               aiGenerating={aiGenerating}
               onTriggerAiReport={triggerAiReport}
