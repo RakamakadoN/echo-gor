@@ -8,10 +8,12 @@
 import express from "express";
 import { registerMvpApi } from "../server/mvpApi";
 import { registerGeminiApi } from "../server/geminiApi";
+import { registerMagomedApi } from "../server/magomedApi";
 
 const app = express();
 app.use(express.json());
 registerMvpApi(app);
 registerGeminiApi(app);
+registerMagomedApi(app);
 
 export default app;
