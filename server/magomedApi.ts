@@ -20,7 +20,8 @@ import type express from "express";
 import { GoogleGenAI, Type, FunctionCallingConfigMode } from "@google/genai";
 
 const apiKey = process.env.GEMINI_API_KEY;
-const model = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+// gemini-2.0-flash отключён Google с 01.06.2026 — дефолт на актуальную модель.
+const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 const genai = apiKey ? new GoogleGenAI({ apiKey }) : null;
 
 const supabaseUrl = process.env.SUPABASE_URL?.replace(/\/$/, "");
@@ -115,12 +116,14 @@ async function toolSearchCrm(args: any, session: MagomedSession) {
   const branch = branchClause(session);
 
   if (entity === "students") {
+    // ВАЖНО: в таблице students НЕТ колонки full_name (она есть только в users).
+    // Имя собираем из first_name/last_name/middle_name.
     const or = q
-      ? `&or=(first_name.ilike.${enc},last_name.ilike.${enc},full_name.ilike.${enc},phone.ilike.${enc},parent_name.ilike.${enc},parent_phone.ilike.${enc})`
+      ? `&or=(first_name.ilike.${enc},last_name.ilike.${enc},middle_name.ilike.${enc},phone.ilike.${enc},parent_name.ilike.${enc},parent_phone.ilike.${enc})`
       : "";
     const rows = await supabaseFetch<any[]>(
       "students",
-      `select=id,first_name,last_name,full_name,phone,parent_name,parent_phone,status,group_id&${org}&status=neq.archived&deletion_requested_at=is.null${branch}${or}&limit=15`
+      `select=id,first_name,last_name,middle_name,phone,parent_name,parent_phone,status,group_id&${org}&status=neq.archived&deletion_requested_at=is.null${branch}${or}&limit=15`
     );
     return {
       count: rows.length,
@@ -338,6 +341,28 @@ async function toolCreateTask(args: any, session: MagomedSession) {
   };
 }
 
+// Сводка по ученикам: всего + разбивка по статусам. Отвечает на «сколько
+// активных/должников/новых учеников». В студии учеников немного — берём все
+// и считаем в коде (без count-заголовков PostgREST).
+async function toolGetStudentsSummary(_args: any, session: MagomedSession) {
+  const org = `organization_id=eq.${session.organizationId}`;
+  const branch = branchClause(session);
+  const rows = await supabaseFetch<any[]>(
+    "students",
+    `select=status&${org}&status=neq.archived&deletion_requested_at=is.null${branch}&limit=5000`
+  );
+  const byStatus: Record<string, number> = {};
+  for (const r of rows) {
+    const key = STUDENT_STATUS_RU[r.status] || r.status || "—";
+    byStatus[key] = (byStatus[key] || 0) + 1;
+  }
+  return {
+    total: rows.length,
+    byStatus,
+    scope: session.dbBranchId ? "филиал" : "вся сеть",
+  };
+}
+
 async function executeTool(name: string, args: any, session: MagomedSession) {
   try {
     if (!supabaseEnabled) {
@@ -346,6 +371,7 @@ async function executeTool(name: string, args: any, session: MagomedSession) {
     if (name === "search_crm") return await toolSearchCrm(args, session);
     if (name === "get_record_details") return await toolGetRecordDetails(args, session);
     if (name === "get_sales_summary") return await toolGetSalesSummary(args, session);
+    if (name === "get_students_summary") return await toolGetStudentsSummary(args, session);
     if (name === "create_task") return await toolCreateTask(args, session);
     return { error: `Неизвестный инструмент: ${name}` };
   } catch (e: any) {
@@ -406,6 +432,14 @@ const functionDeclarations = [
       },
       required: ["period"],
     },
+  },
+  {
+    name: "get_students_summary",
+    description:
+      "Сводка по ученикам: общее количество и разбивка по статусам (Активен, Должник, " +
+      "Пробное, Лид, Пауза, Ушёл). Используй для вопросов вида «сколько активных учеников», " +
+      "«сколько должников», «сколько всего учеников». Скоуп зависит от роли.",
+    parameters: { type: Type.OBJECT, properties: {} },
   },
   {
     name: "create_task",

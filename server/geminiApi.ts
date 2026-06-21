@@ -12,7 +12,8 @@ import type express from "express";
 import { GoogleGenAI } from "@google/genai";
 
 const apiKey = process.env.GEMINI_API_KEY;
-const model = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+// gemini-2.0-flash отключён Google с 01.06.2026 — дефолт на актуальную модель.
+const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 const genai = apiKey ? new GoogleGenAI({ apiKey }) : null;
 
 async function generateJson(prompt: string): Promise<unknown> {

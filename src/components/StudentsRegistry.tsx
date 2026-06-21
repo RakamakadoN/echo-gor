@@ -7,7 +7,7 @@
  * цветовая таблица, LTV-сегментация, коммуникации, массовые действия,
  * поиск, пагинация и архив. Светлая CRM-тема в стиле карточки ученика.
  */
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Search,
   Plus,
@@ -116,6 +116,14 @@ export default function StudentsRegistry({
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [openId, setOpenId] = useState<string | null>(null);
+  const [drawerIn, setDrawerIn] = useState(false);
+  useEffect(() => {
+    if (openId) {
+      const t = requestAnimationFrame(() => setDrawerIn(true));
+      return () => cancelAnimationFrame(t);
+    }
+    setDrawerIn(false);
+  }, [openId]);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [massNote, setMassNote] = useState<string | null>(null);
@@ -559,10 +567,17 @@ export default function StudentsRegistry({
         </div>
       </div>
 
-      {/* Карточка ученика (модально) */}
+      {/* Карточка ученика (боковая панель) */}
       {openStudent && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 backdrop-blur-sm" onClick={() => setOpenId(null)}>
-          <div className="my-8 w-full max-w-3xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50">
+          <div
+            className={`absolute inset-0 bg-black/20 transition-opacity duration-200 ${drawerIn ? "opacity-100" : "opacity-0"}`}
+            onClick={() => setOpenId(null)}
+          />
+          <div
+            className={`absolute right-0 top-0 h-full w-full max-w-xl overflow-y-auto bg-slate-50 shadow-2xl ring-1 ring-black/10 transition-transform duration-200 ease-out ${drawerIn ? "translate-x-0" : "translate-x-full"}`}
+          >
+            <div className="p-3 sm:p-4">
             <StudentManagementCard
               student={openStudent}
               group={groups.find((g) => g.id === studentGroupId(openStudent))}
@@ -577,6 +592,7 @@ export default function StudentsRegistry({
               onOpenPayment={onOpenPayment ? () => onOpenPayment(openStudent) : undefined}
               onTransfer={onUpdateStudent ? (payload) => onUpdateStudent(openStudent.id, payload) : undefined}
             />
+            </div>
           </div>
         </div>
       )}

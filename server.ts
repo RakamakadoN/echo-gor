@@ -3,18 +3,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+// ВАЖНО: грузим .env ПЕРВЫМ импортом — до модулей, которые читают process.env
+// на верхнем уровне (mvpApi/geminiApi/magomedApi). Иначе ключи будут undefined.
+import './server/loadEnv';
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
-import dotenv from 'dotenv';
 import { registerMvpApi } from './server/mvpApi';
 import { registerGeminiApi } from './server/geminiApi';
 import { registerMagomedApi } from './server/magomedApi';
-
-// Load environment variables in development
-if (process.env.NODE_ENV !== 'production') {
-  dotenv.config();
-}
 
 const app = express();
 app.use(express.json());
