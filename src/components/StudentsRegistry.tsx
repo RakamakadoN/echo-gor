@@ -7,7 +7,7 @@
  * цветовая таблица, LTV-сегментация, коммуникации, массовые действия,
  * поиск, пагинация и архив. Светлая CRM-тема в стиле карточки ученика.
  */
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   Search,
   Plus,
@@ -116,14 +116,6 @@ export default function StudentsRegistry({
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [openId, setOpenId] = useState<string | null>(null);
-  const [drawerIn, setDrawerIn] = useState(false);
-  useEffect(() => {
-    if (openId) {
-      const t = requestAnimationFrame(() => setDrawerIn(true));
-      return () => cancelAnimationFrame(t);
-    }
-    setDrawerIn(false);
-  }, [openId]);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [massNote, setMassNote] = useState<string | null>(null);
@@ -454,8 +446,9 @@ export default function StudentsRegistry({
         </div>
       )}
 
-      {/* Таблица */}
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      {/* Таблица + боковая панель ученика */}
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
+      <div className="min-w-0 flex-1 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1080px] text-left text-sm">
             <thead className="border-b border-slate-100 bg-slate-50 text-[10px] uppercase tracking-wider text-slate-400">
@@ -482,7 +475,7 @@ export default function StudentsRegistry({
                 const st = getStudentState(s, now);
                 const phone = s.parentPhone || (s as any).phone || "—";
                 return (
-                  <tr key={s.id} className={`border-b border-slate-100 text-slate-700 transition ${ROW_TONE_CLASS[st.tone]}`}>
+                  <tr key={s.id} className={`border-b border-slate-100 text-slate-700 transition ${ROW_TONE_CLASS[st.tone]} ${openId === s.id ? "ring-2 ring-inset ring-amber-400" : ""}`}>
                     <td className="p-3"><input type="checkbox" checked={selected.has(s.id)} onChange={() => toggleOne(s.id)} className="h-4 w-4 accent-amber-500" /></td>
                     <td className="p-3 text-slate-400">{page * pageSize + i + 1}</td>
                     <td className="p-3">
@@ -538,6 +531,26 @@ export default function StudentsRegistry({
         </div>
       </div>
 
+      {openStudent && (
+        <aside className="w-full shrink-0 xl:w-[420px] xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto">
+          <StudentManagementCard
+            student={openStudent}
+            group={groups.find((g) => g.id === studentGroupId(openStudent))}
+            branch={branches.find((b) => b.id === openStudent.branchId)}
+            teacher={teachers.find((t) => t.id === openStudent.teacherId)}
+            allGroups={groups}
+            allBranches={branches}
+            allTeachers={teachers}
+            onClose={() => setOpenId(null)}
+            onEdit={canManage ? () => openEdit(openStudent) : undefined}
+            onDelete={onDeleteStudent ? async () => { await onDeleteStudent(openStudent.id); applyOverride(openStudent.id, { status: "left" }); setOpenId(null); } : undefined}
+            onOpenPayment={onOpenPayment ? () => onOpenPayment(openStudent) : undefined}
+            onTransfer={onUpdateStudent ? (payload) => onUpdateStudent(openStudent.id, payload) : undefined}
+          />
+        </aside>
+      )}
+      </div>
+
       {/* Легенда + статусы */}
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -567,35 +580,6 @@ export default function StudentsRegistry({
         </div>
       </div>
 
-      {/* Карточка ученика (боковая панель) */}
-      {openStudent && (
-        <div className="fixed inset-0 z-50">
-          <div
-            className={`absolute inset-0 bg-black/20 transition-opacity duration-200 ${drawerIn ? "opacity-100" : "opacity-0"}`}
-            onClick={() => setOpenId(null)}
-          />
-          <div
-            className={`absolute right-0 top-0 h-full w-full max-w-xl overflow-y-auto bg-slate-50 shadow-2xl ring-1 ring-black/10 transition-transform duration-200 ease-out ${drawerIn ? "translate-x-0" : "translate-x-full"}`}
-          >
-            <div className="p-3 sm:p-4">
-            <StudentManagementCard
-              student={openStudent}
-              group={groups.find((g) => g.id === studentGroupId(openStudent))}
-              branch={branches.find((b) => b.id === openStudent.branchId)}
-              teacher={teachers.find((t) => t.id === openStudent.teacherId)}
-              allGroups={groups}
-              allBranches={branches}
-              allTeachers={teachers}
-              onClose={() => setOpenId(null)}
-              onEdit={canManage ? () => { setOpenId(null); openEdit(openStudent); } : undefined}
-              onDelete={onDeleteStudent ? async () => { await onDeleteStudent(openStudent.id); applyOverride(openStudent.id, { status: "left" }); setOpenId(null); } : undefined}
-              onOpenPayment={onOpenPayment ? () => onOpenPayment(openStudent) : undefined}
-              onTransfer={onUpdateStudent ? (payload) => onUpdateStudent(openStudent.id, payload) : undefined}
-            />
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
