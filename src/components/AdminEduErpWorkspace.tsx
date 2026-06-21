@@ -30,7 +30,7 @@ import {
   Users,
   WalletCards
 } from "lucide-react";
-import { Announcement, AnnouncementAudience, AuditLog, Branch, Group, Hall, Payment, Student, Teacher } from "../types";
+import { Announcement, AnnouncementAudience, AuditLog, Branch, Group, Hall, Payment, Student, Teacher, AdminTask, AdminTaskStatus, AdminTaskPriority, SubscriptionPlan, LeadSource } from "../types";
 import StudentManagementCard from "./StudentManagementCard";
 
 // --- Лёгкая система всплывающих уведомлений (toast) ---
@@ -105,6 +105,18 @@ interface AdminEduErpWorkspaceProps {
   onDeleteStudent?: (id: string) => Promise<boolean>;
   onCreateAnnouncement?: (data: { title: string; content: string; audience: AnnouncementAudience; isImportant: boolean }) => void;
   onOpenPayment?: (student: Student) => void;
+  tasks?: AdminTask[];
+  subscriptionPlans?: SubscriptionPlan[];
+  leadSources?: LeadSource[];
+  onCreateTask?: (data: any) => Promise<boolean>;
+  onUpdateTask?: (id: string, data: any) => Promise<boolean>;
+  onDeleteTask?: (id: string) => Promise<boolean>;
+  onCreatePlan?: (data: any) => Promise<boolean>;
+  onUpdatePlan?: (id: string, data: any) => Promise<boolean>;
+  onDeletePlan?: (id: string) => Promise<boolean>;
+  onCreateLeadSource?: (data: any) => Promise<boolean>;
+  onUpdateLeadSource?: (id: string, data: any) => Promise<boolean>;
+  onDeleteLeadSource?: (id: string) => Promise<boolean>;
 }
 
 type AdminTab =
@@ -156,6 +168,18 @@ export function AdminEduErpWorkspace({
   onDeleteStudent,
   onCreateAnnouncement,
   onOpenPayment,
+  tasks = [],
+  subscriptionPlans = [],
+  leadSources = [],
+  onCreateTask,
+  onUpdateTask,
+  onDeleteTask,
+  onCreatePlan,
+  onUpdatePlan,
+  onDeletePlan,
+  onCreateLeadSource,
+  onUpdateLeadSource,
+  onDeleteLeadSource,
 }: AdminEduErpWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<AdminTab>("dashboard");
   const [search, setSearch] = useState("");
@@ -299,11 +323,11 @@ export function AdminEduErpWorkspace({
             />
           )}
           {activeTab === "billing" && <BillingView students={students} groups={groups} branches={branches} payments={payments} debt={debt} renewals={renewals} onOpenPayment={onOpenPayment} />}
-          {activeTab === "reports" && <ReportsView branches={branches} groups={groups} todayRevenue={todayRevenue} monthRevenue={monthRevenue} attendanceRate={attendanceRate} />}
+          {activeTab === "reports" && <ReportsView branches={branches} groups={groups} students={students} payments={payments} teachers={teachers} todayRevenue={todayRevenue} monthRevenue={monthRevenue} attendanceRate={attendanceRate} />}
           {activeTab === "messages" && <MessagesView announcements={announcements} branches={branches} groups={groups} onCreateAnnouncement={onCreateAnnouncement} />}
-          {activeTab === "tasks" && <TasksView auditLogs={auditLogs} students={students} />}
-          {activeTab === "org" && <OrganizationView branches={branches} groups={groups} teachers={teachers} />}
-          {activeTab === "settings" && <SettingsView branches={branches} groups={groups} />}
+          {activeTab === "tasks" && <TasksView auditLogs={auditLogs} students={students} tasks={tasks} adminBranchId={branches[0]?.id || ""} onCreateTask={onCreateTask} onUpdateTask={onUpdateTask} onDeleteTask={onDeleteTask} />}
+          {activeTab === "org" && <OrganizationView branches={branches} groups={groups} teachers={teachers} students={students} />}
+          {activeTab === "settings" && <SettingsView branches={branches} groups={groups} subscriptionPlans={subscriptionPlans} leadSources={leadSources} onCreatePlan={onCreatePlan} onUpdatePlan={onUpdatePlan} onDeletePlan={onDeletePlan} onCreateLeadSource={onCreateLeadSource} onUpdateLeadSource={onUpdateLeadSource} onDeleteLeadSource={onDeleteLeadSource} />}
         </main>
       </div>
 
@@ -1291,32 +1315,131 @@ function BillingView({ students, groups, branches, payments, debt, renewals, onO
   );
 }
 
-function ReportsView({ branches, groups, todayRevenue, monthRevenue, attendanceRate }: any) {
-  const reports = [
-    "Руководители по месяцам",
-    "Отчет о выручке и потерях",
-    "Взаиморасчеты",
-    "Выгрузка посетителей с привязкой к тренерам",
-    "Отчет по рекламному источнику",
-    "Отчет о заполненности",
-    "Реестр операций",
-    "Проданные абонементы",
-    "Отчет о ДР посетителей",
-    "Отчет о посещаемости",
-    "Отчет по задачам",
-    "Реестр задач"
+function ReportsView({ branches, groups, students, payments, teachers, todayRevenue, monthRevenue, attendanceRate }: any) {
+  const studentList: Student[] = students || [];
+  const paymentList: Payment[] = payments || [];
+  const branchName = (id?: string) => branches.find((b: Branch) => b.id === id)?.city || branches.find((b: Branch) => b.id === id)?.name || "—";
+  const groupName = (id?: string) => groups.find((g: Group) => g.id === id)?.name || "—";
+  const teacherName = (id?: string) => teachers.find((t: Teacher) => t.id === id)?.name || "—";
+  const studentName = (id?: string) => studentList.find((s) => s.id === id)?.name || id || "—";
+  const sGid = (s: Student) => s.groupIds?.[0] || (s as any).groupId;
+  const attendancePct = (s: Student) => {
+    const records = Object.values(s.attendance || {});
+    if (!records.length) return 0;
+    return Math.round((records.filter((r: any) => r.status === "present").length / records.length) * 100);
+  };
+
+  // Каждый отчёт — реальная выгрузка CSV из текущих данных кабинета.
+  const reports: { title: string; build: () => { headers: string[]; rows: (string | number)[][] } }[] = [
+    {
+      title: "Реестр операций",
+      build: () => ({
+        headers: ["Дата", "Ученик", "Сумма", "Тип", "Статус"],
+        rows: paymentList.map((p) => [p.date || "", studentName(p.studentId), p.amount, (p as any).type || "оплата", p.status])
+      })
+    },
+    {
+      title: "Отчет о выручке и потерях",
+      build: () => {
+        const byMonth = new Map<string, number>();
+        paymentList.forEach((p) => {
+          const m = (p.date || "").slice(0, 7);
+          if (m) byMonth.set(m, (byMonth.get(m) || 0) + p.amount);
+        });
+        return { headers: ["Месяц", "Выручка"], rows: [...byMonth.entries()].sort().map(([m, v]) => [m, v]) };
+      }
+    },
+    {
+      title: "Выгрузка посетителей с привязкой к тренерам",
+      build: () => ({
+        headers: ["Ученик", "Филиал", "Группа", "Преподаватель", "Родитель", "Телефон", "Баланс", "Статус"],
+        rows: studentList.map((s) => [s.name, branchName(s.branchId), groupName(sGid(s)), teacherName(s.teacherId), s.parentName || "", s.parentPhone || "", s.balance, s.status || ""])
+      })
+    },
+    {
+      title: "Проданные абонементы",
+      build: () => ({
+        headers: ["Ученик", "Абонемент", "Осталось занятий", "Действует до", "Статус"],
+        rows: studentList.flatMap((s) => (s.subscriptions || []).map((sub) => [s.name, sub.name, sub.lessonsLeft, sub.validUntil || "", sub.status]))
+      })
+    },
+    {
+      title: "Отчет о посещаемости",
+      build: () => ({
+        headers: ["Ученик", "Группа", "Посещаемость, %"],
+        rows: studentList.map((s) => [s.name, groupName(sGid(s)), attendancePct(s)])
+      })
+    },
+    {
+      title: "Должники",
+      build: () => ({
+        headers: ["Ученик", "Филиал", "Родитель", "Телефон", "Долг"],
+        rows: studentList.filter((s) => s.balance < 0).map((s) => [s.name, branchName(s.branchId), s.parentName || "", s.parentPhone || "", Math.abs(s.balance)])
+      })
+    },
+    {
+      title: "Отчет о заполненности групп",
+      build: () => ({
+        headers: ["Группа", "Филиал", "Учеников", "Вместимость", "Заполненность, %"],
+        rows: groups.map((g: Group) => {
+          const cnt = studentList.filter((s) => sGid(s) === g.id).length;
+          const cap = (g as any).capacity || 0;
+          return [g.name, branchName(g.branchId), cnt, cap || "—", cap ? Math.round((cnt / cap) * 100) : 0];
+        })
+      })
+    },
+    {
+      title: "Отчет о ДР посетителей",
+      build: () => ({
+        headers: ["Ученик", "Возраст", "Группа", "Телефон"],
+        rows: studentList.map((s) => [s.name, (s as any).age || "—", groupName(sGid(s)), s.parentPhone || ""])
+      })
+    }
   ];
+
+  const occupancy = (() => {
+    const withCap = groups.filter((g: Group) => (g as any).capacity > 0);
+    if (!withCap.length) return Math.round((groups.length / Math.max(1, branches.length * 4)) * 100);
+    const totalCap = withCap.reduce((s: number, g: Group) => s + ((g as any).capacity || 0), 0);
+    const totalStud = withCap.reduce((s: number, g: Group) => s + studentList.filter((st) => sGid(st) === g.id).length, 0);
+    return totalCap ? Math.round((totalStud / totalCap) * 100) : 0;
+  })();
+
+  const runExport = (title: string, build: () => { headers: string[]; rows: (string | number)[][] }) => {
+    const { headers, rows } = build();
+    if (!rows.length) { notify(`${title}: нет данных для выгрузки`); return; }
+    const stamp = new Date().toISOString().slice(0, 10);
+    exportCsv(`${title.replace(/[^\wа-яА-Я]+/g, "_")}_${stamp}.csv`, headers, rows);
+    notify(`${title}: выгружено строк — ${rows.length}`);
+  };
+
   return (
     <div className="space-y-5">
-      <SectionHeader kicker="Аналитика" title="Отчеты и экспорт" text="Все отчеты EduERP собраны в одном BI-центре с фильтрами день, неделя, месяц, филиал, группа и экспортом." actions={["Сформировать", "Экспорт"]} />
+      <SectionHeader kicker="Аналитика" title="Отчеты и экспорт" text="Отчёты формируются из текущих данных кабинета и выгружаются в CSV (Excel). Период берётся по загруженным записям филиала." actions={[]} />
       <div className="grid gap-3 md:grid-cols-4">
         <KpiCard label="Сегодня" value={money(todayRevenue)} detail="касса" tone="gold" />
         <KpiCard label="Месяц" value={money(monthRevenue)} detail="рост сети" tone="gold" />
         <KpiCard label="Посещаемость" value={`${attendanceRate}%`} detail="по группам" tone="emerald" />
-        <KpiCard label="Заполненность" value={`${Math.round((groups.length / Math.max(1, branches.length * 4)) * 100)}%`} detail="залы" tone="white" />
+        <KpiCard label="Заполненность" value={`${occupancy}%`} detail="залы" tone="white" />
       </div>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {reports.map((report) => <ReportCard key={report} title={report} />)}
+        {reports.map((report) => {
+          const count = report.build().rows.length;
+          return (
+            <div key={report.title} className="flex flex-col justify-between rounded-2xl border border-white/10 bg-black/25 p-4">
+              <div className="flex items-start gap-3">
+                <div className="rounded-xl bg-[#C5A059]/15 p-2 text-[#C5A059]"><BarChart3 className="h-4 w-4" /></div>
+                <div>
+                  <h3 className="text-sm font-black text-white">{report.title}</h3>
+                  <p className="mt-1 text-xs leading-relaxed text-slate-400">Строк к выгрузке: {count}. Экспорт в CSV.</p>
+                </div>
+              </div>
+              <button onClick={() => runExport(report.title, report.build)} disabled={!count} className="mt-3 inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-black text-slate-200 transition hover:bg-white/10 disabled:opacity-40">
+                <FileSpreadsheet className="h-4 w-4" /> Экспорт CSV
+              </button>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -1387,21 +1510,108 @@ function MessagesView({ announcements, onCreateAnnouncement }: any) {
   );
 }
 
-function TasksView({ auditLogs, students }: any) {
-  const tasks = [
-    ["Перезвонить родителю", students[0]?.parentName || "Родитель", "Сегодня", "В работе"],
-    ["Проверить оплату", students[1]?.parentName || "Родитель", "Завтра", "Новая"],
-    ["Закрыть пропуски", students[2]?.parentName || "Родитель", "02.06", "Просрочена"],
-    ["Подготовить счет", students[3]?.parentName || "Родитель", "03.06", "Новая"]
-  ];
+const TASK_STATUS_LABEL: Record<AdminTaskStatus, string> = {
+  new: "Новая", in_progress: "В работе", done: "Выполнена", cancelled: "Отменена", overdue: "Просрочена"
+};
+const TASK_STATUS_TONE: Record<AdminTaskStatus, string> = {
+  new: "bg-sky-500/15 text-sky-300", in_progress: "bg-amber-500/15 text-amber-300",
+  done: "bg-emerald-500/15 text-emerald-300", cancelled: "bg-slate-500/15 text-slate-400",
+  overdue: "bg-rose-500/15 text-rose-300"
+};
+const TASK_PRIORITY_LABEL: Record<AdminTaskPriority, string> = { low: "Низкий", normal: "Обычный", high: "Высокий" };
+
+function TasksView({ auditLogs, students, tasks, adminBranchId, onCreateTask, onUpdateTask, onDeleteTask }: any) {
+  const [title, setTitle] = useState("");
+  const [dueAt, setDueAt] = useState("");
+  const [priority, setPriority] = useState<AdminTaskPriority>("normal");
+  const [studentId, setStudentId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const canManage = Boolean(onCreateTask);
+
+  const submit = async () => {
+    if (!canManage || !title.trim()) return;
+    setBusy(true);
+    const ok = await onCreateTask({ title: title.trim(), dueAt: dueAt || null, priority, studentId: studentId || null, branchId: adminBranchId || undefined });
+    setBusy(false);
+    if (ok) { setTitle(""); setDueAt(""); setPriority("normal"); setStudentId(""); }
+  };
+
+  const list: AdminTask[] = tasks || [];
+  const openCount = list.filter((t) => t.status !== "done" && t.status !== "cancelled").length;
+
   return (
     <div className="space-y-5">
-      <SectionHeader kicker="Задачи" title="Шаблоны задач, дедлайны и реестр" text="Системные задачи по триггерам: новый лид, пробное занятие, долг, продление, пропуск, закрытие задачи с комментарием." actions={["Добавить задачу", "Шаблоны"]} />
-      <div className="grid gap-4 xl:grid-cols-[1fr_0.8fr]">
-        <DataTable headers={["Задача", "Посетитель", "Дедлайн", "Статус"]} rows={tasks} />
-        <Panel title="История изменений" kicker="Audit log">
-          {auditLogs.slice(0, 5).map((log: AuditLog) => <TimelineItem key={log.id} icon={FileText} title={log.action} text={log.details} />)}
+      <SectionHeader kicker="Задачи" title="Задачи администратора, дедлайны и реестр" text={`${openCount} активных задач. Задачи хранятся в базе: создание, смена статуса, привязка к ученику и удаление.`} actions={[]} />
+      <div className="grid gap-4 xl:grid-cols-[0.85fr_1.15fr]">
+        <Panel title="Новая задача" kicker="Добавить в реестр">
+          <div className="grid gap-3">
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Что сделать *</span>
+              <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Напр. «Перезвонить родителю»" className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-sm text-white placeholder-slate-600" />
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="flex flex-col gap-1">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Дедлайн</span>
+                <input type="date" value={dueAt} onChange={(e) => setDueAt(e.target.value)} className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-sm text-white" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Приоритет</span>
+                <select value={priority} onChange={(e) => setPriority(e.target.value as AdminTaskPriority)} className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-sm text-white">
+                  <option value="low">Низкий</option>
+                  <option value="normal">Обычный</option>
+                  <option value="high">Высокий</option>
+                </select>
+              </label>
+            </div>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Ученик (необязательно)</span>
+              <select value={studentId} onChange={(e) => setStudentId(e.target.value)} className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-sm text-white">
+                <option value="">— не привязывать —</option>
+                {students.map((s: Student) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </label>
+            <button onClick={submit} disabled={!canManage || !title.trim() || busy} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#C5A059] px-4 py-2.5 text-sm font-black text-black transition hover:bg-[#D4AF70] disabled:opacity-40">
+              <Plus className="h-4 w-4" /> Добавить задачу
+            </button>
+            {!canManage && <p className="text-xs text-slate-500">Создание недоступно в этом режиме.</p>}
+          </div>
         </Panel>
+        <div className="space-y-4">
+          {list.length === 0 ? (
+            <div className="rounded-[2rem] border border-white/10 bg-[#111] px-5 py-6 text-sm text-slate-400">Задач пока нет. Добавьте первую через форму слева.</div>
+          ) : (
+            <section className="overflow-hidden rounded-[2rem] border border-white/10 bg-[#111]">
+              <div className="divide-y divide-white/5">
+                {list.map((t) => (
+                  <div key={t.id} className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${TASK_STATUS_TONE[t.status] || "bg-white/10 text-slate-300"}`}>{TASK_STATUS_LABEL[t.status] || t.status}</span>
+                        {t.priority === "high" && <span className="rounded-full bg-rose-500/15 px-2 py-0.5 text-[10px] font-black text-rose-300">Важно</span>}
+                      </div>
+                      <p className="mt-1 truncate font-bold text-white">{t.title}</p>
+                      <p className="text-xs text-slate-500">
+                        {t.dueAt ? `Дедлайн: ${t.dueAt}` : "Без срока"}{t.studentName ? ` · ${t.studentName}` : ""} · {TASK_PRIORITY_LABEL[t.priority] || t.priority}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 gap-2">
+                      {t.status !== "in_progress" && t.status !== "done" && (
+                        <button onClick={() => onUpdateTask?.(t.id, { status: "in_progress" })} className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-bold text-amber-300 hover:bg-white/10">В работу</button>
+                      )}
+                      {t.status !== "done" && (
+                        <button onClick={() => onUpdateTask?.(t.id, { status: "done" })} className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-bold text-emerald-300 hover:bg-white/10">Готово</button>
+                      )}
+                      <button onClick={() => onDeleteTask?.(t.id)} className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-bold text-rose-300 hover:bg-white/10">Удалить</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+          <Panel title="История изменений" kicker="Audit log">
+            {auditLogs.slice(0, 5).map((log: AuditLog) => <TimelineItem key={log.id} icon={FileText} title={log.action} text={log.details} />)}
+          </Panel>
+        </div>
       </div>
     </div>
   );
@@ -1410,9 +1620,9 @@ function TasksView({ auditLogs, students }: any) {
 function OrganizationView({ branches, groups, teachers }: any) {
   return (
     <div className="space-y-5">
-      <SectionHeader kicker="Организация" title="Сотрудники, родители, филиалы, группы и территории" text="Справочник организационной структуры: пользователи, роли, филиалы Казахстана, группы, залы, возрастные категории и направления." actions={["Добавить сотрудника", "Добавить группу"]} />
+      <SectionHeader kicker="Организация" title="Сотрудники, родители, филиалы, группы и территории" text="Справочник организационной структуры: пользователи, роли, филиалы Казахстана, группы, залы, возрастные категории и направления." actions={[]} />
       <div className="grid gap-4 xl:grid-cols-3">
-        <DirectoryPanel icon={UserRound} title="Сотрудники" count={teachers.length + 12} items={teachers.map((teacher: Teacher) => teacher.name)} />
+        <DirectoryPanel icon={UserRound} title="Преподаватели" count={teachers.length} items={teachers.map((teacher: Teacher) => teacher.name)} />
         <DirectoryPanel icon={Building2} title="Филиалы" count={branches.length} items={branches.map((branch: Branch) => `${branch.city}, ${branch.address}`)} />
         <DirectoryPanel icon={BookOpen} title="Группы" count={groups.length} items={groups.map((group: Group) => group.name)} />
       </div>
@@ -1420,24 +1630,104 @@ function OrganizationView({ branches, groups, teachers }: any) {
   );
 }
 
-function SettingsView({ branches, groups }: any) {
+function PlansDirectory({ plans, onCreatePlan, onUpdatePlan, onDeletePlan }: any) {
+  const canManage = Boolean(onCreatePlan);
+  const [form, setForm] = useState({ name: "", lessonsCount: "", durationDays: "", price: "" });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const list: SubscriptionPlan[] = plans || [];
+
+  const save = async () => {
+    if (!form.name.trim()) return;
+    const data = { name: form.name.trim(), lessonsCount: Number(form.lessonsCount) || 0, durationDays: Number(form.durationDays) || 30, price: Number(form.price) || 0 };
+    const ok = editingId ? await onUpdatePlan?.(editingId, data) : await onCreatePlan?.(data);
+    if (ok) { setForm({ name: "", lessonsCount: "", durationDays: "", price: "" }); setEditingId(null); }
+  };
+  const edit = (p: SubscriptionPlan) => { setEditingId(p.id); setForm({ name: p.name, lessonsCount: String(p.lessonsCount), durationDays: String(p.durationDays), price: String(p.price) }); };
+
+  return (
+    <Panel title="Абонементы" kicker={`${list.length} в справочнике`}>
+      {canManage && (
+        <div className="mb-4 grid gap-2 sm:grid-cols-[1.4fr_0.7fr_0.7fr_0.8fr_auto] sm:items-end">
+          <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Название" className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-sm text-white placeholder-slate-600" />
+          <input type="number" value={form.lessonsCount} onChange={(e) => setForm((f) => ({ ...f, lessonsCount: e.target.value }))} placeholder="Занятий" className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-sm text-white placeholder-slate-600" />
+          <input type="number" value={form.durationDays} onChange={(e) => setForm((f) => ({ ...f, durationDays: e.target.value }))} placeholder="Дней" className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-sm text-white placeholder-slate-600" />
+          <input type="number" value={form.price} onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))} placeholder="Цена ₸" className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-sm text-white placeholder-slate-600" />
+          <button onClick={save} disabled={!form.name.trim()} className="rounded-xl bg-[#C5A059] px-3 py-2 text-sm font-black text-black hover:bg-[#D4AF70] disabled:opacity-40">{editingId ? "Сохранить" : "Добавить"}</button>
+        </div>
+      )}
+      <div className="space-y-2">
+        {list.length === 0 && <p className="text-xs text-slate-500">Абонементов пока нет.</p>}
+        {list.map((p) => (
+          <div key={p.id} className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/25 p-3">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-black text-white">{p.name}</p>
+              <p className="text-xs text-slate-500">{p.lessonsCount} занятий · {p.durationDays} дн. · {money(p.price)}{p.status !== "active" ? " · архив" : ""}</p>
+            </div>
+            {canManage && (
+              <div className="flex shrink-0 gap-2">
+                <button onClick={() => edit(p)} className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-bold text-slate-200 hover:bg-white/10">Изм.</button>
+                <button onClick={() => onDeletePlan?.(p.id)} className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-bold text-rose-300 hover:bg-white/10">Удалить</button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+function LeadSourcesDirectory({ leadSources, onCreateLeadSource, onUpdateLeadSource, onDeleteLeadSource }: any) {
+  const canManage = Boolean(onCreateLeadSource);
+  const [name, setName] = useState("");
+  const list: LeadSource[] = leadSources || [];
+  const add = async () => {
+    if (!name.trim()) return;
+    const ok = await onCreateLeadSource?.({ name: name.trim() });
+    if (ok) setName("");
+  };
+  return (
+    <Panel title="Рекламные источники" kicker={`${list.length} в справочнике`}>
+      {canManage && (
+        <div className="mb-4 flex gap-2">
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Напр. «Instagram», «Сарафан»" className="flex-1 rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-sm text-white placeholder-slate-600" />
+          <button onClick={add} disabled={!name.trim()} className="rounded-xl bg-[#C5A059] px-3 py-2 text-sm font-black text-black hover:bg-[#D4AF70] disabled:opacity-40">Добавить</button>
+        </div>
+      )}
+      <div className="flex flex-wrap gap-2">
+        {list.length === 0 && <p className="text-xs text-slate-500">Источников пока нет.</p>}
+        {list.map((s) => (
+          <span key={s.id} className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/25 px-3 py-1.5 text-xs font-bold text-slate-200">
+            {s.name}
+            {canManage && <button onClick={() => onDeleteLeadSource?.(s.id)} className="text-rose-400 hover:text-rose-300">×</button>}
+          </span>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+function SettingsView({ branches, subscriptionPlans, leadSources, onCreatePlan, onUpdatePlan, onDeletePlan, onCreateLeadSource, onUpdateLeadSource, onDeleteLeadSource }: any) {
+  // Справочники без отдельных таблиц в БД — пока информационные карточки.
   const directories = [
     ["Статусы посетителей", "Пользовательские и системные статусы"],
-    ["Рекламные источники", "Каналы, источники, территории"],
-    ["Абонементы", "Тип, цена, срок, доступно занятий"],
-    ["Скидки", "Процент, дни, рубли, филиалы"],
+    ["Скидки", "Процент, дни, филиалы"],
     ["Промокоды", "Код, лимит, срок, статистика"],
     ["Справки", "Медицинские справки и компенсации"],
     ["Возраст групп", "Возрастные категории"],
-    ["Архив", "Статусы, посетители, скидки, сотрудники"],
     ["Интеграции", "SMS, email, платежи, внешние формы"]
   ];
   return (
     <div className="space-y-5">
-      <SectionHeader kicker="Справочники" title="Настройки операционного ядра" text="Все сущности, которые нужны для полноценного переноса EduERP: статусы, источники, стоимость, архивы, интеграции и политики." actions={["Добавить", "Редактировать"]} />
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {directories.map(([title, text]) => <ModuleCard key={title} icon={Tags} title={title} text={text} />)}
+      <SectionHeader kicker="Справочники" title="Настройки операционного ядра" text="Абонементы и рекламные источники подключены к базе — изменения сохраняются. Остальные справочники появятся по мере добавления таблиц." actions={[]} />
+      <div className="grid gap-4 xl:grid-cols-2">
+        <PlansDirectory plans={subscriptionPlans} onCreatePlan={onCreatePlan} onUpdatePlan={onUpdatePlan} onDeletePlan={onDeletePlan} />
+        <LeadSourcesDirectory leadSources={leadSources} onCreateLeadSource={onCreateLeadSource} onUpdateLeadSource={onUpdateLeadSource} onDeleteLeadSource={onDeleteLeadSource} />
       </div>
+      <Panel title="Прочие справочники" kicker="В разработке">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {directories.map(([title, text]) => <ModuleCard key={title} icon={Tags} title={title} text={text} />)}
+        </div>
+      </Panel>
       <Panel title="RBAC администратора" kicker="Ограничения">
         <div className="grid gap-3 md:grid-cols-3">
           <Permission title="Можно" text="Создавать посетителей, родителей, задачи, счета, рассылки и расписание." ok />

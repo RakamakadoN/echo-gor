@@ -143,6 +143,9 @@ function fallbackPayload(session: MvpSession) {
     branches: branchFiltered,
     halls: initialHalls.filter((hall) => session.role === "owner" || branchIds.has(hall.branchId)),
     teachers: initialTeachers,
+    tasks: [],
+    subscriptionPlans: [],
+    leadSources: [],
     groups,
     students,
     announcements: initialAnnouncements,
@@ -151,6 +154,38 @@ function fallbackPayload(session: MvpSession) {
     auditLogs: initialAuditLogs,
     metrics: getExecutiveSummary(branchFiltered, groups, students, payments, initialTeachers)
   };
+}
+
+function mapDbTask(row: any, studentNameById?: Map<string, string>) {
+  return {
+    id: row.id,
+    branchId: row.branch_id || null,
+    studentId: row.student_id || null,
+    studentName: row.student_id ? (studentNameById?.get(row.student_id) || null) : null,
+    assignedTo: row.assigned_to || null,
+    title: row.title,
+    description: row.description || null,
+    status: row.status || "new",
+    priority: row.priority || "normal",
+    dueAt: row.due_at ? toDate(row.due_at) : null,
+    completedAt: row.completed_at || null,
+    createdAt: row.created_at || null
+  };
+}
+
+function mapDbPlan(row: any) {
+  return {
+    id: row.id,
+    name: row.name,
+    lessonsCount: row.lessons_count ?? 0,
+    durationDays: row.duration_days ?? 0,
+    price: Number(row.price || 0),
+    status: row.status || "active"
+  };
+}
+
+function mapDbLeadSource(row: any) {
+  return { id: row.id, name: row.name, status: row.status || "active" };
 }
 
 function mapDbUserToTeacher(user: any) {
@@ -222,7 +257,7 @@ function mapDbPayment(row: any): Payment {
 async function dbBootstrap(session: MvpSession) {
   const orgFilter = `organization_id=eq.${session.organizationId}`;
   
-  const [branches, halls, users, groups, studentsRaw, paymentsRaw, lessons, attendanceRaw, subscriptionsRaw, plans, financeTransactions] = await Promise.all([
+  const [branches, halls, users, groups, studentsRaw, paymentsRaw, lessons, attendanceRaw, subscriptionsRaw, plans, financeTransactions, tasksRaw, leadSourcesRaw] = await Promise.all([
     supabaseFetch<any[]>("branches", `select=*&${orgFilter}&status=neq.archived`),
     supabaseFetch<any[]>("halls", `select=*`), // Halls are filtered by branch in mapping
     supabaseFetch<any[]>("users", `select=*&${orgFilter}`),
@@ -233,7 +268,10 @@ async function dbBootstrap(session: MvpSession) {
     supabaseFetch<any[]>("attendance", "select=*"),
     supabaseFetch<any[]>("student_subscriptions", `select=*`),
     supabaseFetch<any[]>("subscription_plans", `select=*&${orgFilter}`),
-    supabaseFetch<any[]>("finance_transactions", `select=*&${orgFilter}&order=created_at.desc`)
+    supabaseFetch<any[]>("finance_transactions", `select=*&${orgFilter}&order=created_at.desc`),
+    // tasks/lead_sources не имеют organization_id — фильтруем по филиалу в коде
+    supabaseFetch<any[]>("tasks", `select=*&order=created_at.desc`).catch(() => [] as any[]),
+    supabaseFetch<any[]>("lead_sources", `select=*&order=name.asc`).catch(() => [] as any[])
   ]);
 
   const groupById = new Map(groups.map((group) => [group.id, group]));
@@ -328,6 +366,15 @@ async function dbBootstrap(session: MvpSession) {
     return group.branchId === session.dbBranchId;
   });
 
+  const studentNameById = new Map(
+    studentsRaw.map((s) => [s.id, [s.first_name, s.last_name].filter(Boolean).join(" ") || s.full_name || "Ученик"])
+  );
+  const tasks = tasksRaw
+    .filter((task) => isOwner || !task.branch_id || task.branch_id === session.dbBranchId)
+    .map((task) => mapDbTask(task, studentNameById));
+  const subscriptionPlans = plans.map(mapDbPlan);
+  const leadSources = leadSourcesRaw.map(mapDbLeadSource);
+
   return {
     mode: "supabase",
     session,
@@ -335,6 +382,9 @@ async function dbBootstrap(session: MvpSession) {
     branches: branchesVisible,
     halls: hallsVisible,
     teachers,
+    tasks,
+    subscriptionPlans,
+    leadSources,
     groups: groupsVisible,
     students,
     announcements: initialAnnouncements,
@@ -1419,6 +1469,175 @@ export function registerMvpApi(app: express.Express) {
       res.json({ student: { ...mapped, subscriptions: subsMapped }, payments: paymentsMapped });
     } catch (error: any) {
       res.status(400).json({ error: error.message || "Не удалось загрузить данные ребёнка" });
+    }
+  });
+
+  // ===== Задачи администратора (tasks) =====
+  app.post("/api/mvp/tasks", async (req, res) => {
+    const session = getSession(req);
+    const payload = req.body || {};
+    if (!payload.title || !String(payload.title).trim()) {
+      return res.status(400).json({ error: "title is required" });
+    }
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const branchId = payload.branchId ?? session.dbBranchId ?? null;
+    if (branchId && !canSeeBranch(session, branchId)) {
+      return res.status(403).json({ error: "Branch access denied" });
+    }
+    try {
+      const inserted = await supabaseFetch<any[]>("tasks", "", {
+        method: "POST",
+        body: JSON.stringify({
+          branch_id: branchId,
+          student_id: payload.studentId || null,
+          assigned_to: payload.assignedTo || null,
+          created_by: session.userId,
+          title: String(payload.title).trim(),
+          description: payload.description || null,
+          status: payload.status || "new",
+          priority: payload.priority || "normal",
+          due_at: payload.dueAt || null
+        })
+      });
+      res.status(201).json({ task: mapDbTask(inserted[0]) });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось создать задачу" });
+    }
+  });
+
+  app.patch("/api/mvp/tasks/:id", async (req, res) => {
+    const session = getSession(req);
+    const payload = req.body || {};
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    if (payload.branchId && !canSeeBranch(session, payload.branchId)) {
+      return res.status(403).json({ error: "Branch access denied" });
+    }
+    const updates: Record<string, unknown> = {};
+    if (payload.title !== undefined) updates.title = String(payload.title).trim();
+    if (payload.description !== undefined) updates.description = payload.description || null;
+    if (payload.status !== undefined) {
+      updates.status = payload.status;
+      updates.completed_at = payload.status === "done" ? new Date().toISOString() : null;
+    }
+    if (payload.priority !== undefined) updates.priority = payload.priority;
+    if (payload.dueAt !== undefined) updates.due_at = payload.dueAt || null;
+    if (payload.studentId !== undefined) updates.student_id = payload.studentId || null;
+    if (payload.assignedTo !== undefined) updates.assigned_to = payload.assignedTo || null;
+    if (Object.keys(updates).length === 0) return res.status(400).json({ error: "Нет полей для обновления" });
+    try {
+      const rows = await supabaseFetch<any[]>("tasks", `id=eq.${req.params.id}`, { method: "PATCH", body: JSON.stringify(updates) });
+      if (!rows[0]) return res.status(404).json({ error: "Задача не найдена" });
+      res.json({ task: mapDbTask(rows[0]) });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось обновить задачу" });
+    }
+  });
+
+  app.delete("/api/mvp/tasks/:id", async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      await supabaseFetch("tasks", `id=eq.${req.params.id}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      res.json({ ok: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось удалить задачу" });
+    }
+  });
+
+  // ===== Справочник: абонементы (subscription_plans) =====
+  app.post("/api/mvp/subscription-plans", async (req, res) => {
+    const session = getSession(req);
+    const payload = req.body || {};
+    if (!payload.name || !String(payload.name).trim()) return res.status(400).json({ error: "name is required" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      const inserted = await supabaseFetch<any[]>("subscription_plans", "", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: session.organizationId,
+          name: String(payload.name).trim(),
+          lessons_count: Number(payload.lessonsCount) || 0,
+          duration_days: Number(payload.durationDays) || 30,
+          price: Number(payload.price) || 0,
+          status: payload.status || "active"
+        })
+      });
+      res.status(201).json({ plan: mapDbPlan(inserted[0]) });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось создать абонемент" });
+    }
+  });
+
+  app.patch("/api/mvp/subscription-plans/:id", async (req, res) => {
+    const session = getSession(req);
+    const payload = req.body || {};
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const updates: Record<string, unknown> = {};
+    if (payload.name !== undefined) updates.name = String(payload.name).trim();
+    if (payload.lessonsCount !== undefined) updates.lessons_count = Number(payload.lessonsCount) || 0;
+    if (payload.durationDays !== undefined) updates.duration_days = Number(payload.durationDays) || 0;
+    if (payload.price !== undefined) updates.price = Number(payload.price) || 0;
+    if (payload.status !== undefined) updates.status = payload.status;
+    if (Object.keys(updates).length === 0) return res.status(400).json({ error: "Нет полей для обновления" });
+    try {
+      const rows = await supabaseFetch<any[]>("subscription_plans", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", body: JSON.stringify(updates) });
+      if (!rows[0]) return res.status(404).json({ error: "Абонемент не найден" });
+      res.json({ plan: mapDbPlan(rows[0]) });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось обновить абонемент" });
+    }
+  });
+
+  app.delete("/api/mvp/subscription-plans/:id", async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      await supabaseFetch("subscription_plans", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      res.json({ ok: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось удалить абонемент" });
+    }
+  });
+
+  // ===== Справочник: рекламные источники (lead_sources) =====
+  app.post("/api/mvp/lead-sources", async (req, res) => {
+    const payload = req.body || {};
+    if (!payload.name || !String(payload.name).trim()) return res.status(400).json({ error: "name is required" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      const inserted = await supabaseFetch<any[]>("lead_sources", "", {
+        method: "POST",
+        body: JSON.stringify({ name: String(payload.name).trim(), status: payload.status || "active" })
+      });
+      res.status(201).json({ source: mapDbLeadSource(inserted[0]) });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось создать источник" });
+    }
+  });
+
+  app.patch("/api/mvp/lead-sources/:id", async (req, res) => {
+    const payload = req.body || {};
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const updates: Record<string, unknown> = {};
+    if (payload.name !== undefined) updates.name = String(payload.name).trim();
+    if (payload.status !== undefined) updates.status = payload.status;
+    if (Object.keys(updates).length === 0) return res.status(400).json({ error: "Нет полей для обновления" });
+    try {
+      const rows = await supabaseFetch<any[]>("lead_sources", `id=eq.${req.params.id}`, { method: "PATCH", body: JSON.stringify(updates) });
+      if (!rows[0]) return res.status(404).json({ error: "Источник не найден" });
+      res.json({ source: mapDbLeadSource(rows[0]) });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось обновить источник" });
+    }
+  });
+
+  app.delete("/api/mvp/lead-sources/:id", async (req, res) => {
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      await supabaseFetch("lead_sources", `id=eq.${req.params.id}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      res.json({ ok: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось удалить источник" });
     }
   });
 

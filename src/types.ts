@@ -242,6 +242,41 @@ export interface ExecutiveSummary {
   }[];
 }
 
+export type AdminTaskStatus = "new" | "in_progress" | "done" | "cancelled" | "overdue";
+export type AdminTaskPriority = "low" | "normal" | "high";
+
+export interface AdminTask {
+  id: string;
+  branchId?: string | null;
+  studentId?: string | null;
+  studentName?: string | null;
+  assignedTo?: string | null;
+  title: string;
+  description?: string | null;
+  status: AdminTaskStatus;
+  priority: AdminTaskPriority;
+  dueAt?: string | null; // YYYY-MM-DD
+  completedAt?: string | null;
+  createdAt?: string | null;
+}
+
+export type DirectoryStatus = "active" | "inactive" | "archived";
+
+export interface SubscriptionPlan {
+  id: string;
+  name: string;
+  lessonsCount: number;
+  durationDays: number;
+  price: number;
+  status: DirectoryStatus;
+}
+
+export interface LeadSource {
+  id: string;
+  name: string;
+  status: DirectoryStatus;
+}
+
 export interface Competition {
   id: string;
   title: string;

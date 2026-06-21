@@ -101,7 +101,10 @@ import {
   Subscription,
   Achievement,
   Competition,
-  ExecutiveSummary
+  ExecutiveSummary,
+  AdminTask,
+  SubscriptionPlan,
+  LeadSource
 } from "./types";
 
 import { getAvailableAchievements, getExecutiveSummary } from "./dataMock";
@@ -138,6 +141,9 @@ export default function App() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [adminTasks, setAdminTasks] = useState<AdminTask[]>([]);
+  const [subscriptionPlans, setSubscriptionPlans] = useState<SubscriptionPlan[]>([]);
+  const [leadSources, setLeadSources] = useState<LeadSource[]>([]);
 
   // Competition State Management
   const [competitions, setCompetitions] = useState<Competition[]>([]);
@@ -412,6 +418,9 @@ export default function App() {
       if (payload.announcements) setAnnouncements(payload.announcements);
       if (payload.payments) setPayments(payload.payments);
       if (payload.auditLogs) setAuditLogs(payload.auditLogs);
+      if (payload.tasks) setAdminTasks(payload.tasks);
+      if (payload.subscriptionPlans) setSubscriptionPlans(payload.subscriptionPlans);
+      if (payload.leadSources) setLeadSources(payload.leadSources);
       if (payload.metrics) {
         setMetricsSummary((prev) => ({
           ...prev,
@@ -656,6 +665,147 @@ export default function App() {
       return true;
     } catch (error: any) {
       setMvpDataError(error.message || "Не удалось переместить ученика в корзину");
+      return false;
+    }
+  };
+
+  // --- Задачи администратора (tasks) ---
+  const handleCreateTask = async (data: any) => {
+    try {
+      const response = await fetch("/api/mvp/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+        body: JSON.stringify(data)
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await loadMvpBootstrap(activeRole);
+      addAuditLog("Создание задачи", `Добавлена задача «${data.title}»`);
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось создать задачу");
+      return false;
+    }
+  };
+  const handleUpdateTask = async (id: string, data: any) => {
+    try {
+      const response = await fetch(`/api/mvp/tasks/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+        body: JSON.stringify(data)
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await loadMvpBootstrap(activeRole);
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось обновить задачу");
+      return false;
+    }
+  };
+  const handleDeleteTask = async (id: string) => {
+    try {
+      const response = await fetch(`/api/mvp/tasks/${id}`, {
+        method: "DELETE",
+        headers: { "x-demo-role": getMvpRoleHeader() }
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await loadMvpBootstrap(activeRole);
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось удалить задачу");
+      return false;
+    }
+  };
+
+  // --- Справочник: абонементы ---
+  const handleCreatePlan = async (data: any) => {
+    try {
+      const response = await fetch("/api/mvp/subscription-plans", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+        body: JSON.stringify(data)
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await loadMvpBootstrap(activeRole);
+      addAuditLog("Справочник: абонемент", `Добавлен абонемент «${data.name}»`);
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось создать абонемент");
+      return false;
+    }
+  };
+  const handleUpdatePlan = async (id: string, data: any) => {
+    try {
+      const response = await fetch(`/api/mvp/subscription-plans/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+        body: JSON.stringify(data)
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await loadMvpBootstrap(activeRole);
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось обновить абонемент");
+      return false;
+    }
+  };
+  const handleDeletePlan = async (id: string) => {
+    try {
+      const response = await fetch(`/api/mvp/subscription-plans/${id}`, {
+        method: "DELETE",
+        headers: { "x-demo-role": getMvpRoleHeader() }
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await loadMvpBootstrap(activeRole);
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось удалить абонемент");
+      return false;
+    }
+  };
+
+  // --- Справочник: рекламные источники ---
+  const handleCreateLeadSource = async (data: any) => {
+    try {
+      const response = await fetch("/api/mvp/lead-sources", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+        body: JSON.stringify(data)
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await loadMvpBootstrap(activeRole);
+      addAuditLog("Справочник: источник", `Добавлен источник «${data.name}»`);
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось создать источник");
+      return false;
+    }
+  };
+  const handleUpdateLeadSource = async (id: string, data: any) => {
+    try {
+      const response = await fetch(`/api/mvp/lead-sources/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+        body: JSON.stringify(data)
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await loadMvpBootstrap(activeRole);
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось обновить источник");
+      return false;
+    }
+  };
+  const handleDeleteLeadSource = async (id: string) => {
+    try {
+      const response = await fetch(`/api/mvp/lead-sources/${id}`, {
+        method: "DELETE",
+        headers: { "x-demo-role": getMvpRoleHeader() }
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await loadMvpBootstrap(activeRole);
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось удалить источник");
       return false;
     }
   };
@@ -2686,6 +2836,18 @@ export default function App() {
               onDeleteStudent={handleDeleteStudent}
               onCreateAnnouncement={handleCreateAnnouncement}
               onOpenPayment={openPaymentForStudent}
+              tasks={adminTasks}
+              subscriptionPlans={subscriptionPlans}
+              leadSources={leadSources}
+              onCreateTask={handleCreateTask}
+              onUpdateTask={handleUpdateTask}
+              onDeleteTask={handleDeleteTask}
+              onCreatePlan={handleCreatePlan}
+              onUpdatePlan={handleUpdatePlan}
+              onDeletePlan={handleDeletePlan}
+              onCreateLeadSource={handleCreateLeadSource}
+              onUpdateLeadSource={handleUpdateLeadSource}
+              onDeleteLeadSource={handleDeleteLeadSource}
             />
           ) : (
             <>
@@ -2729,7 +2891,6 @@ export default function App() {
                   <span className="text-2xl md:text-3xl font-bold text-white tracking-tight">
                     {metricsSummary.activeStudentsTotal}
                   </span>
-                  <span className="text-xs text-green-400">+12%</span>
                 </div>
               </div>
               
