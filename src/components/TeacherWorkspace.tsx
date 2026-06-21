@@ -12,6 +12,10 @@ import { motion, AnimatePresence } from 'motion/react';
 // @ts-ignore
 import teacherProfileCard from '../assets/images/teacher_profile_card.png';
 
+type NoteKind = "note" | "praise" | "concern";
+type LessonPlan = { title: string; summary: string; sections: { heading: string; items: string[] }[] };
+type DevPlan = { praise: string; focusArea: string; nextMilestoneAdvice: string };
+
 interface TeacherWorkspaceProps {
   groups: Group[];
   students: Student[];
@@ -23,7 +27,18 @@ interface TeacherWorkspaceProps {
   scheduleLoading?: boolean;
   onLoadSchedule?: (filters?: { branchId?: string; groupId?: string; from?: string; to?: string }) => void;
   onToggleAttendance?: (studentId: string, date: string, status: "present" | "absent" | "sick") => void;
+  homeworks?: Homework[];
+  onAddNote?: (studentId: string, content: string, opts?: { kind?: NoteKind; isPrivate?: boolean }) => Promise<void>;
+  onAssignHomework?: (data: { studentId?: string; groupId?: string; title: string; description?: string; dueAt?: string; videoUrl?: string }) => Promise<Homework | null>;
+  onUpdateHomework?: (id: string, patch: { status?: Homework["status"]; gradeComment?: string }) => Promise<void>;
+  onBulkAttendance?: (groupId: string, date: string, status?: "present" | "absent" | "sick") => Promise<number>;
+  onGenerateLessonPlan?: (prompt: string, ctx?: { groupName?: string; groupLevel?: string; studentCount?: number }) => Promise<LessonPlan>;
+  onGenerateStudentPlan?: (student: Student) => Promise<DevPlan>;
+  onSubmitReaction?: (reactionKey: string, opts?: { studentId?: string; groupId?: string; teacherId?: string }) => Promise<boolean>;
+  onLoadReactions?: (filters?: { from?: string; to?: string; groupId?: string }) => Promise<ReactionSummary | null>;
 }
+
+type ReactionSummary = { total: number; byKey: Record<string, number>; byGroup: { groupId: string; count: number }[] };
 
 // Sub-components: 
 // - Dashboard
@@ -44,11 +59,35 @@ export function TeacherWorkspace({
   scheduleLoading = false,
   onLoadSchedule,
   onToggleAttendance,
+  homeworks = [],
+  onAddNote,
+  onAssignHomework,
+  onUpdateHomework,
+  onBulkAttendance,
+  onGenerateLessonPlan,
+  onGenerateStudentPlan,
+  onSubmitReaction,
+  onLoadReactions,
 }: TeacherWorkspaceProps) {
 
   const [activeTab, setActiveTab] = useState<'today' | 'profile' | 'groups' | 'students' | 'journal' | 'feedback' | 'more'>('today');
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+
+  // Общие модальные окна (заметка, ДЗ, AI-план)
+  const [noteModal, setNoteModal] = useState<{ studentId: string; kind: NoteKind } | null>(null);
+  const [homeworkModal, setHomeworkModal] = useState<{ studentId?: string; groupId?: string; studentName?: string } | null>(null);
+  const [lessonPlanModal, setLessonPlanModal] = useState<{ prompt: string; ctx?: { groupName?: string; groupLevel?: string; studentCount?: number } } | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const flash = (msg: string) => {
+    setToast(msg);
+    window.setTimeout(() => setToast(null), 2600);
+  };
+
+  const openNote = (studentId: string, kind: NoteKind = "note") => setNoteModal({ studentId, kind });
+  const openHomework = (target: { studentId?: string; groupId?: string; studentName?: string }) => setHomeworkModal(target);
+  const openLessonPlan = (prompt: string, ctx?: { groupName?: string; groupLevel?: string; studentCount?: number }) => setLessonPlanModal({ prompt, ctx });
 
   // Load real schedule on mount
   useEffect(() => {
@@ -57,9 +96,6 @@ export function TeacherWorkspace({
     if (onLoadSchedule) onLoadSchedule({ from: today, to: weekAhead });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Local state for Homeworks and Notebook
-  const [homeworks, setHomeworks] = useState<Homework[]>([]);
-  const [notebookEntries, setNotebookEntries] = useState<any[]>([]);
 
   // Helpers
   const teacherGroups = groups; // Taking all passed for demo, normally filter by teacherId
@@ -102,6 +138,8 @@ export function TeacherWorkspace({
               onNavigateToStudent={navigateToStudent}
               scheduleItems={scheduleItems}
               scheduleLoading={scheduleLoading}
+              onNavigate={(tab: any) => { setActiveTab(tab); setSelectedGroupId(null); setSelectedStudentId(null); }}
+              onOpenLessonPlan={openLessonPlan}
             />
           )}
 
@@ -145,12 +183,16 @@ export function TeacherWorkspace({
 
           {/* GROUP DETAILS VIEW */}
           {activeTab === 'groups' && selectedGroupId && (
-            <GroupDetailsView 
+            <GroupDetailsView
               groupId={selectedGroupId}
               groups={groups}
               students={students}
               onBack={() => setSelectedGroupId(null)}
               onNavigateToStudent={navigateToStudent}
+              onToggleAttendance={onToggleAttendance}
+              onBulkAttendance={onBulkAttendance}
+              onOpenHomework={openHomework}
+              flash={flash}
             />
           )}
 
@@ -161,6 +203,11 @@ export function TeacherWorkspace({
               students={students}
               groups={groups}
               onBack={() => setSelectedStudentId(null)}
+              homeworks={homeworks}
+              onOpenNote={openNote}
+              onOpenHomework={openHomework}
+              onUpdateHomework={onUpdateHomework}
+              onGenerateStudentPlan={onGenerateStudentPlan}
             />
           )}
 
@@ -203,11 +250,24 @@ export function TeacherWorkspace({
           )}
 
           {activeTab === 'feedback' && (
-            <SafeFeedbackView groups={teacherGroups} students={teacherStudents} />
+            <SafeFeedbackView
+              groups={teacherGroups}
+              students={teacherStudents}
+              onSubmitReaction={onSubmitReaction}
+              onLoadReactions={onLoadReactions}
+              flash={flash}
+            />
           )}
 
           {activeTab === 'more' && (
-            <AINotebookView announcements={announcements} groups={teacherGroups} students={teacherStudents} competitions={competitions} />
+            <AINotebookView
+              announcements={announcements}
+              groups={teacherGroups}
+              students={teacherStudents}
+              competitions={competitions}
+              onOpenLessonPlan={openLessonPlan}
+              onOpenNote={openNote}
+            />
           )}
 
         </div>
@@ -224,6 +284,59 @@ export function TeacherWorkspace({
           <NavItem icon={<BrainCircuit className="w-5 h-5" />} label="Notebook" active={activeTab === 'more'} onClick={() => {setActiveTab('more'); setSelectedGroupId(null); setSelectedStudentId(null)}} />
         </div>
       </div>
+
+      {/* SHARED MODALS */}
+      <AnimatePresence>
+        {noteModal && (
+          <NoteModal
+            key="note-modal"
+            kind={noteModal.kind}
+            studentName={students.find((s) => s.id === noteModal.studentId)?.name || "ученика"}
+            onClose={() => setNoteModal(null)}
+            onSubmit={async (content, isPrivate) => {
+              await onAddNote?.(noteModal.studentId, content, { kind: noteModal.kind, isPrivate });
+              setNoteModal(null);
+              flash(noteModal.kind === "praise" ? "Похвала сохранена" : "Заметка сохранена");
+            }}
+          />
+        )}
+        {homeworkModal && (
+          <HomeworkModal
+            key="hw-modal"
+            targetLabel={homeworkModal.studentName || groups.find((g) => g.id === homeworkModal.groupId)?.name || "ученику"}
+            onClose={() => setHomeworkModal(null)}
+            onSubmit={async (data) => {
+              await onAssignHomework?.({ studentId: homeworkModal.studentId, groupId: homeworkModal.groupId, ...data });
+              setHomeworkModal(null);
+              flash("Задание выдано");
+            }}
+          />
+        )}
+        {lessonPlanModal && (
+          <LessonPlanModal
+            key="plan-modal"
+            initialPrompt={lessonPlanModal.prompt}
+            ctx={lessonPlanModal.ctx}
+            onClose={() => setLessonPlanModal(null)}
+            onGenerate={onGenerateLessonPlan}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* TOAST */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            key="toast"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="fixed bottom-24 left-1/2 z-[60] -translate-x-1/2 rounded-2xl border border-[#C5A059]/40 bg-[#1A1A1A] px-5 py-3 text-sm font-bold text-white shadow-2xl"
+          >
+            {toast}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -234,14 +347,18 @@ export function TeacherWorkspace({
 
 const teacherPhotoUrl = teacherProfileCard;
 
-const safeReactions = [
-  { label: "Спасибо, учитель", count: 42, tone: "amber" },
-  { label: "Мне понравилось занятие", count: 35, tone: "emerald" },
-  { label: "Было интересно", count: 31, tone: "sky" },
-  { label: "Я понял движение", count: 27, tone: "indigo" },
-  { label: "Хочу еще такую тренировку", count: 19, tone: "rose" },
-  { label: "Было сложно, но я старался", count: 16, tone: "violet" }
+// Канонический набор безопасных реакций (ключи совпадают с CHECK миграции 010).
+// defaultCount — стартовое значение для демо/локального фолбэка.
+const SAFE_REACTIONS: { key: string; label: string; tone: string; defaultCount: number }[] = [
+  { key: "thanks_teacher", label: "Спасибо, учитель", tone: "amber", defaultCount: 42 },
+  { key: "liked_lesson", label: "Мне понравилось занятие", tone: "emerald", defaultCount: 35 },
+  { key: "was_interesting", label: "Было интересно", tone: "sky", defaultCount: 31 },
+  { key: "understood_move", label: "Я понял движение", tone: "indigo", defaultCount: 27 },
+  { key: "got_better", label: "Я стал лучше", tone: "violet", defaultCount: 22 },
+  { key: "want_more", label: "Хочу ещё такую тренировку", tone: "rose", defaultCount: 19 },
+  { key: "hard_but_tried", label: "Было сложно, но я старался", tone: "slate", defaultCount: 16 },
 ];
+const reactionLabel = (key: string) => SAFE_REACTIONS.find((r) => r.key === key)?.label || key;
 
 const announcementTypes = ["Репетиция", "Форма одежды", "Концерт", "Оплата", "Перенос занятия", "Домашнее задание", "Важное сообщение"];
 
@@ -505,8 +622,54 @@ function ProfileStory({ title, value, text }: { title: string; value: string; te
   );
 }
 
-function SafeFeedbackView({ groups, students }: any) {
-  const totalReactions = safeReactions.reduce((sum, item) => sum + item.count, 0);
+function groupEngagementRate(group: Group, students: Student[]): number {
+  const members = students.filter((s) => s.groupIds?.includes(group.id));
+  if (members.length === 0) return 70;
+  let present = 0, total = 0;
+  members.forEach((s) => {
+    Object.values(s.attendance || {}).forEach((a: any) => {
+      if (a.status && a.status !== "unmarked") {
+        total++;
+        if (a.status === "present") present++;
+      }
+    });
+  });
+  return total > 0 ? Math.round((present / total) * 100) : 70;
+}
+
+function SafeFeedbackView({ groups, students, onSubmitReaction, onLoadReactions, flash }: any) {
+  const [counts, setCounts] = useState<Record<string, number>>(() =>
+    Object.fromEntries(SAFE_REACTIONS.map((r) => [r.key, r.defaultCount]))
+  );
+  const [isLive, setIsLive] = useState(false);
+  const [sending, setSending] = useState<string | null>(null);
+  const [selectedGroupId, setSelectedGroupId] = useState<string>(groups[0]?.id || "");
+
+  const refresh = async () => {
+    if (!onLoadReactions) return;
+    const summary: ReactionSummary | null = await onLoadReactions();
+    if (summary && summary.total > 0) {
+      const next: Record<string, number> = {};
+      SAFE_REACTIONS.forEach((r) => (next[r.key] = summary.byKey[r.key] || 0));
+      setCounts(next);
+      setIsLive(true);
+    }
+  };
+
+  useEffect(() => { refresh(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const totalReactions = Object.values(counts).reduce((a: number, b: number) => a + b, 0);
+  const sorted = [...SAFE_REACTIONS].sort((a, b) => (counts[b.key] || 0) - (counts[a.key] || 0));
+  const maxCount = Math.max(1, ...sorted.map((r) => counts[r.key] || 0));
+
+  const sendReaction = async (key: string) => {
+    setSending(key);
+    setCounts((prev) => ({ ...prev, [key]: (prev[key] || 0) + 1 })); // оптимистично
+    const ok = await onSubmitReaction?.(key, { groupId: selectedGroupId || undefined });
+    if (ok) flash?.(`Реакция засчитана: «${reactionLabel(key)}»`);
+    await refresh();
+    setSending(null);
+  };
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -521,28 +684,34 @@ function SafeFeedbackView({ groups, students }: any) {
             </p>
           </div>
           <div className="rounded-3xl border border-[#C5A059]/25 bg-[#C5A059]/10 p-5 text-center">
-            <p className="text-[10px] font-black uppercase tracking-widest text-[#C5A059]">За неделю</p>
+            <p className="text-[10px] font-black uppercase tracking-widest text-[#C5A059]">{isLive ? "Всего" : "За неделю"}</p>
             <p className="mt-1 text-4xl font-black text-white">{totalReactions}</p>
-            <p className="text-xs text-slate-400">теплых реакций</p>
+            <p className="text-xs text-slate-400">{isLive ? "реакций из базы" : "теплых реакций"}</p>
           </div>
         </div>
       </section>
 
       <div className="grid gap-4 xl:grid-cols-[1fr_0.8fr]">
         <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-white">Самые частые реакции</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-white">Самые частые реакции</h2>
+            {isLive && <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-400">live</span>}
+          </div>
           <div className="mt-5 space-y-3">
-            {safeReactions.map((reaction) => (
-              <div key={reaction.label} className="rounded-2xl border border-white/5 bg-black/30 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-black text-white">{reaction.label}</p>
-                  <span className="rounded-full bg-[#C5A059]/15 px-3 py-1 text-xs font-black text-[#C5A059]">{reaction.count}</span>
+            {sorted.map((reaction) => {
+              const count = counts[reaction.key] || 0;
+              return (
+                <div key={reaction.key} className="rounded-2xl border border-white/5 bg-black/30 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-black text-white">{reaction.label}</p>
+                    <span className="rounded-full bg-[#C5A059]/15 px-3 py-1 text-xs font-black text-[#C5A059]">{count}</span>
+                  </div>
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
+                    <div className="h-full rounded-full bg-[#C5A059] transition-all duration-500" style={{ width: `${Math.round((count / maxCount) * 100)}%` }} />
+                  </div>
                 </div>
-                <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
-                  <div className="h-full rounded-full bg-[#C5A059]" style={{ width: `${Math.round((reaction.count / safeReactions[0].count) * 100)}%` }} />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
 
@@ -550,8 +719,8 @@ function SafeFeedbackView({ groups, students }: any) {
           <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5">
             <h2 className="text-sm font-bold uppercase tracking-wider text-white">Вовлеченность групп</h2>
             <div className="mt-4 space-y-3">
-              {groups.slice(0, 4).map((group: Group, index: number) => {
-                const rate = [92, 81, 64, 73][index] || 70;
+              {groups.slice(0, 4).map((group: Group) => {
+                const rate = groupEngagementRate(group, students);
                 return (
                   <div key={group.id} className="rounded-2xl border border-white/5 bg-black/30 p-4">
                     <div className="flex justify-between gap-3">
@@ -567,12 +736,26 @@ function SafeFeedbackView({ groups, students }: any) {
 
           <div className="rounded-[2rem] border border-indigo-500/20 bg-indigo-500/10 p-5">
             <h2 className="text-sm font-bold uppercase tracking-wider text-white">Экран ученика после занятия</h2>
-            <p className="mt-2 text-xs text-slate-400">“Как прошло занятие?”</p>
-            <div className="mt-4 grid gap-2">
-              {["Спасибо, учитель", "Было интересно", "Я стал лучше", "Было сложно, но я старался", "Хочу повторить"].map((label) => (
-                <div key={label} className="rounded-xl border border-indigo-500/15 bg-black/25 px-3 py-2 text-xs font-bold text-indigo-100">
-                  {label}
-                </div>
+            <p className="mt-2 text-xs text-slate-400">“Как прошло занятие?” — нажмите, чтобы записать реакцию.</p>
+            {groups.length > 0 && (
+              <select
+                value={selectedGroupId}
+                onChange={(e) => setSelectedGroupId(e.target.value)}
+                className="mt-3 w-full rounded-xl border border-indigo-500/20 bg-black/40 px-3 py-2 text-xs text-white outline-none focus:border-indigo-400"
+              >
+                {groups.map((g: Group) => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </select>
+            )}
+            <div className="mt-3 grid gap-2">
+              {SAFE_REACTIONS.map((r) => (
+                <button
+                  key={r.key}
+                  disabled={sending === r.key}
+                  onClick={() => sendReaction(r.key)}
+                  className="rounded-xl border border-indigo-500/15 bg-black/25 px-3 py-2 text-left text-xs font-bold text-indigo-100 transition hover:bg-indigo-500/15 active:scale-[0.98] disabled:opacity-50"
+                >
+                  {sending === r.key ? "Записываем…" : r.label}
+                </button>
               ))}
             </div>
           </div>
@@ -582,7 +765,13 @@ function SafeFeedbackView({ groups, students }: any) {
   );
 }
 
-function AINotebookView({ announcements, groups, students, competitions }: any) {
+function AINotebookView({ announcements, groups, students, competitions, onOpenLessonPlan, onOpenNote }: any) {
+  const [query, setQuery] = useState("");
+  const submitQuery = () => {
+    if (!query.trim()) return;
+    onOpenLessonPlan?.(query.trim(), { groupName: groups[0]?.name, groupLevel: groups[0]?.level, studentCount: students.length });
+    setQuery("");
+  };
   return (
     <div className="animate-fade-in space-y-6">
       <section className="rounded-[2rem] border border-indigo-500/20 bg-[#11121A] p-5 md:p-7">
@@ -597,7 +786,7 @@ function AINotebookView({ announcements, groups, students, competitions }: any) 
               <p className="mt-1 text-xs text-slate-400">Заметки по ученикам, группам, занятиям, концертам и подготовке.</p>
             </div>
           </div>
-          <button className="rounded-2xl bg-indigo-500 px-4 py-3 text-xs font-black uppercase tracking-wider text-white">
+          <button onClick={() => onOpenNote?.(students[0]?.id, "note")} className="rounded-2xl bg-indigo-500 px-4 py-3 text-xs font-black uppercase tracking-wider text-white transition hover:bg-indigo-600 active:scale-95">
             Новая заметка
           </button>
         </div>
@@ -606,9 +795,15 @@ function AINotebookView({ announcements, groups, students, competitions }: any) 
           <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-indigo-300/60" />
           <input
             type="text"
-            className="w-full rounded-2xl border border-indigo-500/30 bg-black/35 py-4 pl-12 pr-4 text-sm text-white outline-none placeholder:text-slate-500 focus:border-indigo-400"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") submitQuery(); }}
+            className="w-full rounded-2xl border border-indigo-500/30 bg-black/35 py-4 pl-12 pr-28 text-sm text-white outline-none placeholder:text-slate-500 focus:border-indigo-400"
             placeholder="Спросите: подготовь сообщение родителям, составь план занятия, найди заметки по ученику..."
           />
+          <button onClick={submitQuery} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-xl bg-indigo-500 px-4 py-2 text-xs font-black uppercase text-white transition hover:bg-indigo-600 active:scale-95">
+            Спросить
+          </button>
         </div>
       </section>
 
@@ -638,7 +833,7 @@ function AINotebookView({ announcements, groups, students, competitions }: any) 
               "Какие ученики требуют поддержки?",
               "Что повторить перед фестивалем?"
             ].map((prompt) => (
-              <button key={prompt} className="rounded-2xl border border-indigo-500/15 bg-indigo-500/10 p-4 text-left text-xs font-bold leading-relaxed text-indigo-100 hover:bg-indigo-500/15">
+              <button key={prompt} onClick={() => onOpenLessonPlan?.(prompt, { groupName: groups[0]?.name, groupLevel: groups[0]?.level, studentCount: students.length })} className="rounded-2xl border border-indigo-500/15 bg-indigo-500/10 p-4 text-left text-xs font-bold leading-relaxed text-indigo-100 hover:bg-indigo-500/15 active:scale-95 transition">
                 {prompt}
               </button>
             ))}
@@ -771,7 +966,7 @@ function NavItem({ icon, label, active, onClick }: { icon: React.ReactNode, labe
   );
 }
 
-function DashboardView({ teacherName, groups, students, announcements, onNavigateToGroup, onNavigateToStudent, scheduleItems, scheduleLoading }: any) {
+function DashboardView({ teacherName, groups, students, announcements, onNavigateToGroup, onNavigateToStudent, scheduleItems, scheduleLoading, onNavigate, onOpenLessonPlan }: any) {
   const attentionStudents = students
     .filter((student: Student) => {
       const recent = Object.values(student.attendance || {}).slice(-4);
@@ -825,12 +1020,12 @@ function DashboardView({ teacherName, groups, students, announcements, onNavigat
       <div>
         <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-4">Быстрые действия</h3>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          <QuickAction icon={<ClipboardList />} label="Отметить посещаемость" color="emerald" />
-          <QuickAction icon={<Calendar />} label="Открыть расписание" color="blue" />
-          <QuickAction icon={<FileText />} label="Добавить заметку" color="amber" />
-          <QuickAction icon={<Bell />} label="Создать объявление" color="purple" />
-          <QuickAction icon={<CheckSquare />} label="Проверить задания" color="indigo" />
-          <QuickAction icon={<Trophy />} label="Подготовка к конкурсу" color="rose" />
+          <QuickAction icon={<ClipboardList />} label="Отметить посещаемость" color="emerald" onClick={() => onNavigate?.('journal')} />
+          <QuickAction icon={<Calendar />} label="Открыть расписание" color="blue" onClick={() => onNavigate?.('today')} />
+          <QuickAction icon={<FileText />} label="Добавить заметку" color="amber" onClick={() => onNavigate?.('students')} />
+          <QuickAction icon={<Bell />} label="Создать объявление" color="purple" onClick={() => onNavigate?.('more')} />
+          <QuickAction icon={<CheckSquare />} label="Проверить задания" color="indigo" onClick={() => onNavigate?.('students')} />
+          <QuickAction icon={<Trophy />} label="Подготовка к конкурсу" color="rose" onClick={() => onOpenLessonPlan?.("Составь план подготовки ансамбля к ближайшему конкурсу: репетиции, состав, сценография", { groupName: groups[0]?.name, groupLevel: groups[0]?.level, studentCount: students.length })} />
         </div>
       </div>
 
@@ -966,7 +1161,10 @@ function DashboardView({ teacherName, groups, students, announcements, onNavigat
           <p className="mt-4 text-sm leading-relaxed text-slate-200">
             Сегодня стоит поддержать младшую группу: у них хороший прогресс, но нужна уверенность перед открытым уроком.
           </p>
-          <button className="mt-5 rounded-2xl bg-emerald-500 px-4 py-3 text-xs font-black uppercase tracking-wider text-black">
+          <button
+            onClick={() => onOpenLessonPlan?.("Составь план занятия для младшей группы перед открытым уроком: акцент на уверенность и синхронность", { groupName: groups[0]?.name, groupLevel: groups[0]?.level, studentCount: students.length })}
+            className="mt-5 rounded-2xl bg-emerald-500 px-4 py-3 text-xs font-black uppercase tracking-wider text-black transition hover:bg-emerald-400 active:scale-95"
+          >
             Подготовить план занятия
           </button>
         </section>
@@ -975,7 +1173,7 @@ function DashboardView({ teacherName, groups, students, announcements, onNavigat
   );
 }
 
-function QuickAction({ icon, label, color }: { icon: React.ReactNode, label: string, color: string }) {
+function QuickAction({ icon, label, color, onClick }: { icon: React.ReactNode, label: string, color: string, onClick?: () => void }) {
   const colorClasses: Record<string, string> = {
     emerald: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20 hover:bg-emerald-500/20',
     blue: 'bg-blue-500/10 text-blue-500 border-blue-500/20 hover:bg-blue-500/20',
@@ -985,18 +1183,36 @@ function QuickAction({ icon, label, color }: { icon: React.ReactNode, label: str
     rose: 'bg-rose-500/10 text-rose-500 border-rose-500/20 hover:bg-rose-500/20',
   };
   return (
-    <button className={`flex flex-col items-center justify-center text-center p-4 rounded-3xl border transition-all ${colorClasses[color]}`}>
+    <button onClick={onClick} className={`flex flex-col items-center justify-center text-center p-4 rounded-3xl border transition-all active:scale-95 ${colorClasses[color]}`}>
       <div className="mb-2">{icon}</div>
       <span className="text-[10px] font-bold uppercase tracking-wider leading-tight">{label}</span>
     </button>
   );
 }
 
-function GroupDetailsView({ groupId, groups, students, onBack, onNavigateToStudent }: any) {
+function GroupDetailsView({ groupId, groups, students, onBack, onNavigateToStudent, onToggleAttendance, onBulkAttendance, onOpenHomework, flash }: any) {
   const group = groups.find((g: any) => g.id === groupId);
   const groupStudents = students.filter((s: any) => s.groupIds?.includes(groupId));
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const [marking, setMarking] = useState(false);
+  const [perStudent, setPerStudent] = useState<Record<string, "present" | "absent" | "sick">>({});
 
   if (!group) return null;
+
+  const markAll = async () => {
+    setMarking(true);
+    const count = await onBulkAttendance?.(groupId, todayStr, "present");
+    const map: Record<string, "present"> = {};
+    groupStudents.forEach((s: any) => (map[s.id] = "present"));
+    setPerStudent((prev) => ({ ...prev, ...map }));
+    setMarking(false);
+    flash?.(`Отмечено присутствующими: ${count ?? groupStudents.length}`);
+  };
+
+  const markOne = async (studentId: string, status: "present" | "absent" | "sick") => {
+    setPerStudent((prev) => ({ ...prev, [studentId]: status }));
+    await onToggleAttendance?.(studentId, todayStr, status);
+  };
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -1010,8 +1226,12 @@ function GroupDetailsView({ groupId, groups, students, onBack, onNavigateToStude
             <h1 className="text-2xl font-black text-white">{group.name}</h1>
             <p className="text-sm text-[#C5A059] font-mono mt-1">{group.level} | {group.ageGroup}</p>
           </div>
-          <button className="bg-[#C5A059] hover:bg-[#C5A059]/90 text-black px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all shadow-lg active:scale-95">
-            Отметить всех присутствующими
+          <button
+            onClick={markAll}
+            disabled={marking}
+            className="bg-[#C5A059] hover:bg-[#C5A059]/90 text-black px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all shadow-lg active:scale-95 disabled:opacity-50"
+          >
+            {marking ? "Отмечаем…" : "Отметить всех присутствующими"}
           </button>
         </div>
 
@@ -1032,9 +1252,19 @@ function GroupDetailsView({ groupId, groups, students, onBack, onNavigateToStude
                 </div>
                 {/* Micro Attendance Control */}
                 <div className="flex bg-white/5 rounded-lg p-1 gap-1">
-                  <button className="w-8 h-8 rounded-md bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white flex items-center justify-center transition-colors font-bold text-xs">П</button>
-                  <button className="w-8 h-8 rounded-md bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white flex items-center justify-center transition-colors font-bold text-xs">О</button>
-                  <button className="w-8 h-8 rounded-md bg-amber-500/10 text-amber-500 hover:bg-amber-500 hover:text-white flex items-center justify-center transition-colors font-bold text-xs text-[10px]">Б</button>
+                  {([
+                    ["present", "П", "bg-emerald-500 text-white", "bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white"],
+                    ["absent", "О", "bg-rose-500 text-white", "bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white"],
+                    ["sick", "Б", "bg-amber-500 text-black", "bg-amber-500/10 text-amber-500 hover:bg-amber-500 hover:text-white"],
+                  ] as const).map(([st, ltr, activeCls, idleCls]) => (
+                    <button
+                      key={st}
+                      onClick={() => markOne(stud.id, st)}
+                      className={`w-8 h-8 rounded-md flex items-center justify-center transition-colors font-bold text-xs ${perStudent[stud.id] === st ? activeCls : idleCls}`}
+                    >
+                      {ltr}
+                    </button>
+                  ))}
                 </div>
               </div>
             ))}
@@ -1045,9 +1275,23 @@ function GroupDetailsView({ groupId, groups, students, onBack, onNavigateToStude
   );
 }
 
-function StudentDetailsView({ studentId, students, groups = [], onBack }: any) {
+function StudentDetailsView({ studentId, students, groups = [], onBack, homeworks = [], onOpenNote, onOpenHomework, onUpdateHomework, onGenerateStudentPlan }: any) {
   const student = students.find((s: any) => s.id === studentId);
   const [activeSegment, setActiveSegment] = useState<'info' | 'ai' | 'homework'>('info');
+  const [devPlan, setDevPlan] = useState<DevPlan | null>(null);
+  const [planLoading, setPlanLoading] = useState(false);
+  const studentHomeworks = (homeworks as Homework[]).filter((h) => !h.groupId || student?.groupIds?.includes(h.groupId));
+
+  const runDevPlan = async () => {
+    if (!onGenerateStudentPlan || !student) return;
+    setPlanLoading(true);
+    try {
+      const plan = await onGenerateStudentPlan(student);
+      setDevPlan(plan);
+    } finally {
+      setPlanLoading(false);
+    }
+  };
 
   if (!student) return null;
 
@@ -1069,9 +1313,9 @@ function StudentDetailsView({ studentId, students, groups = [], onBack }: any) {
           <p className="text-[#C5A059] font-mono text-sm mt-1">{student.age} лет | Уровень {student.artistLevel}</p>
           
           <div className="flex flex-wrap gap-2 mt-4">
-            <button className="bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold uppercase px-3 py-1.5 rounded-lg transition-colors border border-white/10">Добавить заметку</button>
-            <button className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-[10px] font-bold uppercase px-3 py-1.5 rounded-lg transition-colors border border-emerald-500/20">Похвалить ++</button>
-            <button className="bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 text-[10px] font-bold uppercase px-3 py-1.5 rounded-lg transition-colors border border-indigo-500/20">Задать ДЗ</button>
+            <button onClick={() => onOpenNote?.(student.id, "note")} className="bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold uppercase px-3 py-1.5 rounded-lg transition-colors border border-white/10 active:scale-95">Добавить заметку</button>
+            <button onClick={() => onOpenNote?.(student.id, "praise")} className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-[10px] font-bold uppercase px-3 py-1.5 rounded-lg transition-colors border border-emerald-500/20 active:scale-95">Похвалить ++</button>
+            <button onClick={() => onOpenHomework?.({ studentId: student.id, studentName: student.name })} className="bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 text-[10px] font-bold uppercase px-3 py-1.5 rounded-lg transition-colors border border-indigo-500/20 active:scale-95">Задать ДЗ</button>
           </div>
         </div>
       </div>
@@ -1143,11 +1387,28 @@ function StudentDetailsView({ studentId, students, groups = [], onBack }: any) {
                   Готов к выступлению на осеннем фестивале "Ритмы Гор" в массовом блоке лезгинки.
                 </p>
                 <div className="mt-4 flex">
-                  <button className="bg-indigo-500 text-white rounded-lg px-4 py-2 text-[10px] font-bold uppercase flex items-center gap-2 shadow-lg hover:bg-indigo-600 transition-colors">
-                    <span>Сгенерировать План Развития</span>
+                  <button onClick={runDevPlan} disabled={planLoading} className="bg-indigo-500 text-white rounded-lg px-4 py-2 text-[10px] font-bold uppercase flex items-center gap-2 shadow-lg hover:bg-indigo-600 transition-colors disabled:opacity-50 active:scale-95">
+                    <span>{planLoading ? "Генерируем…" : "Сгенерировать План Развития"}</span>
                     <ArrowUpRight className="w-3 h-3" />
                   </button>
                 </div>
+
+                {devPlan && (
+                  <div className="mt-5 space-y-3 border-t border-white/10 pt-5">
+                    <div className="rounded-2xl bg-emerald-500/10 border border-emerald-500/20 p-4">
+                      <h4 className="text-[10px] uppercase text-emerald-400 font-bold mb-1">Похвала</h4>
+                      <p className="text-xs text-slate-200 leading-relaxed">{devPlan.praise}</p>
+                    </div>
+                    <div className="rounded-2xl bg-amber-500/10 border border-amber-500/20 p-4">
+                      <h4 className="text-[10px] uppercase text-amber-400 font-bold mb-1">Зона роста</h4>
+                      <p className="text-xs text-slate-200 leading-relaxed">{devPlan.focusArea}</p>
+                    </div>
+                    <div className="rounded-2xl bg-indigo-500/10 border border-indigo-500/20 p-4">
+                      <h4 className="text-[10px] uppercase text-indigo-400 font-bold mb-1">Следующая цель</h4>
+                      <p className="text-xs text-slate-200 leading-relaxed">{devPlan.nextMilestoneAdvice}</p>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1158,11 +1419,45 @@ function StudentDetailsView({ studentId, students, groups = [], onBack }: any) {
         <div className="space-y-4 animate-fade-in">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Активные задания</h3>
-            <button className="bg-[#C5A059] text-black text-[10px] font-bold uppercase px-3 py-1.5 rounded-lg flex items-center gap-2">
+            <button onClick={() => onOpenHomework?.({ studentId: student.id, studentName: student.name })} className="bg-[#C5A059] text-black text-[10px] font-bold uppercase px-3 py-1.5 rounded-lg flex items-center gap-2 active:scale-95">
               <Plus className="w-3 h-3" /> Выдать задание
             </button>
           </div>
-          
+
+          {/* Real homework (выданные через бэкенд/состояние) */}
+          {studentHomeworks.map((hw) => (
+            <div key={hw.id} className="bg-white/5 border border-white/10 rounded-2xl p-4 flex gap-4 items-start">
+              <div className="w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400 shrink-0">
+                <PlayCircle className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <div className="flex justify-between items-start mb-1 gap-2">
+                  <h4 className="text-sm font-bold text-white">{hw.title}</h4>
+                  <span className={`text-[9px] px-2 py-0.5 rounded font-black uppercase tracking-wider border ${
+                    hw.status === "completed" ? "bg-emerald-500/20 text-emerald-500 border-emerald-500/30" :
+                    hw.status === "viewed" ? "bg-sky-500/20 text-sky-400 border-sky-500/30" :
+                    "bg-amber-500/20 text-amber-500 border-amber-500/30"
+                  }`}>
+                    {hw.status === "completed" ? "Выполнено" : hw.status === "viewed" ? "Сдано" : "Выдано"}
+                  </span>
+                </div>
+                {hw.description && <p className="text-[10px] text-slate-400 mb-3">{hw.description}</p>}
+                <div className="flex gap-2 flex-wrap">
+                  {hw.dueDate && <span className="text-[9px] text-slate-500 border border-slate-700 px-2 py-0.5 rounded">Срок: {new Date(hw.dueDate).toLocaleDateString("ru-RU")}</span>}
+                  {hw.status !== "completed" && (
+                    <button onClick={() => onUpdateHomework?.(hw.id, { status: "completed" })} className="text-[9px] bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 transition-colors px-2 py-1 rounded font-bold uppercase active:scale-95">
+                      Отметить выполненным
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+
+          {studentHomeworks.length === 0 && (
+            <p className="text-center text-xs text-slate-500 py-2">Пока нет выданных заданий. Демо-примеры ниже.</p>
+          )}
+
           {/* Mock Homework */}
           <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex gap-4 items-start">
             <div className="w-10 h-10 rounded-xl bg-orange-500/10 flex items-center justify-center text-orange-400 shrink-0">
@@ -1494,5 +1789,191 @@ function TeacherJournalView({ groups, students, onToggleAttendance }: {
         </div>
       )}
     </div>
+  );
+}
+
+// -------------------------------------------------------
+// MODALS
+// -------------------------------------------------------
+function ModalShell({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onClose}
+      className="fixed inset-0 z-[55] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4"
+    >
+      <motion.div
+        initial={{ y: 40, opacity: 0, scale: 0.98 }}
+        animate={{ y: 0, opacity: 1, scale: 1 }}
+        exit={{ y: 40, opacity: 0, scale: 0.98 }}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full sm:max-w-lg max-h-[90vh] overflow-y-auto no-scrollbar rounded-t-[2rem] sm:rounded-[2rem] border border-white/10 bg-[#141414] p-6 shadow-2xl"
+      >
+        {children}
+      </motion.div>
+    </motion.div>
+  );
+}
+
+const NoteModal: React.FC<{
+  kind: NoteKind; studentName: string; onClose: () => void; onSubmit: (content: string, isPrivate: boolean) => Promise<void>;
+}> = ({ kind, studentName, onClose, onSubmit }) => {
+  const [content, setContent] = useState(kind === "praise" ? "Отлично справился сегодня — " : "");
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const title = kind === "praise" ? "Похвалить ученика" : kind === "concern" ? "Зона внимания" : "Новая заметка";
+
+  const submit = async () => {
+    if (!content.trim()) return;
+    setSaving(true);
+    try { await onSubmit(content, isPrivate); } finally { setSaving(false); }
+  };
+
+  return (
+    <ModalShell onClose={onClose}>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.28em] text-[#C5A059]">{kind === "praise" ? "Признание" : "Заметка"}</p>
+          <h3 className="mt-1 text-xl font-black text-white">{title}</h3>
+          <p className="text-xs text-slate-500">{studentName}</p>
+        </div>
+        <button onClick={onClose} className="text-slate-500 hover:text-white text-2xl leading-none">×</button>
+      </div>
+      <textarea
+        autoFocus
+        value={content}
+        onChange={(e) => setContent(e.target.value)}
+        rows={5}
+        className="w-full rounded-2xl border border-white/10 bg-black/40 p-4 text-sm text-white outline-none placeholder:text-slate-600 focus:border-[#C5A059]/50"
+        placeholder={kind === "praise" ? "За что хвалите ученика?" : "Наблюдение по технике, дисциплине, прогрессу…"}
+      />
+      <label className="mt-3 flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
+        <input type="checkbox" checked={isPrivate} onChange={(e) => setIsPrivate(e.target.checked)} className="accent-[#C5A059]" />
+        Приватная заметка (видят только администрация и владелец)
+      </label>
+      <div className="mt-5 flex gap-3">
+        <button onClick={onClose} className="flex-1 rounded-2xl border border-white/10 bg-white/5 py-3 text-xs font-black uppercase tracking-wider text-slate-300 hover:bg-white/10">Отмена</button>
+        <button onClick={submit} disabled={saving || !content.trim()} className="flex-1 rounded-2xl bg-[#C5A059] py-3 text-xs font-black uppercase tracking-wider text-black hover:bg-[#C5A059]/90 disabled:opacity-50 active:scale-95">
+          {saving ? "Сохраняем…" : "Сохранить"}
+        </button>
+      </div>
+    </ModalShell>
+  );
+}
+
+const HomeworkModal: React.FC<{
+  targetLabel: string; onClose: () => void; onSubmit: (data: { title: string; description?: string; dueAt?: string; videoUrl?: string }) => Promise<void>;
+}> = ({ targetLabel, onClose, onSubmit }) => {
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [dueAt, setDueAt] = useState(new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10));
+  const [videoUrl, setVideoUrl] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    if (!title.trim()) return;
+    setSaving(true);
+    try { await onSubmit({ title, description, dueAt: dueAt ? new Date(dueAt).toISOString() : undefined, videoUrl: videoUrl || undefined }); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <ModalShell onClose={onClose}>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.28em] text-indigo-400">Домашнее задание</p>
+          <h3 className="mt-1 text-xl font-black text-white">Выдать задание</h3>
+          <p className="text-xs text-slate-500">{targetLabel}</p>
+        </div>
+        <button onClick={onClose} className="text-slate-500 hover:text-white text-2xl leading-none">×</button>
+      </div>
+      <div className="space-y-3">
+        <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Название (напр. Отработка позиции рук)" className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-indigo-400" />
+        <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} placeholder="Что нужно сделать?" className="w-full rounded-2xl border border-white/10 bg-black/40 p-4 text-sm text-white outline-none placeholder:text-slate-600 focus:border-indigo-400" />
+        <div className="flex gap-3">
+          <div className="flex-1">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Срок</label>
+            <input type="date" value={dueAt} onChange={(e) => setDueAt(e.target.value)} className="mt-1 w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-white outline-none focus:border-indigo-400" />
+          </div>
+          <div className="flex-1">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Видео (URL)</label>
+            <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="необязательно" className="mt-1 w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-indigo-400" />
+          </div>
+        </div>
+      </div>
+      <div className="mt-5 flex gap-3">
+        <button onClick={onClose} className="flex-1 rounded-2xl border border-white/10 bg-white/5 py-3 text-xs font-black uppercase tracking-wider text-slate-300 hover:bg-white/10">Отмена</button>
+        <button onClick={submit} disabled={saving || !title.trim()} className="flex-1 rounded-2xl bg-indigo-500 py-3 text-xs font-black uppercase tracking-wider text-white hover:bg-indigo-600 disabled:opacity-50 active:scale-95">
+          {saving ? "Выдаём…" : "Выдать задание"}
+        </button>
+      </div>
+    </ModalShell>
+  );
+}
+
+const LessonPlanModal: React.FC<{
+  initialPrompt: string;
+  ctx?: { groupName?: string; groupLevel?: string; studentCount?: number };
+  onClose: () => void;
+  onGenerate?: (prompt: string, ctx?: { groupName?: string; groupLevel?: string; studentCount?: number }) => Promise<LessonPlan>;
+}> = ({ initialPrompt, ctx, onClose, onGenerate }) => {
+  const [prompt, setPrompt] = useState(initialPrompt);
+  const [plan, setPlan] = useState<LessonPlan | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const run = async (p: string) => {
+    if (!onGenerate) return;
+    setLoading(true);
+    try { setPlan(await onGenerate(p, ctx)); } finally { setLoading(false); }
+  };
+
+  useEffect(() => { run(initialPrompt); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <ModalShell onClose={onClose}>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-indigo-500/15 text-indigo-300"><BrainCircuit className="h-5 w-5" /></div>
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-indigo-400">AI-ассистент</p>
+            <h3 className="text-lg font-black text-white">План / консультация</h3>
+          </div>
+        </div>
+        <button onClick={onClose} className="text-slate-500 hover:text-white text-2xl leading-none">×</button>
+      </div>
+
+      <div className="flex gap-2">
+        <input value={prompt} onChange={(e) => setPrompt(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") run(prompt); }} className="flex-1 rounded-2xl border border-indigo-500/30 bg-black/40 px-4 py-3 text-sm text-white outline-none focus:border-indigo-400" />
+        <button onClick={() => run(prompt)} disabled={loading} className="rounded-2xl bg-indigo-500 px-4 py-3 text-xs font-black uppercase text-white hover:bg-indigo-600 disabled:opacity-50 active:scale-95">
+          {loading ? "…" : "↻"}
+        </button>
+      </div>
+
+      <div className="mt-5">
+        {loading && <p className="text-center text-sm text-slate-500 py-8">AI собирает план…</p>}
+        {!loading && plan && (
+          <div className="space-y-4">
+            <div>
+              <h4 className="text-base font-black text-white">{plan.title}</h4>
+              <p className="mt-1 text-xs leading-relaxed text-slate-400">{plan.summary}</p>
+            </div>
+            {plan.sections?.map((section) => (
+              <div key={section.heading} className="rounded-2xl border border-white/10 bg-black/30 p-4">
+                <p className="text-xs font-black uppercase tracking-wider text-[#C5A059]">{section.heading}</p>
+                <ul className="mt-2 space-y-1.5">
+                  {section.items?.map((item, i) => (
+                    <li key={i} className="flex gap-2 text-xs leading-relaxed text-slate-300">
+                      <span className="text-indigo-400">•</span><span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </ModalShell>
   );
 }

@@ -173,6 +173,28 @@ function mapDbTask(row: any, studentNameById?: Map<string, string>) {
   };
 }
 
+// Семейный квест → форма, удобная фронту (ParentWorkspace).
+// status в БД: in_progress | awaiting | confirmed → русские подписи UI.
+const QUEST_STATUS_LABEL: Record<string, string> = {
+  in_progress: "В процессе",
+  awaiting: "Ждет подтверждения",
+  confirmed: "Подтверждено"
+};
+function mapDbQuest(row: any) {
+  return {
+    id: row.id,
+    studentId: row.student_id || null,
+    title: row.title,
+    category: row.category || "",
+    reward: row.reward || "",
+    minutes: row.minutes || "",
+    status: QUEST_STATUS_LABEL[row.status] || "В процессе",
+    statusKey: row.status || "in_progress",
+    createdAt: row.created_at || null,
+    confirmedAt: row.confirmed_at || null
+  };
+}
+
 function mapDbPlan(row: any) {
   return {
     id: row.id,
@@ -1425,13 +1447,14 @@ export function registerMvpApi(app: express.Express) {
     const { studentId } = req.query as Record<string, string>;
     if (!studentId) return res.status(400).json({ error: "studentId обязателен" });
     try {
-      const [studentsRaw, subscriptionsRaw, paymentsRaw, lessons, attendanceRaw, plans] = await Promise.all([
+      const [studentsRaw, subscriptionsRaw, paymentsRaw, lessons, attendanceRaw, plans, questsRaw] = await Promise.all([
         supabaseFetch<any[]>("students", `select=*&id=eq.${studentId}&status=neq.archived`),
         supabaseFetch<any[]>("student_subscriptions", `select=*&student_id=eq.${studentId}&order=starts_on.desc`),
         supabaseFetch<any[]>("payments", `select=*&student_id=eq.${studentId}&order=paid_at.desc&limit=20`),
         supabaseFetch<any[]>("schedule_lessons", `select=*&order=starts_at.desc&limit=60`),
         supabaseFetch<any[]>("attendance", `select=*&student_id=eq.${studentId}`),
         supabaseFetch<any[]>("subscription_plans", `select=*`),
+        supabaseFetch<any[]>("family_quests", `select=*&student_id=eq.${studentId}&order=created_at.desc`).catch(() => []),
       ]);
       const student = studentsRaw[0];
       if (!student) return res.status(404).json({ error: "Ученик не найден" });
@@ -1465,10 +1488,90 @@ export function registerMvpApi(app: express.Express) {
         };
       });
       const paymentsMapped = paymentsRaw.map(mapDbPayment);
+      const questsMapped = (questsRaw || []).map(mapDbQuest);
       const mapped = mapDbStudent(student, new Map([[studentId, attendanceMap]]), new Map([[studentId, subscriptionsRaw]]));
-      res.json({ student: { ...mapped, subscriptions: subsMapped }, payments: paymentsMapped });
+      res.json({ student: { ...mapped, subscriptions: subsMapped }, payments: paymentsMapped, quests: questsMapped });
     } catch (error: any) {
       res.status(400).json({ error: error.message || "Не удалось загрузить данные ребёнка" });
+    }
+  });
+
+  // ===== Семейные квесты родительского кабинета (family_quests) =====
+  // Родитель создаёт квест, ребёнок выполняет, семья подтверждает.
+  // GET — список квестов ребёнка.
+  app.get("/api/mvp/parent/quests", async (req, res) => {
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const { studentId } = req.query as Record<string, string>;
+    if (!studentId) return res.status(400).json({ error: "studentId обязателен" });
+    try {
+      const rows = await supabaseFetch<any[]>("family_quests", `select=*&student_id=eq.${studentId}&order=created_at.desc`);
+      res.json({ quests: rows.map(mapDbQuest) });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось загрузить квесты" });
+    }
+  });
+
+  // POST — создать квест для ребёнка.
+  app.post("/api/mvp/parent/quests", async (req, res) => {
+    const session = getSession(req);
+    const payload = req.body || {};
+    if (!payload.studentId) return res.status(400).json({ error: "studentId обязателен" });
+    if (!payload.title || !String(payload.title).trim()) return res.status(400).json({ error: "title is required" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const allowed = new Set(["in_progress", "awaiting", "confirmed"]);
+    const status = allowed.has(payload.status) ? payload.status : "in_progress";
+    try {
+      const inserted = await supabaseFetch<any[]>("family_quests", "", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: session.organizationId,
+          student_id: payload.studentId,
+          created_by: session.userId,
+          title: String(payload.title).trim(),
+          category: payload.category || null,
+          reward: payload.reward || null,
+          minutes: payload.minutes || null,
+          status
+        })
+      });
+      res.status(201).json({ quest: mapDbQuest(inserted[0]) });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось создать квест" });
+    }
+  });
+
+  // PATCH — обновить статус квеста (подтверждение выполнения и т.п.).
+  app.patch("/api/mvp/parent/quests/:id", async (req, res) => {
+    const payload = req.body || {};
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (payload.status !== undefined) {
+      const allowed = new Set(["in_progress", "awaiting", "confirmed"]);
+      if (!allowed.has(payload.status)) return res.status(400).json({ error: "Недопустимый статус" });
+      updates.status = payload.status;
+      updates.confirmed_at = payload.status === "confirmed" ? new Date().toISOString() : null;
+    }
+    if (payload.title !== undefined) updates.title = String(payload.title).trim();
+    if (payload.category !== undefined) updates.category = payload.category || null;
+    if (payload.reward !== undefined) updates.reward = payload.reward || null;
+    if (Object.keys(updates).length <= 1) return res.status(400).json({ error: "Нет полей для обновления" });
+    try {
+      const rows = await supabaseFetch<any[]>("family_quests", `id=eq.${req.params.id}`, { method: "PATCH", body: JSON.stringify(updates) });
+      if (!rows[0]) return res.status(404).json({ error: "Квест не найден" });
+      res.json({ quest: mapDbQuest(rows[0]) });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось обновить квест" });
+    }
+  });
+
+  // DELETE — удалить квест.
+  app.delete("/api/mvp/parent/quests/:id", async (req, res) => {
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      await supabaseFetch("family_quests", `id=eq.${req.params.id}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      res.json({ ok: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось удалить квест" });
     }
   });
 
@@ -1654,6 +1757,309 @@ export function registerMvpApi(app: express.Express) {
       res.json({ ranAt: new Date().toISOString(), ...result });
     } catch (error: any) {
       res.status(500).json({ error: error.message || "Парсинг не выполнен" });
+    }
+  });
+
+  // ============================================================
+  // ПЕДАГОГИЧЕСКИЙ СЛОЙ ПРЕПОДАВАТЕЛЯ (миграция 009)
+  // teacher_notes — заметки/похвала по ученику
+  // homework      — домашние задания (индивид./групповые)
+  // attendance/bulk — отметить всю группу за дату
+  // ============================================================
+
+  const authorId = (session: MvpSession) =>
+    session.userId.startsWith("demo-") ? null : session.userId;
+
+  // --- Заметки преподавателя по ученику ---
+  app.get("/api/mvp/notes", async (req, res) => {
+    getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const studentId = String(req.query.studentId || "");
+    try {
+      const query = studentId
+        ? `select=*&student_id=eq.${studentId}&order=created_at.desc`
+        : `select=*&order=created_at.desc&limit=200`;
+      const rows = await supabaseFetch<any[]>("teacher_notes", query);
+      res.json({ notes: rows });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось загрузить заметки" });
+    }
+  });
+
+  app.post("/api/mvp/notes", async (req, res) => {
+    const session = getSession(req);
+    const payload = req.body || {};
+    if (!payload.studentId || !String(payload.content || "").trim()) {
+      return res.status(400).json({ error: "studentId and content are required" });
+    }
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const kind = ["note", "praise", "concern"].includes(payload.kind) ? payload.kind : "note";
+    try {
+      const inserted = await supabaseFetch<any[]>("teacher_notes", "", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: session.organizationId,
+          branch_id: payload.branchId || session.dbBranchId,
+          student_id: payload.studentId,
+          author_id: authorId(session),
+          kind,
+          content: String(payload.content).trim(),
+          is_private: Boolean(payload.isPrivate),
+        }),
+      });
+      res.status(201).json({ note: inserted[0] });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось добавить заметку" });
+    }
+  });
+
+  app.patch("/api/mvp/notes/:id", async (req, res) => {
+    getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const payload = req.body || {};
+    const patch: Record<string, unknown> = {};
+    if (payload.content !== undefined) patch.content = String(payload.content).trim();
+    if (payload.kind !== undefined && ["note", "praise", "concern"].includes(payload.kind)) patch.kind = payload.kind;
+    if (payload.isPrivate !== undefined) patch.is_private = Boolean(payload.isPrivate);
+    if (Object.keys(patch).length === 0) return res.status(400).json({ error: "Нет полей для обновления" });
+    try {
+      const rows = await supabaseFetch<any[]>("teacher_notes", `id=eq.${req.params.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      });
+      res.json({ note: rows[0] });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось обновить заметку" });
+    }
+  });
+
+  app.delete("/api/mvp/notes/:id", async (req, res) => {
+    getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      await supabaseFetch("teacher_notes", `id=eq.${req.params.id}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      res.json({ ok: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось удалить заметку" });
+    }
+  });
+
+  // --- Домашние задания ---
+  app.get("/api/mvp/homework", async (req, res) => {
+    getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const { studentId, groupId, status } = req.query as Record<string, string>;
+    const filters = ["select=*", "order=created_at.desc"];
+    if (studentId) filters.push(`student_id=eq.${studentId}`);
+    if (groupId) filters.push(`group_id=eq.${groupId}`);
+    if (status) filters.push(`status=eq.${status}`);
+    try {
+      const rows = await supabaseFetch<any[]>("homework", filters.join("&"));
+      res.json({ homework: rows });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось загрузить задания" });
+    }
+  });
+
+  app.post("/api/mvp/homework", async (req, res) => {
+    const session = getSession(req);
+    const payload = req.body || {};
+    if (!String(payload.title || "").trim()) return res.status(400).json({ error: "title is required" });
+    if (!payload.studentId && !payload.groupId) return res.status(400).json({ error: "studentId or groupId is required" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      const inserted = await supabaseFetch<any[]>("homework", "", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: session.organizationId,
+          branch_id: payload.branchId || session.dbBranchId,
+          student_id: payload.studentId || null,
+          group_id: payload.groupId || null,
+          author_id: authorId(session),
+          title: String(payload.title).trim(),
+          description: payload.description || null,
+          video_url: payload.videoUrl || null,
+          due_at: payload.dueAt || null,
+          status: "assigned",
+        }),
+      });
+      res.status(201).json({ homework: inserted[0] });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось выдать задание" });
+    }
+  });
+
+  app.patch("/api/mvp/homework/:id", async (req, res) => {
+    getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const payload = req.body || {};
+    const patch: Record<string, unknown> = {};
+    if (payload.title !== undefined) patch.title = String(payload.title).trim();
+    if (payload.description !== undefined) patch.description = payload.description;
+    if (payload.dueAt !== undefined) patch.due_at = payload.dueAt;
+    if (payload.videoUrl !== undefined) patch.video_url = payload.videoUrl;
+    if (payload.submissionNote !== undefined) patch.submission_note = payload.submissionNote;
+    if (payload.submissionVideoUrl !== undefined) patch.submission_video_url = payload.submissionVideoUrl;
+    if (payload.gradeComment !== undefined) patch.grade_comment = payload.gradeComment;
+    if (payload.status !== undefined && ["assigned", "submitted", "done", "archived"].includes(payload.status)) {
+      patch.status = payload.status;
+      if (payload.status === "submitted") patch.submitted_at = new Date().toISOString();
+      if (payload.status === "done") patch.graded_at = new Date().toISOString();
+    }
+    if (Object.keys(patch).length === 0) return res.status(400).json({ error: "Нет полей для обновления" });
+    try {
+      const rows = await supabaseFetch<any[]>("homework", `id=eq.${req.params.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      });
+      res.json({ homework: rows[0] });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось обновить задание" });
+    }
+  });
+
+  app.delete("/api/mvp/homework/:id", async (req, res) => {
+    getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      await supabaseFetch("homework", `id=eq.${req.params.id}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      res.json({ ok: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось удалить задание" });
+    }
+  });
+
+  // --- Массовая отметка посещаемости группы за дату ---
+  app.post("/api/mvp/attendance/bulk", async (req, res) => {
+    const session = getSession(req);
+    const payload = req.body || {};
+    const status = payload.status || "present";
+    if (!payload.groupId || !payload.date) {
+      return res.status(400).json({ error: "groupId and date are required" });
+    }
+    if (!["present", "absent", "sick", "unmarked"].includes(status)) {
+      return res.status(400).json({ error: "invalid status" });
+    }
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      // 1) Находим (или создаём) занятие группы на эту дату.
+      const start = new Date(`${payload.date}T00:00:00.000Z`).toISOString();
+      const endDate = new Date(`${payload.date}T00:00:00.000Z`);
+      endDate.setUTCDate(endDate.getUTCDate() + 1);
+      const end = endDate.toISOString();
+      let lessons = await supabaseFetch<any[]>(
+        "schedule_lessons",
+        `select=*&group_id=eq.${payload.groupId}&starts_at=gte.${encodeURIComponent(start)}&starts_at=lt.${encodeURIComponent(end)}&limit=1`,
+      );
+      let lessonId = lessons[0]?.id;
+      if (!lessonId) {
+        const groups = await supabaseFetch<any[]>("groups", `select=*&id=eq.${payload.groupId}&limit=1`);
+        const group = groups[0];
+        if (!group) return res.status(404).json({ error: "Group not found" });
+        if (!canSeeBranch(session, group.branch_id)) return res.status(403).json({ error: "Branch access denied" });
+        const created = await supabaseFetch<any[]>("schedule_lessons", "", {
+          method: "POST",
+          body: JSON.stringify({
+            branch_id: group.branch_id,
+            group_id: group.id,
+            teacher_id: group.teacher_id || authorId(session),
+            starts_at: `${payload.date}T16:00:00.000Z`,
+            ends_at: `${payload.date}T17:30:00.000Z`,
+            status: "scheduled",
+            created_by: authorId(session),
+          }),
+        });
+        lessonId = created[0]?.id;
+      }
+      if (!lessonId) return res.status(500).json({ error: "Не удалось определить занятие" });
+
+      // 2) Список учеников группы (или явный список из payload).
+      let studentIds: string[] = Array.isArray(payload.studentIds) ? payload.studentIds : [];
+      if (studentIds.length === 0) {
+        const studs = await supabaseFetch<any[]>("students", `select=id&group_id=eq.${payload.groupId}`);
+        studentIds = studs.map((s) => s.id);
+      }
+      if (studentIds.length === 0) return res.json({ marked: 0, lessonId });
+
+      // 3) Upsert посещаемости пачкой.
+      const rows = studentIds.map((sid) => ({
+        lesson_id: lessonId,
+        student_id: sid,
+        status: status === "unmarked" ? "unknown" : status,
+        marked_by: authorId(session),
+        marked_at: new Date().toISOString(),
+      }));
+      const upserted = await supabaseFetch<any[]>("attendance", "on_conflict=lesson_id,student_id", {
+        method: "POST",
+        headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+        body: JSON.stringify(rows),
+      });
+      res.json({ marked: upserted.length, lessonId });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось отметить группу" });
+    }
+  });
+
+  // ============================================================
+  // РАЗДЕЛ «СПАСИБО» — безопасные реакции учеников (миграция 010)
+  // ============================================================
+  const SAFE_REACTION_KEYS = [
+    "thanks_teacher", "liked_lesson", "was_interesting",
+    "understood_move", "got_better", "want_more", "hard_but_tried",
+  ];
+
+  // Ученик записывает реакцию после занятия
+  app.post("/api/mvp/reactions", async (req, res) => {
+    const session = getSession(req);
+    const payload = req.body || {};
+    if (!payload.reactionKey || !SAFE_REACTION_KEYS.includes(payload.reactionKey)) {
+      return res.status(400).json({ error: "valid reactionKey is required" });
+    }
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      const inserted = await supabaseFetch<any[]>("lesson_reactions", "", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: session.organizationId,
+          branch_id: payload.branchId || session.dbBranchId,
+          group_id: payload.groupId || null,
+          student_id: payload.studentId || null,
+          lesson_id: payload.lessonId || null,
+          teacher_id: payload.teacherId || authorId(session),
+          reaction_key: payload.reactionKey,
+        }),
+      });
+      res.status(201).json({ reaction: inserted[0] });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось сохранить реакцию" });
+    }
+  });
+
+  // Агрегированная сводка реакций (для преподавателя/владельца)
+  app.get("/api/mvp/reactions/summary", async (req, res) => {
+    getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const { from, to, groupId } = req.query as Record<string, string>;
+    const filters = ["select=reaction_key,group_id,created_at"];
+    if (from) filters.push(`created_at=gte.${encodeURIComponent(from)}`);
+    if (to) filters.push(`created_at=lte.${encodeURIComponent(to)}`);
+    if (groupId) filters.push(`group_id=eq.${groupId}`);
+    filters.push("limit=5000");
+    try {
+      const rows = await supabaseFetch<any[]>("lesson_reactions", filters.join("&"));
+      const byKey: Record<string, number> = {};
+      const byGroup: Record<string, number> = {};
+      for (const r of rows) {
+        byKey[r.reaction_key] = (byKey[r.reaction_key] || 0) + 1;
+        if (r.group_id) byGroup[r.group_id] = (byGroup[r.group_id] || 0) + 1;
+      }
+      res.json({
+        total: rows.length,
+        byKey,
+        byGroup: Object.entries(byGroup).map(([id, count]) => ({ groupId: id, count })),
+      });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось загрузить сводку реакций" });
     }
   });
 }

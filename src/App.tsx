@@ -104,7 +104,9 @@ import {
   ExecutiveSummary,
   AdminTask,
   SubscriptionPlan,
-  LeadSource
+  LeadSource,
+  Homework,
+  StudentProgressNote
 } from "./types";
 
 import { getAvailableAchievements, getExecutiveSummary } from "./dataMock";
@@ -1117,7 +1119,8 @@ export default function App() {
 
   // ─── Parent: данные конкретного ребёнка ──────────────────────────────────────
 
-  const [parentChildData, setParentChildData] = useState<{ student: any; payments: any[] } | null>(null);
+  const [parentChildData, setParentChildData] = useState<{ student: any; payments: any[]; quests?: any[] } | null>(null);
+  const [parentQuests, setParentQuests] = useState<any[]>([]);
 
   const loadParentChildData = async (studentId: string) => {
     if (mvpDataMode !== "supabase") return;
@@ -1128,8 +1131,48 @@ export default function App() {
       if (!response.ok) return;
       const data = await response.json();
       setParentChildData(data);
+      setParentQuests(Array.isArray(data.quests) ? data.quests : []);
     } catch {
       // silent — ParentWorkspace falls back to bootstrap students
+    }
+  };
+
+  // ─── Parent: семейные квесты (family_quests) ────────────────────────────────
+  // Возвращает true → ParentWorkspace отработал через бэкенд; false → пусть ведёт локально.
+  const handleCreateQuest = async (quest: { title: string; category?: string; reward?: string; minutes?: string }) => {
+    const studentId = parentChildData?.student?.id || selectedStudentId;
+    if (mvpDataMode !== "supabase" || !studentId) return false;
+    try {
+      const response = await fetch("/api/mvp/parent/quests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+        body: JSON.stringify({ ...quest, studentId })
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const data = await response.json();
+      setParentQuests((prev) => [data.quest, ...prev]);
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось создать квест");
+      return false;
+    }
+  };
+
+  const handleUpdateQuestStatus = async (id: string, status: "in_progress" | "awaiting" | "confirmed") => {
+    if (mvpDataMode !== "supabase") return false;
+    try {
+      const response = await fetch(`/api/mvp/parent/quests/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+        body: JSON.stringify({ status })
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const data = await response.json();
+      setParentQuests((prev) => prev.map((q) => (q.id === id ? data.quest : q)));
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось обновить квест");
+      return false;
     }
   };
 
@@ -1306,6 +1349,249 @@ export default function App() {
       "Контроль посещаемости",
       `Выставлен статус ${status} для ${students.find((std) => std.id === studId)?.name} на дату ${date}`
     );
+  };
+
+  // ============================================================
+  // ПЕДАГОГИЧЕСКИЕ ХЕНДЛЕРЫ ПРЕПОДАВАТЕЛЯ
+  // (API при supabase-режиме, иначе локальное состояние — паттерн toggleAttendance)
+  // ============================================================
+  const [teacherHomework, setTeacherHomework] = useState<Homework[]>([]);
+
+  const mapHomeworkRow = (row: any): Homework => ({
+    id: row.id,
+    groupId: row.group_id || "",
+    title: row.title,
+    description: row.description || "",
+    dueDate: row.due_at || "",
+    videoUrl: row.video_url || undefined,
+    createdAt: row.created_at || new Date().toISOString(),
+    status: row.status === "done" ? "completed" : row.status === "submitted" ? "viewed" : "assigned",
+  });
+
+  // Добавить заметку / похвалу по ученику
+  const addTeacherNote = async (
+    studentId: string,
+    content: string,
+    opts: { kind?: "note" | "praise" | "concern"; isPrivate?: boolean } = {}
+  ) => {
+    const trimmed = content.trim();
+    if (!trimmed) return;
+    const kind = opts.kind || "note";
+    const prefix = kind === "praise" ? "👏 " : kind === "concern" ? "⚠️ " : "";
+    if (mvpDataMode === "supabase") {
+      try {
+        const response = await fetch("/api/mvp/notes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+          body: JSON.stringify({ studentId, content: trimmed, kind, isPrivate: Boolean(opts.isPrivate) }),
+        });
+        if (!response.ok) throw new Error(await response.text());
+        await loadMvpBootstrap(activeRole);
+        addAuditLog("Заметка преподавателя", `${kind === "praise" ? "Похвала" : "Заметка"} для ученика (${studentId})`);
+        return;
+      } catch (error: any) {
+        setMvpDataError(error.message || "Не удалось сохранить заметку в Supabase");
+      }
+    }
+    const note: StudentProgressNote = {
+      id: `note-${Date.now()}`,
+      date: new Date().toISOString(),
+      teacherId: "teach-aslan",
+      teacherName: "Аслан Плиев",
+      content: prefix + trimmed,
+      isPrivate: Boolean(opts.isPrivate),
+    };
+    setStudents((prev) =>
+      prev.map((s) => (s.id === studentId ? { ...s, notes: [note, ...(s.notes || [])] } : s))
+    );
+    addAuditLog("Заметка преподавателя", `${kind === "praise" ? "Похвала" : "Заметка"} для ${students.find((s) => s.id === studentId)?.name || studentId}`);
+  };
+
+  // Выдать домашнее задание (индивидуальное или групповое)
+  const assignHomework = async (data: {
+    studentId?: string;
+    groupId?: string;
+    title: string;
+    description?: string;
+    dueAt?: string;
+    videoUrl?: string;
+  }): Promise<Homework | null> => {
+    if (!data.title.trim()) return null;
+    if (mvpDataMode === "supabase") {
+      try {
+        const response = await fetch("/api/mvp/homework", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+          body: JSON.stringify(data),
+        });
+        if (!response.ok) throw new Error(await response.text());
+        const payload = await response.json();
+        const hw = mapHomeworkRow(payload.homework);
+        setTeacherHomework((prev) => [hw, ...prev]);
+        addAuditLog("Домашнее задание", `Выдано «${data.title}»`);
+        return hw;
+      } catch (error: any) {
+        setMvpDataError(error.message || "Не удалось выдать задание в Supabase");
+      }
+    }
+    const hw: Homework = {
+      id: `hw-${Date.now()}`,
+      groupId: data.groupId || "",
+      title: data.title.trim(),
+      description: data.description || "",
+      dueDate: data.dueAt || new Date(Date.now() + 3 * 86400000).toISOString(),
+      videoUrl: data.videoUrl,
+      createdAt: new Date().toISOString(),
+      status: "assigned",
+    };
+    setTeacherHomework((prev) => [hw, ...prev]);
+    addAuditLog("Домашнее задание", `Выдано «${hw.title}»`);
+    return hw;
+  };
+
+  // Обновить статус домашнего задания (проверка/выполнение)
+  const updateHomework = async (id: string, patch: { status?: Homework["status"]; gradeComment?: string }) => {
+    if (mvpDataMode === "supabase") {
+      try {
+        const response = await fetch(`/api/mvp/homework/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+          body: JSON.stringify(patch.status ? { ...patch, status: patch.status === "completed" ? "done" : patch.status } : patch),
+        });
+        if (!response.ok) throw new Error(await response.text());
+      } catch (error: any) {
+        setMvpDataError(error.message || "Не удалось обновить задание");
+      }
+    }
+    setTeacherHomework((prev) => prev.map((h) => (h.id === id ? { ...h, ...patch } as Homework : h)));
+    addAuditLog("Домашнее задание", `Обновлён статус задания (${id})`);
+  };
+
+  // Отметить всю группу за дату
+  const bulkMarkAttendance = async (
+    groupId: string,
+    date: string,
+    status: "present" | "absent" | "sick" = "present"
+  ): Promise<number> => {
+    if (mvpDataMode === "supabase") {
+      try {
+        const response = await fetch("/api/mvp/attendance/bulk", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+          body: JSON.stringify({ groupId, date, status }),
+        });
+        if (!response.ok) throw new Error(await response.text());
+        const payload = await response.json();
+        await loadMvpBootstrap(activeRole);
+        addAuditLog("Массовая посещаемость", `Группа ${groupId}: отмечено ${payload.marked} учеников (${status})`);
+        return payload.marked || 0;
+      } catch (error: any) {
+        setMvpDataError(error.message || "Не удалось отметить группу в Supabase");
+      }
+    }
+    let count = 0;
+    setStudents((prev) =>
+      prev.map((s) => {
+        if (s.groupIds?.includes(groupId)) {
+          count++;
+          return { ...s, attendance: { ...s.attendance, [date]: { date, status, markedBy: "Аслан Плиев" } } };
+        }
+        return s;
+      })
+    );
+    addAuditLog("Массовая посещаемость", `Группа ${groupId}: отмечено ${count} учеников (${status})`);
+    return count;
+  };
+
+  // AI: план занятия / свободный педагогический запрос (gemini + локальный фолбэк)
+  const generateLessonPlan = async (prompt: string, ctx: { groupName?: string; groupLevel?: string; studentCount?: number } = {}) => {
+    try {
+      const response = await fetch("/api/gemini/lesson-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+        body: JSON.stringify({ prompt, ...ctx }),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      addAuditLog("AI план занятия", prompt.slice(0, 60));
+      return await response.json();
+    } catch {
+      addAuditLog("AI план занятия [Fallback]", prompt.slice(0, 60));
+      return {
+        title: prompt || "План занятия",
+        summary: "Локальный демо-план (AI недоступен). Подключите GEMINI_API_KEY для живой генерации.",
+        sections: [
+          { heading: "Разминка (10 мин)", items: ["Суставная гимнастика", "Базовый ход лезгинки в медленном темпе", "Постановка корпуса и рук"] },
+          { heading: "Основная часть (40 мин)", items: ["Отработка связки по группам", "Синхронность рук в трюковых элементах", "Работа над переходами строя"] },
+          { heading: "Отработка (25 мин)", items: ["Прогон номера целиком", "Точечная коррекция слабых мест", "Повтор финала на сцене"] },
+          { heading: "Завершение (5 мин)", items: ["Растяжка и заминка", "Похвала и фиксация прогресса", "Постановка домашнего задания"] },
+        ],
+      };
+    }
+  };
+
+  // AI: персональный план развития ученика (переиспользуем student-analysis)
+  const generateStudentDevPlan = async (student: Student) => {
+    try {
+      const response = await fetch("/api/gemini/student-analysis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+        body: JSON.stringify({ student: { name: student.name, level: student.artistLevel, age: student.age }, notes: student.notes }),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      addAuditLog("AI план развития", `Сгенерирован план для ${student.name}`);
+      return await response.json();
+    } catch {
+      addAuditLog("AI план развития [Fallback]", `Демо-план для ${student.name}`);
+      return {
+        praise: "Уверенно держит базовые перестроения, высокая выносливость на темповых связках.",
+        focusArea: "Синхронность рук в трюковых элементах и удержание концентрации к финалу занятия.",
+        nextMilestoneAdvice: "Назначить ДЗ на отработку позиции рук перед зеркалом. Готов к массовому блоку лезгинки на фестивале.",
+      };
+    }
+  };
+
+  // Раздел «Спасибо»: записать безопасную реакцию ученика
+  const submitReaction = async (
+    reactionKey: string,
+    opts: { studentId?: string; groupId?: string; teacherId?: string } = {}
+  ): Promise<boolean> => {
+    if (mvpDataMode === "supabase") {
+      try {
+        const response = await fetch("/api/mvp/reactions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+          body: JSON.stringify({ reactionKey, ...opts }),
+        });
+        if (!response.ok) throw new Error(await response.text());
+        addAuditLog("Безопасная реакция", `Записана реакция «${reactionKey}»`);
+        return true;
+      } catch (error: any) {
+        setMvpDataError(error.message || "Не удалось сохранить реакцию");
+        return false;
+      }
+    }
+    addAuditLog("Безопасная реакция", `Записана реакция «${reactionKey}» (локально)`);
+    return true;
+  };
+
+  // Раздел «Спасибо»: агрегированная сводка реакций
+  const loadReactionSummary = async (
+    filters: { from?: string; to?: string; groupId?: string } = {}
+  ): Promise<{ total: number; byKey: Record<string, number>; byGroup: { groupId: string; count: number }[] } | null> => {
+    if (mvpDataMode !== "supabase") return null;
+    try {
+      const params = new URLSearchParams();
+      if (filters.from) params.set("from", filters.from);
+      if (filters.to) params.set("to", filters.to);
+      if (filters.groupId) params.set("groupId", filters.groupId);
+      const response = await fetch(`/api/mvp/reactions/summary?${params.toString()}`, {
+        headers: { "x-demo-role": getMvpRoleHeader() },
+      });
+      if (!response.ok) throw new Error(await response.text());
+      return await response.json();
+    } catch {
+      return null;
+    }
   };
 
   // Toggle student payment status manually
@@ -2740,6 +3026,15 @@ export default function App() {
                scheduleLoading={scheduleLoading}
                onLoadSchedule={loadSchedule}
                onToggleAttendance={toggleAttendance}
+               homeworks={teacherHomework}
+               onAddNote={addTeacherNote}
+               onAssignHomework={assignHomework}
+               onUpdateHomework={updateHomework}
+               onBulkAttendance={bulkMarkAttendance}
+               onGenerateLessonPlan={generateLessonPlan}
+               onGenerateStudentPlan={generateStudentDevPlan}
+               onSubmitReaction={submitReaction}
+               onLoadReactions={loadReactionSummary}
              />
           ) : activeRole === "branch" ? (
             <BranchManagerWorkspace
@@ -2869,6 +3164,9 @@ export default function App() {
                     setPaymentType("subscription");
                     setShowAddPaymentModal(true);
                   }}
+                  backendQuests={mvpDataMode === "supabase" ? parentQuests : undefined}
+                  onCreateQuest={handleCreateQuest}
+                  onUpdateQuestStatus={handleUpdateQuestStatus}
                 />
               )}
 

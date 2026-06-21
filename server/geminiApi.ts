@@ -59,6 +59,24 @@ notes=${JSON.stringify(notes ?? [])}`;
     }
   });
 
+  // Lesson plan / free-form pedagogical assistant for teachers.
+  // Used by the "Подготовить план занятия" buttons and the AI Notebook prompts.
+  app.post("/api/gemini/lesson-plan", async (req, res) => {
+    if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });
+    const { prompt: userPrompt, groupName, groupLevel, studentCount, context } = req.body || {};
+    const prompt = `Ты — методист и хореограф школы кавказского танца «Эхо Гор». Помоги преподавателю и верни СТРОГО JSON по схеме:
+{"title": string, "summary": string, "sections": [{"heading": string, "items": string[]}]}
+Пиши по-русски, конкретно и применимо на занятии. Если это план занятия — раздели на разминку, основную часть, отработку и завершение.
+request=${JSON.stringify(userPrompt ?? "Составь план занятия")}
+group=${JSON.stringify({ groupName, groupLevel, studentCount })}
+context=${JSON.stringify(context ?? {})}`;
+    try {
+      res.json(await generateJson(prompt));
+    } catch (e: any) {
+      res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
+
   // Competition readiness consultation for a group.
   app.post("/api/gemini/competition-consult", async (req, res) => {
     if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });
@@ -68,6 +86,23 @@ notes=${JSON.stringify(notes ?? [])}`;
 Пиши по-русски. В rehearsalPlan используй переносы строк для недель.
 competition=${JSON.stringify(competition ?? {})}
 group=${JSON.stringify({ groupName, groupLevel, studentCount })}`;
+    try {
+      res.json(await generateJson(prompt));
+    } catch (e: any) {
+      res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
+
+  // AI-помощник родителя (родительский кабинет).
+  // Отвечает на вопросы о воспитании/мотивации и предлагает семейные квесты.
+  app.post("/api/gemini/parent-advice", async (req, res) => {
+    if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });
+    const { question, childName, childAge, attendanceRate } = req.body || {};
+    const prompt = `Ты — добрый семейный наставник школы кавказского танца «Эхо Гор». Помогаешь родителю поддержать ребёнка без давления, опираясь на ценности: уважение к старшим, дисциплина, ответственность, характер. Верни СТРОГО JSON по схеме:
+{"answer": string, "weekPlan": [{"day": string, "action": string}], "suggestedQuests": [{"title": string, "category": string, "reward": string}]}
+Пиши по-русски, тепло и конкретно. weekPlan — 3-4 пункта. suggestedQuests — 2-3 квеста, которые родитель может дать ребёнку.
+question=${JSON.stringify(question ?? "")}
+child=${JSON.stringify({ childName, childAge, attendanceRate })}`;
     try {
       res.json(await generateJson(prompt));
     } catch (e: any) {
