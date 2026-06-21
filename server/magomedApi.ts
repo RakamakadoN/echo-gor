@@ -1,28 +1,31 @@
 /**
- * «Магомед» — ИИ-ассистент CRM «Эхо Гор».
+ * «Магомед» — ИИ-ассистент CRM «Эхо Гор» (на Groq).
  *
  * Чат-виджет (src/components/MagomedAssistant.tsx) шлёт историю диалога на
- * POST /api/gemini/magomed-chat. Эндпоинт прогоняет её через Gemini с
- * function-calling: модель сама решает, когда вызвать инструмент над базой
- * (search_crm / get_record_details / get_sales_summary), мы исполняем вызов
- * через Supabase REST и возвращаем результат модели. Так Магомед отвечает
- * СТРОГО по данным CRM, без галлюцинаций.
+ * POST /api/gemini/magomed-chat (путь исторический). Эндпоинт прогоняет её
+ * через Groq (OpenAI-совместимый chat/completions) с function-calling: модель
+ * сама решает, когда вызвать инструмент над базой, мы исполняем вызов через
+ * Supabase REST и возвращаем результат модели. Магомед отвечает СТРОГО по
+ * данным CRM, без галлюцинаций.
  *
- * Деградация как у geminiApi.ts:
- *  - нет GEMINI_API_KEY  → 503 (виджет показывает понятное сообщение);
- *  - нет Supabase-ключа  → инструменты честно отвечают «база недоступна».
+ * Почему Groq: у бесплатного тарифа лимиты в разы выше (30 запросов/мин,
+ * 1000/день), чего хватает для рабочего помощника. Модель по умолчанию —
+ * llama-3.3-70b-versatile (хороший tool-calling). Меняется через GROQ_MODEL.
  *
- * Инструменты ТОЛЬКО на чтение/поиск/аналитику. Изменение и удаление данных
- * выполняется в интерфейсе CRM — это сознательное ограничение безопасности
- * (см. системный промпт: защита от деструктивных действий).
+ * Деградация:
+ *  - нет GROQ_API_KEY → 503 (виджет показывает понятное сообщение);
+ *  - 429 (лимит) → дружелюбный ответ «много запросов, попробуйте позже»;
+ *  - нет Supabase-ключа → инструменты честно отвечают «база недоступна».
+ *
+ * Инструменты только на чтение/поиск/аналитику + создание задачи с явным
+ * подтверждением. Удаление и изменение записей выполняется в интерфейсе CRM
+ * (сознательное ограничение безопасности).
  */
 import type express from "express";
-import { GoogleGenAI, Type, FunctionCallingConfigMode } from "@google/genai";
 
-const apiKey = process.env.GEMINI_API_KEY;
-// gemini-2.0-flash отключён Google с 01.06.2026 — дефолт на актуальную модель.
-const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
-const genai = apiKey ? new GoogleGenAI({ apiKey }) : null;
+const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
+const apiKey = process.env.GROQ_API_KEY;
+const model = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
 
 const supabaseUrl = process.env.SUPABASE_URL?.replace(/\/$/, "");
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -104,6 +107,12 @@ const STUDENT_STATUS_RU: Record<string, string> = {
   debt: "Должник",
   left: "Ушёл",
   archived: "В архиве",
+};
+
+const PRIORITY_RU: Record<string, string> = {
+  low: "низкий",
+  normal: "обычный",
+  high: "высокий",
 };
 
 // ───────────────────────── Инструменты (исполнение) ─────────────────────────
@@ -270,16 +279,41 @@ async function toolGetSalesSummary(args: any, session: MagomedSession) {
   };
 }
 
-const PRIORITY_RU: Record<string, string> = {
-  low: "низкий",
-  normal: "обычный",
-  high: "высокий",
-};
+// Сводка по ученикам: всего + разбивка по статусам. Отвечает на «сколько
+// активных/должников/новых учеников».
+async function toolGetStudentsSummary(_args: any, session: MagomedSession) {
+  const org = `organization_id=eq.${session.organizationId}`;
+  const branch = branchClause(session);
+  const rows = await supabaseFetch<any[]>(
+    "students",
+    `select=status&${org}&status=neq.archived&deletion_requested_at=is.null${branch}&limit=5000`
+  );
+  const byStatus: Record<string, number> = {};
+  for (const r of rows) {
+    const key = STUDENT_STATUS_RU[r.status] || r.status || "—";
+    byStatus[key] = (byStatus[key] || 0) + 1;
+  }
+  return {
+    total: rows.length,
+    byStatus,
+    scope: session.dbBranchId ? "филиал" : "вся сеть",
+  };
+}
 
-// Создание задачи. Двухшаговый протокол с подтверждением:
-//  1) без confirmed=true → возвращаем превью и просим подтвердить (вставки НЕТ);
-//  2) confirmed=true     → реально создаём строку в tasks.
-async function toolCreateTask(args: any, session: MagomedSession) {
+// Является ли последнее сообщение пользователя явным подтверждением.
+// Короткая фраза-согласие — защита от создания задачи в том же ходе, что и
+// запрос (слабые модели любят сразу проставлять confirmed=true).
+const AFFIRM_RE =
+  /^(да|ага|угу|ок|окей|окей|подтвержд\w*|подтверждаю|верно|всё верно|все верно|давай|давайте|конечно|yes|yep|yeah|sure|ok|okay)\b/i;
+function isAffirmation(text: string): boolean {
+  const t = (text || "").trim();
+  return t.length > 0 && t.length <= 30 && AFFIRM_RE.test(t);
+}
+
+// Создание задачи. Двухшаговый протокол с подтверждением. Решение «создавать
+// ли» принимает СЕРВЕР по последнему сообщению пользователя (lastUserText), а не
+// по флагу модели — так создание не происходит в том же ходе, что и запрос.
+async function toolCreateTask(args: any, session: MagomedSession, lastUserText: string) {
   const title = String(args?.title ?? "").trim().slice(0, 200);
   if (!title) return { error: "Не указан заголовок задачи." };
   const priority = ["low", "normal", "high"].includes(String(args?.priority))
@@ -311,13 +345,16 @@ async function toolCreateTask(args: any, session: MagomedSession) {
     scope: session.dbBranchId ? "филиал" : "вся сеть",
   };
 
-  if (args?.confirmed !== true) {
+  // Создаём ТОЛЬКО если последнее сообщение пользователя — явное согласие.
+  // Флаг модели args.confirmed игнорируем как недостаточно надёжный.
+  if (!isAffirmation(lastUserText)) {
     return {
       needsConfirmation: true,
       willCreate: preview,
       instruction:
-        "Покажи пользователю, что будет создано, и попроси подтвердить («Напишите «Да» для создания»). " +
-        "Вызови create_task с confirmed=true ТОЛЬКО после явного согласия.",
+        "НЕ создавай задачу сейчас. Покажи пользователю превью (что будет создано) и попроси " +
+        "подтвердить дословно: «Напишите «Да» для создания». Задача будет создана только после " +
+        "того, как пользователь ответит «Да».",
     };
   }
 
@@ -341,29 +378,12 @@ async function toolCreateTask(args: any, session: MagomedSession) {
   };
 }
 
-// Сводка по ученикам: всего + разбивка по статусам. Отвечает на «сколько
-// активных/должников/новых учеников». В студии учеников немного — берём все
-// и считаем в коде (без count-заголовков PostgREST).
-async function toolGetStudentsSummary(_args: any, session: MagomedSession) {
-  const org = `organization_id=eq.${session.organizationId}`;
-  const branch = branchClause(session);
-  const rows = await supabaseFetch<any[]>(
-    "students",
-    `select=status&${org}&status=neq.archived&deletion_requested_at=is.null${branch}&limit=5000`
-  );
-  const byStatus: Record<string, number> = {};
-  for (const r of rows) {
-    const key = STUDENT_STATUS_RU[r.status] || r.status || "—";
-    byStatus[key] = (byStatus[key] || 0) + 1;
-  }
-  return {
-    total: rows.length,
-    byStatus,
-    scope: session.dbBranchId ? "филиал" : "вся сеть",
-  };
-}
-
-async function executeTool(name: string, args: any, session: MagomedSession) {
+async function executeTool(
+  name: string,
+  args: any,
+  session: MagomedSession,
+  lastUserText: string
+) {
   try {
     if (!supabaseEnabled) {
       return { error: "База данных недоступна (Supabase не настроен). Сообщи об этом пользователю." };
@@ -372,7 +392,7 @@ async function executeTool(name: string, args: any, session: MagomedSession) {
     if (name === "get_record_details") return await toolGetRecordDetails(args, session);
     if (name === "get_sales_summary") return await toolGetSalesSummary(args, session);
     if (name === "get_students_summary") return await toolGetStudentsSummary(args, session);
-    if (name === "create_task") return await toolCreateTask(args, session);
+    if (name === "create_task") return await toolCreateTask(args, session, lastUserText);
     return { error: `Неизвестный инструмент: ${name}` };
   } catch (e: any) {
     if (e?.message === "SUPABASE_NOT_CONFIGURED") {
@@ -382,91 +402,106 @@ async function executeTool(name: string, args: any, session: MagomedSession) {
   }
 }
 
-// ───────────────────────── Объявление инструментов ─────────────────────────
+// ─────────────────── Инструменты в формате OpenAI/Groq ───────────────────
 
-const functionDeclarations = [
+const tools = [
   {
-    name: "search_crm",
-    description:
-      "Поиск записей в CRM по имени, телефону или названию. Возвращает краткий список с id. " +
-      "Используй, когда пользователь ищет ученика, преподавателя, группу или задачу.",
-    parameters: {
-      type: Type.OBJECT,
-      properties: {
-        entity: {
-          type: Type.STRING,
-          description: "Тип записи",
-          enum: ["students", "teachers", "groups", "tasks"],
+    type: "function",
+    function: {
+      name: "search_crm",
+      description:
+        "Поиск записей в CRM по имени, телефону или названию. Возвращает краткий список с id. " +
+        "Используй, когда пользователь ищет ученика, преподавателя, группу или задачу.",
+      parameters: {
+        type: "object",
+        properties: {
+          entity: {
+            type: "string",
+            enum: ["students", "teachers", "groups", "tasks"],
+            description: "Тип записи",
+          },
+          query: {
+            type: "string",
+            description: "Поисковая строка: имя, фамилия, телефон или название. Может быть пустой для списка.",
+          },
         },
-        query: {
-          type: Type.STRING,
-          description: "Поисковая строка: имя, фамилия, телефон или название. Может быть пустой для списка.",
-        },
+        required: ["entity"],
       },
-      required: ["entity"],
     },
   },
   {
-    name: "get_record_details",
-    description:
-      "Полная карточка одной записи по её id (получи id через search_crm). " +
-      "Для ученика возвращает абонементы и последние оплаты.",
-    parameters: {
-      type: Type.OBJECT,
-      properties: {
-        entity: { type: Type.STRING, enum: ["students", "tasks", "groups"] },
-        id: { type: Type.STRING, description: "UUID записи" },
+    type: "function",
+    function: {
+      name: "get_record_details",
+      description:
+        "Полная карточка одной записи по её id (получи id через search_crm). " +
+        "Для ученика возвращает абонементы и последние оплаты.",
+      parameters: {
+        type: "object",
+        properties: {
+          entity: { type: "string", enum: ["students", "tasks", "groups"] },
+          id: { type: "string", description: "UUID записи" },
+        },
+        required: ["entity", "id"],
       },
-      required: ["entity", "id"],
     },
   },
   {
-    name: "get_sales_summary",
-    description:
-      "Сводка по оплатам (выручка) за период: сегодня, неделя или месяц. " +
-      "Скоуп зависит от роли: владелец видит всю сеть, остальные — свой филиал.",
-    parameters: {
-      type: Type.OBJECT,
-      properties: {
-        period: { type: Type.STRING, enum: ["today", "week", "month"] },
+    type: "function",
+    function: {
+      name: "get_sales_summary",
+      description:
+        "Сводка по оплатам (выручка) за период: сегодня, неделя или месяц. " +
+        "Скоуп зависит от роли: владелец видит всю сеть, остальные — свой филиал.",
+      parameters: {
+        type: "object",
+        properties: {
+          period: { type: "string", enum: ["today", "week", "month"] },
+        },
+        required: ["period"],
       },
-      required: ["period"],
     },
   },
   {
-    name: "get_students_summary",
-    description:
-      "Сводка по ученикам: общее количество и разбивка по статусам (Активен, Должник, " +
-      "Пробное, Лид, Пауза, Ушёл). Используй для вопросов вида «сколько активных учеников», " +
-      "«сколько должников», «сколько всего учеников». Скоуп зависит от роли.",
-    parameters: { type: Type.OBJECT, properties: {} },
+    type: "function",
+    function: {
+      name: "get_students_summary",
+      description:
+        "Сводка по ученикам: общее количество и разбивка по статусам (Активен, Должник, " +
+        "Пробное, Лид, Пауза, Ушёл). Используй для вопросов вида «сколько активных учеников», " +
+        "«сколько должников», «сколько всего учеников». Скоуп зависит от роли.",
+      parameters: { type: "object", properties: {} },
+    },
   },
   {
-    name: "create_task",
-    description:
-      "Создать задачу в CRM. ВАЖНО: сначала вызови без confirmed (или confirmed=false), " +
-      "чтобы получить превью, покажи его пользователю и попроси подтверждение. " +
-      "Вызывай с confirmed=true ТОЛЬКО после явного согласия пользователя.",
-    parameters: {
-      type: Type.OBJECT,
-      properties: {
-        title: { type: Type.STRING, description: "Заголовок задачи" },
-        description: { type: Type.STRING, description: "Описание (необязательно)" },
-        priority: { type: Type.STRING, enum: ["low", "normal", "high"] },
-        dueAt: {
-          type: Type.STRING,
-          description: "Срок в ISO-формате, напр. 2026-06-25 (необязательно)",
+    type: "function",
+    function: {
+      name: "create_task",
+      description:
+        "Создать задачу в CRM. ВАЖНО: сначала вызови без confirmed (или confirmed=false), " +
+        "чтобы получить превью, покажи его пользователю и попроси подтверждение. " +
+        "Вызывай с confirmed=true ТОЛЬКО после явного согласия пользователя.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Заголовок задачи" },
+          description: { type: "string", description: "Описание (необязательно)" },
+          priority: { type: "string", enum: ["low", "normal", "high"] },
+          dueAt: {
+            type: "string",
+            description: "Срок в ISO-формате, напр. 2026-06-25 (необязательно)",
+          },
+          studentName: {
+            type: "string",
+            description: "Имя ученика для привязки задачи (необязательно)",
+          },
+          confirmed: {
+            type: "boolean",
+            description: "true — пользователь подтвердил создание. Иначе вернётся только превью.",
+          },
         },
-        studentName: {
-          type: Type.STRING,
-          description: "Имя ученика для привязки задачи (необязательно)",
-        },
-        confirmed: {
-          type: Type.BOOLEAN,
-          description: "true — пользователь подтвердил создание. Иначе вернётся только превью.",
-        },
+        required: ["title"],
       },
-      required: ["title"],
     },
   },
 ];
@@ -476,7 +511,7 @@ const SYSTEM_PROMPT = `Ты — Магомед, умный, надёжный и 
 ХАРАКТЕР И СТИЛЬ:
 - Профессионально, вежливо, с лёгким оттенком традиционного гостеприимства и уважения в духе названия «Эхо гор». Обращайся к сотруднику уважительно.
 - Максимально кратко и чётко — ты работаешь в узком виджете. Никакой воды. Ключевые данные выделяй **жирным**, используй короткие списки.
-- Проактивность: предлагай логичный следующий шаг (открыть карточку, посмотреть оплаты, создать задачу в интерфейсе).
+- Проактивность: предлагай логичный следующий шаг (открыть карточку, посмотреть оплаты, создать задачу).
 
 ГЛАВНЫЕ ПРАВИЛА:
 1. НИКАКИХ ГАЛЛЮЦИНАЦИЙ. Отвечай ИСКЛЮЧИТЕЛЬНО по данным, полученным из инструментов. Не выдумывай имена, цифры, даты, статусы. Если инструмент вернул пусто — скажи прямо: «В базе данных нет информации по этому запросу».
@@ -487,63 +522,97 @@ const SYSTEM_PROMPT = `Ты — Магомед, умный, надёжный и 
 
 Отвечай на русском языке.`;
 
+// ───────────────────────────── Вызов Groq ─────────────────────────────
+
+async function groqChat(messages: any[]): Promise<any> {
+  const res = await fetch(GROQ_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      tools,
+      tool_choice: "auto",
+      temperature: 0.3,
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    const err: any = new Error(text || `Groq ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
+  return res.json();
+}
+
 // ───────────────────────────── HTTP-эндпоинт ─────────────────────────────
 
 export function registerMagomedApi(app: express.Express) {
   app.post("/api/gemini/magomed-chat", async (req, res) => {
-    if (!genai) {
-      return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });
+    if (!apiKey) {
+      return res.status(503).json({ error: "GROQ_API_KEY is not configured" });
     }
     const session = getSession(req);
     const history: Array<{ role?: string; content?: string }> = Array.isArray(req.body?.messages)
       ? req.body.messages
       : [];
 
-    // История диалога → формат Gemini. Берём последние 16 сообщений.
-    const contents: any[] = history
-      .slice(-16)
-      .filter((m) => m && typeof m.content === "string" && m.content.trim())
-      .map((m) => ({
-        role: m.role === "assistant" ? "model" : "user",
-        parts: [{ text: m.content as string }],
-      }));
+    // История диалога → формат OpenAI. Берём последние 16 сообщений.
+    const messages: any[] = [{ role: "system", content: SYSTEM_PROMPT }];
+    for (const m of history.slice(-16)) {
+      if (m && typeof m.content === "string" && m.content.trim()) {
+        messages.push({
+          role: m.role === "assistant" ? "assistant" : "user",
+          content: m.content,
+        });
+      }
+    }
 
-    if (!contents.length) {
+    if (messages.length < 2) {
       return res.status(400).json({ error: "Пустой запрос" });
     }
 
-    const config = {
-      systemInstruction: SYSTEM_PROMPT,
-      temperature: 0.3,
-      tools: [{ functionDeclarations }],
-      toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.AUTO } },
-    };
+    // Последнее сообщение пользователя — для серверной проверки подтверждений.
+    const lastUserText = [...history].reverse().find(
+      (m) => m && m.role !== "assistant" && typeof m.content === "string"
+    )?.content || "";
 
     try {
       let reply = "";
-      // До 6 шагов tool-loop, чтобы модель успела сделать поиск → детали → ответ.
+      // До 6 шагов tool-loop: поиск → детали → ответ.
       for (let step = 0; step < 6; step++) {
-        const response = await genai.models.generateContent({ model, contents, config });
-        const calls = response.functionCalls;
-
-        if (!calls || calls.length === 0) {
-          reply = response.text ?? "";
+        const data = await groqChat(messages);
+        const msg = data?.choices?.[0]?.message;
+        if (!msg) {
           break;
         }
 
-        // Сохраняем ход модели (с function_call) в историю запроса.
-        const modelContent = response.candidates?.[0]?.content;
-        if (modelContent) contents.push(modelContent);
-
-        // Исполняем все запрошенные вызовы и возвращаем результаты модели.
-        const responseParts: any[] = [];
-        for (const call of calls) {
-          const result = await executeTool(call.name || "", call.args || {}, session);
-          responseParts.push({
-            functionResponse: { name: call.name, response: result as Record<string, unknown> },
-          });
+        const toolCalls = msg.tool_calls;
+        if (toolCalls && toolCalls.length > 0) {
+          // Сохраняем ход модели (с tool_calls), затем результаты каждого вызова.
+          messages.push(msg);
+          for (const tc of toolCalls) {
+            let parsed: any = {};
+            try {
+              parsed = JSON.parse(tc.function?.arguments || "{}");
+            } catch {
+              parsed = {};
+            }
+            const result = await executeTool(tc.function?.name || "", parsed, session, lastUserText);
+            messages.push({
+              role: "tool",
+              tool_call_id: tc.id,
+              content: JSON.stringify(result),
+            });
+          }
+          continue;
         }
-        contents.push({ role: "user", parts: responseParts });
+
+        reply = msg.content || "";
+        break;
       }
 
       if (!reply) {
@@ -551,6 +620,14 @@ export function registerMagomedApi(app: express.Express) {
       }
       res.json({ reply });
     } catch (e: any) {
+      // 429 — лимит запросов: отдаём понятный сигнал, чтобы виджет показал
+      // дружелюбное сообщение вместо общей ошибки.
+      if (e?.status === 429) {
+        return res.status(429).json({
+          error: "rate_limited",
+          reply: "Сейчас слишком много запросов к ИИ. Пожалуйста, попробуйте через минуту.",
+        });
+      }
       res.status(502).json({ error: e?.message || "AI request failed" });
     }
   });

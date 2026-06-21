@@ -94,8 +94,23 @@ export function MagomedAssistant({ roleHeader, roleLabel }: Props) {
           {
             role: "assistant",
             content:
-              "ИИ-помощник пока не подключён: не задан ключ **GEMINI_API_KEY** на сервере. " +
+              "ИИ-помощник пока не подключён: не задан ключ **GROQ_API_KEY** на сервере. " +
               "Добавьте ключ в .env и перезапустите сервер.",
+          },
+        ]);
+        return;
+      }
+
+      // 429 — лимит запросов: сервер присылает дружелюбный текст в reply.
+      if (response.status === 429) {
+        const data = await response.json().catch(() => null);
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content:
+              data?.reply ||
+              "Сейчас слишком много запросов к ИИ. Пожалуйста, попробуйте через минуту.",
           },
         ]);
         return;

@@ -43,6 +43,9 @@ import {
   Landmark,
   CreditCard,
   CalendarClock,
+  ChevronLeft,
+  Clock,
+  LayoutGrid,
   Plus,
   Pencil,
   Trash2,
@@ -3865,22 +3868,173 @@ function money(value: number) {
   return `${Math.round(value).toLocaleString("ru-RU")} ₸`;
 }
 
-function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, scheduleLoading, onLoadSchedule, onCreateGroup, onUpdateGroup, onDeleteGroup, onCreateLesson, onUpdateLesson, onDeleteLesson }: any) {
-  const today = new Date().toISOString().slice(0, 10);
-  const weekAhead = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+// ─────────────────────────── Schedule helpers ───────────────────────────────
+const WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+const MONTHS_GEN = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
+const GRID_START = 8;  // первый час сетки
+const GRID_END = 22;   // последний час сетки
+const HOUR_H = 58;     // высота часовой строки, px
 
+// Палитра карточек — стабильный цвет на каждую группу (тёмная тема + золото)
+const LESSON_PALETTE = [
+  { bg: "bg-emerald-500/10", br: "border-emerald-400/25", ac: "bg-emerald-400", tx: "text-emerald-300", bar: "bg-emerald-400" },
+  { bg: "bg-sky-500/10", br: "border-sky-400/25", ac: "bg-sky-400", tx: "text-sky-300", bar: "bg-sky-400" },
+  { bg: "bg-violet-500/10", br: "border-violet-400/25", ac: "bg-violet-400", tx: "text-violet-300", bar: "bg-violet-400" },
+  { bg: "bg-amber-500/10", br: "border-amber-400/25", ac: "bg-amber-400", tx: "text-amber-300", bar: "bg-amber-400" },
+  { bg: "bg-rose-500/10", br: "border-rose-400/25", ac: "bg-rose-400", tx: "text-rose-300", bar: "bg-rose-400" },
+  { bg: "bg-teal-500/10", br: "border-teal-400/25", ac: "bg-teal-400", tx: "text-teal-300", bar: "bg-teal-400" },
+  { bg: "bg-[#C5A059]/12", br: "border-[#C5A059]/30", ac: "bg-[#C5A059]", tx: "text-[#C5A059]", bar: "bg-[#C5A059]" },
+];
+function paletteFor(key: string) {
+  let h = 0;
+  for (let i = 0; i < (key || "").length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
+  return LESSON_PALETTE[h % LESSON_PALETTE.length];
+}
+const HALL_BARS = ["bg-emerald-400", "bg-amber-400", "bg-violet-400", "bg-sky-400", "bg-rose-400", "bg-teal-400"];
+
+function startOfWeek(d: Date) {
+  const x = new Date(d);
+  const dow = (x.getDay() + 6) % 7; // Пн = 0
+  x.setHours(0, 0, 0, 0);
+  x.setDate(x.getDate() - dow);
+  return x;
+}
+function addDays(d: Date, n: number) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+function sameDay(a: Date, b: Date) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
+function isoDate(d: Date) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
+function hourFloat(d: Date) { return d.getHours() + d.getMinutes() / 60; }
+function hhmm(d: Date) { return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; }
+
+// Раскладка пересекающихся занятий по «дорожкам» внутри одного дня
+function layoutDay(items: any[]) {
+  const sorted = [...items].sort((a, b) => a._start - b._start);
+  const laneEnds: number[] = [];
+  const placed = sorted.map((l) => {
+    let lane = laneEnds.findIndex((end) => end <= l._start);
+    if (lane === -1) { lane = laneEnds.length; laneEnds.push(l._end); } else { laneEnds[lane] = l._end; }
+    return { ...l, _lane: lane };
+  });
+  return { placed, laneCount: Math.max(1, laneEnds.length) };
+}
+
+function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, scheduleLoading, onLoadSchedule, onCreateGroup, onUpdateGroup, onDeleteGroup, onCreateLesson, onUpdateLesson, onDeleteLesson }: any) {
+  const today = new Date();
+  const todayIso = isoDate(today);
+
+  const [view, setView] = useState<"day" | "week" | "month">("week");
+  const [anchor, setAnchor] = useState<Date>(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; });
   const [activeForm, setActiveForm] = useState<"lesson" | "group" | null>(null);
+  const [showGroups, setShowGroups] = useState(false);
   const [filterBranchId, setFilterBranchId] = useState("");
+  const [filterTeacherId, setFilterTeacherId] = useState("");
+  const [filterHallId, setFilterHallId] = useState("");
   const [lessonForm, setLessonForm] = useState({ groupId: "", startsAt: "", endsAt: "", teacherId: "", hallId: "", topic: "" });
   const [groupForm, setGroupForm] = useState({ name: "", branchId: "", teacherId: "", hallId: "", ageFrom: "", ageTo: "", level: "Начинающие", scheduleDays: "", scheduleTime: "" });
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    if (onLoadSchedule) onLoadSchedule({ from: today, to: weekAhead });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Видимый диапазон по выбранному режиму
+  const range = useMemo(() => {
+    if (view === "day") return { from: anchor, to: anchor, days: [anchor] };
+    if (view === "week") {
+      const s = startOfWeek(anchor);
+      const days = Array.from({ length: 7 }, (_, i) => addDays(s, i));
+      return { from: s, to: addDays(s, 6), days };
+    }
+    // month
+    const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+    const gridStart = startOfWeek(first);
+    const days = Array.from({ length: 42 }, (_, i) => addDays(gridStart, i));
+    const last = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
+    return { from: gridStart, to: addDays(startOfWeek(last), 6), days };
+  }, [view, anchor]);
 
-  const filteredLessons = (scheduleItems || [])
-    .filter((l: any) => l.status !== "cancelled" && (!filterBranchId || l.branchId === filterBranchId));
+  const rangeKey = `${isoDate(range.from)}_${isoDate(range.to)}_${filterBranchId}`;
+  useEffect(() => {
+    if (onLoadSchedule) onLoadSchedule({ from: isoDate(range.from), to: isoDate(addDays(range.to, 1)), branchId: filterBranchId || undefined });
+  }, [rangeKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const groupById = useMemo(() => {
+    const m: Record<string, Group> = {};
+    (groups || []).forEach((g: Group) => { m[g.id] = g; });
+    return m;
+  }, [groups]);
+
+  // Нормализуем занятия: парсим даты, подмешиваем данные группы
+  const lessons = useMemo(() => {
+    return (scheduleItems || [])
+      .filter((l: any) => l.status !== "cancelled")
+      .filter((l: any) => !filterBranchId || l.branchId === filterBranchId)
+      .filter((l: any) => !filterTeacherId || l.teacherId === filterTeacherId)
+      .filter((l: any) => !filterHallId || l.hallId === filterHallId)
+      .map((l: any) => {
+        const s = new Date(l.startsAt);
+        const e = l.endsAt ? new Date(l.endsAt) : new Date(s.getTime() + 60 * 60000);
+        const g = l.groupId ? groupById[l.groupId] : undefined;
+        return {
+          ...l,
+          _s: s, _e: e,
+          _start: hourFloat(s), _end: Math.max(hourFloat(e), hourFloat(s) + 0.5),
+          _date: s,
+          _capacity: g?.capacity ?? 0,
+          _students: g?.studentCount ?? 0,
+          _level: g?.level || "",
+          _age: g?.ageGroup || "",
+          _pal: paletteFor(l.groupId || l.groupName || ""),
+        };
+      });
+  }, [scheduleItems, filterBranchId, filterTeacherId, filterHallId, groupById]);
+
+  const lessonsOnDay = (d: Date) => lessons.filter((l: any) => sameDay(l._date, d));
+
+  // ── KPI «Сегодня» ──
+  const todayStats = useMemo(() => {
+    const tl = lessons.filter((l: any) => sameDay(l._date, today));
+    const seats = tl.reduce((a: number, l: any) => a + l._capacity, 0);
+    const filled = tl.reduce((a: number, l: any) => a + l._students, 0);
+    return {
+      lessons: tl.length,
+      students: filled,
+      fillPct: seats > 0 ? Math.round((filled / seats) * 100) : 0,
+      free: Math.max(0, seats - filled),
+    };
+  }, [lessons]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Загрузка залов сегодня ──
+  const hallLoad = useMemo(() => {
+    const tl = lessons.filter((l: any) => sameDay(l._date, today));
+    return (halls || [])
+      .filter((h: any) => !filterBranchId || h.branchId === filterBranchId)
+      .map((h: any) => {
+        const hl = tl.filter((l: any) => l.hallId === h.id);
+        const seats = hl.reduce((a: number, l: any) => a + (l._capacity || h.capacity || 0), 0);
+        const filled = hl.reduce((a: number, l: any) => a + l._students, 0);
+        return { id: h.id, name: h.name, count: hl.length, pct: seats > 0 ? Math.round((filled / seats) * 100) : 0 };
+      });
+  }, [lessons, halls, filterBranchId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const periodLabel = useMemo(() => {
+    if (view === "day") return `${anchor.getDate()} ${MONTHS_GEN[anchor.getMonth()]} ${anchor.getFullYear()}`;
+    if (view === "week") {
+      const s = range.from, e = range.to;
+      const sameMonth = s.getMonth() === e.getMonth();
+      return sameMonth
+        ? `${s.getDate()} – ${e.getDate()} ${MONTHS_GEN[e.getMonth()]} ${e.getFullYear()}`
+        : `${s.getDate()} ${MONTHS_GEN[s.getMonth()]} – ${e.getDate()} ${MONTHS_GEN[e.getMonth()]} ${e.getFullYear()}`;
+    }
+    return `${["январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"][anchor.getMonth()]} ${anchor.getFullYear()}`;
+  }, [view, anchor, range]);
+
+  const step = (dir: number) => {
+    if (view === "day") setAnchor((d) => addDays(d, dir));
+    else if (view === "week") setAnchor((d) => addDays(d, dir * 7));
+    else setAnchor((d) => new Date(d.getFullYear(), d.getMonth() + dir, 1));
+  };
+  const goToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); setAnchor(d); if (view === "month") setView("week"); };
+
+  const hours = Array.from({ length: GRID_END - GRID_START + 1 }, (_, i) => GRID_START + i);
+  const bodyH = (GRID_END - GRID_START) * HOUR_H;
+
+  const filteredLessons = lessons; // совместимость со старым кодом форм ниже
 
   const handleSaveLesson = async () => {
     if (!lessonForm.groupId || !lessonForm.startsAt || !lessonForm.endsAt) return;
@@ -3902,8 +4056,11 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
   const labelCls = "flex flex-col gap-1";
   const kicCls = "text-[10px] uppercase tracking-widest text-slate-500 font-bold";
 
+  const selCls = "rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-xs font-bold text-slate-300 focus:outline-none focus:border-[#C5A059]/40 hover:bg-white/10 transition-colors";
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
+      {/* Заголовок + действия */}
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#C5A059]">Сеть филиалов</p>
@@ -3916,18 +4073,48 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
           <button onClick={() => setActiveForm(activeForm === "group" ? null : "group")} className="flex items-center gap-2 rounded-xl bg-white/5 border border-white/10 px-4 py-2 text-sm font-bold text-slate-300 hover:bg-white/10 transition-colors">
             <Plus className="w-4 h-4" /> Создать группу
           </button>
-          <button onClick={() => onLoadSchedule?.({ from: today, to: weekAhead, branchId: filterBranchId || undefined })} className="rounded-xl bg-white/5 border border-white/10 px-4 py-2 text-sm font-bold text-slate-400 hover:bg-white/10 transition-colors">
-            Обновить
+          <button onClick={() => onLoadSchedule?.({ from: isoDate(range.from), to: isoDate(addDays(range.to, 1)), branchId: filterBranchId || undefined })} title="Обновить" className="flex items-center justify-center rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-slate-400 hover:bg-white/10 transition-colors">
+            <RefreshCw className={`w-4 h-4 ${scheduleLoading ? "animate-spin" : ""}`} />
           </button>
         </div>
       </div>
 
-      {/* Branch filter */}
-      <div className="flex gap-2 flex-wrap">
-        <button onClick={() => setFilterBranchId("")} className={`rounded-xl px-3 py-1.5 text-xs font-bold transition-colors ${!filterBranchId ? "bg-[#C5A059] text-black" : "bg-white/5 text-slate-400 hover:bg-white/10"}`}>Все филиалы</button>
-        {branches.map((b: Branch) => (
-          <button key={b.id} onClick={() => setFilterBranchId(b.id)} className={`rounded-xl px-3 py-1.5 text-xs font-bold transition-colors ${filterBranchId === b.id ? "bg-[#C5A059] text-black" : "bg-white/5 text-slate-400 hover:bg-white/10"}`}>{b.name}</button>
-        ))}
+      {/* Тулбар: фильтры · переключатель вида · навигация по датам */}
+      <div className="rounded-3xl border border-white/10 bg-[#111] p-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 text-slate-500"><Filter className="w-3.5 h-3.5" /></div>
+          <select value={filterBranchId} onChange={(e) => setFilterBranchId(e.target.value)} className={selCls}>
+            <option value="">Все филиалы</option>
+            {branches.map((b: Branch) => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+          <select value={filterTeacherId} onChange={(e) => setFilterTeacherId(e.target.value)} className={selCls}>
+            <option value="">Все преподаватели</option>
+            {teachers.map((t: Teacher) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+          <select value={filterHallId} onChange={(e) => setFilterHallId(e.target.value)} className={selCls}>
+            <option value="">Все залы</option>
+            {(halls || []).filter((h: any) => !filterBranchId || h.branchId === filterBranchId).map((h: any) => <option key={h.id} value={h.id}>{h.name}</option>)}
+          </select>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {/* Сегментный переключатель */}
+          <div className="flex rounded-xl bg-white/5 border border-white/10 p-0.5">
+            {([["day", "День"], ["week", "Неделя"], ["month", "Месяц"]] as const).map(([v, label]) => (
+              <button key={v} onClick={() => setView(v)} className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${view === v ? "bg-[#C5A059] text-black" : "text-slate-400 hover:text-white"}`}>{label}</button>
+            ))}
+          </div>
+          {/* Навигация */}
+          <div className="flex items-center gap-1">
+            <button onClick={() => step(-1)} className="rounded-lg bg-white/5 border border-white/10 p-1.5 text-slate-400 hover:bg-white/10 transition-colors"><ChevronLeft className="w-4 h-4" /></button>
+            <button onClick={goToday} className="rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-xs font-bold text-slate-300 hover:bg-white/10 transition-colors">Сегодня</button>
+            <button onClick={() => step(1)} className="rounded-lg bg-white/5 border border-white/10 p-1.5 text-slate-400 hover:bg-white/10 transition-colors"><ChevronRight className="w-4 h-4" /></button>
+          </div>
+          <div className="flex items-center gap-2 rounded-xl bg-white/5 border border-white/10 px-3 py-1.5">
+            <CalendarDays className="w-4 h-4 text-[#C5A059]" />
+            <span className="text-xs font-bold text-white whitespace-nowrap">{periodLabel}</span>
+          </div>
+        </div>
       </div>
 
       {activeForm === "lesson" && (
@@ -4019,67 +4206,182 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
         </div>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        {/* Lessons list */}
-        <div className="rounded-3xl border border-white/10 bg-[#111] overflow-hidden">
-          <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-[#C5A059]">Ближайшие 7 дней</p>
-              <p className="text-sm font-black text-white">{filteredLessons.length} занятий</p>
-            </div>
-            {scheduleLoading && <span className="text-xs text-slate-500">Загрузка…</span>}
-          </div>
-          <div className="p-4 space-y-3 max-h-[600px] overflow-y-auto">
-            {filteredLessons.length === 0 && !scheduleLoading && (
-              <div className="py-8 text-center">
-                <CalendarDays className="mx-auto mb-2 h-7 w-7 text-slate-600" />
-                <p className="text-sm text-slate-500">Нет занятий в этом периоде</p>
+      {/* Календарь + правая колонка */}
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="min-w-0">
+          {view === "month" ? (
+            /* ───── Месяц ───── */
+            <div className="rounded-3xl border border-white/10 bg-[#111] p-4">
+              <div className="grid grid-cols-7 gap-1 mb-1">
+                {WEEKDAYS.map((w) => <div key={w} className="py-1 text-center text-[10px] font-bold uppercase tracking-wider text-slate-500">{w}</div>)}
               </div>
-            )}
-            {filteredLessons.map((lesson: any) => (
-              <div key={lesson.id} className="flex items-start justify-between gap-3 rounded-2xl bg-white/5 px-4 py-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-bold text-white truncate">{lesson.groupName || "Группа"}</p>
-                  <p className="mt-0.5 text-xs text-slate-400">
-                    {new Date(lesson.startsAt).toLocaleString("ru-RU", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
-                    {" – "}{new Date(lesson.endsAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
-                  </p>
-                  <div className="mt-1 flex flex-wrap gap-2">
-                    {lesson.teacherName && <span className="text-[10px] text-slate-500">{lesson.teacherName}</span>}
-                    {lesson.hallName && <span className="text-[10px] font-bold text-[#C5A059]">{lesson.hallName}</span>}
-                    {lesson.topic && <span className="text-[10px] italic text-slate-400">{lesson.topic}</span>}
+              <div className="grid grid-cols-7 gap-1">
+                {range.days.map((d) => {
+                  const dl = lessonsOnDay(d);
+                  const inMonth = d.getMonth() === anchor.getMonth();
+                  const isToday = sameDay(d, today);
+                  return (
+                    <button key={+d} onClick={() => { setAnchor(new Date(d)); setView("day"); }}
+                      className={`min-h-[94px] rounded-xl border p-1.5 text-left transition-colors ${isToday ? "border-[#C5A059]/40 bg-[#C5A059]/[0.06]" : "border-white/5 hover:border-white/20"} ${inMonth ? "" : "opacity-35"}`}>
+                      <div className="flex items-center justify-between">
+                        <span className={`text-xs font-bold ${isToday ? "text-[#C5A059]" : "text-slate-300"}`}>{d.getDate()}</span>
+                        {dl.length > 0 && <span className="text-[9px] font-bold text-slate-500">{dl.length}</span>}
+                      </div>
+                      <div className="mt-1 space-y-0.5">
+                        {dl.slice(0, 3).map((l: any) => (
+                          <div key={l.id} className={`truncate rounded border-l-2 px-1 py-0.5 text-[8px] font-bold text-white ${l._pal.bg} ${l._pal.br}`}>{hhmm(l._s)} {l.groupName}</div>
+                        ))}
+                        {dl.length > 3 && <div className="px-1 text-[8px] text-slate-500">+{dl.length - 3} ещё</div>}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            /* ───── День / Неделя ───── */
+            <div className="rounded-3xl border border-white/10 bg-[#111] overflow-hidden">
+              {/* Шапка дней */}
+              <div className="grid border-b border-white/5" style={{ gridTemplateColumns: `52px repeat(${range.days.length}, minmax(0, 1fr))` }}>
+                <div className="py-3" />
+                {range.days.map((d) => {
+                  const isToday = sameDay(d, today);
+                  return (
+                    <div key={+d} className={`border-l border-white/5 py-2.5 text-center ${isToday ? "bg-[#C5A059]/10" : ""}`}>
+                      <p className={`text-[10px] font-bold uppercase tracking-wider ${isToday ? "text-[#C5A059]" : "text-slate-500"}`}>{WEEKDAYS[(d.getDay() + 6) % 7]}</p>
+                      <p className={`text-sm font-black ${isToday ? "text-[#C5A059]" : "text-white"}`}>{d.getDate()} {MONTHS_GEN[d.getMonth()]}</p>
+                    </div>
+                  );
+                })}
+              </div>
+              {/* Тело сетки */}
+              <div className="relative overflow-x-auto">
+                <div className="grid" style={{ gridTemplateColumns: `52px repeat(${range.days.length}, minmax(0, 1fr))` }}>
+                  {/* Колонка времени */}
+                  <div className="relative" style={{ height: bodyH }}>
+                    {hours.map((h) => (
+                      <div key={h} className="absolute right-2 text-[10px] font-bold text-slate-500" style={{ top: (h - GRID_START) * HOUR_H + 2 }}>{String(h).padStart(2, "0")}:00</div>
+                    ))}
                   </div>
+                  {/* Колонки дней */}
+                  {range.days.map((d) => {
+                    const { placed, laneCount } = layoutDay(lessonsOnDay(d));
+                    const isToday = sameDay(d, today);
+                    return (
+                      <div key={+d} className="relative border-l border-white/5" style={{ height: bodyH }}>
+                        {isToday && <div className="absolute inset-0 bg-[#C5A059]/[0.035]" />}
+                        {hours.map((h) => (
+                          <div key={h} className="absolute left-0 right-0 border-t border-white/5" style={{ top: (h - GRID_START) * HOUR_H }} />
+                        ))}
+                        {placed.map((l: any) => {
+                          const start = Math.max(l._start, GRID_START);
+                          const end = Math.min(l._end, GRID_END);
+                          const top = (start - GRID_START) * HOUR_H;
+                          const cardH = Math.max((end - start) * HOUR_H - 4, 32);
+                          const w = 100 / laneCount;
+                          const fill = l._capacity > 0 ? Math.round((l._students / l._capacity) * 100) : 0;
+                          return (
+                            <div key={l.id} className={`group absolute overflow-hidden rounded-xl border border-l-[3px] p-1.5 ${l._pal.bg} ${l._pal.br}`}
+                              style={{ top, height: cardH, left: `calc(${l._lane * w}% + 2px)`, width: `calc(${w}% - 4px)` }}>
+                              <p className="truncate text-[10px] font-bold leading-tight text-white">{l.groupName || "Группа"}</p>
+                              {(l._age || l._level) && <p className="truncate text-[9px] text-slate-400">{[l._age, l._level].filter(Boolean).join(" · ")}</p>}
+                              <div className="mt-0.5 flex items-center gap-1 text-[9px] text-slate-400">
+                                <Clock className="h-2.5 w-2.5" />{hhmm(l._s)}
+                                {l.hallName && <span className={`ml-auto truncate font-bold ${l._pal.tx}`}>{l.hallName}</span>}
+                              </div>
+                              {l.teacherName && cardH > 56 && <p className="truncate text-[9px] text-slate-500">{l.teacherName}</p>}
+                              {l._capacity > 0 && cardH > 64 && (
+                                <div className="mt-0.5">
+                                  <div className="flex justify-between text-[8px] text-slate-400"><span>{l._students}/{l._capacity}</span><span>{fill}%</span></div>
+                                  <div className="h-1 overflow-hidden rounded-full bg-white/10"><div className={`h-full rounded-full ${l._pal.bar}`} style={{ width: `${Math.min(fill, 100)}%` }} /></div>
+                                </div>
+                              )}
+                              {onDeleteLesson && (
+                                <button onClick={() => onDeleteLesson(l.id)} title="Отменить" className="absolute right-1 top-1 hidden h-4 w-4 items-center justify-center rounded bg-black/50 text-red-300 hover:bg-red-500/40 group-hover:flex"><X className="h-2.5 w-2.5" /></button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
                 </div>
-                {onDeleteLesson && (
-                  <button onClick={() => onDeleteLesson(lesson.id)} className="flex-shrink-0 rounded-lg bg-red-500/10 px-2 py-1 text-[10px] font-bold text-red-400 hover:bg-red-500/20 transition-colors">Отменить</button>
+                {!range.days.some((d) => lessonsOnDay(d).length > 0) && !scheduleLoading && (
+                  <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                    <CalendarDays className="mb-2 h-8 w-8 text-slate-600" />
+                    <p className="text-sm text-slate-500">Нет занятий в этом периоде</p>
+                  </div>
                 )}
               </div>
-            ))}
-          </div>
+            </div>
+          )}
         </div>
 
-        {/* Groups list */}
-        <div className="rounded-3xl border border-white/10 bg-[#111] overflow-hidden">
-          <div className="px-5 py-4 border-b border-white/5">
+        {/* Правая колонка */}
+        <aside className="space-y-4">
+          {/* Сегодня */}
+          <div className="rounded-3xl border border-white/10 bg-[#111] p-4">
+            <p className="text-[10px] font-black uppercase tracking-widest text-[#C5A059]">Сегодня</p>
+            <div className="mt-3 space-y-3">
+              {[
+                { icon: CalendarDays, val: todayStats.lessons, label: "Занятий" },
+                { icon: Users, val: todayStats.students, label: "Учеников на занятиях" },
+                { icon: Activity, val: `${todayStats.fillPct}%`, label: "Заполняемость" },
+                { icon: MapPin, val: todayStats.free, label: "Свободных мест" },
+              ].map((k, i) => (
+                <div key={i} className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#C5A059]/10 text-[#C5A059]"><k.icon className="h-4 w-4" /></div>
+                  <div><p className="text-lg font-black leading-none text-white">{k.val}</p><p className="mt-0.5 text-[11px] text-slate-500">{k.label}</p></div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Загрузка залов */}
+          <div className="rounded-3xl border border-white/10 bg-[#111] p-4">
+            <p className="text-[10px] font-black uppercase tracking-widest text-[#C5A059]">Загрузка залов сегодня</p>
+            <div className="mt-3 space-y-3">
+              {hallLoad.length === 0 && <p className="text-xs text-slate-500">Залы не заданы</p>}
+              {hallLoad.map((h: any, i: number) => (
+                <div key={h.id}>
+                  <div className="mb-1 flex items-center justify-between text-xs">
+                    <span className="font-bold text-slate-300">{h.name}</span>
+                    <span className="font-black text-white">{h.pct}%</span>
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-white/10"><div className={`h-full rounded-full ${HALL_BARS[i % HALL_BARS.length]}`} style={{ width: `${Math.min(h.pct, 100)}%` }} /></div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      {/* Группы сети — сворачиваемая панель */}
+      <div className="rounded-3xl border border-white/10 bg-[#111] overflow-hidden">
+        <button onClick={() => setShowGroups((s) => !s)} className="flex w-full items-center justify-between px-5 py-4 transition-colors hover:bg-white/[0.02]">
+          <div className="text-left">
             <p className="text-[10px] font-black uppercase tracking-widest text-[#C5A059]">Все группы сети</p>
             <p className="text-sm font-black text-white">{groups.filter((g: Group) => !filterBranchId || g.branchId === filterBranchId).length} групп</p>
           </div>
-          <div className="p-4 space-y-3 max-h-[600px] overflow-y-auto">
+          <ChevronDown className={`h-5 w-5 text-slate-500 transition-transform ${showGroups ? "rotate-180" : ""}`} />
+        </button>
+        {showGroups && (
+          <div className="grid gap-3 p-4 pt-0 sm:grid-cols-2 lg:grid-cols-3">
             {groups.filter((g: Group) => !filterBranchId || g.branchId === filterBranchId).map((group: Group) => (
-              <div key={group.id} className="flex items-start justify-between gap-3 rounded-2xl bg-black/25 border border-white/10 p-4">
+              <div key={group.id} className="flex items-start justify-between gap-3 rounded-2xl border border-white/10 bg-black/25 p-4">
                 <div className="min-w-0">
-                  <p className="text-sm font-black text-white">{group.name}</p>
+                  <p className="truncate text-sm font-black text-white">{group.name}</p>
                   <p className="mt-0.5 text-xs text-slate-400">{group.ageGroup} · {group.level}</p>
                   {(group.days?.length > 0 || group.time) && <p className="mt-0.5 text-xs text-slate-500">{group.days?.join(", ")} {group.time}</p>}
                   <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-[#C5A059]">{group.studentCount} учеников</p>
                 </div>
                 {onDeleteGroup && (
-                  <button onClick={() => onDeleteGroup(group.id)} className="flex-shrink-0 rounded-lg bg-red-500/10 px-2 py-1 text-[10px] font-bold text-red-400 hover:bg-red-500/20 transition-colors">Архив</button>
+                  <button onClick={() => onDeleteGroup(group.id)} className="flex-shrink-0 rounded-lg bg-red-500/10 px-2 py-1 text-[10px] font-bold text-red-400 transition-colors hover:bg-red-500/20">Архив</button>
                 )}
               </div>
             ))}
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
