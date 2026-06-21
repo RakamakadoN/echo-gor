@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { Announcement, AnnouncementAudience, Attendance, Branch, Competition, Group, Hall, Payment, Student, Teacher } from "../types";
 import StudentManagementCard from "./StudentManagementCard";
+import StudentsRegistry from "./StudentsRegistry";
 
 interface BranchManagerWorkspaceProps {
   branchId?: string;
@@ -196,12 +197,11 @@ export function BranchManagerWorkspace({
           )}
           {activeTab === "students" && (
             <StudentsView
-              students={filteredStudents}
+              students={branchStudents}
               groups={branchGroups}
               teachers={branchTeachers}
+              branches={branch ? [branch] : []}
               branchId={branch.id}
-              search={studentSearch}
-              onSearch={setStudentSearch}
               onCreateStudent={onCreateStudent}
               onUpdateStudent={onUpdateStudent}
               onDeleteStudent={onDeleteStudent}
@@ -321,168 +321,30 @@ function DashboardView({ branch, metrics, attendanceWeek, attendanceMonth, group
   );
 }
 
-function StudentsView({ students, groups, teachers = [], branchId, search, onSearch, onCreateStudent, onUpdateStudent, onDeleteStudent, onOpenPayment }: {
+function StudentsView({ students, groups, teachers = [], branches = [], branchId, onCreateStudent, onUpdateStudent, onDeleteStudent, onOpenPayment }: {
   students: Student[];
   groups: Group[];
   teachers?: Teacher[];
+  branches?: Branch[];
   branchId: string;
-  search: string;
-  onSearch: (value: string) => void;
   onCreateStudent?: (data: any) => Promise<boolean>;
   onUpdateStudent?: (id: string, data: any) => Promise<boolean>;
   onDeleteStudent?: (id: string) => Promise<boolean>;
   onOpenPayment?: (student: Student) => void;
 }) {
-  const emptyForm = { name: "", groupId: "", teacherId: "", parentName: "", parentPhone: "" };
-  const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState(emptyForm);
-  const [saving, setSaving] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const canManage = Boolean(onCreateStudent || onUpdateStudent);
-  const selectedStudent = students.find((item) => item.id === selectedId) || null;
-
-  const openCreate = () => { setEditingId(null); setForm(emptyForm); setShowForm(true); };
-  const openEdit = (student: Student) => {
-    setEditingId(student.id);
-    setForm({
-      name: student.name,
-      groupId: student.groupIds?.[0] || (student as any).groupId || "",
-      teacherId: student.teacherId || "",
-      parentName: student.parentName || "",
-      parentPhone: student.parentPhone || ""
-    });
-    setShowForm(true);
-  };
-
-  const handleSave = async () => {
-    if (!form.name.trim()) return;
-    setSaving(true);
-    const payload: any = {
-      name: form.name.trim(),
-      branchId,
-      groupId: form.groupId || undefined,
-      teacherId: form.teacherId || undefined,
-      parentName: form.parentName || undefined,
-      parentPhone: form.parentPhone || undefined
-    };
-    const ok = editingId ? await onUpdateStudent?.(editingId, payload) : await onCreateStudent?.(payload);
-    setSaving(false);
-    if (ok) { setShowForm(false); setEditingId(null); setForm(emptyForm); }
-  };
-
-  const handleDelete = async (student: Student) => {
-    if (!onDeleteStudent) return;
-    if (!window.confirm(`Переместить ученика «${student.name}» в корзину? Окончательное удаление подтвердит владелец сети.`)) return;
-    await onDeleteStudent(student.id);
-  };
-
   return (
-    <Screen title="Ученики филиала" subtitle="Поиск, фильтрация, посещаемость, оплаты, достижения и переводы между группами.">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex flex-1 items-center gap-2 rounded-2xl border border-white/10 bg-black/30 px-3 py-2">
-          <Search className="h-4 w-4 text-slate-500" />
-          <input value={search} onChange={(event) => onSearch(event.target.value)} placeholder="Поиск по ученику, родителю или телефону" className="w-full bg-transparent text-sm text-white outline-none placeholder:text-slate-600" />
-        </div>
-        {canManage && (
-          <button onClick={showForm ? () => setShowForm(false) : openCreate} className="flex items-center gap-2 rounded-xl border border-[#C5A059]/30 bg-[#C5A059]/15 px-4 py-2 text-sm font-bold text-[#C5A059] transition-colors hover:bg-[#C5A059]/25">
-            <Plus className="h-4 w-4" /> {showForm ? "Скрыть" : "Новый ученик"}
-          </button>
-        )}
-      </div>
-
-      {showForm && (
-        <div className="rounded-3xl border border-white/10 bg-[#111] p-5 space-y-4">
-          <p className="text-sm font-black text-white">{editingId ? "Редактировать ученика" : "Новый ученик"}</p>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="flex flex-col gap-1">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Имя ученика *</span>
-              <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Имя и фамилия" className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-slate-600" />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Группа</span>
-              <select value={form.groupId} onChange={(e) => setForm((f) => ({ ...f, groupId: e.target.value }))} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white">
-                <option value="">Без группы</option>
-                {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Преподаватель</span>
-              <select value={form.teacherId} onChange={(e) => setForm((f) => ({ ...f, teacherId: e.target.value }))} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white">
-                <option value="">Из группы</option>
-                {teachers.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Родитель</span>
-              <input value={form.parentName} onChange={(e) => setForm((f) => ({ ...f, parentName: e.target.value }))} placeholder="ФИО родителя" className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-slate-600" />
-            </label>
-            <label className="flex flex-col gap-1 sm:col-span-2">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Телефон родителя</span>
-              <input value={form.parentPhone} onChange={(e) => setForm((f) => ({ ...f, parentPhone: e.target.value }))} placeholder="+7 ..." className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-slate-600" />
-            </label>
-          </div>
-          <div className="flex gap-3">
-            <button onClick={handleSave} disabled={saving || !form.name.trim()} className="rounded-xl bg-[#C5A059] px-5 py-2 text-sm font-bold text-black transition-colors hover:bg-[#D4AF70] disabled:opacity-40">
-              {saving ? "Сохранение…" : editingId ? "Сохранить" : "Добавить ученика"}
-            </button>
-            <button onClick={() => { setShowForm(false); setEditingId(null); setForm(emptyForm); }} className="rounded-xl bg-white/5 px-5 py-2 text-sm font-bold text-slate-400 transition-colors hover:bg-white/10">Отмена</button>
-          </div>
-        </div>
-      )}
-
-      {selectedStudent && (
-        <StudentManagementCard
-          student={selectedStudent}
-          group={groups.find((item) => item.id === (selectedStudent.groupIds?.[0] || (selectedStudent as any).groupId))}
-          teacher={teachers.find((item) => item.id === selectedStudent.teacherId)}
-          allGroups={groups}
-          allTeachers={teachers}
-          onClose={() => setSelectedId(null)}
-          onEdit={canManage ? () => openEdit(selectedStudent) : undefined}
-          onDelete={onDeleteStudent ? () => handleDelete(selectedStudent) : undefined}
-          onOpenPayment={onOpenPayment ? () => onOpenPayment(selectedStudent) : undefined}
-          onTransfer={onUpdateStudent ? (payload) => onUpdateStudent(selectedStudent.id, payload) : undefined}
-        />
-      )}
-
-      <div className="grid gap-3 lg:grid-cols-2">
-        {students.map((student) => {
-          const group = groups.find((item) => item.id === (student.groupIds?.[0] || (student as any).groupId));
-          const debt = student.balance < 0;
-          return (
-            <article key={student.id} onClick={() => setSelectedId(student.id)} className={`cursor-pointer rounded-3xl border bg-[#121212] p-4 transition hover:border-[#C5A059]/40 ${selectedId === student.id ? "border-[#C5A059]/50" : "border-white/10"}`}>
-              <div className="flex gap-3">
-                <img src={student.photoUrl} alt={student.name} className="h-14 w-14 rounded-2xl object-cover" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h3 className="font-black text-white">{student.name}</h3>
-                      <p className="mt-1 text-xs text-slate-400">{student.age} лет • {group?.name || "Без группы"}</p>
-                    </div>
-                    <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase ${debt ? "bg-rose-500/10 text-rose-400" : "bg-emerald-500/10 text-emerald-400"}`}>
-                      {debt ? "Долг" : "Активен"}
-                    </span>
-                  </div>
-                  <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-                    <MiniStat label="Посещ." value={`${studentAttendance(student)}%`} />
-                    <MiniStat label="Баланс" value={formatMoney(student.balance)} />
-                    <MiniStat label="Путь" value={student.artistLevelPoints} />
-                  </div>
-                  {canManage && (
-                    <div className="mt-4 flex gap-2">
-                      <button onClick={(e) => { e.stopPropagation(); openEdit(student); }} className="rounded-lg bg-white/5 px-3 py-1.5 text-[10px] font-bold text-slate-300 transition-colors hover:bg-white/10">Редактировать</button>
-                      {onDeleteStudent && (
-                        <button onClick={(e) => { e.stopPropagation(); handleDelete(student); }} className="rounded-lg bg-red-500/10 px-3 py-1.5 text-[10px] font-bold text-red-400 transition-colors hover:bg-red-500/20">В корзину</button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </article>
-          );
-        })}
-      </div>
+    <Screen title="Ученики филиала" subtitle="Продления, долги, LTV-сегменты, коммуникации и массовые действия по вашему филиалу.">
+      <StudentsRegistry
+        students={students}
+        groups={groups}
+        branches={branches}
+        teachers={teachers}
+        adminBranchId={branchId}
+        onCreateStudent={onCreateStudent}
+        onUpdateStudent={onUpdateStudent}
+        onDeleteStudent={onDeleteStudent}
+        onOpenPayment={onOpenPayment}
+      />
     </Screen>
   );
 }
