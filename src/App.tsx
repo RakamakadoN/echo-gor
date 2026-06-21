@@ -11,6 +11,7 @@ import { BranchManagerWorkspace } from "./components/BranchManagerWorkspace";
 import { OwnerExecutiveWorkspace } from "./components/OwnerExecutiveWorkspace";
 import { AdminEduErpWorkspace } from "./components/AdminEduErpWorkspace";
 import { AnimatedBarChartShowcase } from "./components/AnimatedBarChartShowcase";
+import { MagomedAssistant } from "./components/MagomedAssistant";
 // @ts-ignore
 import logoImg from "./assets/images/echogor_logo_1780297382250.png";
 // @ts-ignore
@@ -7193,6 +7194,14 @@ export default function App() {
         </div>
       )}
 
+      {/* ИИ-помощник «Магомед» — только в рабочих кабинетах после входа */}
+      {!isPlayingPromo &&
+        ["owner", "branch", "admin", "teacher"].includes(activeRole) && (
+          <MagomedAssistant
+            roleHeader={getMvpRoleHeader()}
+            roleLabel={roles.find((r) => r.id === activeRole)?.name}
+          />
+        )}
 
     </div>
   );

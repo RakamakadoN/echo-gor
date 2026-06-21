@@ -34,10 +34,15 @@ import {
   Shield,
   Sparkles,
   TrendingUp,
+  TrendingDown,
   Trophy,
   UserRound,
   Users,
   WalletCards,
+  Wallet,
+  Landmark,
+  CreditCard,
+  CalendarClock,
   Plus,
   Pencil,
   Trash2,
@@ -123,7 +128,7 @@ const ownerTabs: { id: OwnerTab; label: string; short: string; icon: React.Eleme
   { id: "students", label: "Ученики", short: "Ученики", icon: Users },
   { id: "teachers", label: "Преподаватели", short: "Педагоги", icon: GraduationCap },
   { id: "schedule", label: "Расписание", short: "Расписание", icon: CalendarDays },
-  { id: "finance", label: "Финансы", short: "Деньги", icon: Coins },
+  { id: "finance", label: "Бухгалтерия", short: "Учёт", icon: Coins },
   { id: "events", label: "Концерты", short: "Сцена", icon: Trophy },
   { id: "feed", label: "Афиша СНГ", short: "Афиша", icon: CalendarDays },
   { id: "announcements", label: "Объявления", short: "Связь", icon: Megaphone },
@@ -254,10 +259,10 @@ export function OwnerExecutiveWorkspace({
             />
           )}
           {activeTab === "eduerp" && <OwnerEduErpView branches={branches} groups={groups} students={students} teachers={teachers} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
-          {activeTab === "branches" && <BranchesView branches={branchScorecards} rawBranches={branches} students={students} groups={groups} teachers={teachers} onCreateBranch={onCreateBranch} onUpdateBranch={onUpdateBranch} onDeleteBranch={onDeleteBranch} />}
+          {activeTab === "branches" && <BranchesView branches={branchScorecards} rawBranches={branches} students={students} groups={groups} teachers={teachers} halls={halls} onCreateBranch={onCreateBranch} onUpdateBranch={onUpdateBranch} onDeleteBranch={onDeleteBranch} onCreateGroup={onCreateGroup} onUpdateGroup={onUpdateGroup} onDeleteGroup={onDeleteGroup} />}
           {activeTab === "students" && <StudentsNetworkView students={students} branches={branches} groups={groups} teachers={teachers} onCreateStudent={onCreateStudent} onUpdateStudent={onUpdateStudent} onDeleteStudent={onDeleteStudent} onOpenPayment={onOpenPayment} studentTrash={studentTrash} onRestoreStudent={onRestoreStudent} onConfirmDeleteStudent={onConfirmDeleteStudent} />}
           {activeTab === "teachers" && <TeachersNetworkView teachers={teachers} metrics={metrics} branches={branches} onCreateTeacher={onCreateTeacher} onUpdateTeacher={onUpdateTeacher} onDeleteTeacher={onDeleteTeacher} />}
-          {activeTab === "finance" && <FinanceCenterView branches={branchScorecards} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
+          {activeTab === "finance" && <BookkeepingView branches={branchScorecards} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
           {activeTab === "schedule" && (
             <OwnerScheduleView
               branches={branches}
@@ -827,17 +832,22 @@ function PriorityCard({ tone, icon: Icon, title, sub, onClick }: { key?: React.K
   );
 }
 
-function BranchesView({ branches, rawBranches, students, groups, teachers, onCreateBranch, onUpdateBranch, onDeleteBranch }: {
+function BranchesView({ branches, rawBranches, students, groups, teachers, halls, onCreateBranch, onUpdateBranch, onDeleteBranch, onCreateGroup, onUpdateGroup, onDeleteGroup }: {
   branches: any[];
   rawBranches: Branch[];
   students: Student[];
   groups: Group[];
   teachers: Teacher[];
+  halls?: any[];
   onCreateBranch?: (data: { name: string; city: string; address?: string; phone?: string }) => Promise<boolean>;
   onUpdateBranch?: (id: string, data: { name?: string; city?: string; address?: string; phone?: string }) => Promise<boolean>;
   onDeleteBranch?: (id: string) => Promise<boolean>;
+  onCreateGroup?: (data: any) => Promise<boolean>;
+  onUpdateGroup?: (id: string, data: any) => Promise<boolean>;
+  onDeleteGroup?: (id: string) => Promise<boolean>;
 }) {
   const empty = { name: "", city: "", address: "", phone: "" };
+  const [section, setSection] = useState<"branches" | "groups">("branches");
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(empty);
@@ -876,7 +886,34 @@ function BranchesView({ branches, rawBranches, students, groups, teachers, onCre
   };
 
   return (
-    <OwnerScreen title="Филиалы сети" subtitle="Все филиалы, руководители, финансы, посещаемость. Владелец может добавлять, редактировать и архивировать филиалы.">
+    <OwnerScreen title="Филиалы сети" subtitle="Все филиалы, руководители, финансы, посещаемость. Владелец может добавлять, редактировать и архивировать филиалы и группы.">
+      <div className="mb-5 inline-flex rounded-2xl border border-white/10 bg-[#121212] p-1">
+        <button
+          onClick={() => setSection("branches")}
+          className={`rounded-xl px-4 py-2 text-sm font-bold transition ${section === "branches" ? "bg-[#C5A059] text-black" : "text-slate-400 hover:text-white"}`}
+        >
+          <Building2 className="mr-1.5 inline h-4 w-4" /> Филиалы
+        </button>
+        <button
+          onClick={() => setSection("groups")}
+          className={`rounded-xl px-4 py-2 text-sm font-bold transition ${section === "groups" ? "bg-[#C5A059] text-black" : "text-slate-400 hover:text-white"}`}
+        >
+          <Users className="mr-1.5 inline h-4 w-4" /> Группы
+        </button>
+      </div>
+
+      {section === "groups" ? (
+        <BranchGroupsManager
+          rawBranches={rawBranches}
+          groups={groups}
+          teachers={teachers}
+          halls={halls}
+          onCreateGroup={onCreateGroup}
+          onUpdateGroup={onUpdateGroup}
+          onDeleteGroup={onDeleteGroup}
+        />
+      ) : (
+      <>
       {canManage && (
         <div className="mb-4 flex items-center justify-between">
           <p className="text-sm text-slate-400">{rawBranches.length} активных филиалов</p>
@@ -972,7 +1009,216 @@ function BranchesView({ branches, rawBranches, students, groups, teachers, onCre
           </div>
         );
       })()}
+      </>
+      )}
     </OwnerScreen>
+  );
+}
+
+function BranchGroupsManager({ rawBranches, groups, teachers, halls, onCreateGroup, onUpdateGroup, onDeleteGroup }: {
+  rawBranches: Branch[];
+  groups: Group[];
+  teachers: Teacher[];
+  halls?: any[];
+  onCreateGroup?: (data: any) => Promise<boolean>;
+  onUpdateGroup?: (id: string, data: any) => Promise<boolean>;
+  onDeleteGroup?: (id: string) => Promise<boolean>;
+}) {
+  const emptyForm = { name: "", branchId: "", teacherId: "", hallId: "", ageFrom: "", ageTo: "", capacity: "", level: "Начинающие", scheduleDays: "", scheduleTime: "" };
+  const [filterBranchId, setFilterBranchId] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState(emptyForm);
+  const [busy, setBusy] = useState(false);
+  const canManage = Boolean(onCreateGroup);
+
+  const branchName = (id: string) => rawBranches.find((b) => b.id === id)?.name || "—";
+  const teacherName = (id: string) => teachers.find((t) => t.id === id)?.name || "Не назначен";
+  const hallName = (id: string) => (halls || []).find((h: any) => h.id === id)?.name || "—";
+  const visibleGroups = groups.filter((g) => !filterBranchId || g.branchId === filterBranchId);
+  const branchTeachers = (branchId: string) => teachers.filter((t) => !t.branchId || t.branchId === branchId);
+
+  const startAdd = () => { setEditingId(null); setForm({ ...emptyForm, branchId: filterBranchId || "" }); setAdding(true); };
+  const startEdit = (g: Group) => {
+    setAdding(false);
+    setEditingId(g.id);
+    setForm({
+      name: g.name || "",
+      branchId: g.branchId || "",
+      teacherId: g.teacherId || "",
+      hallId: g.hallId || "",
+      ageFrom: g.ageFrom != null ? String(g.ageFrom) : "",
+      ageTo: g.ageTo != null ? String(g.ageTo) : "",
+      capacity: g.capacity != null ? String(g.capacity) : "",
+      level: g.level || "Начинающие",
+      scheduleDays: (g.days || []).join(", "),
+      scheduleTime: g.time || "",
+    });
+  };
+  const cancel = () => { setAdding(false); setEditingId(null); setForm(emptyForm); };
+
+  const submit = async () => {
+    if (!form.name.trim() || !form.branchId) return;
+    setBusy(true);
+    const payload = {
+      name: form.name.trim(),
+      branchId: form.branchId,
+      teacherId: form.teacherId || undefined,
+      hallId: form.hallId || undefined,
+      ageFrom: form.ageFrom ? Number(form.ageFrom) : undefined,
+      ageTo: form.ageTo ? Number(form.ageTo) : undefined,
+      capacity: form.capacity ? Number(form.capacity) : undefined,
+      level: form.level,
+      scheduleDays: form.scheduleDays || undefined,
+      scheduleTime: form.scheduleTime || undefined,
+    };
+    let ok = false;
+    if (adding && onCreateGroup) ok = await onCreateGroup(payload);
+    else if (editingId && onUpdateGroup) ok = await onUpdateGroup(editingId, payload);
+    setBusy(false);
+    if (ok) cancel();
+  };
+
+  const assignTeacher = async (groupId: string, teacherId: string) => {
+    if (!onUpdateGroup) return;
+    await onUpdateGroup(groupId, { teacherId: teacherId || undefined });
+  };
+
+  const remove = async (g: Group) => {
+    if (!onDeleteGroup) return;
+    if (!window.confirm(`Архивировать группу «${g.name}»? Данные сохранятся, но группа скроется из сети.`)) return;
+    await onDeleteGroup(g.id);
+  };
+
+  const inputCls = "mt-1 w-full rounded-xl border border-white/10 bg-[#0C0C0C] px-3 py-2 text-sm text-white outline-none focus:border-[#C5A059]/50";
+  const kicCls = "text-[11px] font-bold uppercase tracking-wider text-slate-500";
+
+  return (
+    <div>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-slate-400">{visibleGroups.length} {filterBranchId ? "групп в филиале" : "групп в сети"}</p>
+        {canManage && !adding && editingId === null && (
+          <button onClick={startAdd} className="inline-flex items-center gap-2 rounded-2xl bg-[#C5A059] px-4 py-2 text-sm font-bold text-black transition hover:bg-[#d4b06a]">
+            <Plus className="h-4 w-4" /> Добавить группу
+          </button>
+        )}
+      </div>
+
+      <div className="mb-5 flex flex-wrap gap-2">
+        <button onClick={() => setFilterBranchId("")} className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${!filterBranchId ? "bg-[#C5A059] text-black" : "bg-white/5 text-slate-400 hover:bg-white/10"}`}>Все филиалы</button>
+        {rawBranches.map((b) => (
+          <button key={b.id} onClick={() => setFilterBranchId(b.id)} className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${filterBranchId === b.id ? "bg-[#C5A059] text-black" : "bg-white/5 text-slate-400 hover:bg-white/10"}`}>{b.name}</button>
+        ))}
+      </div>
+
+      {(adding || editingId !== null) && (
+        <div className="mb-5 rounded-[2rem] border border-[#C5A059]/30 bg-[#161616] p-5">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-black text-white">{adding ? "Новая группа" : "Редактирование группы"}</h3>
+            <button onClick={cancel} className="rounded-lg p-1 text-slate-400 hover:text-white"><X className="h-5 w-5" /></button>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+            <label className="block"><span className={kicCls}>Название *</span>
+              <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Лезгинка · Старшая" className={inputCls} />
+            </label>
+            <label className="block"><span className={kicCls}>Филиал *</span>
+              <select value={form.branchId} onChange={(e) => setForm({ ...form, branchId: e.target.value, teacherId: "" })} className={inputCls}>
+                <option value="">Выберите филиал</option>
+                {rawBranches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+            </label>
+            <label className="block"><span className={kicCls}>Преподаватель</span>
+              <select value={form.teacherId} onChange={(e) => setForm({ ...form, teacherId: e.target.value })} className={inputCls}>
+                <option value="">Не назначен</option>
+                {(form.branchId ? branchTeachers(form.branchId) : teachers).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </label>
+            <label className="block"><span className={kicCls}>Зал</span>
+              <select value={form.hallId} onChange={(e) => setForm({ ...form, hallId: e.target.value })} className={inputCls}>
+                <option value="">Не выбрано</option>
+                {(halls || []).filter((h: any) => !form.branchId || h.branchId === form.branchId).map((h: any) => <option key={h.id} value={h.id}>{h.name}</option>)}
+              </select>
+            </label>
+            <label className="block"><span className={kicCls}>Уровень</span>
+              <select value={form.level} onChange={(e) => setForm({ ...form, level: e.target.value })} className={inputCls}>
+                {["Начинающие", "Продолжающие", "Ансамбль", "Профи"].map((l) => <option key={l}>{l}</option>)}
+              </select>
+            </label>
+            <label className="block"><span className={kicCls}>Возраст от–до</span>
+              <div className="mt-1 flex gap-2">
+                <input type="number" min={3} value={form.ageFrom} onChange={(e) => setForm({ ...form, ageFrom: e.target.value })} placeholder="от" className="w-full rounded-xl border border-white/10 bg-[#0C0C0C] px-3 py-2 text-sm text-white outline-none focus:border-[#C5A059]/50" />
+                <input type="number" min={3} value={form.ageTo} onChange={(e) => setForm({ ...form, ageTo: e.target.value })} placeholder="до" className="w-full rounded-xl border border-white/10 bg-[#0C0C0C] px-3 py-2 text-sm text-white outline-none focus:border-[#C5A059]/50" />
+              </div>
+            </label>
+            <label className="block"><span className={kicCls}>Вместимость</span>
+              <input type="number" min={1} value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} placeholder="16" className={inputCls} />
+            </label>
+            <label className="block"><span className={kicCls}>Дни занятий</span>
+              <input value={form.scheduleDays} onChange={(e) => setForm({ ...form, scheduleDays: e.target.value })} placeholder="Пн, Ср, Пт" className={inputCls} />
+            </label>
+            <label className="block"><span className={kicCls}>Время</span>
+              <input value={form.scheduleTime} onChange={(e) => setForm({ ...form, scheduleTime: e.target.value })} placeholder="18:30–20:00" className={inputCls} />
+            </label>
+          </div>
+          <div className="mt-4 flex gap-2">
+            <button disabled={busy || !form.name.trim() || !form.branchId} onClick={submit} className="rounded-2xl bg-[#C5A059] px-5 py-2 text-sm font-bold text-black transition hover:bg-[#d4b06a] disabled:opacity-50">
+              {busy ? "Сохранение…" : "Сохранить"}
+            </button>
+            <button onClick={cancel} className="rounded-2xl border border-white/10 px-5 py-2 text-sm font-bold text-slate-300 hover:text-white">Отмена</button>
+          </div>
+        </div>
+      )}
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        {visibleGroups.map((g) => (
+          <article key={g.id} className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="text-lg font-black text-white">{g.name}</h3>
+                <p className="mt-1 text-xs text-slate-500">{branchName(g.branchId)} · {g.ageGroup || "Все возрасты"} · {g.level}</p>
+                {(g.days?.length > 0 || g.time) && <p className="mt-0.5 text-xs text-slate-500">{(g.days || []).join(", ")} {g.time}</p>}
+              </div>
+              {canManage && (
+                <div className="flex flex-shrink-0 gap-1">
+                  <button onClick={() => startEdit(g)} title="Редактировать" className="rounded-xl border border-white/10 p-2 text-slate-300 transition hover:border-[#C5A059]/40 hover:text-[#C5A059]">
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                  <button onClick={() => remove(g)} title="Архивировать" className="rounded-xl border border-white/10 p-2 text-slate-300 transition hover:border-red-500/40 hover:text-red-400">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
+            </div>
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              <MiniMetric label="Ученики" value={g.studentCount ?? 0} />
+              <MiniMetric label="Вместим." value={g.capacity || "—"} />
+              <MiniMetric label="Зал" value={hallName(g.hallId)} />
+            </div>
+            <div className="mt-4">
+              <span className={kicCls}>Преподаватель</span>
+              {canManage ? (
+                <select
+                  value={g.teacherId || ""}
+                  onChange={(e) => assignTeacher(g.id, e.target.value)}
+                  className="mt-1 w-full rounded-xl border border-white/10 bg-[#0C0C0C] px-3 py-2 text-sm font-bold text-white outline-none focus:border-[#C5A059]/50"
+                >
+                  <option value="">Не назначен</option>
+                  {branchTeachers(g.branchId).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              ) : (
+                <p className="mt-1 text-sm font-bold text-white">{teacherName(g.teacherId)}</p>
+              )}
+            </div>
+          </article>
+        ))}
+      </div>
+      {visibleGroups.length === 0 && (
+        <div className="rounded-[2rem] border border-white/10 bg-[#121212] py-12 text-center">
+          <Users className="mx-auto mb-3 h-8 w-8 text-slate-600" />
+          <p className="text-sm text-slate-500">{filterBranchId ? "В этом филиале пока нет групп." : "Групп пока нет."}</p>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1792,6 +2038,551 @@ function FinanceCenterView({ branches, payments, monthRevenue, todayRevenue, deb
       </section>
     </OwnerScreen>
   );
+}
+
+// ===================== БУХГАЛТЕРИЯ (управленческий учёт в стиле brizo) =====================
+
+type AcctRow = { category: string; byMonth: number[]; total: number };
+type AcctOverview = {
+  accounts: { id: string; name: string; kind: string; currency: string; openingBalance: number; balance: number }[];
+  categories: { id: string; name: string; kind: "income" | "expense" }[];
+  cashflow: { months: string[]; incomeRows: AcctRow[]; expenseRows: AcctRow[]; incomeByMonth: number[]; expenseByMonth: number[]; netByMonth: number[] };
+  pnl: { month: string; revenue: number; expense: number; profit: number; margin: number }[];
+  calendar: { id: string; date: string; type: string; amount: number; category: string; account: string; counterparty: string | null; description: string | null }[];
+  totals: { income: number; expense: number; profit: number; plannedIn: number; plannedOut: number; balanceTotal: number };
+};
+type AcctOp = { id: string; type: string; status: string; amount: number; date: string; categoryId: string | null; accountId: string | null; counterparty: string | null; description: string | null };
+
+const RU_MON = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
+function monthLabel(m: string) {
+  const [y, mm] = m.split("-");
+  return `${RU_MON[Number(mm) - 1]} ${y.slice(2)}`;
+}
+function accountIcon(kind: string) {
+  return kind === "bank" ? Landmark : kind === "card" ? CreditCard : Wallet;
+}
+const ownerHdr = { headers: { "x-demo-role": "owner" } };
+
+function BookkeepingView({ branches }: any) {
+  const [tab, setTab] = useState<"overview" | "cashflow" | "pnl" | "calendar" | "ops" | "requests">("overview");
+  const [data, setData] = useState<AcctOverview | null>(null);
+  const [ops, setOps] = useState<AcctOp[]>([]);
+  const [requests, setRequests] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    setLoading(true); setError(null);
+    try {
+      const [oRes, opRes, reqRes] = await Promise.all([
+        fetch("/api/mvp/accounting/overview", ownerHdr),
+        fetch("/api/mvp/accounting/operations", ownerHdr),
+        fetch("/api/mvp/accounting/expense-requests", ownerHdr),
+      ]);
+      if (!oRes.ok) throw new Error(await oRes.text());
+      setData(await oRes.json());
+      if (opRes.ok) setOps(((await opRes.json()).operations as AcctOp[]) || []);
+      if (reqRes.ok) setRequests((await reqRes.json()).requests || []);
+    } catch (e: any) {
+      setError(e?.message || "Не удалось загрузить данные бухгалтерии");
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => { load(); }, []);
+
+  const decideRequest = async (id: string, action: "approve" | "reject", opts?: { comment?: string; accountId?: string }) => {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/mvp/accounting/expense-requests/${id}/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-demo-role": "owner" },
+        body: JSON.stringify({ comment: opts?.comment || null, accountId: opts?.accountId || null }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      await load();
+    } catch (e: any) {
+      setError(e?.message || "Не удалось обработать заявку");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const pendingCount = requests.filter((r) => r.status === "pending").length;
+
+  const createOp = async (payload: any) => {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/mvp/accounting/operations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-demo-role": "owner" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setShowAdd(false);
+      await load();
+    } catch (e: any) {
+      setError(e?.message || "Не удалось создать операцию");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const deleteOp = async (id: string) => {
+    setBusy(true);
+    try {
+      await fetch(`/api/mvp/accounting/operations/${id}`, { method: "DELETE", headers: { "x-demo-role": "owner" } });
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const tabs: { id: typeof tab; label: string; icon: React.ElementType; badge?: number }[] = [
+    { id: "overview", label: "Обзор", icon: WalletCards },
+    { id: "cashflow", label: "ДДС", icon: TrendingUp },
+    { id: "pnl", label: "ОПиУ / P&L", icon: BarChart3 },
+    { id: "calendar", label: "Платёжный календарь", icon: CalendarClock },
+    { id: "ops", label: "Операции", icon: Receipt },
+    { id: "requests", label: "Заявки на расход", icon: Send, badge: pendingCount },
+  ];
+
+  return (
+    <OwnerScreen title="Бухгалтерия" subtitle="Управленческий учёт сети: счета и кассы, движение денег (ДДС), прибыли и убытки (ОПиУ), платёжный календарь и реестр операций.">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-2">
+          {tabs.map((t) => {
+            const Icon = t.icon;
+            const active = tab === t.id;
+            return (
+              <button key={t.id} onClick={() => setTab(t.id)}
+                className={`inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-bold transition ${active ? "border-[#C5A059]/50 bg-[#C5A059]/15 text-[#C5A059]" : "border-white/10 bg-[#161616] text-slate-400 hover:text-white"}`}>
+                <Icon className="h-4 w-4" /> {t.label}
+                {t.badge ? <span className="ml-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-rose-500 px-1.5 text-[10px] font-black text-white">{t.badge}</span> : null}
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={load} className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-[#161616] px-3 py-2 text-xs font-bold text-slate-300 hover:text-white">
+            <RefreshCw className="h-4 w-4" /> Обновить
+          </button>
+          <button onClick={() => setShowAdd(true)} className="inline-flex items-center gap-2 rounded-2xl bg-[#C5A059] px-4 py-2 text-sm font-bold text-black transition hover:bg-[#d4b06a]">
+            <Plus className="h-4 w-4" /> Операция
+          </button>
+        </div>
+      </div>
+
+      {error && <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-200">{error}</div>}
+      {loading && !data && <div className="rounded-3xl border border-white/10 bg-[#121212] p-8 text-center text-sm text-slate-500">Загрузка данных бухгалтерии…</div>}
+
+      {data && (
+        <>
+          {tab === "overview" && <AcctOverviewTab data={data} branches={branches} />}
+          {tab === "cashflow" && <AcctCashflowTab data={data} />}
+          {tab === "pnl" && <AcctPnlTab data={data} />}
+          {tab === "calendar" && <AcctCalendarTab data={data} />}
+          {tab === "ops" && <AcctOpsTab data={data} ops={ops} onDelete={deleteOp} busy={busy} />}
+          {tab === "requests" && <AcctRequestsTab data={data} requests={requests} onDecide={decideRequest} busy={busy} />}
+        </>
+      )}
+
+      {showAdd && data && (
+        <AcctAddOperation categories={data.categories} accounts={data.accounts} busy={busy}
+          onClose={() => setShowAdd(false)} onSubmit={createOp} />
+      )}
+    </OwnerScreen>
+  );
+}
+
+function AcctOverviewTab({ data, branches }: { data: AcctOverview; branches: any[] }) {
+  const { totals, cashflow } = data;
+  const maxNet = Math.max(1, ...cashflow.netByMonth.map((v) => Math.abs(v)));
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-3 md:grid-cols-4">
+        <OwnerKpi label="Остаток на счетах" value={money(totals.balanceTotal)} detail="все кассы и банки" tone="gold" icon={Wallet} />
+        <OwnerKpi label="Доходы (факт)" value={money(totals.income)} detail="за весь период" tone="emerald" icon={ArrowUpRight} />
+        <OwnerKpi label="Расходы (факт)" value={money(totals.expense)} detail="за весь период" tone="rose" icon={ArrowDownRight} />
+        <OwnerKpi label="Прибыль" value={money(totals.profit)} detail={`план: +${money(totals.plannedIn)} / −${money(totals.plannedOut)}`} tone={totals.profit >= 0 ? "emerald" : "rose"} icon={TrendingUp} />
+      </div>
+
+      <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+        <h3 className="font-black text-white">Счета и кассы</h3>
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          {data.accounts.map((a) => {
+            const Icon = accountIcon(a.kind);
+            return (
+              <div key={a.id} className="rounded-2xl border border-white/10 bg-[#161616] p-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold text-slate-400">{a.name}</p>
+                  <Icon className="h-4 w-4 text-[#C5A059]" />
+                </div>
+                <p className="mt-2 text-xl font-black text-white">{money(a.balance)}</p>
+                <p className="mt-1 text-[11px] text-slate-500">старт: {money(a.openingBalance)} · {a.currency}</p>
+              </div>
+            );
+          })}
+          {data.accounts.length === 0 && <p className="text-sm text-slate-500">Счета не заведены.</p>}
+        </div>
+      </section>
+
+      <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+        <h3 className="font-black text-white">Чистый денежный поток по месяцам</h3>
+        <div className="mt-4 flex items-end gap-3" style={{ height: 160 }}>
+          {cashflow.months.map((m, i) => {
+            const v = cashflow.netByMonth[i];
+            const h = Math.round((Math.abs(v) / maxNet) * 130);
+            return (
+              <div key={m} className="flex flex-1 flex-col items-center justify-end gap-2">
+                <span className={`text-[11px] font-bold ${v >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{money(v)}</span>
+                <div className={`w-full rounded-t-lg ${v >= 0 ? "bg-emerald-500/70" : "bg-rose-500/70"}`} style={{ height: `${Math.max(4, h)}px` }} />
+                <span className="text-[11px] text-slate-500">{monthLabel(m)}</span>
+              </div>
+            );
+          })}
+          {cashflow.months.length === 0 && <p className="text-sm text-slate-500">Нет фактических операций.</p>}
+        </div>
+      </section>
+
+      {branches && branches.length > 0 && (
+        <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+          <h3 className="font-black text-white">Выручка по филиалам</h3>
+          <div className="mt-4 space-y-3">
+            {branches.map((branch: any) => <BranchRow key={branch.branchId} branch={branch} />)}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function AcctCashflowTab({ data }: { data: AcctOverview }) {
+  const { cashflow } = data;
+  const { months } = cashflow;
+  if (months.length === 0) return <EmptyAcct text="Пока нет фактических операций для ДДС." />;
+  const Section = ({ title, rows, totals, tone }: { title: string; rows: AcctRow[]; totals: number[]; tone: "emerald" | "rose" }) => (
+    <>
+      <tr className="bg-white/[0.03]">
+        <td className="p-3 text-xs font-black uppercase tracking-wider text-slate-300">{title}</td>
+        {totals.map((t, i) => <td key={i} className="p-3 text-right text-xs font-black text-slate-300">{money(t)}</td>)}
+        <td className="p-3 text-right text-xs font-black text-slate-300">{money(totals.reduce((s, v) => s + v, 0))}</td>
+      </tr>
+      {rows.map((r) => (
+        <tr key={title + r.category} className="border-t border-white/5">
+          <td className="p-3 pl-6 text-sm text-slate-400">{r.category}</td>
+          {r.byMonth.map((v, i) => <td key={i} className={`p-3 text-right text-sm ${v ? (tone === "emerald" ? "text-emerald-300" : "text-rose-300") : "text-slate-600"}`}>{v ? money(v) : "—"}</td>)}
+          <td className="p-3 text-right text-sm font-bold text-white">{money(r.total)}</td>
+        </tr>
+      ))}
+    </>
+  );
+  return (
+    <section className="overflow-x-auto rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+      <h3 className="font-black text-white">Движение денежных средств (ДДС)</h3>
+      <table className="mt-4 w-full min-w-[640px] border-collapse">
+        <thead>
+          <tr className="text-left text-[11px] uppercase tracking-wider text-slate-500">
+            <th className="p-3">Статья</th>
+            {months.map((m) => <th key={m} className="p-3 text-right">{monthLabel(m)}</th>)}
+            <th className="p-3 text-right">Итого</th>
+          </tr>
+        </thead>
+        <tbody>
+          <Section title="Поступления" rows={cashflow.incomeRows} totals={cashflow.incomeByMonth} tone="emerald" />
+          <Section title="Выплаты" rows={cashflow.expenseRows} totals={cashflow.expenseByMonth} tone="rose" />
+          <tr className="border-t-2 border-[#C5A059]/30 bg-[#C5A059]/5">
+            <td className="p-3 text-sm font-black text-[#C5A059]">Чистый поток</td>
+            {cashflow.netByMonth.map((v, i) => <td key={i} className={`p-3 text-right text-sm font-black ${v >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{money(v)}</td>)}
+            <td className="p-3 text-right text-sm font-black text-white">{money(cashflow.netByMonth.reduce((s, v) => s + v, 0))}</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function AcctPnlTab({ data }: { data: AcctOverview }) {
+  if (data.pnl.length === 0) return <EmptyAcct text="Пока нет данных для отчёта о прибылях и убытках." />;
+  return (
+    <section className="overflow-x-auto rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+      <h3 className="font-black text-white">Отчёт о прибылях и убытках (ОПиУ)</h3>
+      <p className="mt-1 text-xs text-slate-500">Упрощённый P&L по денежным операциям.</p>
+      <table className="mt-4 w-full min-w-[560px] border-collapse">
+        <thead>
+          <tr className="text-left text-[11px] uppercase tracking-wider text-slate-500">
+            <th className="p-3">Месяц</th>
+            <th className="p-3 text-right">Выручка</th>
+            <th className="p-3 text-right">Расходы</th>
+            <th className="p-3 text-right">Прибыль</th>
+            <th className="p-3 text-right">Маржа</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.pnl.map((p) => (
+            <tr key={p.month} className="border-t border-white/5">
+              <td className="p-3 text-sm font-bold text-white">{monthLabel(p.month)}</td>
+              <td className="p-3 text-right text-sm text-emerald-300">{money(p.revenue)}</td>
+              <td className="p-3 text-right text-sm text-rose-300">{money(p.expense)}</td>
+              <td className={`p-3 text-right text-sm font-bold ${p.profit >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{money(p.profit)}</td>
+              <td className={`p-3 text-right text-sm font-bold ${p.margin >= 0 ? "text-slate-200" : "text-rose-400"}`}>{p.margin}%</td>
+            </tr>
+          ))}
+          <tr className="border-t-2 border-[#C5A059]/30 bg-[#C5A059]/5">
+            <td className="p-3 text-sm font-black text-[#C5A059]">Итого</td>
+            <td className="p-3 text-right text-sm font-black text-emerald-400">{money(data.totals.income)}</td>
+            <td className="p-3 text-right text-sm font-black text-rose-400">{money(data.totals.expense)}</td>
+            <td className="p-3 text-right text-sm font-black text-white">{money(data.totals.profit)}</td>
+            <td className="p-3 text-right text-sm font-black text-white">{data.totals.income > 0 ? Math.round((data.totals.profit / data.totals.income) * 100) : 0}%</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function AcctCalendarTab({ data }: { data: AcctOverview }) {
+  const { calendar, totals } = data;
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-3 md:grid-cols-3">
+        <OwnerKpi label="Плановые поступления" value={money(totals.plannedIn)} detail="ожидается" tone="emerald" icon={ArrowUpRight} />
+        <OwnerKpi label="Плановые выплаты" value={money(totals.plannedOut)} detail="к оплате" tone="rose" icon={ArrowDownRight} />
+        <OwnerKpi label="Прогноз остатка" value={money(totals.balanceTotal + totals.plannedIn - totals.plannedOut)} detail="после плановых" tone={(totals.balanceTotal + totals.plannedIn - totals.plannedOut) >= 0 ? "gold" : "rose"} icon={Wallet} />
+      </div>
+      <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+        <h3 className="font-black text-white">Платёжный календарь</h3>
+        {calendar.length === 0 ? (
+          <p className="mt-4 text-sm text-slate-500">Плановых операций нет.</p>
+        ) : (
+          <div className="mt-4 space-y-2">
+            {calendar.map((c) => (
+              <div key={c.id} className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-[#161616] p-3">
+                <div className="flex items-center gap-3">
+                  <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${c.type === "income" ? "bg-emerald-500/15 text-emerald-400" : "bg-rose-500/15 text-rose-400"}`}>
+                    {c.type === "income" ? <ArrowUpRight className="h-4 w-4" /> : <ArrowDownRight className="h-4 w-4" />}
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-white">{c.category}{c.counterparty ? ` · ${c.counterparty}` : ""}</p>
+                    <p className="text-[11px] text-slate-500">{new Date(c.date).toLocaleDateString("ru-RU")} · {c.account}{c.description ? ` · ${c.description}` : ""}</p>
+                  </div>
+                </div>
+                <p className={`text-sm font-black ${c.type === "income" ? "text-emerald-400" : "text-rose-400"}`}>{c.type === "income" ? "+" : "−"}{money(c.amount)}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function AcctOpsTab({ data, ops, onDelete, busy }: { data: AcctOverview; ops: AcctOp[]; onDelete: (id: string) => void; busy: boolean }) {
+  const [filter, setFilter] = useState<"all" | "actual" | "planned">("all");
+  const catName = (id: string | null) => data.categories.find((c) => c.id === id)?.name || "Без статьи";
+  const accName = (id: string | null) => data.accounts.find((a) => a.id === id)?.name || "—";
+  const rows = ops.filter((o) => filter === "all" || o.status === filter);
+  return (
+    <section className="overflow-x-auto rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h3 className="font-black text-white">Реестр операций</h3>
+        <div className="flex gap-2">
+          {(["all", "actual", "planned"] as const).map((f) => (
+            <button key={f} onClick={() => setFilter(f)}
+              className={`rounded-xl border px-3 py-1.5 text-xs font-bold transition ${filter === f ? "border-[#C5A059]/50 bg-[#C5A059]/15 text-[#C5A059]" : "border-white/10 text-slate-400 hover:text-white"}`}>
+              {f === "all" ? "Все" : f === "actual" ? "Факт" : "План"}
+            </button>
+          ))}
+        </div>
+      </div>
+      <table className="mt-4 w-full min-w-[680px] border-collapse">
+        <thead>
+          <tr className="text-left text-[11px] uppercase tracking-wider text-slate-500">
+            <th className="p-3">Дата</th>
+            <th className="p-3">Статья</th>
+            <th className="p-3">Счёт</th>
+            <th className="p-3">Контрагент</th>
+            <th className="p-3 text-right">Сумма</th>
+            <th className="p-3"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((o) => (
+            <tr key={o.id} className="border-t border-white/5">
+              <td className="p-3 text-sm text-slate-300">
+                {new Date(o.date).toLocaleDateString("ru-RU")}
+                {o.status === "planned" && <span className="ml-2 rounded bg-amber-400/15 px-1.5 py-0.5 text-[10px] font-bold text-amber-300">план</span>}
+              </td>
+              <td className="p-3 text-sm text-white">{catName(o.categoryId)}{o.description ? <span className="block text-[11px] text-slate-500">{o.description}</span> : null}</td>
+              <td className="p-3 text-sm text-slate-400">{accName(o.accountId)}</td>
+              <td className="p-3 text-sm text-slate-400">{o.counterparty || "—"}</td>
+              <td className={`p-3 text-right text-sm font-black ${o.type === "income" ? "text-emerald-400" : "text-rose-400"}`}>{o.type === "income" ? "+" : "−"}{money(o.amount)}</td>
+              <td className="p-3 text-right">
+                <button disabled={busy} onClick={() => onDelete(o.id)} className="rounded-lg p-1.5 text-slate-500 transition hover:bg-rose-500/10 hover:text-rose-400" title="Удалить">
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </td>
+            </tr>
+          ))}
+          {rows.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-sm text-slate-500">Операций нет.</td></tr>}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function AcctRequestsTab({ data, requests, onDecide, busy }: {
+  data: AcctOverview; requests: any[]; onDecide: (id: string, action: "approve" | "reject", opts?: { comment?: string; accountId?: string }) => void; busy: boolean;
+}) {
+  const [rejectId, setRejectId] = useState<string | null>(null);
+  const [comment, setComment] = useState("");
+  const defaultAccount = data.accounts[0]?.id || "";
+  const [acctFor, setAcctFor] = useState<Record<string, string>>({});
+  const pending = requests.filter((r) => r.status === "pending");
+  const decided = requests.filter((r) => r.status !== "pending");
+
+  const Card = ({ r, actionable }: { key?: React.Key; r: any; actionable: boolean }) => (
+    <div className="rounded-2xl border border-white/10 bg-[#161616] p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-base font-black text-white">{money(r.amount)}</p>
+          <p className="text-sm text-slate-300">{r.description || "Без описания"}</p>
+          <p className="mt-1 text-[11px] text-slate-500">
+            {r.requestedByName || "Управляющий"} · {new Date(r.createdAt).toLocaleDateString("ru-RU")}
+          </p>
+          {r.status === "approved" && <p className="mt-1 text-[11px] text-emerald-400">Одобрено{r.decidedBy ? ` · ${r.decidedBy}` : ""} → расход списан со счёта</p>}
+          {r.status === "rejected" && <p className="mt-1 text-[11px] text-rose-400">Отклонено{r.decisionComment ? ` · ${r.decisionComment}` : ""}</p>}
+        </div>
+        {!actionable && (
+          <span className={`rounded-lg px-2 py-1 text-[11px] font-bold ${r.status === "approved" ? "bg-emerald-500/15 text-emerald-300" : "bg-rose-500/15 text-rose-300"}`}>
+            {r.status === "approved" ? "Одобрено" : "Отклонено"}
+          </span>
+        )}
+      </div>
+      {actionable && (
+        rejectId === r.id ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <input autoFocus placeholder="Причина отказа (необязательно)" value={comment} onChange={(e) => setComment(e.target.value)}
+              className="flex-1 rounded-xl border border-white/10 bg-[#0e0e0e] px-3 py-2 text-sm text-white outline-none focus:border-rose-500/50" />
+            <button disabled={busy} onClick={() => { onDecide(r.id, "reject", { comment }); setRejectId(null); setComment(""); }}
+              className="rounded-xl bg-rose-500 px-3 py-2 text-sm font-bold text-white hover:bg-rose-600 disabled:opacity-50">Отклонить</button>
+            <button onClick={() => { setRejectId(null); setComment(""); }} className="rounded-xl border border-white/10 px-3 py-2 text-sm text-slate-400">Отмена</button>
+          </div>
+        ) : (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <label className="text-[11px] text-slate-500">Списать со счёта:</label>
+            <select value={acctFor[r.id] ?? defaultAccount} onChange={(e) => setAcctFor((m) => ({ ...m, [r.id]: e.target.value }))}
+              className="rounded-xl border border-white/10 bg-[#0e0e0e] px-3 py-2 text-sm text-white outline-none focus:border-[#C5A059]/50">
+              {data.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+            <button disabled={busy} onClick={() => onDecide(r.id, "approve", { accountId: acctFor[r.id] ?? defaultAccount })}
+              className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2 text-sm font-black text-white transition hover:bg-emerald-600 disabled:opacity-50">
+              <CheckCircle className="h-4 w-4" /> Одобрить
+            </button>
+            <button disabled={busy} onClick={() => { setRejectId(r.id); setComment(""); }}
+              className="inline-flex items-center gap-2 rounded-xl border border-rose-500/40 px-4 py-2 text-sm font-bold text-rose-300 transition hover:bg-rose-500/10 disabled:opacity-50">
+              <X className="h-4 w-4" /> Отклонить
+            </button>
+          </div>
+        )
+      )}
+    </div>
+  );
+
+  return (
+    <div className="space-y-5">
+      <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+        <div className="flex items-center gap-2">
+          <Send className="h-5 w-5 text-[#C5A059]" />
+          <h3 className="font-black text-white">Заявки на расход от филиалов</h3>
+          {pending.length > 0 && <span className="rounded-full bg-rose-500 px-2 py-0.5 text-[11px] font-black text-white">{pending.length}</span>}
+        </div>
+        <p className="mt-1 text-xs text-slate-500">Управляющие запрашивают средства — подтвердите или отклоните. При одобрении создаётся фактический расход и списывается с выбранного счёта.</p>
+        <div className="mt-4 space-y-3">
+          {pending.length === 0 && <p className="text-sm text-slate-500">Новых заявок нет.</p>}
+          {pending.map((r) => <Card key={r.id} r={r} actionable />)}
+        </div>
+      </section>
+
+      {decided.length > 0 && (
+        <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+          <h3 className="font-black text-white">История заявок</h3>
+          <div className="mt-4 space-y-3">
+            {decided.map((r) => <Card key={r.id} r={r} actionable={false} />)}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function AcctAddOperation({ categories, accounts, busy, onClose, onSubmit }: {
+  categories: AcctOverview["categories"]; accounts: AcctOverview["accounts"]; busy: boolean;
+  onClose: () => void; onSubmit: (p: any) => void;
+}) {
+  const [type, setType] = useState<"income" | "expense">("expense");
+  const [status, setStatus] = useState<"actual" | "planned">("actual");
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [amount, setAmount] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [accountId, setAccountId] = useState(accounts[0]?.id || "");
+  const [counterparty, setCounterparty] = useState("");
+  const [description, setDescription] = useState("");
+  const cats = categories.filter((c) => c.kind === type);
+
+  const submit = () => {
+    const a = Number(amount);
+    if (!a || a <= 0) return;
+    onSubmit({ type, status, date, amount: a, categoryId: categoryId || cats[0]?.id || null, accountId: accountId || null, counterparty, description });
+  };
+  const field = "w-full rounded-xl border border-white/10 bg-[#0e0e0e] px-3 py-2 text-sm text-white outline-none focus:border-[#C5A059]/50";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-3xl border border-white/10 bg-[#161616] p-5" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h3 className="font-black text-white">Новая операция</h3>
+          <button onClick={onClose} className="rounded-lg p-1 text-slate-500 hover:text-white"><X className="h-5 w-5" /></button>
+        </div>
+        <div className="mt-4 space-y-3">
+          <div className="grid grid-cols-2 gap-2">
+            {(["expense", "income"] as const).map((t) => (
+              <button key={t} onClick={() => { setType(t); setCategoryId(""); }}
+                className={`rounded-xl border px-3 py-2 text-sm font-bold transition ${type === t ? (t === "income" ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-300" : "border-rose-500/50 bg-rose-500/15 text-rose-300") : "border-white/10 text-slate-400"}`}>
+                {t === "income" ? "Доход" : "Расход"}
+              </button>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <select value={status} onChange={(e) => setStatus(e.target.value as any)} className={field}>
+              <option value="actual">Факт</option>
+              <option value="planned">План</option>
+            </select>
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={field} />
+          </div>
+          <input type="number" inputMode="numeric" placeholder="Сумма, ₸" value={amount} onChange={(e) => setAmount(e.target.value)} className={field} />
+          <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className={field}>
+            <option value="">— Статья —</option>
+            {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <select value={accountId} onChange={(e) => setAccountId(e.target.value)} className={field}>
+            <option value="">— Счёт —</option>
+            {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+          <input placeholder="Контрагент (необязательно)" value={counterparty} onChange={(e) => setCounterparty(e.target.value)} className={field} />
+          <input placeholder="Описание (необязательно)" value={description} onChange={(e) => setDescription(e.target.value)} className={field} />
+          <button disabled={busy || !amount} onClick={submit}
+            className="w-full rounded-2xl bg-[#C5A059] px-4 py-2.5 text-sm font-black text-black transition hover:bg-[#d4b06a] disabled:opacity-50">
+            {busy ? "Сохранение…" : "Добавить операцию"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EmptyAcct({ text }: { text: string }) {
+  return <div className="rounded-[2rem] border border-white/10 bg-[#121212] p-8 text-center text-sm text-slate-500">{text}</div>;
 }
 
 type CompFormState = {

@@ -51,7 +51,16 @@ const demoUsers: MvpSession[] = [
 
 const supabaseUrl = process.env.SUPABASE_URL?.replace(/\/$/, "");
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const supabaseEnabled = Boolean(supabaseUrl && supabaseKey);
+// Считаем ключ "ненастроенным", если он пустой или остался плейсхолдером из .env.example.
+// Иначе непустая заглушка (напр. "PASTE...") включала бы Supabase, и запись падала бы
+// с 401 — а без обработки ошибок это подвешивало бы запрос (кнопка «Сохранение...»).
+const isPlaceholder = (value?: string) => {
+  if (!value) return true;
+  const v = value.trim();
+  if (v.length < 20) return true; // реальный service_role JWT длинный
+  return /^(paste|your|changeme|placeholder|<|xxx)/i.test(v);
+};
+const supabaseEnabled = Boolean(supabaseUrl && supabaseKey && !isPlaceholder(supabaseKey));
 
 function getSession(req: express.Request): MvpSession {
   const roleHeader = String(req.headers["x-demo-role"] || "owner");
@@ -420,6 +429,19 @@ async function dbBootstrap(session: MvpSession) {
 }
 
 export function registerMvpApi(app: express.Express) {
+  // Оборачивает async-обработчик: при отклонённом промисе всегда отправляет JSON-ответ,
+  // а не оставляет запрос висеть. Express 4 не ловит rejection из async-хендлеров
+  // автоматически — без этого ошибка Supabase подвешивала бы фронт (кнопка «Сохранение...»).
+  const ah = (fn: (req: express.Request, res: express.Response) => Promise<unknown>) =>
+    (req: express.Request, res: express.Response) => {
+      Promise.resolve(fn(req, res)).catch((error: any) => {
+        console.error("[mvpApi] Ошибка обработчика:", error?.message || error);
+        if (!res.headersSent) {
+          res.status(500).json({ error: error?.message || "Внутренняя ошибка сервера" });
+        }
+      });
+    };
+
   app.get("/api/mvp/session/demo-users", (_req, res) => {
     res.json({ users: demoUsers });
   });
@@ -613,7 +635,7 @@ export function registerMvpApi(app: express.Express) {
     }
   });
 
-  app.post("/api/mvp/students", async (req, res) => {
+  app.post("/api/mvp/students", ah(async (req, res) => {
     const session = getSession(req);
     const payload = req.body || {};
     if (!payload.name || !payload.branchId) {
@@ -645,7 +667,7 @@ export function registerMvpApi(app: express.Express) {
     });
     await logStatusEvent(session, inserted[0]?.id, inserted[0]?.status, null, payload.branchId);
     res.status(201).json({ student: inserted[0] });
-  });
+  }));
 
   app.patch("/api/mvp/students/:id", async (req, res) => {
     const session = getSession(req);
@@ -2064,6 +2086,332 @@ export function registerMvpApi(app: express.Express) {
       });
     } catch (error: any) {
       res.status(400).json({ error: error.message || "Не удалось загрузить сводку реакций" });
+    }
+  });
+
+  // ===================== БУХГАЛТЕРИЯ (управленческий учёт) =====================
+  // Раздел доступен только Владельцу сети.
+  const ACCOUNTING_TYPES = ["income", "expense", "transfer"];
+  const monthKey = (d: string) => String(d).slice(0, 7); // YYYY-MM
+
+  // Сводка: счета с остатками, ДДС, ОПиУ, платёжный календарь.
+  app.get("/api/mvp/accounting/overview", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "Раздел доступен только владельцу" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const orgFilter = `organization_id=eq.${session.organizationId}`;
+    try {
+      const [accounts, categories, txns] = await Promise.all([
+        supabaseFetch<any[]>("finance_accounts", `select=*&${orgFilter}&order=sort.asc`),
+        supabaseFetch<any[]>("finance_categories", `select=*&${orgFilter}&order=kind.asc,sort.asc`),
+        supabaseFetch<any[]>("finance_transactions", `select=*&${orgFilter}&type=in.(income,expense)&order=operation_date.asc`),
+      ]);
+
+      const actual = txns.filter((t) => (t.status || "actual") === "actual");
+      const planned = txns.filter((t) => t.status === "planned");
+      const catName = (id: string) => categories.find((c) => c.id === id)?.name || "Без статьи";
+      const accName = (id: string) => accounts.find((a) => a.id === id)?.name || "—";
+
+      // Остатки по счетам
+      const accountsOut = accounts.map((a) => {
+        const inc = actual.filter((t) => t.account_id === a.id && t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
+        const exp = actual.filter((t) => t.account_id === a.id && t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
+        return {
+          id: a.id, name: a.name, kind: a.kind, currency: a.currency,
+          openingBalance: Number(a.opening_balance), balance: Number(a.opening_balance) + inc - exp,
+        };
+      });
+
+      // Месяцы (диапазон по фактическим операциям)
+      const months = Array.from(new Set(actual.map((t) => monthKey(t.operation_date)))).sort();
+
+      // ДДС: строки по статьям (доход/расход) с разбивкой по месяцам
+      const buildRows = (kind: "income" | "expense") => {
+        const cats = Array.from(new Set(actual.filter((t) => t.type === kind).map((t) => t.category_id)));
+        return cats.map((cid) => {
+          const byMonth = months.map((m) =>
+            actual.filter((t) => t.type === kind && t.category_id === cid && monthKey(t.operation_date) === m)
+              .reduce((s, t) => s + Number(t.amount), 0));
+          return { category: catName(cid), byMonth, total: byMonth.reduce((s, v) => s + v, 0) };
+        }).sort((a, b) => b.total - a.total);
+      };
+      const incomeRows = buildRows("income");
+      const expenseRows = buildRows("expense");
+      const incomeByMonth = months.map((m) => actual.filter((t) => t.type === "income" && monthKey(t.operation_date) === m).reduce((s, t) => s + Number(t.amount), 0));
+      const expenseByMonth = months.map((m) => actual.filter((t) => t.type === "expense" && monthKey(t.operation_date) === m).reduce((s, t) => s + Number(t.amount), 0));
+      const netByMonth = months.map((_, i) => incomeByMonth[i] - expenseByMonth[i]);
+
+      // ОПиУ (P&L) — упрощённо из денежных операций
+      const pnl = months.map((m, i) => ({
+        month: m, revenue: incomeByMonth[i], expense: expenseByMonth[i], profit: netByMonth[i],
+        margin: incomeByMonth[i] > 0 ? Math.round((netByMonth[i] / incomeByMonth[i]) * 100) : 0,
+      }));
+
+      // Платёжный календарь (плановые)
+      const calendar = planned
+        .map((t) => ({
+          id: t.id, date: t.operation_date, type: t.type, amount: Number(t.amount),
+          category: catName(t.category_id), account: accName(t.account_id),
+          counterparty: t.counterparty || null, description: t.description || null,
+        }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+      const incomeTotal = incomeByMonth.reduce((s, v) => s + v, 0);
+      const expenseTotal = expenseByMonth.reduce((s, v) => s + v, 0);
+      const plannedIn = planned.filter((t) => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
+      const plannedOut = planned.filter((t) => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
+
+      res.json({
+        accounts: accountsOut,
+        categories: categories.map((c) => ({ id: c.id, name: c.name, kind: c.kind })),
+        cashflow: { months, incomeRows, expenseRows, incomeByMonth, expenseByMonth, netByMonth },
+        pnl,
+        calendar,
+        totals: {
+          income: incomeTotal, expense: expenseTotal, profit: incomeTotal - expenseTotal,
+          plannedIn, plannedOut,
+          balanceTotal: accountsOut.reduce((s, a) => s + a.balance, 0),
+        },
+      });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось загрузить бухгалтерию" });
+    }
+  });
+
+  // Лента операций
+  app.get("/api/mvp/accounting/operations", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "Раздел доступен только владельцу" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const orgFilter = `organization_id=eq.${session.organizationId}`;
+    const { status, from, to } = req.query as Record<string, string>;
+    const filters = [`select=*`, orgFilter, "type=in.(income,expense)", "order=operation_date.desc"];
+    if (status === "actual" || status === "planned") filters.push(`status=eq.${status}`);
+    if (from) filters.push(`operation_date=gte.${from}`);
+    if (to) filters.push(`operation_date=lte.${to}`);
+    filters.push("limit=1000");
+    try {
+      const rows = await supabaseFetch<any[]>("finance_transactions", filters.join("&"));
+      res.json({ operations: rows.map((t) => ({
+        id: t.id, type: t.type, status: t.status || "actual", amount: Number(t.amount),
+        date: t.operation_date, categoryId: t.category_id, accountId: t.account_id,
+        counterparty: t.counterparty || null, description: t.description || null,
+      })) });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось загрузить операции" });
+    }
+  });
+
+  // Создать операцию (доход/расход, факт или план)
+  app.post("/api/mvp/accounting/operations", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "Раздел доступен только владельцу" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const p = req.body || {};
+    const type = ACCOUNTING_TYPES.includes(p.type) ? p.type : "expense";
+    const status = p.status === "planned" ? "planned" : "actual";
+    const amount = Number(p.amount);
+    if (!amount || amount <= 0) return res.status(400).json({ error: "Укажите сумму больше нуля" });
+    try {
+      const inserted = await supabaseFetch<any[]>("finance_transactions", "", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: session.organizationId,
+          branch_id: p.branchId || session.dbBranchId || null,
+          account_id: p.accountId || null,
+          category_id: p.categoryId || null,
+          amount, type, status,
+          operation_date: p.date || new Date().toISOString().slice(0, 10),
+          counterparty: p.counterparty || null,
+          description: p.description || null,
+        }),
+      });
+      res.status(201).json({ operation: inserted[0] });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось создать операцию" });
+    }
+  });
+
+  // Изменить операцию
+  app.patch("/api/mvp/accounting/operations/:id", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "Раздел доступен только владельцу" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const p = req.body || {};
+    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (p.amount !== undefined) patch.amount = Number(p.amount);
+    if (p.type !== undefined && ACCOUNTING_TYPES.includes(p.type)) patch.type = p.type;
+    if (p.status !== undefined) patch.status = p.status === "planned" ? "planned" : "actual";
+    if (p.date !== undefined) patch.operation_date = p.date;
+    if (p.categoryId !== undefined) patch.category_id = p.categoryId || null;
+    if (p.accountId !== undefined) patch.account_id = p.accountId || null;
+    if (p.counterparty !== undefined) patch.counterparty = p.counterparty || null;
+    if (p.description !== undefined) patch.description = p.description || null;
+    try {
+      const rows = await supabaseFetch<any[]>("finance_transactions", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, {
+        method: "PATCH", body: JSON.stringify(patch),
+      });
+      res.json({ operation: rows[0] });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось обновить операцию" });
+    }
+  });
+
+  // Удалить операцию
+  app.delete("/api/mvp/accounting/operations/:id", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "Раздел доступен только владельцу" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      await supabaseFetch("finance_transactions", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      res.json({ ok: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось удалить операцию" });
+    }
+  });
+
+  // Создать счёт/кассу
+  app.post("/api/mvp/accounting/accounts", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "Раздел доступен только владельцу" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const p = req.body || {};
+    if (!String(p.name || "").trim()) return res.status(400).json({ error: "Укажите название счёта" });
+    try {
+      const inserted = await supabaseFetch<any[]>("finance_accounts", "", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: session.organizationId,
+          branch_id: p.branchId || null,
+          name: String(p.name).trim(),
+          kind: ["cash", "bank", "card"].includes(p.kind) ? p.kind : "cash",
+          currency: p.currency || "KZT",
+          opening_balance: Number(p.openingBalance) || 0,
+          sort: Number(p.sort) || 99,
+        }),
+      });
+      res.status(201).json({ account: inserted[0] });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось создать счёт" });
+    }
+  });
+
+  // ---- Заявки на расход (управляющий запрашивает — владелец подтверждает) ----
+  const mapExpenseReq = (r: any) => ({
+    id: r.id, branchId: r.branch_id, requestedByName: r.requested_by_name,
+    amount: Number(r.amount), categoryId: r.category_id, description: r.description,
+    status: r.status, decidedBy: r.decided_by, decidedAt: r.decided_at,
+    decisionComment: r.decision_comment, operationId: r.operation_id, createdAt: r.created_at,
+  });
+
+  // Создать заявку (управляющий филиалом или владелец)
+  app.post("/api/mvp/accounting/expense-requests", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "branch_manager" && session.role !== "owner") {
+      return res.status(403).json({ error: "Недостаточно прав" });
+    }
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const p = req.body || {};
+    const amount = Number(p.amount);
+    if (!amount || amount <= 0) return res.status(400).json({ error: "Укажите сумму больше нуля" });
+    try {
+      const inserted = await supabaseFetch<any[]>("finance_expense_requests", "", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: session.organizationId,
+          branch_id: p.branchId || session.dbBranchId || null,
+          requested_by: authorId(session),
+          requested_by_name: session.fullName || session.role,
+          amount,
+          category_id: p.categoryId || null,
+          description: p.description || null,
+          status: "pending",
+        }),
+      });
+      res.status(201).json({ request: mapExpenseReq(inserted[0]) });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось создать заявку" });
+    }
+  });
+
+  // Список заявок (владелец — все по сети; управляющий — только свой филиал)
+  app.get("/api/mvp/accounting/expense-requests", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "branch_manager" && session.role !== "owner") {
+      return res.status(403).json({ error: "Недостаточно прав" });
+    }
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const filters = [`select=*`, `organization_id=eq.${session.organizationId}`, "order=created_at.desc", "limit=500"];
+    if (session.role === "branch_manager") filters.push(`branch_id=eq.${session.dbBranchId}`);
+    if (req.query.status) filters.push(`status=eq.${req.query.status}`);
+    try {
+      const rows = await supabaseFetch<any[]>("finance_expense_requests", filters.join("&"));
+      res.json({ requests: rows.map(mapExpenseReq) });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось загрузить заявки" });
+    }
+  });
+
+  // Одобрить заявку (только владелец) — создаёт плановую расходную операцию
+  app.post("/api/mvp/accounting/expense-requests/:id/approve", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "Подтверждать может только владелец" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const p = req.body || {};
+    try {
+      const found = await supabaseFetch<any[]>("finance_expense_requests", `select=*&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`);
+      const reqRow = found[0];
+      if (!reqRow) return res.status(404).json({ error: "Заявка не найдена" });
+      if (reqRow.status !== "pending") return res.status(400).json({ error: "Заявка уже обработана" });
+
+      const categoryId = p.categoryId || reqRow.category_id || null;
+      // Фактическая расходная операция — списание со счёта
+      const op = await supabaseFetch<any[]>("finance_transactions", "", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: session.organizationId,
+          branch_id: reqRow.branch_id,
+          account_id: p.accountId || null,
+          category_id: categoryId,
+          amount: reqRow.amount,
+          type: "expense",
+          status: "actual",
+          operation_date: p.date || new Date().toISOString().slice(0, 10),
+          description: reqRow.description ? `Заявка: ${reqRow.description}` : "Одобренная заявка на расход",
+        }),
+      });
+      const rows = await supabaseFetch<any[]>("finance_expense_requests", `id=eq.${req.params.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: "approved", decided_by: session.fullName || "owner",
+          decided_at: new Date().toISOString(), decision_comment: p.comment || null,
+          category_id: categoryId, operation_id: op[0]?.id || null,
+        }),
+      });
+      res.json({ request: mapExpenseReq(rows[0]) });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось одобрить заявку" });
+    }
+  });
+
+  // Отклонить заявку (только владелец)
+  app.post("/api/mvp/accounting/expense-requests/:id/reject", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "Отклонять может только владелец" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const p = req.body || {};
+    try {
+      const rows = await supabaseFetch<any[]>("finance_expense_requests", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}&status=eq.pending`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: "rejected", decided_by: session.fullName || "owner",
+          decided_at: new Date().toISOString(), decision_comment: p.comment || null,
+        }),
+      });
+      if (!rows[0]) return res.status(400).json({ error: "Заявка не найдена или уже обработана" });
+      res.json({ request: mapExpenseReq(rows[0]) });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось отклонить заявку" });
     }
   });
 }

@@ -9,6 +9,7 @@ import fs from 'fs';
 import dotenv from 'dotenv';
 import { registerMvpApi } from './server/mvpApi';
 import { registerGeminiApi } from './server/geminiApi';
+import { registerMagomedApi } from './server/magomedApi';
 
 // Load environment variables in development
 if (process.env.NODE_ENV !== 'production') {
@@ -19,6 +20,7 @@ const app = express();
 app.use(express.json());
 registerMvpApi(app);
 registerGeminiApi(app);
+registerMagomedApi(app);
 
 // Configure client routing
 const isProduction = process.env.NODE_ENV === 'production';

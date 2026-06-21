@@ -1,0 +1,242 @@
+/**
+ * «Магомед» — плавающий ИИ-чат-виджет CRM «Эхо Гор».
+ *
+ * Постоянная кнопка в правом нижнем углу; по клику разворачивается панель чата.
+ * Историю диалога шлёт на POST /api/gemini/magomed-chat вместе с заголовком
+ * x-demo-role (роль активного кабинета) — бэкенд скоупит данные по роли.
+ *
+ * Деградация: при 503 (нет GEMINI_API_KEY) показывает понятное сообщение,
+ * а не падает — как остальные AI-кнопки приложения.
+ */
+import { useEffect, useRef, useState } from "react";
+import { MessageCircle, Send, X, Sparkles, Loader2 } from "lucide-react";
+
+type ChatMessage = { role: "user" | "assistant"; content: string };
+
+type Props = {
+  /** Значение для заголовка x-demo-role (owner | branch_manager | admin | teacher). */
+  roleHeader: string;
+  /** Человекочитаемое имя текущей роли — для приветствия. */
+  roleLabel?: string;
+};
+
+const GREETING =
+  "Мир вашему дому. Я — **Магомед**, помощник по базе «Эхо Гор». " +
+  "Найду ученика, покажу карточку или сводку по оплатам. Чем могу помочь?";
+
+const SUGGESTIONS = [
+  "Сводка по оплатам за сегодня",
+  "Найди ученика",
+  "Сколько активных учеников?",
+];
+
+// Минимальный рендер: **жирный** и переносы строк. Без внешних зависимостей.
+function renderText(text: string) {
+  return text.split("\n").map((line, i) => (
+    <span key={i}>
+      {i > 0 && <br />}
+      {line.split(/(\*\*[^*]+\*\*)/g).map((part, j) =>
+        part.startsWith("**") && part.endsWith("**") ? (
+          <strong key={j} className="text-[#E8C887] font-semibold">
+            {part.slice(2, -2)}
+          </strong>
+        ) : (
+          <span key={j}>{part}</span>
+        )
+      )}
+    </span>
+  ));
+}
+
+export function MagomedAssistant({ roleHeader, roleLabel }: Props) {
+  const [open, setOpen] = useState(false);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    { role: "assistant", content: GREETING },
+  ]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages, loading, open]);
+
+  useEffect(() => {
+    if (open) inputRef.current?.focus();
+  }, [open]);
+
+  async function send(text: string) {
+    const trimmed = text.trim();
+    if (!trimmed || loading) return;
+
+    const next: ChatMessage[] = [...messages, { role: "user", content: trimmed }];
+    setMessages(next);
+    setInput("");
+    setLoading(true);
+
+    try {
+      const response = await fetch("/api/gemini/magomed-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-demo-role": roleHeader },
+        // Шлём только реальный диалог (без вступительного приветствия).
+        body: JSON.stringify({
+          role: roleHeader,
+          messages: next.filter((m, i) => !(i === 0 && m.role === "assistant")),
+        }),
+      });
+
+      if (response.status === 503) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content:
+              "ИИ-помощник пока не подключён: не задан ключ **GEMINI_API_KEY** на сервере. " +
+              "Добавьте ключ в .env и перезапустите сервер.",
+          },
+        ]);
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: data.reply || "Пустой ответ." },
+      ]);
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "Не удалось связаться с помощником. Проверьте соединение и попробуйте ещё раз.",
+        },
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <>
+      {/* Плавающая кнопка вызова */}
+      {!open && (
+        <button
+          onClick={() => setOpen(true)}
+          aria-label="Открыть помощника Магомеда"
+          className="fixed bottom-5 right-5 z-[900] flex items-center gap-2 rounded-full bg-gradient-to-br from-[#C5A059] to-[#9C784D] px-4 py-3 text-black shadow-[0_8px_30px_rgba(197,160,89,0.4)] transition hover:scale-105 active:scale-95 cursor-pointer"
+        >
+          <MessageCircle size={20} strokeWidth={2.2} />
+          <span className="hidden sm:block text-sm font-bold">Магомед</span>
+        </button>
+      )}
+
+      {/* Панель чата */}
+      {open && (
+        <div className="fixed bottom-0 right-0 z-[900] flex h-[70vh] max-h-[560px] w-full flex-col overflow-hidden border border-[#C5A059]/30 bg-[#0C0E14] shadow-2xl sm:bottom-5 sm:right-5 sm:h-[560px] sm:w-[380px] sm:rounded-2xl">
+          {/* Шапка */}
+          <div className="flex items-center justify-between border-b border-white/10 bg-gradient-to-r from-[#1A140A] to-[#0C0E14] px-4 py-3">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#C5A059] to-[#9C784D] text-black">
+                <Sparkles size={18} />
+              </div>
+              <div className="leading-tight">
+                <div className="text-sm font-bold text-white">Магомед</div>
+                <div className="text-[11px] text-[#C5A059]">
+                  Помощник CRM{roleLabel ? ` · ${roleLabel}` : ""}
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => setOpen(false)}
+              aria-label="Свернуть"
+              className="rounded-lg p-1.5 text-slate-400 transition hover:bg-white/10 hover:text-white cursor-pointer"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          {/* Лента сообщений */}
+          <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+            {messages.map((m, i) => (
+              <div
+                key={i}
+                className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
+              >
+                <div
+                  className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-[13px] leading-relaxed ${
+                    m.role === "user"
+                      ? "rounded-br-sm bg-[#C5A059] text-black"
+                      : "rounded-bl-sm bg-white/5 text-slate-200 border border-white/5"
+                  }`}
+                >
+                  {renderText(m.content)}
+                </div>
+              </div>
+            ))}
+
+            {loading && (
+              <div className="flex justify-start">
+                <div className="flex items-center gap-2 rounded-2xl rounded-bl-sm border border-white/5 bg-white/5 px-3.5 py-2 text-[13px] text-slate-400">
+                  <Loader2 size={14} className="animate-spin" />
+                  Магомед смотрит в базу…
+                </div>
+              </div>
+            )}
+
+            {/* Быстрые подсказки — только в начале диалога */}
+            {messages.length === 1 && !loading && (
+              <div className="flex flex-wrap gap-2 pt-1">
+                {SUGGESTIONS.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => send(s)}
+                    className="rounded-full border border-[#C5A059]/30 bg-[#C5A059]/10 px-3 py-1.5 text-[12px] text-[#E8C887] transition hover:bg-[#C5A059]/20 cursor-pointer"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Поле ввода */}
+          <div className="border-t border-white/10 bg-[#0C0E14] p-3">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                send(input);
+              }}
+              className="flex items-center gap-2"
+            >
+              <input
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Спросите Магомеда…"
+                disabled={loading}
+                className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3.5 py-2.5 text-[13px] text-white placeholder:text-slate-500 outline-none focus:border-[#C5A059]/50 disabled:opacity-60"
+              />
+              <button
+                type="submit"
+                disabled={loading || !input.trim()}
+                aria-label="Отправить"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#C5A059] to-[#9C784D] text-black transition hover:scale-105 disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
+              >
+                <Send size={17} />
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+export default MagomedAssistant;
