@@ -31,24 +31,47 @@
   color: #1f2937 !important;
 }
 
+/* Tier 1 — page chrome and the deepest container backgrounds become the
+   light page surface. */
 :root.day-theme .day-theme-app header,
 :root.day-theme .day-theme-app aside,
 :root.day-theme .day-theme-app main,
 :root.day-theme .day-theme-app footer,
 :root.day-theme .day-theme-app [class*="bg-[#080808]"],
-:root.day-theme .day-theme-app [class*="bg-[#0A0A0A]"],
-:root.day-theme .day-theme-app [class*="bg-[#0F0F0F]"],
-:root.day-theme .day-theme-app [class*="bg-[#121212]"] {
+:root.day-theme .day-theme-app [class*="bg-[#0A0A0A]"] {
   background-color: #f4f7fb !important;
 }
 
+/* Tier 2 — every solid dark CARD/panel surface becomes a clean white card
+   with a soft border and shadow so it reads against the light page. Covers
+   the full range of near-black hexes used across the app (KPI cards #141414,
+   schedule + AI panels #111, charts/panels #121212, etc.). */
+:root.day-theme .day-theme-app [class*="bg-[#0c0c0c]"],
+:root.day-theme .day-theme-app [class*="bg-[#0C0C0C]"],
+:root.day-theme .day-theme-app [class*="bg-[#0e0e0e]"],
+:root.day-theme .day-theme-app [class*="bg-[#0F0F0F]"],
+:root.day-theme .day-theme-app [class*="bg-[#111]"],
+:root.day-theme .day-theme-app [class*="bg-[#121212]"],
+:root.day-theme .day-theme-app [class*="bg-[#141414]"],
 :root.day-theme .day-theme-app [class*="bg-[#161616]"],
 :root.day-theme .day-theme-app [class*="bg-[#171717]"],
+:root.day-theme .day-theme-app [class*="bg-[#181818]"],
 :root.day-theme .day-theme-app [class*="bg-[#1A1A1A]"],
+:root.day-theme .day-theme-app [class*="bg-[#1a1a1a]"],
+:root.day-theme .day-theme-app [class*="bg-[#1b1b1b]"],
+:root.day-theme .day-theme-app [class*="bg-[#11121A]"],
+:root.day-theme .day-theme-app [class*="bg-[#12141c]"] {
+  background-color: #ffffff !important;
+  border-color: rgba(15, 23, 42, 0.08) !important;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06) !important;
+}
+
+/* Tier 3 — subtle translucent overlays (bg-black/NN, bg-white/NN) become a
+   light tint so nested boxes still read as gentle insets on white cards. */
 :root.day-theme .day-theme-app [class*="bg-black"],
 :root.day-theme .day-theme-app [class*="bg-white/"],
 :root.day-theme .day-theme-app [class*="bg-white\\["] {
-  background-color: rgba(255, 255, 255, 0.88) !important;
+  background-color: #eef2f7 !important;
 }
 
 :root.day-theme .day-theme-app [class*="from-[#"],
