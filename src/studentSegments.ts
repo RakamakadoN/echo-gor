@@ -1,0 +1,410 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * studentSegments — чистые хелперы для раздела «Ученики».
+ * Реализуют ТЗ: расчёт продолжительности обучения, LTV-сегментацию,
+ * автоматические статусы, цветовые обозначения строк и предикаты
+ * быстрых сегментов / фильтров. Никаких сайд-эффектов — только данные.
+ */
+import { Student, Subscription } from "./types";
+
+/* ============================ Время / даты ============================ */
+
+const MS_DAY = 24 * 60 * 60 * 1000;
+
+const parseDate = (value?: string | null): Date | null => {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
+/** Полных месяцев между двумя датами (>= 0). */
+const monthsBetween = (from: Date, to: Date): number => {
+  let months =
+    (to.getFullYear() - from.getFullYear()) * 12 +
+    (to.getMonth() - from.getMonth());
+  if (to.getDate() < from.getDate()) months -= 1;
+  return Math.max(0, months);
+};
+
+/**
+ * Продолжительность обучения в месяцах.
+ * Берём дату регистрации (createdAt); если её нет — самую раннюю дату
+ * начала абонемента; иначе 0.
+ */
+export const getEnrollmentMonths = (student: Student, now: Date = new Date()): number => {
+  const created = parseDate(student.createdAt);
+  if (created) return monthsBetween(created, now);
+  const subDates = (student.subscriptions || [])
+    .map((s) => parseDate(s.validUntil))
+    .filter((d): d is Date => Boolean(d));
+  if (subDates.length) {
+    const earliest = new Date(Math.min(...subDates.map((d) => d.getTime())));
+    return monthsBetween(earliest, now);
+  }
+  return 0;
+};
+
+/** «1 год 8 месяцев», «5 месяцев», «меньше месяца». */
+export const formatDuration = (months: number): string => {
+  if (months <= 0) return "меньше месяца";
+  const years = Math.floor(months / 12);
+  const rest = months % 12;
+  const yearWord = (n: number) => (n === 1 ? "год" : n >= 2 && n <= 4 ? "года" : "лет");
+  const monthWord = (n: number) =>
+    n === 1 ? "месяц" : n >= 2 && n <= 4 ? "месяца" : "месяцев";
+  const parts: string[] = [];
+  if (years > 0) parts.push(`${years} ${yearWord(years)}`);
+  if (rest > 0) parts.push(`${rest} ${monthWord(rest)}`);
+  return parts.join(" ");
+};
+
+/* ============================ LTV-сегментация ============================ */
+
+export type LtvSegment =
+  | "Новый"
+  | "Адаптация"
+  | "Постоянный"
+  | "Лояльный"
+  | "Ядро студии"
+  | "Легенда Эхо Гор";
+
+export const LTV_SEGMENTS: LtvSegment[] = [
+  "Новый",
+  "Адаптация",
+  "Постоянный",
+  "Лояльный",
+  "Ядро студии",
+  "Легенда Эхо Гор",
+];
+
+/** ТЗ §5: сегмент по продолжительности обучения (в месяцах). */
+export const getLtvSegmentByMonths = (months: number): LtvSegment => {
+  if (months < 3) return "Новый";
+  if (months < 6) return "Адаптация";
+  if (months < 12) return "Постоянный";
+  if (months < 36) return "Лояльный"; // 1–3 года
+  if (months < 60) return "Ядро студии"; // 3–5 лет
+  return "Легенда Эхо Гор"; // > 5 лет
+};
+
+export const getLtvSegment = (student: Student, now: Date = new Date()): LtvSegment =>
+  getLtvSegmentByMonths(getEnrollmentMonths(student, now));
+
+/** Цвет бейджа LTV (Tailwind). */
+export const LTV_BADGE: Record<LtvSegment, string> = {
+  "Новый": "bg-sky-100 text-sky-700",
+  "Адаптация": "bg-teal-100 text-teal-700",
+  "Постоянный": "bg-slate-100 text-slate-600",
+  "Лояльный": "bg-violet-100 text-violet-700",
+  "Ядро студии": "bg-amber-100 text-amber-700",
+  "Легенда Эхо Гор": "bg-gradient-to-r from-amber-200 to-orange-200 text-orange-800",
+};
+
+/* ============================ Абонемент / долг ============================ */
+
+/** Активный (или последний) абонемент. */
+export const getPrimarySubscription = (student: Student): Subscription | undefined =>
+  (student.subscriptions || []).find((s) => s.status === "active") ||
+  (student.subscriptions || [])[0];
+
+/** Дата окончания текущего абонемента (Date | null). */
+export const getSubscriptionEnd = (student: Student): Date | null =>
+  parseDate(getPrimarySubscription(student)?.validUntil);
+
+/** «31.05.2026» / «—». */
+export const formatRuDate = (d: Date | null): string =>
+  d
+    ? d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" })
+    : "—";
+
+/** Сумма долга (положительное число тг), 0 если долга нет. */
+export const getDebt = (student: Student): number =>
+  student.balance < 0 ? Math.abs(student.balance) : 0;
+
+/** Признак частичной задолженности (0 < долг < стоимость абонемента). */
+export const isPartialDebt = (student: Student): boolean => {
+  const debt = getDebt(student);
+  if (debt <= 0) return false;
+  const price = getPrimarySubscription(student)?.price ?? 0;
+  return price > 0 ? debt < price : false;
+};
+
+/** Куплен ли следующий месяц (есть абонемент, начинающийся/действующий за пределами текущего периода). */
+export const hasNextMonthPaid = (student: Student, now: Date = new Date()): boolean => {
+  const subs = student.subscriptions || [];
+  const active = subs.filter((s) => s.status === "active");
+  if (active.length >= 2) return true; // куплено два периода вперёд
+  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  // абонемент с автопродлением или действующий заметно дольше текущего месяца
+  return active.some((s) => {
+    const until = parseDate(s.validUntil);
+    return Boolean(s.isAutoRenew) || (until ? until > endOfMonth : false);
+  });
+};
+
+/** Требует ли продления: заканчивается в ближайшие N дней или мало занятий. */
+export const needsRenewal = (student: Student, now: Date = new Date(), days = 7): boolean => {
+  if (isLeft(student) || isPaused(student)) return false;
+  const sub = getPrimarySubscription(student);
+  if (!sub) return true; // нет активного абонемента — нужно продлить
+  if (sub.status === "expired") return true;
+  if (sub.lessonsLeft <= 2) return true;
+  const until = parseDate(sub.validUntil);
+  if (!until) return false;
+  return until.getTime() - now.getTime() <= days * MS_DAY;
+};
+
+/* ============================ Флаги статуса (по БД) ============================ */
+/* status в БД: lead | trial | active | paused | debt | left | archived
+   + опционально вернувшийся (поле returned / manualStatus). */
+
+export const isLeft = (s: Student): boolean =>
+  s.status === "left" || s.status === "archived";
+export const isPaused = (s: Student): boolean => s.status === "paused";
+export const isTrial = (s: Student): boolean =>
+  s.status === "trial" || s.status === "lead";
+export const isReturned = (s: Student): boolean =>
+  (s as any).returned === true ||
+  s.status === "returned" ||
+  (s.manualStatus || "").toLowerCase().includes("верн");
+
+/* ============================ Автоматический статус ============================ */
+
+export type RowTone =
+  | "red"
+  | "yellow"
+  | "green"
+  | "blue"
+  | "purple"
+  | "gray"
+  | "neutral";
+
+export interface StudentState {
+  enrollmentMonths: number;
+  durationLabel: string;
+  ltv: LtvSegment;
+  subscriptionEnd: Date | null;
+  subscriptionEndLabel: string;
+  debt: number;
+  statusKey: string;
+  statusLabel: string;
+  tone: RowTone;
+}
+
+/**
+ * ТЗ §2 + §6: вычисляет цвет строки и человекочитаемый статус.
+ * Приоритет: ушёл → каникулы/пауза → ручной статус → вернувшийся →
+ * долг → требует продления → куплен следующий месяц → новый → активный.
+ */
+export const getStudentState = (student: Student, now: Date = new Date()): StudentState => {
+  const enrollmentMonths = getEnrollmentMonths(student, now);
+  const ltv = getLtvSegmentByMonths(enrollmentMonths);
+  const subscriptionEnd = getSubscriptionEnd(student);
+  const debt = getDebt(student);
+
+  let statusKey = "active";
+  let statusLabel = "Активный";
+  let tone: RowTone = "neutral";
+
+  if (isLeft(student)) {
+    statusKey = "left";
+    statusLabel = "Ушедший ученик";
+    tone = "gray";
+  } else if (isPaused(student)) {
+    statusKey = "paused";
+    statusLabel = "Замороженный абонемент";
+    tone = "neutral";
+  } else if (student.manualStatus) {
+    statusKey = "manual";
+    statusLabel = student.manualStatus;
+    tone = isReturned(student) ? "purple" : "neutral";
+  } else if (isReturned(student)) {
+    statusKey = "returned";
+    statusLabel = "Вернувшийся ученик";
+    tone = "purple";
+  } else if (debt > 0) {
+    if (isPartialDebt(student)) {
+      statusKey = "debt_partial";
+      statusLabel = "Частичный долг";
+      tone = "yellow";
+    } else if (!getPrimarySubscription(student) || getPrimarySubscription(student)?.status === "expired") {
+      statusKey = "debt_prev";
+      statusLabel = "Не оплачен прошлый месяц";
+      tone = "red";
+    } else {
+      statusKey = "debt_current";
+      statusLabel = "Не оплачен текущий месяц";
+      tone = "red";
+    }
+  } else if (isTrial(student)) {
+    statusKey = "trial";
+    statusLabel = "Новый ученик";
+    tone = "blue";
+  } else if (!getPrimarySubscription(student) || getPrimarySubscription(student)?.status === "expired") {
+    statusKey = "not_renewed";
+    statusLabel = "Не продлил абонемент";
+    tone = "red";
+  } else if (hasNextMonthPaid(student, now)) {
+    statusKey = "next_paid";
+    statusLabel = "Куплен следующий месяц";
+    tone = "green";
+  } else if (enrollmentMonths < 1) {
+    statusKey = "new";
+    statusLabel = "Новый ученик";
+    tone = "blue";
+  } else {
+    statusKey = "active";
+    statusLabel = "Активный";
+    tone = "neutral";
+  }
+
+  return {
+    enrollmentMonths,
+    durationLabel: formatDuration(enrollmentMonths),
+    ltv,
+    subscriptionEnd,
+    subscriptionEndLabel: formatRuDate(subscriptionEnd),
+    debt,
+    statusKey,
+    statusLabel,
+    tone,
+  };
+};
+
+/** Цвет фона строки таблицы по тону. */
+export const ROW_TONE_CLASS: Record<RowTone, string> = {
+  red: "bg-rose-50 hover:bg-rose-100/70",
+  yellow: "bg-amber-50 hover:bg-amber-100/70",
+  green: "bg-emerald-50 hover:bg-emerald-100/70",
+  blue: "bg-sky-50 hover:bg-sky-100/70",
+  purple: "bg-violet-50 hover:bg-violet-100/70",
+  gray: "bg-slate-100 hover:bg-slate-200/70 text-slate-500",
+  neutral: "bg-white hover:bg-slate-50",
+};
+
+/** Цвет бейджа статуса по тону. */
+export const STATUS_BADGE_CLASS: Record<RowTone, string> = {
+  red: "bg-rose-100 text-rose-700",
+  yellow: "bg-amber-100 text-amber-700",
+  green: "bg-emerald-100 text-emerald-700",
+  blue: "bg-sky-100 text-sky-700",
+  purple: "bg-violet-100 text-violet-700",
+  gray: "bg-slate-200 text-slate-500",
+  neutral: "bg-slate-100 text-slate-600",
+};
+
+/* ============================ Быстрые сегменты ============================ */
+
+export type SegmentId =
+  | "all"
+  | "active"
+  | "renewal"
+  | "debtors"
+  | "new"
+  | "returned"
+  | "next_month"
+  | "waitlist"
+  | "vacation"
+  | "left"
+  | "loyal"
+  | "core"
+  | "legends";
+
+export interface SegmentDef {
+  id: SegmentId;
+  label: string;
+  match: (s: Student, now?: Date) => boolean;
+}
+
+const isWaitlist = (s: Student): boolean =>
+  (s.manualStatus || "").toLowerCase().includes("лист ожид") || s.status === "lead";
+const isVacation = (s: Student): boolean =>
+  isPaused(s) || (s.manualStatus || "").toLowerCase().includes("каникул");
+
+/** ТЗ §4: набор быстрых сегментов в верхней панели. */
+export const SEGMENTS: SegmentDef[] = [
+  { id: "all", label: "Все ученики", match: () => true },
+  { id: "active", label: "Активные", match: (s) => !isLeft(s) && s.status === "active" },
+  { id: "renewal", label: "Требуют продления", match: (s, now) => !isLeft(s) && needsRenewal(s, now) },
+  { id: "debtors", label: "Должники", match: (s) => !isLeft(s) && getDebt(s) > 0 },
+  { id: "new", label: "Новые", match: (s, now) => !isLeft(s) && (isTrial(s) || getEnrollmentMonths(s, now) < 1) },
+  { id: "returned", label: "Вернувшиеся", match: (s) => !isLeft(s) && isReturned(s) },
+  { id: "next_month", label: "Купили следующий", match: (s, now) => !isLeft(s) && hasNextMonthPaid(s, now) },
+  { id: "waitlist", label: "Лист ожидания", match: (s) => !isLeft(s) && isWaitlist(s) },
+  { id: "vacation", label: "Каникулы", match: (s) => !isLeft(s) && isVacation(s) },
+  { id: "left", label: "Ушедшие", match: (s) => isLeft(s) },
+  { id: "loyal", label: "Лояльные", match: (s, now) => !isLeft(s) && getLtvSegment(s, now) === "Лояльный" },
+  { id: "core", label: "Ядро студии", match: (s, now) => !isLeft(s) && getLtvSegment(s, now) === "Ядро студии" },
+  { id: "legends", label: "Легенды Эхо Гор", match: (s, now) => !isLeft(s) && getLtvSegment(s, now) === "Легенда Эхо Гор" },
+];
+
+/* ============================ Фильтр по статусу ============================ */
+
+export const STATUS_FILTER_OPTIONS: { value: string; label: string }[] = [
+  { value: "all", label: "Все статусы" },
+  { value: "active", label: "Активные" },
+  { value: "renewal", label: "Требуют продления" },
+  { value: "debtors", label: "Должники" },
+  { value: "new", label: "Новый ученик" },
+  { value: "returned", label: "Вернувшийся" },
+  { value: "next_month", label: "Куплен следующий месяц" },
+  { value: "vacation", label: "Каникулы" },
+  { value: "waitlist", label: "Лист ожидания" },
+  { value: "left", label: "Ушедшие" },
+];
+
+export const matchStatusFilter = (student: Student, value: string, now: Date = new Date()): boolean => {
+  if (value === "all") return true;
+  const seg = SEGMENTS.find((x) => x.id === (value as SegmentId));
+  return seg ? seg.match(student, now) : true;
+};
+
+/* ============================ Справочные данные UI ============================ */
+
+/** ТЗ §2: легенда цветов. */
+export const COLOR_LEGEND: { tone: RowTone; dot: string; text: string }[] = [
+  { tone: "red", dot: "bg-rose-500", text: "Красный — не продлил абонемент / долг за прошлый месяц" },
+  { tone: "yellow", dot: "bg-amber-400", text: "Жёлтый — частичная задолженность" },
+  { tone: "green", dot: "bg-emerald-500", text: "Зелёный — куплен следующий месяц" },
+  { tone: "blue", dot: "bg-sky-500", text: "Синий — новый ученик" },
+  { tone: "purple", dot: "bg-violet-500", text: "Фиолетовый — вернувшийся ученик" },
+  { tone: "gray", dot: "bg-slate-400", text: "Серый — ушедший ученик" },
+];
+
+/** ТЗ §7: ручные статусы по умолчанию. */
+export const DEFAULT_MANUAL_STATUSES: string[] = [
+  "Был на пробном, оплатит",
+  "Каникулы",
+  "Лист ожидания",
+  "Медицинская пауза",
+  "Временно отсутствует",
+  "Индивидуальный график",
+];
+
+/** ТЗ §6: автоматические статусы (для справочной панели). */
+export const AUTO_STATUS_GROUPS: { title: string; items: string[] }[] = [
+  {
+    title: "Воронка продаж",
+    items: [
+      "Записан на пробный урок",
+      "Не пришёл на пробный урок",
+      "Был на пробном, не купил",
+      "Купил после пробного урока",
+    ],
+  },
+  {
+    title: "Постоянные ученики",
+    items: [
+      "Есть активный абонемент",
+      "Не оплачен текущий месяц",
+      "Не оплачен прошлый месяц",
+      "Новый оплативший",
+      "Вернувшийся ученик",
+      "Куплен следующий месяц",
+      "Замороженный абонемент",
+      "Ушедший ученик",
+    ],
+  },
+];

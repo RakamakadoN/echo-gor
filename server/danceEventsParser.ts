@@ -275,13 +275,26 @@ function extractHrefs(html: string, pattern: RegExp): string[] {
   return [...out];
 }
 
+/** Верхняя граница ожидания одного запроса (мс). Защищает от зависшего upstream. */
+const PER_REQUEST_TIMEOUT_MS = 12000;
+
 async function safeFetchText(
   ctx: AdapterContext,
   url: string,
   stat?: { fetchErrors: number } | null,
 ): Promise<string | null> {
+  // Таймаут запроса = минимум из жёсткого предела и остатка до общего дедлайна раннера.
+  // Без этого один «висящий» ответ (Cloudflare и т.п.) держит соединение до тех пор,
+  // пока платформа не убьёт serverless-функцию по maxDuration → 500/504.
+  let timeout = PER_REQUEST_TIMEOUT_MS;
+  if (ctx.deadlineMs) timeout = Math.min(timeout, ctx.deadlineMs - Date.now());
+  if (timeout <= 0) { ctx.log(`  ${url} → пропуск: дедлайн истёк`); if (stat) stat.fetchErrors++; return null; }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
   try {
     const res = await ctx.fetchFn(url, {
+      signal: controller.signal,
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -291,9 +304,12 @@ async function safeFetchText(
     if (!res.ok) { ctx.log(`  ${url} → HTTP ${res.status}`); if (stat) stat.fetchErrors++; return null; }
     return await res.text();
   } catch (e: any) {
-    ctx.log(`  ${url} → ошибка: ${e?.message || e}`);
+    const msg = e?.name === "AbortError" ? `таймаут ${timeout}ms` : (e?.message || e);
+    ctx.log(`  ${url} → ошибка: ${msg}`);
     if (stat) stat.fetchErrors++;
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 

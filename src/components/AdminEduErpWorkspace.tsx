@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import { Announcement, AnnouncementAudience, AuditLog, Branch, Group, Hall, Payment, Student, Teacher, AdminTask, AdminTaskStatus, AdminTaskPriority, SubscriptionPlan, LeadSource } from "../types";
 import StudentManagementCard from "./StudentManagementCard";
+import StudentsRegistry from "./StudentsRegistry";
 
 // --- Лёгкая система всплывающих уведомлений (toast) ---
 // Даёт видимый отклик кнопкам, у которых пока нет полноценного бэкенда,
@@ -281,7 +282,7 @@ export function AdminEduErpWorkspace({
           )}
           {activeTab === "visitors" && (
             <VisitorsView
-              students={filteredStudents}
+              students={students}
               groups={groups}
               branches={branches}
               teachers={teachers}
@@ -402,7 +403,26 @@ function DashboardView({ branches, groups, students, teachers, todayRevenue, mon
   );
 }
 
-function VisitorsView({ students, groups, branches, teachers, payments, search, branchFilter, setSearch, setBranchFilter, adminBranchId, onCreateStudent, onUpdateStudent, onDeleteStudent, onOpenPayment }: any) {
+// Раздел «Ученики» (ТЗ): полноценный реестр клиентской базы.
+function VisitorsView({ students, groups, branches, teachers, adminBranchId, onCreateStudent, onUpdateStudent, onDeleteStudent, onOpenPayment }: any) {
+  return (
+    <StudentsRegistry
+      students={students}
+      groups={groups}
+      branches={branches}
+      teachers={teachers}
+      adminBranchId={adminBranchId}
+      onCreateStudent={onCreateStudent}
+      onUpdateStudent={onUpdateStudent}
+      onDeleteStudent={onDeleteStudent}
+      onOpenPayment={onOpenPayment}
+    />
+  );
+}
+
+// Прежний вариант списка (оставлен для справки, не используется).
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function VisitorsViewLegacy({ students, groups, branches, teachers, payments, search, branchFilter, setSearch, setBranchFilter, adminBranchId, onCreateStudent, onUpdateStudent, onDeleteStudent, onOpenPayment }: any) {
   const [selectedStudentId, setSelectedStudentId] = useState(students[0]?.id || "");
   const selectedStudent = students.find((student: Student) => student.id === selectedStudentId) || students[0];
 

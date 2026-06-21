@@ -621,7 +621,7 @@ export default function App() {
   };
 
   // --- Owner: student management ---
-  type StudentInput = { name?: string; branchId?: string; groupId?: string; teacherId?: string; parentName?: string; parentPhone?: string };
+  type StudentInput = { name?: string; branchId?: string; groupId?: string; teacherId?: string; parentName?: string; parentPhone?: string; status?: string; manualStatus?: string | null };
   const handleCreateStudent = async (data: StudentInput) => {
     try {
       const response = await fetch("/api/mvp/students", {

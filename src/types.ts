@@ -187,6 +187,8 @@ export interface Student {
   paymentStatus?: string;
   createdAt?: string; // дата регистрации ученика (ISO), для метрики «новые ученики»
   status?: string; // статус из БД: lead|trial|active|paused|debt|left|archived
+  manualStatus?: string | null; // ручной статус (ТЗ §7): Каникулы, Лист ожидания, ...
+  returned?: boolean; // признак вернувшегося ученика (фиолетовый, ТЗ §2)
 }
 
 export type AnnouncementAudience = "all" | "branches" | "teachers" | "parents" | "students";
