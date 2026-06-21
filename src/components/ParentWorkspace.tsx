@@ -26,6 +26,18 @@ import {
 } from "lucide-react";
 import { Announcement, Group, Student, Teacher } from "../types";
 
+type QuestStatusKey = "in_progress" | "awaiting" | "confirmed";
+
+interface BackendQuest {
+  id: string;
+  title: string;
+  category: string;
+  reward: string;
+  minutes?: string;
+  status: string; // русская подпись из бэкенда
+  statusKey?: QuestStatusKey;
+}
+
 interface ParentWorkspaceProps {
   students: Student[];
   groups: Group[];
@@ -35,6 +47,10 @@ interface ParentWorkspaceProps {
   onSelectStudent: (id: string) => void;
   onRenewSubscription: (student: Student) => void;
   readOnlyPreview?: boolean;
+  // Когда задано (Supabase-режим) — квесты идут через бэкенд (family_quests).
+  backendQuests?: BackendQuest[];
+  onCreateQuest?: (quest: { title: string; category?: string; reward?: string; minutes?: string }) => Promise<boolean>;
+  onUpdateQuestStatus?: (id: string, status: QuestStatusKey) => Promise<boolean>;
 }
 
 type ParentTab = "home" | "child" | "quests" | "feed" | "library" | "ai";
@@ -76,13 +92,20 @@ export function ParentWorkspace({
   selectedStudentId,
   onSelectStudent,
   onRenewSubscription,
-  readOnlyPreview = false
+  readOnlyPreview = false,
+  backendQuests,
+  onCreateQuest,
+  onUpdateQuestStatus
 }: ParentWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<ParentTab>("home");
-  const [activeQuests, setActiveQuests] = useState([
-    { id: "quest-1", title: "Сделать зарядку", category: "физическая активность", status: "Ждет подтверждения", reward: "Чемпион дисциплины" },
-    { id: "quest-2", title: "Подготовить форму к занятию", category: "дисциплина", status: "В процессе", reward: "Ответственный артист" }
+  const [localQuests, setLocalQuests] = useState([
+    { id: "quest-1", title: "Сделать зарядку", category: "физическая активность", status: "Ждет подтверждения", reward: "Чемпион дисциплины", statusKey: "awaiting" as QuestStatusKey },
+    { id: "quest-2", title: "Подготовить форму к занятию", category: "дисциплина", status: "В процессе", reward: "Ответственный артист", statusKey: "in_progress" as QuestStatusKey }
   ]);
+
+  // Источник истины: бэкенд (Supabase) если задан, иначе локальный state (mock/preview).
+  const useBackend = Array.isArray(backendQuests);
+  const activeQuests = useBackend ? backendQuests! : localQuests;
 
   const student = students.find((item) => item.id === selectedStudentId) || students[0];
   const group = groups.find((item) => item.id === (student?.groupIds?.[0] || (student as any)?.groupId));
@@ -106,15 +129,33 @@ export function ParentWorkspace({
     location: "Городской дом культуры"
   };
 
-  const confirmQuest = (id: string) => {
-    if (readOnlyPreview) return;
-    setActiveQuests((prev) => prev.map((quest) => quest.id === id ? { ...quest, status: "Подтверждено" } : quest));
+  const QUEST_LABEL: Record<QuestStatusKey, string> = {
+    in_progress: "В процессе",
+    awaiting: "Ждет подтверждения",
+    confirmed: "Подтверждено"
   };
 
-  const addQuest = (quest: (typeof questCatalog)[number]) => {
+  // Перевод статуса: in_progress → awaiting → confirmed.
+  const setQuestStatus = async (id: string, status: QuestStatusKey) => {
     if (readOnlyPreview) return;
-    setActiveQuests((prev) => [
-      { id: `quest-${Date.now()}`, title: quest.title, category: quest.category, status: "В процессе", reward: quest.reward },
+    if (useBackend && onUpdateQuestStatus) {
+      await onUpdateQuestStatus(id, status);
+      return;
+    }
+    setLocalQuests((prev) => prev.map((quest) => quest.id === id ? { ...quest, status: QUEST_LABEL[status], statusKey: status } : quest));
+  };
+
+  const confirmQuest = (id: string) => setQuestStatus(id, "confirmed");
+  const markQuestDone = (id: string) => setQuestStatus(id, "awaiting");
+
+  const addQuest = async (quest: (typeof questCatalog)[number]) => {
+    if (readOnlyPreview) return;
+    if (useBackend && onCreateQuest) {
+      await onCreateQuest({ title: quest.title, category: quest.category, reward: quest.reward, minutes: quest.minutes });
+      return;
+    }
+    setLocalQuests((prev) => [
+      { id: `quest-${Date.now()}`, title: quest.title, category: quest.category, status: "В процессе", reward: quest.reward, statusKey: "in_progress" },
       ...prev
     ]);
   };
@@ -181,7 +222,7 @@ export function ParentWorkspace({
         )}
 
         {activeTab === "child" && <ChildStoryView student={student} attendanceStats={attendanceStats} nextPerformance={nextPerformance} />}
-        {activeTab === "quests" && <FamilyQuestsView quests={activeQuests} onConfirm={confirmQuest} onAddQuest={addQuest} readOnlyPreview={readOnlyPreview} />}
+        {activeTab === "quests" && <FamilyQuestsView quests={activeQuests} onConfirm={confirmQuest} onMarkDone={markQuestDone} onAddQuest={addQuest} readOnlyPreview={readOnlyPreview} />}
         {activeTab === "feed" && <FamilyFeedView student={student} quests={activeQuests} nextPerformance={nextPerformance} />}
         {activeTab === "library" && <ParentLibraryView />}
         {activeTab === "ai" && <ParentAiView student={student} />}
@@ -310,7 +351,7 @@ function ChildStoryView({ student, attendanceStats, nextPerformance }: any) {
   );
 }
 
-function FamilyQuestsView({ quests, onConfirm, onAddQuest, readOnlyPreview }: any) {
+function FamilyQuestsView({ quests, onConfirm, onMarkDone, onAddQuest, readOnlyPreview }: any) {
   return (
     <div className="space-y-5">
       <section className="rounded-[2rem] border border-[#C5A059]/20 bg-[#C5A059]/10 p-5">
@@ -333,6 +374,15 @@ function FamilyQuestsView({ quests, onConfirm, onAddQuest, readOnlyPreview }: an
                   </div>
                   <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase ${quest.status === "Подтверждено" ? "bg-emerald-500/10 text-emerald-400" : "bg-[#C5A059]/10 text-[#C5A059]"}`}>{quest.status}</span>
                 </div>
+                {quest.status === "В процессе" && (
+                  <button
+                    onClick={() => onMarkDone(quest.id)}
+                    disabled={readOnlyPreview}
+                    className={`mt-4 rounded-2xl px-4 py-2 text-xs font-black uppercase ${readOnlyPreview ? "cursor-not-allowed bg-white/10 text-slate-500" : "border border-[#C5A059]/40 text-[#C5A059]"}`}
+                  >
+                    {readOnlyPreview ? "Скоро" : "Отметить выполненным"}
+                  </button>
+                )}
                 {quest.status === "Ждет подтверждения" && (
                   <button
                     onClick={() => onConfirm(quest.id)}
@@ -414,6 +464,23 @@ function ParentLibraryView() {
   );
 }
 
+interface ParentAdvice {
+  answer: string;
+  weekPlan: { day: string; action: string }[];
+  suggestedQuests?: { title: string; category: string; reward: string }[];
+}
+
+// Резервный ответ, когда бэкенд AI недоступен (нет GEMINI_API_KEY) — UI не ломается.
+const AI_FALLBACK: ParentAdvice = {
+  answer: "Поддерживайте ребёнка вниманием к усилиям, а не только к результату. Короткая совместная репетиция и тёплое слово работают лучше давления.",
+  weekPlan: [
+    { day: "Понедельник", action: "Похвалить за старание, не за результат." },
+    { day: "Среда", action: "Семейный квест: подготовить форму и повторить движение." },
+    { day: "Пятница", action: "Перед занятием сказать: «Я вижу, как ты стараешься»." },
+    { day: "Выходные", action: "Посмотреть видео выступления и отметить один новый навык." }
+  ]
+};
+
 function ParentAiView({ student }: { student: Student }) {
   const prompts = [
     "Как мотивировать ребенка 8 лет заниматься?",
@@ -421,6 +488,39 @@ function ParentAiView({ student }: { student: Student }) {
     "Как поддержать ребенка перед выступлением?",
     "Составь план развития дисциплины"
   ];
+  const [advice, setAdvice] = useState<ParentAdvice>(AI_FALLBACK);
+  const [loadingPrompt, setLoadingPrompt] = useState<string | null>(null);
+  const [usedFallback, setUsedFallback] = useState(false);
+
+  const ask = async (prompt: string) => {
+    if (loadingPrompt) return;
+    setLoadingPrompt(prompt);
+    setUsedFallback(false);
+    try {
+      const attendance = Object.values(student.attendance || {});
+      const present = attendance.filter((a: any) => a.status === "present").length;
+      const rate = attendance.length ? Math.round((present / attendance.length) * 100) : null;
+      const response = await fetch("/api/gemini/parent-advice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: prompt, childName: student.name, attendanceRate: rate })
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const data = (await response.json()) as ParentAdvice;
+      setAdvice({
+        answer: data.answer || AI_FALLBACK.answer,
+        weekPlan: Array.isArray(data.weekPlan) && data.weekPlan.length ? data.weekPlan : AI_FALLBACK.weekPlan,
+        suggestedQuests: data.suggestedQuests
+      });
+    } catch {
+      // Бэкенд недоступен (например, нет ключа) — показываем резервный план.
+      setAdvice(AI_FALLBACK);
+      setUsedFallback(true);
+    } finally {
+      setLoadingPrompt(null);
+    }
+  };
+
   return (
     <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
       <section className="rounded-[2rem] border border-[#C5A059]/20 bg-gradient-to-br from-[#2A2110] to-[#101010] p-5 md:p-7">
@@ -428,19 +528,40 @@ function ParentAiView({ student }: { student: Student }) {
         <h2 className="mt-4 text-2xl font-black text-white">AI Родительский помощник</h2>
         <p className="mt-2 text-sm leading-relaxed text-slate-300">Помогает подобрать квест, составить план недели и поддержать {student.name} без давления.</p>
         <div className="mt-5 space-y-2">
-          {prompts.map((prompt) => <button key={prompt} className="w-full rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-left text-sm font-bold text-white">{prompt}</button>)}
+          {prompts.map((prompt) => (
+            <button
+              key={prompt}
+              onClick={() => ask(prompt)}
+              disabled={!!loadingPrompt}
+              className={`flex w-full items-center justify-between gap-2 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-left text-sm font-bold text-white transition ${loadingPrompt ? "opacity-60" : "hover:border-[#C5A059]/40"}`}
+            >
+              <span>{prompt}</span>
+              {loadingPrompt === prompt
+                ? <Sparkles className="h-4 w-4 shrink-0 animate-pulse text-[#C5A059]" />
+                : <ChevronRight className="h-4 w-4 shrink-0 text-slate-600" />}
+            </button>
+          ))}
         </div>
       </section>
 
       <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
-        <p className="text-[10px] font-black uppercase tracking-[0.26em] text-[#C5A059]">Пример ответа</p>
-        <h3 className="mt-2 text-xl font-black text-white">План поддержки на неделю</h3>
-        <div className="mt-4 space-y-3">
-          <MiniRow title="Понедельник" meta="Похвалить за старание, не за результат." />
-          <MiniRow title="Среда" meta="Семейный квест: подготовить форму и повторить движение." />
-          <MiniRow title="Пятница" meta="Перед занятием сказать: “Я вижу, как ты стараешься”." />
-          <MiniRow title="Выходные" meta="Посмотреть видео выступления и отметить один новый навык." />
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[10px] font-black uppercase tracking-[0.26em] text-[#C5A059]">Ответ помощника</p>
+          {usedFallback && <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500">офлайн-режим</span>}
         </div>
+        <p className="mt-3 text-sm leading-relaxed text-slate-200">{advice.answer}</p>
+        <h3 className="mt-5 text-xl font-black text-white">План поддержки на неделю</h3>
+        <div className="mt-4 space-y-3">
+          {advice.weekPlan.map((item, i) => <MiniRow key={`${item.day}-${i}`} title={item.day} meta={item.action} />)}
+        </div>
+        {advice.suggestedQuests && advice.suggestedQuests.length > 0 && (
+          <div className="mt-5">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Идеи квестов</p>
+            <div className="mt-3 space-y-2">
+              {advice.suggestedQuests.map((q, i) => <MiniRow key={`${q.title}-${i}`} title={q.title} meta={`${q.category} • награда: ${q.reward}`} />)}
+            </div>
+          </div>
+        )}
       </section>
     </div>
   );
