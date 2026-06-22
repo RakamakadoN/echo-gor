@@ -121,6 +121,9 @@ export interface Subscription {
   validUntil: string;
   isAutoRenew: boolean;
   status: 'active' | 'expired' | 'suspended';
+  startsOn?: string; // YYYY-MM-DD, дата начала
+  discountAmount?: number; // скидка + перерасчёт, тг
+  groupId?: string | null;
 }
 
 export interface Achievement {

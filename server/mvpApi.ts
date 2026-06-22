@@ -267,7 +267,10 @@ function mapDbStudent(row: any, attendanceByStudent: Map<string, Record<string, 
       lessonsLeft: sub.lessons_left || 0,
       validUntil: sub.ends_on,
       isAutoRenew: false,
-      status: sub.status === "active" ? "active" : "expired"
+      status: sub.status === "active" ? "active" : "expired",
+      startsOn: sub.starts_on,
+      discountAmount: Number(sub.discount_amount || 0),
+      groupId: sub.group_id || null
     }))
   };
 }
@@ -297,7 +300,10 @@ function mapDbSubscription(row: any, planName?: string) {
     lessonsLeft: row.lessons_left || 0,
     validUntil: row.ends_on,
     isAutoRenew: false,
-    status: row.status === "active" ? "active" : "expired"
+    status: row.status === "active" ? "active" : "expired",
+    startsOn: row.starts_on,
+    discountAmount: Number(row.discount_amount || 0),
+    groupId: row.group_id || null
   };
 }
 
@@ -1625,6 +1631,9 @@ export function registerMvpApi(app: express.Express) {
           validUntil: sub.ends_on,
           isAutoRenew: false,
           status: sub.status === "active" ? "active" : "expired",
+          startsOn: sub.starts_on,
+          discountAmount: Number(sub.discount_amount || 0),
+          groupId: sub.group_id || null,
         };
       });
       const paymentsMapped = paymentsRaw.map(mapDbPayment);

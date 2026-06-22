@@ -23,8 +23,9 @@ import {
   CreditCard,
   CheckCircle2,
   Wallet,
+  ChevronRight,
 } from "lucide-react";
-import { Branch, Group, Student, SubscriptionPlan, Teacher } from "../types";
+import { Branch, Group, Student, Subscription, SubscriptionPlan, Teacher } from "../types";
 
 /** Полезная нагрузка продажи абонемента из инлайн-формы карточки. */
 export interface SellSubscriptionInput {
@@ -123,6 +124,7 @@ export default function StudentManagementCard({
 }: StudentManagementCardProps) {
   const [tab, setTab] = useState<TabId>("general");
   const [panel, setPanel] = useState<null | "trial" | "transfer" | "sell">(null);
+  const [openSub, setOpenSub] = useState<Subscription | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);
 
@@ -500,10 +502,15 @@ export default function StudentManagementCard({
               student={student}
               branch={branch}
               subscription={subscription}
+              onOpenSub={setOpenSub}
             />
           )}
           {tab === "subscriptions" && (
-            <SubscriptionsTab student={student} onSell={(canSell || onOpenPayment) ? handleSellClick : undefined} />
+            <SubscriptionsTab
+              student={student}
+              onSell={(canSell || onOpenPayment) ? handleSellClick : undefined}
+              onOpenSub={setOpenSub}
+            />
           )}
           {tab === "attendance" && (
             <AttendanceTab
@@ -523,6 +530,16 @@ export default function StudentManagementCard({
           {tab === "family" && <FamilyTab student={student} />}
         </div>
       </div>
+
+      {openSub && (
+        <SubscriptionDetailModal
+          subscription={openSub}
+          student={student}
+          branch={branch}
+          group={group}
+          onClose={() => setOpenSub(null)}
+        />
+      )}
     </div>
   );
 }
@@ -568,15 +585,22 @@ function GeneralTab({
   student,
   branch,
   subscription,
+  onOpenSub,
 }: {
   student: Student;
   branch?: Branch;
   subscription?: Student["subscriptions"][number];
+  onOpenSub?: (sub: Subscription) => void;
 }) {
   return (
     <div>
       <SectionHeader title="Текущий абонемент" action="Все абонементы" />
-      <div className="grid grid-cols-2 gap-4 rounded-2xl border border-amber-200 bg-amber-50/70 p-4 sm:grid-cols-4">
+      <div
+        onClick={subscription && onOpenSub ? () => onOpenSub(subscription) : undefined}
+        className={`grid grid-cols-2 gap-4 rounded-2xl border border-amber-200 bg-amber-50/70 p-4 sm:grid-cols-4 ${
+          subscription && onOpenSub ? "cursor-pointer transition hover:border-amber-300 hover:bg-amber-100/70" : ""
+        }`}
+      >
         <div>
           <p className="text-[11px] font-bold uppercase tracking-wide text-amber-700/70">
             Тип
@@ -970,12 +994,135 @@ function SellRow({ k, v, tone }: { k: string; v: string; tone?: "rose" }) {
   );
 }
 
+function SubscriptionDetailModal({
+  subscription,
+  student,
+  branch,
+  group,
+  onClose,
+}: {
+  subscription: Subscription;
+  student: Student;
+  branch?: Branch;
+  group?: Group;
+  onClose: () => void;
+}) {
+  const s = subscription;
+  const used = Math.max(0, (s.lessonsTotal || 0) - (s.lessonsLeft || 0));
+  const pct = s.lessonsTotal > 0 ? Math.round((used / s.lessonsTotal) * 100) : 0;
+  const statusLabel =
+    s.status === "active" ? "Активный" : s.status === "suspended" ? "Приостановлен" : "Истёк";
+  const statusCls =
+    s.status === "active"
+      ? "bg-emerald-100 text-emerald-700"
+      : s.status === "suspended"
+      ? "bg-amber-100 text-amber-700"
+      : "bg-slate-200 text-slate-500";
+  const fmt = (iso?: string) => (iso ? ddmmyyyyFromIso(iso) : "—");
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl bg-white shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Шапка */}
+        <div className="relative bg-gradient-to-r from-violet-500 via-rose-500 to-amber-400 px-5 py-4">
+          <button
+            onClick={onClose}
+            className="absolute right-4 top-4 rounded-full bg-white/20 p-1.5 text-white transition hover:bg-white/30"
+          >
+            <X className="h-4 w-4" />
+          </button>
+          <p className="text-xs font-bold uppercase tracking-wide text-white/80">Абонемент</p>
+          <p className="mt-1 text-lg font-black text-white">{s.name}</p>
+          <span className={`mt-2 inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold ${statusCls}`}>
+            {statusLabel}
+          </span>
+        </div>
+
+        <div className="p-5">
+          {/* Чипы */}
+          <div className="mb-4 flex flex-wrap gap-1.5">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-600">
+              <Users className="h-3.5 w-3.5 text-slate-400" /> {student.name}
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-600">
+              <MapPin className="h-3.5 w-3.5 text-slate-400" /> {branch?.name || "Филиал"}
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-600">
+              <Users className="h-3.5 w-3.5 text-slate-400" /> {group?.name || "Без группы"}
+            </span>
+          </div>
+
+          {/* Прогресс занятий */}
+          <div className="mb-4 rounded-2xl border border-violet-100 bg-violet-50/60 p-4">
+            <div className="flex items-end justify-between">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-wide text-violet-500/80">Занятия</p>
+                <p className="mt-1 text-2xl font-black text-slate-800">
+                  {s.lessonsLeft}
+                  <span className="text-base font-bold text-slate-400"> / {s.lessonsTotal}</span>
+                </p>
+                <p className="text-xs text-slate-500">осталось из всего</p>
+              </div>
+              <p className="text-xs font-bold text-slate-500">проведено {used}</p>
+            </div>
+            <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-violet-100">
+              <div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-rose-500" style={{ width: `${pct}%` }} />
+            </div>
+          </div>
+
+          {/* Детали */}
+          <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4">
+            <DetailRow k="Тип абонемента" v={s.name} />
+            <DetailRow k="Статус" v={statusLabel} />
+            <DetailRow k="Занятий всего" v={`${s.lessonsTotal}`} />
+            <DetailRow k="Осталось занятий" v={`${s.lessonsLeft}`} />
+            <DetailRow k="Проведено" v={`${used}`} />
+            <DetailRow k="Дата начала" v={fmt(s.startsOn)} />
+            <DetailRow k="Дата окончания" v={fmt(s.validUntil)} />
+            <DetailRow k="Стоимость" v={money(s.price)} />
+            {(s.discountAmount || 0) > 0 && (
+              <DetailRow k="Скидка/перерасчёт" v={`−${money(s.discountAmount || 0)}`} tone="rose" />
+            )}
+            <DetailRow k="Автопродление" v={s.isAutoRenew ? "Включено" : "Выключено"} last />
+          </div>
+
+          <div className="mt-4 flex justify-end">
+            <button
+              onClick={onClose}
+              className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-bold text-slate-500 transition hover:bg-slate-50"
+            >
+              Закрыть
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DetailRow({ k, v, tone, last }: { k: string; v: string; tone?: "rose"; last?: boolean }) {
+  return (
+    <div className={`flex items-center justify-between py-2 text-sm ${last ? "" : "border-b border-slate-200/70"}`}>
+      <span className="text-slate-500">{k}</span>
+      <span className={`font-bold ${tone === "rose" ? "text-rose-600" : "text-slate-800"}`}>{v}</span>
+    </div>
+  );
+}
+
 function SubscriptionsTab({
   student,
   onSell,
+  onOpenSub,
 }: {
   student: Student;
   onSell?: () => void;
+  onOpenSub?: (sub: Subscription) => void;
 }) {
   const subs = student.subscriptions || [];
   return (
@@ -988,9 +1135,11 @@ function SubscriptionsTab({
       )}
       <div className="grid gap-3">
         {subs.map((sub) => (
-          <div
+          <button
             key={sub.id}
-            className="flex items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm"
+            type="button"
+            onClick={() => onOpenSub?.(sub)}
+            className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-white p-4 text-left shadow-sm transition hover:border-violet-200 hover:shadow-md"
           >
             <div>
               <p className="font-bold text-slate-800">{sub.name}</p>
@@ -998,19 +1147,22 @@ function SubscriptionsTab({
                 до {sub.validUntil} · осталось {sub.lessonsLeft}/{sub.lessonsTotal} занятий
               </p>
             </div>
-            <div className="text-right">
-              <p className="font-black text-slate-800">{money(sub.price)}</p>
-              <span
-                className={`mt-0.5 inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold ${
-                  sub.status === "active"
-                    ? "bg-emerald-100 text-emerald-600"
-                    : "bg-slate-200 text-slate-500"
-                }`}
-              >
-                {sub.status === "active" ? "Активный" : "Неактивный"}
-              </span>
+            <div className="flex items-center gap-3 text-right">
+              <div>
+                <p className="font-black text-slate-800">{money(sub.price)}</p>
+                <span
+                  className={`mt-0.5 inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                    sub.status === "active"
+                      ? "bg-emerald-100 text-emerald-600"
+                      : "bg-slate-200 text-slate-500"
+                  }`}
+                >
+                  {sub.status === "active" ? "Активный" : "Неактивный"}
+                </span>
+              </div>
+              <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" />
             </div>
-          </div>
+          </button>
         ))}
       </div>
     </div>
