@@ -10,6 +10,7 @@ import { StudentArtistCabinet } from "./components/StudentArtistCabinet";
 import { BranchManagerWorkspace } from "./components/BranchManagerWorkspace";
 import { OwnerExecutiveWorkspace } from "./components/OwnerExecutiveWorkspace";
 import { AdminEduErpWorkspace } from "./components/AdminEduErpWorkspace";
+import type { SellSubscriptionInput } from "./components/StudentManagementCard";
 import { AnimatedBarChartShowcase } from "./components/AnimatedBarChartShowcase";
 import { MagomedAssistant } from "./components/MagomedAssistant";
 // @ts-ignore
@@ -825,6 +826,27 @@ export default function App() {
     );
     setPaymentType("subscription");
     setShowAddPaymentModal(true);
+  };
+
+  // Продать абонемент из карточки ученика: создаёт student_subscription (+ платёж) и обновляет данные.
+  const handleSellSubscription = async (payload: SellSubscriptionInput): Promise<boolean> => {
+    try {
+      const response = await fetch("/api/mvp/student-subscriptions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await loadMvpBootstrap(activeRole);
+      addAuditLog(
+        "Продажа абонемента",
+        `Абонемент продан ученику (${payload.studentId}) на сумму ${payload.price} тг`
+      );
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось продать абонемент");
+      return false;
+    }
   };
 
   // --- Корзина учеников (владелец подтверждает удаление) ---
@@ -3046,6 +3068,8 @@ export default function App() {
               teachers={teachers}
               payments={payments}
               onOpenPayment={openPaymentForStudent}
+              onSellSubscription={handleSellSubscription}
+              subscriptionPlans={subscriptionPlans}
               announcements={announcements}
               competitions={competitions}
               halls={halls}
@@ -3081,6 +3105,8 @@ export default function App() {
               onUpdateStudent={handleUpdateStudent}
               onDeleteStudent={handleDeleteStudent}
               onOpenPayment={openPaymentForStudent}
+              onSellSubscription={handleSellSubscription}
+              subscriptionPlans={subscriptionPlans}
               studentTrash={studentTrash}
               onRestoreStudent={handleRestoreStudent}
               onConfirmDeleteStudent={handleConfirmDeleteStudent}
@@ -3132,6 +3158,7 @@ export default function App() {
               onDeleteStudent={handleDeleteStudent}
               onCreateAnnouncement={handleCreateAnnouncement}
               onOpenPayment={openPaymentForStudent}
+              onSellSubscription={handleSellSubscription}
               tasks={adminTasks}
               subscriptionPlans={subscriptionPlans}
               leadSources={leadSources}

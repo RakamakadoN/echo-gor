@@ -60,7 +60,8 @@
 :root.day-theme .day-theme-app [class*="bg-[#1a1a1a]"],
 :root.day-theme .day-theme-app [class*="bg-[#1b1b1b]"],
 :root.day-theme .day-theme-app [class*="bg-[#11121A]"],
-:root.day-theme .day-theme-app [class*="bg-[#12141c]"] {
+:root.day-theme .day-theme-app [class*="bg-[#12141c]"],
+:root.day-theme .day-theme-app [class*="bg-[#140f10]"] {
   background-color: #ffffff !important;
   border-color: rgba(15, 23, 42, 0.08) !important;
   box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06) !important;

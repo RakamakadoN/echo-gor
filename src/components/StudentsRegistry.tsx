@@ -28,8 +28,8 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
-import { Branch, Group, Student, Teacher } from "../types";
-import StudentManagementCard from "./StudentManagementCard";
+import { Branch, Group, Student, SubscriptionPlan, Teacher } from "../types";
+import StudentManagementCard, { SellSubscriptionInput } from "./StudentManagementCard";
 import {
   SEGMENTS,
   SegmentId,
@@ -69,6 +69,8 @@ export interface StudentsRegistryProps {
   onUpdateStudent?: (id: string, data: StudentInput) => Promise<boolean>;
   onDeleteStudent?: (id: string) => Promise<boolean | void> | void;
   onOpenPayment?: (student: Student) => void;
+  plans?: SubscriptionPlan[];
+  onSellSubscription?: (payload: SellSubscriptionInput) => Promise<boolean> | boolean;
 }
 
 /* ---------- helpers ---------- */
@@ -93,6 +95,8 @@ export default function StudentsRegistry({
   onUpdateStudent,
   onDeleteStudent,
   onOpenPayment,
+  plans = [],
+  onSellSubscription,
 }: StudentsRegistryProps) {
   const now = useMemo(() => new Date(), []);
   const canManage = Boolean(onCreateStudent || onUpdateStudent);
@@ -545,6 +549,8 @@ export default function StudentsRegistry({
             onEdit={canManage ? () => openEdit(openStudent) : undefined}
             onDelete={onDeleteStudent ? async () => { await onDeleteStudent(openStudent.id); applyOverride(openStudent.id, { status: "left" }); setOpenId(null); } : undefined}
             onOpenPayment={onOpenPayment ? () => onOpenPayment(openStudent) : undefined}
+            plans={plans}
+            onSellSubscription={onSellSubscription}
             onTransfer={onUpdateStudent ? (payload) => onUpdateStudent(openStudent.id, payload) : undefined}
           />
         </aside>

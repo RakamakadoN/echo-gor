@@ -287,6 +287,20 @@ function mapDbPayment(row: any): Payment {
   };
 }
 
+function mapDbSubscription(row: any, planName?: string) {
+  return {
+    id: row.id,
+    studentId: row.student_id,
+    name: planName || row.plan_name || "Абонемент",
+    price: Number(row.price || 0),
+    lessonsTotal: row.lessons_total || 0,
+    lessonsLeft: row.lessons_left || 0,
+    validUntil: row.ends_on,
+    isAutoRenew: false,
+    status: row.status === "active" ? "active" : "expired"
+  };
+}
+
 async function dbBootstrap(session: MvpSession) {
   const orgFilter = `organization_id=eq.${session.organizationId}`;
   
@@ -863,6 +877,106 @@ export function registerMvpApi(app: express.Express) {
     });
 
     res.status(201).json({ payment: mapDbPayment(insertedPayment[0]) });
+  });
+
+  // Продать абонемент: создаём student_subscriptions + (по флагу paid) платёж и проводку ДДС.
+  app.post("/api/mvp/student-subscriptions", async (req, res) => {
+    const session = getSession(req);
+    const payload = req.body || {};
+    const studentId = payload.studentId;
+    const branchId = payload.branchId;
+    const planId = payload.planId;
+    if (!studentId || !branchId || !planId) {
+      return res.status(400).json({ error: "studentId, branchId and planId are required" });
+    }
+    if (!canSeeBranch(session, branchId)) {
+      return res.status(403).json({ error: "Branch access denied" });
+    }
+    if (!supabaseEnabled) {
+      return res.status(503).json({ error: "Supabase is not configured" });
+    }
+    try {
+      // План нужен для названия и значений по умолчанию.
+      const plans = await supabaseFetch<any[]>(
+        "subscription_plans",
+        `select=*&id=eq.${planId}&organization_id=eq.${session.organizationId}`
+      );
+      const plan = plans[0];
+      if (!plan) return res.status(404).json({ error: "План абонемента не найден" });
+
+      const lessonsTotal = Number(payload.lessonsTotal) > 0
+        ? Math.round(Number(payload.lessonsTotal))
+        : Number(plan.lessons_count) || 0;
+      const today = new Date().toISOString().slice(0, 10);
+      const startsOn = payload.startsOn || today;
+      let endsOn = payload.endsOn || startsOn;
+      if (endsOn < startsOn) endsOn = startsOn;
+
+      const basePrice = Number(plan.price) || 0;
+      const discountAmount = Math.max(0, Number(payload.discountAmount) || 0);
+      // Итоговая цена: либо передана с фронта, либо база − скидка − перерасчёт.
+      const recalc = Math.max(0, Number(payload.recalc) || 0);
+      const finalPrice = payload.price !== undefined
+        ? Math.max(0, Number(payload.price) || 0)
+        : Math.max(0, basePrice - discountAmount - recalc);
+
+      const insertedSub = await supabaseFetch<any[]>("student_subscriptions", "", {
+        method: "POST",
+        body: JSON.stringify({
+          student_id: studentId,
+          plan_id: planId,
+          branch_id: branchId,
+          group_id: payload.groupId || null,
+          starts_on: startsOn,
+          ends_on: endsOn,
+          lessons_total: lessonsTotal,
+          lessons_left: lessonsTotal,
+          price: finalPrice,
+          discount_amount: discountAmount + recalc,
+          status: "active"
+        })
+      });
+
+      // Платёж и проводка ДДС — только если оплата принята (по умолчанию да).
+      let payment = null;
+      const paid = payload.paid !== false;
+      if (paid && finalPrice > 0) {
+        const insertedPayment = await supabaseFetch<any[]>("payments", "", {
+          method: "POST",
+          body: JSON.stringify({
+            organization_id: session.organizationId,
+            branch_id: branchId,
+            student_id: studentId,
+            amount: finalPrice,
+            method: payload.method || "kaspi",
+            status: "paid",
+            comment: payload.description || `Абонемент: ${plan.name}`,
+            created_by: session.userId.startsWith("demo-") ? null : session.userId
+          })
+        });
+        payment = mapDbPayment(insertedPayment[0]);
+        await supabaseFetch<any[]>("finance_transactions", "", {
+          method: "POST",
+          body: JSON.stringify({
+            organization_id: session.organizationId,
+            branch_id: branchId,
+            student_id: studentId,
+            payment_id: insertedPayment[0].id,
+            amount: finalPrice,
+            type: "income",
+            category: "tuition",
+            description: payload.description || `Абонемент: ${plan.name}`
+          })
+        });
+      }
+
+      res.status(201).json({
+        subscription: mapDbSubscription(insertedSub[0], plan.name),
+        payment
+      });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось продать абонемент" });
+    }
   });
 
   app.post("/api/mvp/attendance", async (req, res) => {

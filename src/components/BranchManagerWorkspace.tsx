@@ -25,8 +25,8 @@ import {
   Users,
   WalletCards
 } from "lucide-react";
-import { Announcement, AnnouncementAudience, Attendance, Branch, Competition, Group, Hall, Payment, Student, Teacher } from "../types";
-import StudentManagementCard from "./StudentManagementCard";
+import { Announcement, AnnouncementAudience, Attendance, Branch, Competition, Group, Hall, Payment, Student, SubscriptionPlan, Teacher } from "../types";
+import StudentManagementCard, { SellSubscriptionInput } from "./StudentManagementCard";
 import StudentsRegistry from "./StudentsRegistry";
 
 interface BranchManagerWorkspaceProps {
@@ -53,6 +53,8 @@ interface BranchManagerWorkspaceProps {
   onDeleteStudent?: (id: string) => Promise<boolean>;
   onCreateAnnouncement?: (data: { title: string; content: string; audience: AnnouncementAudience; isImportant: boolean }) => void;
   onOpenPayment?: (student: Student) => void;
+  onSellSubscription?: (payload: SellSubscriptionInput) => Promise<boolean> | boolean;
+  subscriptionPlans?: SubscriptionPlan[];
   onToggleAttendance?: (studentId: string, date: string, status: "present" | "absent" | "sick") => void;
 }
 
@@ -96,6 +98,8 @@ export function BranchManagerWorkspace({
   onDeleteStudent,
   onCreateAnnouncement,
   onOpenPayment,
+  onSellSubscription,
+  subscriptionPlans = [],
   onToggleAttendance,
 }: BranchManagerWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<BranchTab>("dashboard");
@@ -206,6 +210,8 @@ export function BranchManagerWorkspace({
               onUpdateStudent={onUpdateStudent}
               onDeleteStudent={onDeleteStudent}
               onOpenPayment={onOpenPayment}
+              onSellSubscription={onSellSubscription}
+              plans={subscriptionPlans}
             />
           )}
           {activeTab === "teachers" && <TeachersView teachers={branchTeachers} groups={branchGroups} students={branchStudents} />}
@@ -321,7 +327,7 @@ function DashboardView({ branch, metrics, attendanceWeek, attendanceMonth, group
   );
 }
 
-function StudentsView({ students, groups, teachers = [], branches = [], branchId, onCreateStudent, onUpdateStudent, onDeleteStudent, onOpenPayment }: {
+function StudentsView({ students, groups, teachers = [], branches = [], branchId, onCreateStudent, onUpdateStudent, onDeleteStudent, onOpenPayment, onSellSubscription, plans = [] }: {
   students: Student[];
   groups: Group[];
   teachers?: Teacher[];
@@ -331,6 +337,8 @@ function StudentsView({ students, groups, teachers = [], branches = [], branchId
   onUpdateStudent?: (id: string, data: any) => Promise<boolean>;
   onDeleteStudent?: (id: string) => Promise<boolean>;
   onOpenPayment?: (student: Student) => void;
+  onSellSubscription?: (payload: SellSubscriptionInput) => Promise<boolean> | boolean;
+  plans?: SubscriptionPlan[];
 }) {
   return (
     <Screen title="Ученики филиала" subtitle="Продления, долги, LTV-сегменты, коммуникации и массовые действия по вашему филиалу.">
@@ -344,6 +352,8 @@ function StudentsView({ students, groups, teachers = [], branches = [], branchId
         onUpdateStudent={onUpdateStudent}
         onDeleteStudent={onDeleteStudent}
         onOpenPayment={onOpenPayment}
+        onSellSubscription={onSellSubscription}
+        plans={plans}
       />
     </Screen>
   );

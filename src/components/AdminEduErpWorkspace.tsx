@@ -31,7 +31,7 @@ import {
   WalletCards
 } from "lucide-react";
 import { Announcement, AnnouncementAudience, AuditLog, Branch, Group, Hall, Payment, Student, Teacher, AdminTask, AdminTaskStatus, AdminTaskPriority, SubscriptionPlan, LeadSource } from "../types";
-import StudentManagementCard from "./StudentManagementCard";
+import StudentManagementCard, { SellSubscriptionInput } from "./StudentManagementCard";
 import StudentsRegistry from "./StudentsRegistry";
 
 // --- Лёгкая система всплывающих уведомлений (toast) ---
@@ -106,6 +106,7 @@ interface AdminEduErpWorkspaceProps {
   onDeleteStudent?: (id: string) => Promise<boolean>;
   onCreateAnnouncement?: (data: { title: string; content: string; audience: AnnouncementAudience; isImportant: boolean }) => void;
   onOpenPayment?: (student: Student) => void;
+  onSellSubscription?: (payload: SellSubscriptionInput) => Promise<boolean> | boolean;
   tasks?: AdminTask[];
   subscriptionPlans?: SubscriptionPlan[];
   leadSources?: LeadSource[];
@@ -169,6 +170,7 @@ export function AdminEduErpWorkspace({
   onDeleteStudent,
   onCreateAnnouncement,
   onOpenPayment,
+  onSellSubscription,
   tasks = [],
   subscriptionPlans = [],
   leadSources = [],
@@ -296,6 +298,8 @@ export function AdminEduErpWorkspace({
               onUpdateStudent={onUpdateStudent}
               onDeleteStudent={onDeleteStudent}
               onOpenPayment={onOpenPayment}
+              onSellSubscription={onSellSubscription}
+              plans={subscriptionPlans}
             />
           )}
           {activeTab === "journal" && (
@@ -404,7 +408,7 @@ function DashboardView({ branches, groups, students, teachers, todayRevenue, mon
 }
 
 // Раздел «Ученики» (ТЗ): полноценный реестр клиентской базы.
-function VisitorsView({ students, groups, branches, teachers, adminBranchId, onCreateStudent, onUpdateStudent, onDeleteStudent, onOpenPayment }: any) {
+function VisitorsView({ students, groups, branches, teachers, adminBranchId, onCreateStudent, onUpdateStudent, onDeleteStudent, onOpenPayment, onSellSubscription, plans }: any) {
   return (
     <StudentsRegistry
       students={students}
@@ -416,6 +420,8 @@ function VisitorsView({ students, groups, branches, teachers, adminBranchId, onC
       onUpdateStudent={onUpdateStudent}
       onDeleteStudent={onDeleteStudent}
       onOpenPayment={onOpenPayment}
+      onSellSubscription={onSellSubscription}
+      plans={plans}
     />
   );
 }

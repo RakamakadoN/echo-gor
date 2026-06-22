@@ -51,12 +51,12 @@ import {
   Trash2,
   X
 } from "lucide-react";
-import { Announcement, AnnouncementAudience, Branch, Competition, ExecutiveSummary, Group, Payment, Student, Teacher } from "../types";
+import { Announcement, AnnouncementAudience, Branch, Competition, ExecutiveSummary, Group, Payment, Student, SubscriptionPlan, Teacher } from "../types";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
   LineChart as RLineChart, Line, Legend, AreaChart, Area
 } from "recharts";
-import StudentManagementCard from "./StudentManagementCard";
+import StudentManagementCard, { SellSubscriptionInput } from "./StudentManagementCard";
 import StudentsRegistry from "./StudentsRegistry";
 import { computeOwnerDashboard, type DashFilters, type PeriodKey, type LevelKey, type DashExtras, type Delta } from "../ownerDashboardAnalytics";
 
@@ -91,6 +91,8 @@ interface OwnerExecutiveWorkspaceProps {
   onUpdateStudent?: (id: string, data: StudentInput) => Promise<boolean>;
   onDeleteStudent?: (id: string) => Promise<boolean>;
   onOpenPayment?: (student: Student) => void;
+  onSellSubscription?: (payload: SellSubscriptionInput) => Promise<boolean> | boolean;
+  subscriptionPlans?: SubscriptionPlan[];
   studentTrash?: TrashStudent[];
   onRestoreStudent?: (id: string) => Promise<boolean>;
   onConfirmDeleteStudent?: (id: string) => Promise<boolean>;
@@ -157,6 +159,8 @@ export function OwnerExecutiveWorkspace({
   onUpdateStudent,
   onDeleteStudent,
   onOpenPayment,
+  onSellSubscription,
+  subscriptionPlans = [],
   studentTrash = [],
   onRestoreStudent,
   onConfirmDeleteStudent,
@@ -264,7 +268,7 @@ export function OwnerExecutiveWorkspace({
           )}
           {activeTab === "eduerp" && <OwnerEduErpView branches={branches} groups={groups} students={students} teachers={teachers} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
           {activeTab === "branches" && <BranchesView branches={branchScorecards} rawBranches={branches} students={students} groups={groups} teachers={teachers} halls={halls} onCreateBranch={onCreateBranch} onUpdateBranch={onUpdateBranch} onDeleteBranch={onDeleteBranch} onCreateGroup={onCreateGroup} onUpdateGroup={onUpdateGroup} onDeleteGroup={onDeleteGroup} />}
-          {activeTab === "students" && <StudentsNetworkView students={students} branches={branches} groups={groups} teachers={teachers} onCreateStudent={onCreateStudent} onUpdateStudent={onUpdateStudent} onDeleteStudent={onDeleteStudent} onOpenPayment={onOpenPayment} studentTrash={studentTrash} onRestoreStudent={onRestoreStudent} onConfirmDeleteStudent={onConfirmDeleteStudent} />}
+          {activeTab === "students" && <StudentsNetworkView students={students} branches={branches} groups={groups} teachers={teachers} onCreateStudent={onCreateStudent} onUpdateStudent={onUpdateStudent} onDeleteStudent={onDeleteStudent} onOpenPayment={onOpenPayment} onSellSubscription={onSellSubscription} subscriptionPlans={subscriptionPlans} studentTrash={studentTrash} onRestoreStudent={onRestoreStudent} onConfirmDeleteStudent={onConfirmDeleteStudent} />}
           {activeTab === "teachers" && <TeachersNetworkView teachers={teachers} metrics={metrics} branches={branches} onCreateTeacher={onCreateTeacher} onUpdateTeacher={onUpdateTeacher} onDeleteTeacher={onDeleteTeacher} />}
           {activeTab === "finance" && <BookkeepingView branches={branchScorecards} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
           {activeTab === "schedule" && (
@@ -1549,7 +1553,7 @@ function OwnerEduErpView({ branches, groups, students, teachers, payments, month
   );
 }
 
-function StudentsNetworkView({ students, branches, groups, teachers, onCreateStudent, onUpdateStudent, onDeleteStudent, onOpenPayment, studentTrash = [], onRestoreStudent, onConfirmDeleteStudent }: {
+function StudentsNetworkView({ students, branches, groups, teachers, onCreateStudent, onUpdateStudent, onDeleteStudent, onOpenPayment, onSellSubscription, subscriptionPlans = [], studentTrash = [], onRestoreStudent, onConfirmDeleteStudent }: {
   students: Student[];
   branches: Branch[];
   groups: Group[];
@@ -1558,6 +1562,8 @@ function StudentsNetworkView({ students, branches, groups, teachers, onCreateStu
   onUpdateStudent?: (id: string, data: StudentInput) => Promise<boolean>;
   onDeleteStudent?: (id: string) => Promise<boolean>;
   onOpenPayment?: (student: Student) => void;
+  onSellSubscription?: (payload: SellSubscriptionInput) => Promise<boolean> | boolean;
+  subscriptionPlans?: SubscriptionPlan[];
   studentTrash?: TrashStudent[];
   onRestoreStudent?: (id: string) => Promise<boolean>;
   onConfirmDeleteStudent?: (id: string) => Promise<boolean>;
@@ -1589,6 +1595,8 @@ function StudentsNetworkView({ students, branches, groups, teachers, onCreateStu
         onUpdateStudent={onUpdateStudent}
         onDeleteStudent={onDeleteStudent}
         onOpenPayment={onOpenPayment}
+        onSellSubscription={onSellSubscription}
+        plans={subscriptionPlans}
       />
 
             <div className="overflow-hidden rounded-[2rem] border border-rose-500/20 bg-[#140f10]">
