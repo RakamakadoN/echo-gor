@@ -57,8 +57,8 @@ import {
   LineChart as RLineChart, Line, Legend, AreaChart, Area
 } from "recharts";
 import StudentManagementCard, { SellSubscriptionInput } from "./StudentManagementCard";
-import StudentsRegistry from "./StudentsRegistry";
-import { computeOwnerDashboard, type DashFilters, type PeriodKey, type LevelKey, type DashExtras, type Delta } from "../ownerDashboardAnalytics";
+import StudentsRegistry, { type RegistryPreset } from "./StudentsRegistry";
+import { computeOwnerDashboard, type DashFilters, type PeriodKey, type LevelKey, type DashExtras, type Delta, type DailyReport } from "../ownerDashboardAnalytics";
 
 type StudentInput = { name?: string; branchId?: string; groupId?: string; teacherId?: string; parentName?: string; parentPhone?: string; status?: string; manualStatus?: string | null };
 type TrashStudent = { id: string; name: string; branchId: string; parentName: string; parentPhone: string; requestedBy: string; requestedAt: string; reason: string };
@@ -188,6 +188,12 @@ export function OwnerExecutiveWorkspace({
   onDeleteLesson,
 }: OwnerExecutiveWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<OwnerTab>("dashboard");
+  // Пресет-фильтр для вкладки «Ученики» — задаётся кликом по KPI/риску в дашборде.
+  const [studentsPreset, setStudentsPreset] = useState<RegistryPreset | null>(null);
+  const openStudentsWithPreset = (preset: RegistryPreset) => {
+    setStudentsPreset({ ...preset, nonce: Date.now() });
+    setActiveTab("students");
+  };
   const debt = Math.abs(students.filter((student) => student.balance < 0).reduce((sum, student) => sum + student.balance, 0));
   const renewals = students.filter((student) => student.subscriptions.some((sub) => sub.lessonsLeft <= 2 || sub.status !== "active")).length;
   const monthRevenue = metrics.thisMonthRevenue;
@@ -261,6 +267,7 @@ export function OwnerExecutiveWorkspace({
               rawPayments={payments}
               branchScorecards={branchScorecards}
               onNavigate={(tab: OwnerTab) => setActiveTab(tab)}
+              onOpenStudents={openStudentsWithPreset}
               onTriggerAiReport={onTriggerAiReport}
               aiResult={aiResult}
               aiGenerating={aiGenerating}
@@ -268,7 +275,7 @@ export function OwnerExecutiveWorkspace({
           )}
           {activeTab === "eduerp" && <OwnerEduErpView branches={branches} groups={groups} students={students} teachers={teachers} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
           {activeTab === "branches" && <BranchesView branches={branchScorecards} rawBranches={branches} students={students} groups={groups} teachers={teachers} halls={halls} onCreateBranch={onCreateBranch} onUpdateBranch={onUpdateBranch} onDeleteBranch={onDeleteBranch} onCreateGroup={onCreateGroup} onUpdateGroup={onUpdateGroup} onDeleteGroup={onDeleteGroup} />}
-          {activeTab === "students" && <StudentsNetworkView students={students} branches={branches} groups={groups} teachers={teachers} onCreateStudent={onCreateStudent} onUpdateStudent={onUpdateStudent} onDeleteStudent={onDeleteStudent} onOpenPayment={onOpenPayment} onSellSubscription={onSellSubscription} subscriptionPlans={subscriptionPlans} studentTrash={studentTrash} onRestoreStudent={onRestoreStudent} onConfirmDeleteStudent={onConfirmDeleteStudent} />}
+          {activeTab === "students" && <StudentsNetworkView students={students} branches={branches} groups={groups} teachers={teachers} onCreateStudent={onCreateStudent} onUpdateStudent={onUpdateStudent} onDeleteStudent={onDeleteStudent} onOpenPayment={onOpenPayment} onSellSubscription={onSellSubscription} subscriptionPlans={subscriptionPlans} studentTrash={studentTrash} onRestoreStudent={onRestoreStudent} onConfirmDeleteStudent={onConfirmDeleteStudent} preset={studentsPreset} />}
           {activeTab === "teachers" && <TeachersNetworkView teachers={teachers} metrics={metrics} branches={branches} onCreateTeacher={onCreateTeacher} onUpdateTeacher={onUpdateTeacher} onDeleteTeacher={onDeleteTeacher} />}
           {activeTab === "finance" && <BookkeepingView branches={branchScorecards} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
           {activeTab === "schedule" && (
@@ -306,7 +313,7 @@ export function OwnerExecutiveWorkspace({
   );
 }
 
-function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawPayments, branchScorecards, onNavigate, onTriggerAiReport, aiResult, aiGenerating }: any) {
+function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawPayments, branchScorecards, onNavigate, onOpenStudents, onTriggerAiReport, aiResult, aiGenerating }: any) {
   const go = (tab: string) => onNavigate?.(tab);
   const [period, setPeriod] = useState<PeriodKey>("month");
   const [level, setLevel] = useState<LevelKey>("network");
@@ -336,6 +343,26 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
     ),
     [rawStudents, rawPayments, rawGroups, rawBranches, rawTeachers, period, level, branchId, groupId, teacherId, customStart, customEnd, extras]
   );
+
+  // Открыть «Ученики» с пресет-фильтром, сохранив выбранный филиал из дашборда.
+  const openList = (preset: RegistryPreset) =>
+    onOpenStudents?.({ branchFilter: level === "branch" && branchId ? branchId : "all", ...preset });
+
+  // Сопоставление общих рисков (m.risks) с готовыми списками ежедневного отчёта.
+  const dr = m.dailyReport;
+  const resolveRisk = (id: string) => {
+    if (id === "renew3") return openList({ ids: dr.expiring3d.ids, label: "Истекают через 3 дня" });
+    if (id === "renew7") return openList({ ids: dr.expiring7d.ids, label: "Истекают через 7 дней" });
+    if (id === "debt") return openList({ ids: dr.debtors.ids, label: "Должники" });
+    if (id === "overload") return openList({ ids: dr.overloadedGroups.studentIds, label: "Ученики перегруженных групп" });
+    if (id === "empty") return openList({ ids: dr.lowFillGroups.studentIds, label: "Ученики низкозаполненных групп" });
+    if (id.startsWith("lowret-b-") || id.startsWith("lowocc-")) {
+      const bid = id.replace("lowret-b-", "").replace("lowocc-", "");
+      const ids = (rawStudents || []).filter((s: Student) => s.branchId === bid).map((s: Student) => s.id);
+      return openList({ ids, label: "Ученики филиала", branchFilter: bid });
+    }
+    return go("branches");
+  };
 
   const periods: { id: PeriodKey; label: string }[] = [
     { id: "today", label: "Сегодня" }, { id: "yesterday", label: "Вчера" }, { id: "week", label: "Неделя" },
@@ -401,6 +428,10 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
         </div>
       </section>
 
+      {/* 1.5 ЕЖЕДНЕВНЫЙ ОТЧЁТ РУКОВОДИТЕЛЯ */}
+      <DailyManagerReport report={m.dailyReport} scopeLabel={m.scope.label} periodLabel={m.ranges.cur.label}
+        onOpenList={openList} onGo={go} />
+
       {/* 2. ОСНОВНЫЕ ПОКАЗАТЕЛИ */}
       <SectionTitle icon={BarChart3} title="Основные показатели" />
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -463,7 +494,7 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
       <SectionTitle icon={AlertTriangle} title="Риски" hint="Что требует решения прямо сейчас" />
       {m.risks.length > 0 ? (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {m.risks.map((r) => <RiskTile key={r.id} severity={r.severity} title={r.title} detail={r.detail} onClick={() => go("branches")} />)}
+          {m.risks.map((r) => <RiskTile key={r.id} severity={r.severity} title={r.title} detail={r.detail} onClick={() => resolveRisk(r.id)} />)}
         </div>
       ) : (
         <div className="flex items-center gap-3 rounded-3xl border border-emerald-500/20 bg-emerald-500/10 p-4">
@@ -696,6 +727,84 @@ function RiskTile({ severity, title, detail, onClick }: { key?: React.Key; sever
         <p className="mt-0.5 text-xs text-slate-400">{detail}</p>
       </div>
     </button>
+  );
+}
+
+// ---------- Ежедневный отчёт руководителя: «Здоровье студии за 30 секунд» ----------
+function DailyManagerReport({ report, scopeLabel, periodLabel, onOpenList, onGo }: {
+  report: DailyReport;
+  scopeLabel: string;
+  periodLabel: string;
+  onOpenList: (preset: RegistryPreset) => void;
+  onGo: (tab: string) => void;
+}) {
+  const toneCls: Record<string, string> = {
+    gold: "text-[#C5A059]", white: "text-white", rose: "text-rose-400", emerald: "text-emerald-400", amber: "text-amber-400",
+  };
+  const stats: { label: string; value: React.ReactNode; tone: string; hint?: string; onClick: () => void }[] = [
+    { label: "Выручка сегодня", value: money(report.revenueToday), tone: "gold", hint: `${report.paymentsToday} ${report.paymentsToday === 1 ? "оплата" : "оплат"}`, onClick: () => onGo("finance") },
+    { label: "Активные абонементы", value: report.activeSubs, tone: "white", onClick: () => onOpenList({ segment: "active", label: "Активные ученики" }) },
+    { label: "Должники", value: report.debtors.count, tone: report.debtors.count > 0 ? "rose" : "emerald", onClick: () => onOpenList({ ids: report.debtors.ids, label: "Должники" }) },
+    { label: "Новые ученики", value: report.newStudents.count, tone: "gold", onClick: () => onOpenList({ ids: report.newStudents.ids, label: `Новые ученики · ${periodLabel}` }) },
+    { label: "Записи на будущее", value: report.futureEnrollments.count, tone: "white", onClick: () => onOpenList({ ids: report.futureEnrollments.ids, label: "Записи на будущее" }) },
+    { label: "Истекают через 3 дня", value: report.expiring3d.count, tone: report.expiring3d.count > 0 ? "amber" : "emerald", onClick: () => onOpenList({ ids: report.expiring3d.ids, label: "Истекают через 3 дня" }) },
+  ];
+  const sevDot: Record<string, string> = { high: "bg-rose-500", mid: "bg-amber-400", low: "bg-slate-500" };
+  const sevBadge: Record<string, string> = { high: "bg-rose-500/15 text-rose-300", mid: "bg-amber-400/15 text-amber-300", low: "bg-white/10 text-slate-300" };
+
+  return (
+    <section className="rounded-[2rem] border border-[#C5A059]/25 bg-gradient-to-br from-[#1B160B] via-[#121212] to-black p-5 md:p-6">
+      <div className="flex items-start gap-3">
+        <div className="rounded-2xl bg-[#C5A059] p-2.5 text-black"><ClipboardList className="h-5 w-5" /></div>
+        <div className="min-w-0">
+          <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">Ежедневный отчёт руководителя · Здоровье студии за 30 секунд</p>
+          <p className="mt-1 text-sm leading-relaxed text-slate-100">{report.summary}</p>
+          <p className="mt-1 text-[11px] text-slate-500">{scopeLabel} · {periodLabel}</p>
+        </div>
+      </div>
+
+      {/* Кликабельные показатели */}
+      <div className="mt-4 grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-6">
+        {stats.map((s) => (
+          <button key={s.label} onClick={s.onClick}
+            className="group rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 text-left transition hover:border-[#C5A059]/45 hover:bg-white/[0.06]">
+            <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">{s.label}</p>
+            <p className={`mt-1.5 text-xl font-black ${toneCls[s.tone] || "text-white"}`}>{s.value}</p>
+            <p className="mt-1 flex items-center gap-1 text-[10px] font-bold text-slate-500 group-hover:text-[#C5A059]">
+              {s.hint || "Открыть список"} <ArrowRight className="h-3 w-3" />
+            </p>
+          </button>
+        ))}
+      </div>
+
+      {/* Главные риски — каждый ведёт к конкретному списку */}
+      <div className="mt-4">
+        <p className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider text-slate-300">
+          <AlertTriangle className="h-3.5 w-3.5 text-amber-400" /> Главные риски
+        </p>
+        {report.risks.length > 0 ? (
+          <div className="mt-2.5 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {report.risks.map((r) => (
+              <button key={r.id} onClick={() => onOpenList({ ids: r.studentIds, label: r.label })}
+                className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-2.5 text-left transition hover:border-[#C5A059]/40 hover:bg-white/[0.06]">
+                <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${sevDot[r.severity]}`} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold text-white">{r.title}</p>
+                  <p className="truncate text-[11px] text-slate-500">{r.detail}</p>
+                </div>
+                <span className={`shrink-0 rounded-lg px-2 py-0.5 text-[11px] font-black ${sevBadge[r.severity]}`}>{r.count}</span>
+                <ArrowRight className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-2.5 flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-2.5">
+            <CheckCircle className="h-4 w-4 text-emerald-400" />
+            <p className="text-sm font-bold text-emerald-200">Острых рисков нет — показатели в норме.</p>
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -1553,7 +1662,7 @@ function OwnerEduErpView({ branches, groups, students, teachers, payments, month
   );
 }
 
-function StudentsNetworkView({ students, branches, groups, teachers, onCreateStudent, onUpdateStudent, onDeleteStudent, onOpenPayment, onSellSubscription, subscriptionPlans = [], studentTrash = [], onRestoreStudent, onConfirmDeleteStudent }: {
+function StudentsNetworkView({ students, branches, groups, teachers, onCreateStudent, onUpdateStudent, onDeleteStudent, onOpenPayment, onSellSubscription, subscriptionPlans = [], studentTrash = [], onRestoreStudent, onConfirmDeleteStudent, preset }: {
   students: Student[];
   branches: Branch[];
   groups: Group[];
@@ -1567,6 +1676,7 @@ function StudentsNetworkView({ students, branches, groups, teachers, onCreateStu
   studentTrash?: TrashStudent[];
   onRestoreStudent?: (id: string) => Promise<boolean>;
   onConfirmDeleteStudent?: (id: string) => Promise<boolean>;
+  preset?: RegistryPreset | null;
 }) {
   const [trashBusy, setTrashBusy] = useState<string | null>(null);
   const branchNameById = (id: string) => branches.find((b) => b.id === id)?.name || "—";
@@ -1597,6 +1707,7 @@ function StudentsNetworkView({ students, branches, groups, teachers, onCreateStu
         onOpenPayment={onOpenPayment}
         onSellSubscription={onSellSubscription}
         plans={subscriptionPlans}
+        preset={preset}
       />
 
             <div className="overflow-hidden rounded-[2rem] border border-rose-500/20 bg-[#140f10]">

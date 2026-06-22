@@ -7,7 +7,7 @@
  * цветовая таблица, LTV-сегментация, коммуникации, массовые действия,
  * поиск, пагинация и архив. Светлая CRM-тема в стиле карточки ученика.
  */
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Search,
   Plus,
@@ -59,6 +59,21 @@ type StudentInput = {
   manualStatus?: string | null;
 };
 
+/**
+ * Пресет-фильтр: задаётся извне (например, кликом по KPI в дашборде владельца),
+ * чтобы открыть раздел «Ученики» с уже применённым фильтром по точному списку.
+ * `ids` — точный список учеников (приоритет над сегментом/статусом);
+ * `nonce` — счётчик, чтобы повторный клик по тому же пресету снова применился.
+ */
+export interface RegistryPreset {
+  ids?: string[];
+  segment?: SegmentId;
+  statusFilter?: string;
+  branchFilter?: string;
+  label?: string;
+  nonce?: number;
+}
+
 export interface StudentsRegistryProps {
   students: Student[];
   groups: Group[];
@@ -71,6 +86,7 @@ export interface StudentsRegistryProps {
   onOpenPayment?: (student: Student) => void;
   plans?: SubscriptionPlan[];
   onSellSubscription?: (payload: SellSubscriptionInput) => Promise<boolean> | boolean;
+  preset?: RegistryPreset | null;
 }
 
 /* ---------- helpers ---------- */
@@ -97,6 +113,7 @@ export default function StudentsRegistry({
   onOpenPayment,
   plans = [],
   onSellSubscription,
+  preset,
 }: StudentsRegistryProps) {
   const now = useMemo(() => new Date(), []);
   const canManage = Boolean(onCreateStudent || onUpdateStudent);
@@ -118,6 +135,42 @@ export default function StudentsRegistry({
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(10);
 
+  // Пресет-фильтр по точному списку id (приходит из дашборда владельца).
+  const [presetIds, setPresetIds] = useState<Set<string> | null>(null);
+  const [presetLabel, setPresetLabel] = useState<string | null>(null);
+
+  const clearPreset = () => { setPresetIds(null); setPresetLabel(null); };
+
+  // Применяем входящий пресет (по nonce — чтобы повторный клик сработал снова).
+  useEffect(() => {
+    if (!preset) return;
+    if (preset.ids && preset.ids.length >= 0 && (preset.ids.length > 0 || preset.label)) {
+      // точный список — сбрасываем прочие фильтры, показываем всех (вкл. архив)
+      setPresetIds(new Set(preset.ids));
+      setPresetLabel(preset.label || null);
+      setSegment("all");
+      setStatusFilter("all");
+      setGroupFilter("all");
+      setLtvFilter("all");
+      setArchiveFilter("all");
+      setSearch("");
+      setBranchFilter(preset.branchFilter || "all");
+    } else {
+      // нативный фильтр по сегменту/статусу
+      clearPreset();
+      setSegment((preset.segment as SegmentId) || "all");
+      setStatusFilter(preset.statusFilter || "all");
+      setBranchFilter(preset.branchFilter || "all");
+      setLtvFilter("all");
+      setGroupFilter("all");
+      setArchiveFilter("active");
+      setSearch("");
+      setPresetLabel(preset.label || null);
+    }
+    setPage(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preset?.nonce]);
+
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [openId, setOpenId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -135,6 +188,16 @@ export default function StudentsRegistry({
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return data.filter((s) => {
+      // точный список из пресета имеет приоритет над остальными фильтрами
+      if (presetIds) {
+        if (!presetIds.has(s.id)) return false;
+        if (q) {
+          const hay = [s.name, s.parentName, s.parentPhone, (s as any).phone, groupName(studentGroupId(s))]
+            .filter(Boolean).join(" ").toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        return true;
+      }
       // архив
       if (segment === "left") {
         if (!isLeft(s)) return false;
@@ -170,10 +233,10 @@ export default function StudentsRegistry({
       }
       return true;
     });
-  }, [data, segment, statusFilter, branchFilter, groupFilter, ltvFilter, archiveFilter, search, now]);
+  }, [data, segment, statusFilter, branchFilter, groupFilter, ltvFilter, archiveFilter, search, now, presetIds]);
 
   // сброс страницы при смене фильтров
-  const filterKey = `${segment}|${statusFilter}|${branchFilter}|${groupFilter}|${ltvFilter}|${archiveFilter}|${search}|${pageSize}`;
+  const filterKey = `${segment}|${statusFilter}|${branchFilter}|${groupFilter}|${ltvFilter}|${archiveFilter}|${search}|${pageSize}|${presetIds ? presetIds.size : "-"}`;
   const [lastKey, setLastKey] = useState(filterKey);
   if (lastKey !== filterKey) {
     setLastKey(filterKey);
@@ -387,14 +450,27 @@ export default function StudentsRegistry({
         </div>
       )}
 
+      {/* Активный пресет-фильтр (из дашборда владельца) */}
+      {presetLabel && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm">
+          <span className="font-bold text-amber-800">
+            Фильтр из дашборда: {presetLabel}
+            {presetIds ? ` · найдено ${filtered.length}` : ""}
+          </span>
+          <button onClick={clearPreset} className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-black text-amber-700 transition hover:bg-amber-100">
+            <X className="h-3.5 w-3.5" /> Сбросить фильтр
+          </button>
+        </div>
+      )}
+
       {/* Быстрые сегменты */}
       <div className="flex gap-2 overflow-x-auto pb-1">
         {SEGMENTS.map((seg) => {
-          const active = segment === seg.id;
+          const active = !presetIds && segment === seg.id;
           return (
             <button
               key={seg.id}
-              onClick={() => setSegment(seg.id)}
+              onClick={() => { clearPreset(); setSegment(seg.id); }}
               className={`whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-bold transition ${
                 active ? "bg-slate-900 text-white" : "bg-white text-slate-500 ring-1 ring-slate-200 hover:bg-slate-50"
               }`}
@@ -411,11 +487,11 @@ export default function StudentsRegistry({
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Поиск: имя, телефон, родитель, группа" className="w-full rounded-xl border border-slate-200 py-2 pl-10 pr-3 text-sm outline-none focus:border-amber-400" />
         </div>
-        <FilterSelect value={statusFilter} onChange={setStatusFilter} options={STATUS_FILTER_OPTIONS} />
-        <FilterSelect value={branchFilter} onChange={setBranchFilter} options={[{ value: "all", label: "Все филиалы" }, ...branches.map((b) => ({ value: b.id, label: b.name || b.city }))]} />
-        <FilterSelect value={groupFilter} onChange={setGroupFilter} options={[{ value: "all", label: "Все группы" }, ...visibleGroups.map((g) => ({ value: g.id, label: g.name }))]} />
-        <FilterSelect value={ltvFilter} onChange={setLtvFilter} options={[{ value: "all", label: "Все LTV" }, ...LTV_SEGMENTS.map((s) => ({ value: s, label: s }))]} />
-        <FilterSelect value={archiveFilter} onChange={(v) => setArchiveFilter(v as any)} options={[{ value: "active", label: "Активные" }, { value: "archive", label: "Архив" }, { value: "all", label: "Все" }]} />
+        <FilterSelect value={presetIds ? "all" : statusFilter} onChange={(v) => { clearPreset(); setStatusFilter(v); }} options={STATUS_FILTER_OPTIONS} />
+        <FilterSelect value={branchFilter} onChange={(v) => { clearPreset(); setBranchFilter(v); }} options={[{ value: "all", label: "Все филиалы" }, ...branches.map((b) => ({ value: b.id, label: b.name || b.city }))]} />
+        <FilterSelect value={presetIds ? "all" : groupFilter} onChange={(v) => { clearPreset(); setGroupFilter(v); }} options={[{ value: "all", label: "Все группы" }, ...visibleGroups.map((g) => ({ value: g.id, label: g.name }))]} />
+        <FilterSelect value={presetIds ? "all" : ltvFilter} onChange={(v) => { clearPreset(); setLtvFilter(v); }} options={[{ value: "all", label: "Все LTV" }, ...LTV_SEGMENTS.map((s) => ({ value: s, label: s }))]} />
+        <FilterSelect value={archiveFilter} onChange={(v) => { clearPreset(); setArchiveFilter(v as any); }} options={[{ value: "active", label: "Активные" }, { value: "archive", label: "Архив" }, { value: "all", label: "Все" }]} />
       </div>
 
       {/* Уведомление массового действия */}
