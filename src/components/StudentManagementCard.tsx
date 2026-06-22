@@ -675,6 +675,14 @@ const SELL_WEEKDAYS: { label: string; d: number }[] = [
   { label: "Вс", d: 0 },
 ];
 
+// Полные названия дней + сопоставление коротких меток группы (["Пн","Ср"]) с номером дня недели.
+const FULL_WEEKDAY: Record<number, string> = {
+  1: "Понедельник", 2: "Вторник", 3: "Среда", 4: "Четверг", 5: "Пятница", 6: "Суббота", 0: "Воскресенье",
+};
+const SHORT_WD_TO_NUM: Record<string, number> = {
+  "Пн": 1, "Вт": 2, "Ср": 3, "Чт": 4, "Пт": 5, "Сб": 6, "Вс": 0,
+};
+
 const SELL_DISCOUNTS: { label: string; kind: "none" | "pct" | "custom"; pct?: number }[] = [
   { label: "Без скидки", kind: "none" },
   { label: "Семейная скидка (10%)", kind: "pct", pct: 10 },
@@ -684,12 +692,13 @@ const SELL_DISCOUNTS: { label: string; kind: "none" | "pct" | "custom"; pct?: nu
 ];
 
 const SELL_METHODS: { label: string; value: SellSubscriptionInput["method"] }[] = [
+  { label: "Наличные", value: "cash" },
   { label: "Kaspi Pay", value: "kaspi" },
   { label: "Kaspi перевод", value: "kaspi" },
-  { label: "Наличные", value: "cash" },
   { label: "Банковская карта", value: "card" },
   { label: "Безналичный расчёт", value: "transfer" },
 ];
+const DEFAULT_METHOD_IDX = 1; // Kaspi Pay по умолчанию
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 const isoOf = (dt: Date) => `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
@@ -716,13 +725,21 @@ function SellSubscriptionPanel({
   onClose: () => void;
 }) {
   const activePlans = plans.filter((p) => p.status !== "archived");
+  // Дни тренировок из расписания выбранной группы (["Пн","Ср","Пт"] → [1,3,5]); если не заданы — Пн/Ср/Пт.
+  const groupDayNums = (group?.days || [])
+    .map((d) => SHORT_WD_TO_NUM[d])
+    .filter((n) => n !== undefined);
+  const scheduleDayNums = groupDayNums.length ? groupDayNums : [1, 3, 5];
+  const groupTime = group?.time || "";
   const [planId, setPlanId] = useState(activePlans[0]?.id || "");
   const [discountIdx, setDiscountIdx] = useState(0);
   const [customDiscount, setCustomDiscount] = useState(0);
   const [recalc, setRecalc] = useState(0);
-  const [methodIdx, setMethodIdx] = useState(0);
+  const [methodIdx, setMethodIdx] = useState(DEFAULT_METHOD_IDX);
   const [startDate, setStartDate] = useState(isoOf(new Date()));
-  const [enabledDays, setEnabledDays] = useState<Record<number, boolean>>({ 1: true, 3: true, 5: true });
+  const [enabledDays, setEnabledDays] = useState<Record<number, boolean>>(
+    () => Object.fromEntries(scheduleDayNums.map((d) => [d, true]))
+  );
   const [disabledDates, setDisabledDates] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState<null | "save" | "sell">(null);
   const [error, setError] = useState<string | null>(null);
@@ -887,27 +904,30 @@ function SellSubscriptionPanel({
             </label>
           </div>
 
-          {/* Расписание */}
+          {/* Расписание группы */}
           <div className="mt-4">
-            <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Дни недели</p>
+            <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">
+              Расписание занятий{group?.name ? ` · ${group.name}` : ""}
+            </p>
             <div className="flex flex-wrap gap-2">
-              {SELL_WEEKDAYS.map((w) => (
+              {scheduleDayNums.map((d) => (
                 <button
-                  key={w.d}
+                  key={d}
                   type="button"
-                  onClick={() => toggleDay(w.d)}
-                  className={`rounded-full border px-3 py-1.5 text-sm font-bold transition ${
-                    enabledDays[w.d] ? "border-violet-300 bg-violet-50 text-violet-700" : "border-slate-200 bg-slate-50 text-slate-400"
+                  onClick={() => toggleDay(d)}
+                  className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-bold transition ${
+                    enabledDays[d] ? "border-violet-300 bg-violet-50 text-violet-700" : "border-slate-200 bg-slate-50 text-slate-400"
                   }`}
                 >
-                  {w.label}
+                  <span className={`h-1.5 w-1.5 rounded-full ${enabledDays[d] ? "bg-violet-500" : "bg-slate-300"}`} />
+                  {FULL_WEEKDAY[d]}{groupTime ? ` ${groupTime}` : ""}
                 </button>
               ))}
             </div>
             {candidates.length > 0 && (
               <>
                 <p className="mb-2 mt-3 text-xs font-bold uppercase tracking-wide text-slate-400">
-                  Даты занятий ({lessonsTotal} из {candidates.length})
+                  Конкретные даты ({lessonsTotal} из {candidates.length})
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {candidates.map((c) => {
@@ -940,12 +960,12 @@ function SellSubscriptionPanel({
               <SellRow k="Группа" v={group?.name || "—"} />
               <SellRow k="Тип абонемента" v={plan?.name || "—"} />
               <SellRow k="Количество занятий" v={`${lessonsTotal} занятий`} />
-              <SellRow k="Дата начала" v={ddmmyyyyFromIso(startsOn)} />
-              <SellRow k="Дата окончания" v={ddmmyyyyFromIso(endsOn)} />
               <SellRow k="Базовая стоимость" v={money(basePrice)} />
               <SellRow k="Скидка" v={discountAmount > 0 ? `−${money(discountAmount)}` : "—"} tone={discountAmount > 0 ? "rose" : undefined} />
               <SellRow k="Перерасчёт" v={recalcAmount > 0 ? `−${money(recalcAmount)}` : "—"} tone={recalcAmount > 0 ? "rose" : undefined} />
               <SellRow k="Способ оплаты" v={SELL_METHODS[methodIdx].label} />
+              <SellRow k="Дата начала" v={ddmmyyyyFromIso(startsOn)} />
+              <SellRow k="Дата окончания" v={ddmmyyyyFromIso(endsOn)} />
             </div>
             <div className="mt-3 flex items-center justify-between border-t-2 border-violet-200/60 pt-3">
               <span className="text-sm font-black text-slate-700">Итоговая цена</span>

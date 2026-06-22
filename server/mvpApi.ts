@@ -926,6 +926,9 @@ export function registerMvpApi(app: express.Express) {
         ? Math.max(0, Number(payload.price) || 0)
         : Math.max(0, basePrice - discountAmount - recalc);
 
+      // «Сохранить счёт» (paid=false) → абонемент создаётся неактивным (ещё не продан).
+      // «Продать абонемент» (paid=true) → активный + платёж.
+      const paid = payload.paid !== false;
       const insertedSub = await supabaseFetch<any[]>("student_subscriptions", "", {
         method: "POST",
         body: JSON.stringify({
@@ -939,13 +942,12 @@ export function registerMvpApi(app: express.Express) {
           lessons_left: lessonsTotal,
           price: finalPrice,
           discount_amount: discountAmount + recalc,
-          status: "active"
+          status: paid ? "active" : "inactive"
         })
       });
 
-      // Платёж и проводка ДДС — только если оплата принята (по умолчанию да).
+      // Платёж и проводка ДДС — только если оплата принята.
       let payment = null;
-      const paid = payload.paid !== false;
       if (paid && finalPrice > 0) {
         const insertedPayment = await supabaseFetch<any[]>("payments", "", {
           method: "POST",
