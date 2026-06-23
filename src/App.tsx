@@ -72,7 +72,8 @@ import {
   Eye,
   EyeOff,
   Moon,
-  Sun
+  Sun,
+  ChevronDown
 } from "lucide-react";
 
 import {
@@ -129,10 +130,12 @@ export default function App() {
 
   // Active role
   const [activeRole, setActiveRole] = useState<string>("owner");
-  const [themeMode, setThemeMode] = useState<"dark" | "day">(() => {
+  const [themeMode, setThemeMode] = useState<"dark" | "day" | "iman">(() => {
     if (typeof window === "undefined") return "dark";
-    return window.localStorage.getItem("echogor-theme") === "day" ? "day" : "dark";
+    const saved = window.localStorage.getItem("echogor-theme");
+    return saved === "day" || saved === "iman" ? saved : "dark";
   });
+  const [isThemeMenuOpen, setIsThemeMenuOpen] = useState<boolean>(false);
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
@@ -445,6 +448,7 @@ export default function App() {
 
   useEffect(() => {
     document.documentElement.classList.toggle("day-theme", themeMode === "day");
+    document.documentElement.classList.toggle("iman-theme", themeMode === "iman");
     window.localStorage.setItem("echogor-theme", themeMode);
   }, [themeMode]);
 
@@ -2123,7 +2127,7 @@ export default function App() {
   };
 
   return (
-    <div className={`flex flex-col h-screen w-screen overflow-hidden bg-[#0A0A0A] text-slate-200 font-sans ${themeMode === "day" ? "day-theme-app" : ""}`}>
+    <div className={`flex flex-col h-screen w-screen overflow-hidden bg-[#0A0A0A] text-slate-200 font-sans ${themeMode === "day" ? "day-theme-app" : themeMode === "iman" ? "iman-theme-app" : ""}`}>
       
       {/* Desktop login uses the supplied image as the visible UI, with real controls as transparent hotspots. */}
       {isPlayingPromo && (
@@ -2723,19 +2727,49 @@ export default function App() {
 
         {/* Right Status */}
         <div className="hidden xl:flex items-center space-x-4">
-          <button
-            type="button"
-            onClick={() => setThemeMode((current) => current === "day" ? "dark" : "day")}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all outline-none ${
-              themeMode === "day"
-                ? "bg-sky-100 text-slate-900 border border-sky-200 shadow-sm"
-                : "bg-white/5 border border-white/10 hover:bg-[#C5A059]/20 hover:text-[#C5A059] text-slate-300"
-            }`}
-            title={themeMode === "day" ? "Включить ночную тему" : "Включить дневную тему"}
-          >
-            {themeMode === "day" ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
-            <span>{themeMode === "day" ? "Дневная" : "Ночная"}</span>
-          </button>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsThemeMenuOpen((open) => !open)}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all outline-none ${
+                themeMode === "day"
+                  ? "bg-sky-100 text-slate-900 border border-sky-200 shadow-sm"
+                  : themeMode === "iman"
+                  ? "bg-[#C9A861]/15 border border-[#C9A861]/40 text-[#D8BC7E]"
+                  : "bg-white/5 border border-white/10 hover:bg-[#C5A059]/20 hover:text-[#C5A059] text-slate-300"
+              }`}
+              title="Выбрать тему оформления"
+            >
+              {themeMode === "day" ? <Sun className="w-3.5 h-3.5" /> : themeMode === "iman" ? <Sparkles className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+              <span>{themeMode === "day" ? "Дневная" : themeMode === "iman" ? "Iman Ver 1.0" : "Ночная"}</span>
+              <ChevronDown className={`w-3 h-3 transition-transform ${isThemeMenuOpen ? "rotate-180" : ""}`} />
+            </button>
+            {isThemeMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setIsThemeMenuOpen(false)} />
+                <div className="absolute right-0 mt-2 w-48 z-50 rounded-xl border border-white/10 bg-[#141414] shadow-2xl shadow-black/50 overflow-hidden py-1">
+                  {([
+                    { id: "dark", label: "Ночная", Icon: Moon },
+                    { id: "day", label: "Дневная", Icon: Sun },
+                    { id: "iman", label: "Iman Ver 1.0", Icon: Sparkles },
+                  ] as const).map(({ id, label, Icon }) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => { setThemeMode(id); setIsThemeMenuOpen(false); }}
+                      className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 text-xs font-semibold text-left transition-colors ${
+                        themeMode === id ? "bg-[#C5A059]/15 text-[#C5A059]" : "text-slate-300 hover:bg-white/5"
+                      }`}
+                    >
+                      <Icon className="w-3.5 h-3.5 shrink-0" />
+                      <span>{label}</span>
+                      {themeMode === id && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-[#C5A059]" />}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
 
           <button
             onClick={() => {
@@ -2780,11 +2814,11 @@ export default function App() {
         <div className="flex items-center gap-2 xl:hidden">
           <button
             type="button"
-            onClick={() => setThemeMode((current) => current === "day" ? "dark" : "day")}
+            onClick={() => setThemeMode((current) => current === "dark" ? "day" : current === "day" ? "iman" : "dark")}
             className="p-2 text-slate-400 hover:text-white rounded-xl bg-white/5 border border-white/10"
-            title={themeMode === "day" ? "Включить ночную тему" : "Включить дневную тему"}
+            title={`Тема: ${themeMode === "day" ? "Дневная" : themeMode === "iman" ? "Iman Ver 1.0" : "Ночная"} — нажмите, чтобы сменить`}
           >
-            {themeMode === "day" ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+            {themeMode === "day" ? <Sun className="w-5 h-5" /> : themeMode === "iman" ? <Sparkles className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
           </button>
           <button
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}

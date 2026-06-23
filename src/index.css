@@ -140,6 +140,121 @@
   color: transparent !important;
 }
 
+/* ============================================================
+   Iman Ver 1.0 — глубокий сине-графитовый фон + антикварное
+   золото и стально-голубой акцент. Перетинтовывает базовую
+   тёмную тему (по образцу day-theme), не трогая разметку.
+   ============================================================ */
+
+:root.iman-theme {
+  color-scheme: dark;
+}
+
+:root.iman-theme body {
+  background: #0d1016;
+}
+
+:root.iman-theme .iman-theme-app {
+  background: #0d1016 !important;
+  color: #e9e7e2 !important;
+}
+
+/* Tier 1 — page chrome и самые глубокие фоны → сине-графитовая база. */
+:root.iman-theme .iman-theme-app header,
+:root.iman-theme .iman-theme-app aside,
+:root.iman-theme .iman-theme-app main,
+:root.iman-theme .iman-theme-app footer,
+:root.iman-theme .iman-theme-app [class*="bg-[#080808]"],
+:root.iman-theme .iman-theme-app [class*="bg-[#0A0A0A]"] {
+  background-color: #0d1016 !important;
+}
+
+/* Tier 2 — карточки/панели → чуть светлее сине-графит с прохладной
+   границей и мягкой тенью. */
+:root.iman-theme .iman-theme-app [class*="bg-[#0c0c0c]"],
+:root.iman-theme .iman-theme-app [class*="bg-[#0C0C0C]"],
+:root.iman-theme .iman-theme-app [class*="bg-[#0e0e0e]"],
+:root.iman-theme .iman-theme-app [class*="bg-[#0F0F0F]"],
+:root.iman-theme .iman-theme-app [class*="bg-[#111]"],
+:root.iman-theme .iman-theme-app [class*="bg-[#121212]"],
+:root.iman-theme .iman-theme-app [class*="bg-[#141414]"],
+:root.iman-theme .iman-theme-app [class*="bg-[#161616]"],
+:root.iman-theme .iman-theme-app [class*="bg-[#171717]"],
+:root.iman-theme .iman-theme-app [class*="bg-[#181818]"],
+:root.iman-theme .iman-theme-app [class*="bg-[#1A1A1A]"],
+:root.iman-theme .iman-theme-app [class*="bg-[#1a1a1a]"],
+:root.iman-theme .iman-theme-app [class*="bg-[#1b1b1b]"],
+:root.iman-theme .iman-theme-app [class*="bg-[#11121A]"],
+:root.iman-theme .iman-theme-app [class*="bg-[#12141c]"],
+:root.iman-theme .iman-theme-app [class*="bg-[#140f10]"] {
+  background-color: #161b23 !important;
+  border-color: rgba(140, 170, 200, 0.10) !important;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45) !important;
+}
+
+/* Tier 3 — полупрозрачные тёмные оверлеи → прохладный сине-графитовый тинт. */
+:root.iman-theme .iman-theme-app [class*="bg-black"] {
+  background-color: rgba(10, 14, 22, 0.55) !important;
+}
+
+/* Тёмные градиенты держим в палитре. */
+:root.iman-theme .iman-theme-app [class*="to-black"] {
+  --tw-gradient-to: #0d1016 !important;
+}
+
+/* Границы → прохладный стально-голубой. */
+:root.iman-theme .iman-theme-app [class*="border-white/"],
+:root.iman-theme .iman-theme-app [class*="border-[#"] {
+  border-color: rgba(140, 170, 200, 0.14) !important;
+}
+
+/* Сохраняем золотой бренд-бордер чуть теплее. */
+:root.iman-theme .iman-theme-app [class*="border-[#C5A059]"] {
+  border-color: #c9a861 !important;
+}
+
+/* Антикварное золото — теплее дефолтного #C5A059. */
+:root.iman-theme .iman-theme-app [class*="text-[#C5A059]"] {
+  color: #d8bc7e !important;
+}
+
+:root.iman-theme .iman-theme-app [class*="bg-[#C5A059]"] {
+  background-color: #c9a861 !important;
+}
+
+/* Поля ввода. */
+:root.iman-theme .iman-theme-app input,
+:root.iman-theme .iman-theme-app textarea,
+:root.iman-theme .iman-theme-app select {
+  background: rgba(22, 27, 35, 0.85) !important;
+  color: #e9e7e2 !important;
+  border-color: rgba(140, 170, 200, 0.14) !important;
+}
+
+:root.iman-theme .iman-theme-app input::placeholder,
+:root.iman-theme .iman-theme-app textarea::placeholder {
+  color: #7c8694 !important;
+}
+
+/* Экран входа («картинка-как-UI») остаётся прозрачным. */
+:root.iman-theme .iman-theme-app .login-auth-screen input,
+:root.iman-theme .iman-theme-app .login-auth-screen button,
+:root.iman-theme .iman-theme-app .login-auth-screen label {
+  background: transparent !important;
+  background-color: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+:root.iman-theme .iman-theme-app .login-auth-screen input {
+  color: transparent !important;
+  caret-color: #ffffff !important;
+}
+
+:root.iman-theme .iman-theme-app .login-auth-screen input::placeholder {
+  color: transparent !important;
+}
+
 /* --- Mobile adaptation helpers --- */
 
 /* Smooth momentum scrolling + a visible thin scrollbar for horizontally
