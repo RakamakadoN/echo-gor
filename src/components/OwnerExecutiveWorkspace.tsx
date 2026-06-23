@@ -8,6 +8,7 @@ import {
   Building2,
   CalendarDays,
   ChevronDown,
+  ChevronUp,
   CheckCircle,
   ClipboardList,
   Coins,
@@ -59,6 +60,25 @@ import {
 import StudentManagementCard, { SellSubscriptionInput } from "./StudentManagementCard";
 import StudentsRegistry, { type RegistryPreset } from "./StudentsRegistry";
 import { computeOwnerDashboard, type DashFilters, type PeriodKey, type LevelKey, type DashExtras, type Delta, type DailyReport } from "../ownerDashboardAnalytics";
+
+// Память состояния свёрнутых блоков дашборда — отдельно для каждого пользователя (по роли).
+function useCollapsedSections(userKey: string) {
+  const storageKey = `echogor:dashboard-collapsed:${userKey}`;
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
+    try {
+      const raw = typeof window !== "undefined" ? window.localStorage.getItem(storageKey) : null;
+      return raw ? JSON.parse(raw) : {};
+    } catch { return {}; }
+  });
+  useEffect(() => {
+    try { window.localStorage.setItem(storageKey, JSON.stringify(collapsed)); } catch { /* noop */ }
+  }, [storageKey, collapsed]);
+  const isOpen = (id: string) => collapsed[id] !== true; // по умолчанию блок развёрнут
+  const toggle = (id: string) => setCollapsed((c) => ({ ...c, [id]: !(c[id] === true) }));
+  return { isOpen, toggle };
+}
+
+const pctOrDash = (v: number | null) => (v === null ? "—" : `${v}%`);
 
 type StudentInput = { name?: string; branchId?: string; groupId?: string; teacherId?: string; parentName?: string; parentPhone?: string; status?: string; manualStatus?: string | null };
 type TrashStudent = { id: string; name: string; branchId: string; parentName: string; parentPhone: string; requestedBy: string; requestedAt: string; reason: string };
@@ -323,6 +343,10 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
   const [customStart, setCustomStart] = useState<string>("");
   const [customEnd, setCustomEnd] = useState<string>("");
   const [extras, setExtras] = useState<DashExtras>({});
+  // Таблица риска, раскрываемая по клику (модальное окно).
+  const [riskTable, setRiskTable] = useState<{ title: string; columns: string[]; rows: React.ReactNode[][]; note?: string } | null>(null);
+  // Состояние сворачивания блоков — запоминается по роли пользователя.
+  const { isOpen: sectionOpen, toggle: toggleSection } = useCollapsedSections("owner");
 
   useEffect(() => {
     let alive = true;
@@ -363,6 +387,32 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
     }
     return go("branches");
   };
+
+  // Открыть подробную таблицу риска в модальном окне.
+  const openGroupRetention = () => setRiskTable({
+    title: "Группы с падением удержания",
+    columns: ["Группа", "Педагог", "Удерж. пред. мес", "Удерж. тек. мес", "Изменение"],
+    rows: m.riskTables.groupRetention.map((r) => [r.name, r.teacher, pctOrDash(r.prev), pctOrDash(r.cur), <ChangeCell value={r.change} />]),
+    note: "Удержание оценивается по посещаемости (тот же прокси, что и график «удержание по дням»); история накапливается по мере отметок. Сортировка — от худших к лучшим.",
+  });
+  const openLowFill = () => setRiskTable({
+    title: "Низкая заполняемость групп",
+    columns: ["Группа", "Педагог", "Заполняемость"],
+    rows: m.riskTables.lowFillGroups.map((g) => [g.name, g.teacher, `${g.fill}%`]),
+    note: "Группы с заполняемостью ниже 50% — есть свободные мощности для набора.",
+  });
+  const openTeacherRetention = () => setRiskTable({
+    title: "Низкое удержание у педагогов",
+    columns: ["Педагог", "Удержание"],
+    rows: m.riskTables.teacherLowRetention.map((t) => [t.name, `${t.retention}%`]),
+    note: "Педагоги с удержанием ниже нормы (70%). Сортировка — от худших к лучшим.",
+  });
+  const openOverload = () => setRiskTable({
+    title: "Перегруз групп",
+    columns: ["Группа", "Педагог", "Заполняемость"],
+    rows: m.riskTables.overloadGroups.map((g) => [g.name, g.teacher, `${g.fill}%`]),
+    note: "Группы с загрузкой выше нормы (>90%) — кандидаты на параллельные группы / набор педагогов.",
+  });
 
   const periods: { id: PeriodKey; label: string }[] = [
     { id: "today", label: "Сегодня" }, { id: "yesterday", label: "Вчера" }, { id: "week", label: "Неделя" },
@@ -429,11 +479,15 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
       </section>
 
       {/* 1.5 ЕЖЕДНЕВНЫЙ ОТЧЁТ РУКОВОДИТЕЛЯ */}
-      <DailyManagerReport report={m.dailyReport} scopeLabel={m.scope.label} periodLabel={m.ranges.cur.label}
-        onOpenList={openList} onGo={go} />
+      <CollapsibleSection id="daily" icon={ClipboardList} title="Ежедневный отчёт руководителя" hint="Здоровье студии за 30 секунд"
+        open={sectionOpen("daily")} onToggle={() => toggleSection("daily")}>
+        <DailyManagerReport report={m.dailyReport} scopeLabel={m.scope.label} periodLabel={m.ranges.cur.label}
+          onOpenList={openList} onGo={go} />
+      </CollapsibleSection>
 
       {/* 2. ОСНОВНЫЕ ПОКАЗАТЕЛИ */}
-      <SectionTitle icon={BarChart3} title="Основные показатели" />
+      <CollapsibleSection id="kpi" icon={BarChart3} title="Основные показатели"
+        open={sectionOpen("kpi")} onToggle={() => toggleSection("kpi")}>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <BigKpi label="Выручка" value={money(m.revenue.total)} onClick={() => go("finance")}
           rows={[
@@ -489,21 +543,36 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
             { k: "За период", v: <span className="text-slate-200">{m.newStudents.hasData ? m.newStudents.period : "нет данных"}</span> }
           ]} />
       </div>
+      </CollapsibleSection>
 
       {/* 3. РИСКИ */}
-      <SectionTitle icon={AlertTriangle} title="Риски" hint="Что требует решения прямо сейчас" />
-      {m.risks.length > 0 ? (
+      <CollapsibleSection id="risks" icon={AlertTriangle} title="Риски" hint="Что требует решения прямо сейчас"
+        open={sectionOpen("risks")} onToggle={() => toggleSection("risks")}>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {m.risks.map((r) => <RiskTile key={r.id} severity={r.severity} title={r.title} detail={r.detail} onClick={() => resolveRisk(r.id)} />)}
+          <RiskTile severity={dr.unpaidCurrentMonth.count > 0 ? "mid" : "low"}
+            title={`Не оплатили текущий месяц — ${dr.unpaidCurrentMonth.count}`} detail="Открыть список учеников ›"
+            onClick={() => openList({ ids: dr.unpaidCurrentMonth.ids, label: "Не оплатили текущий месяц" })} />
+          <RiskTile severity={dr.unpaidPrevMonth.count > 0 ? "high" : "low"}
+            title={`Не оплатили прошлый месяц — ${dr.unpaidPrevMonth.count}`} detail="Открыть список учеников ›"
+            onClick={() => openList({ ids: dr.unpaidPrevMonth.ids, label: "Не оплатили прошлый месяц" })} />
+          <RiskTile severity={m.riskTables.groupRetention.length > 0 ? "mid" : "low"}
+            title={`Группы с падением удержания — ${m.riskTables.groupRetention.length}`} detail="Группа · педагог · мес→мес ›"
+            onClick={openGroupRetention} />
+          <RiskTile severity={m.riskTables.lowFillGroups.length > 0 ? "mid" : "low"}
+            title={`Низкая заполняемость групп — ${m.riskTables.lowFillGroups.length}`} detail="Группа · педагог · заполняемость ›"
+            onClick={openLowFill} />
+          <RiskTile severity={m.riskTables.teacherLowRetention.length > 0 ? "mid" : "low"}
+            title={`Низкое удержание у педагогов — ${m.riskTables.teacherLowRetention.length}`} detail="Педагог · удержание ›"
+            onClick={openTeacherRetention} />
+          <RiskTile severity={m.riskTables.overloadGroups.length > 0 ? "high" : "low"}
+            title={`Перегруз групп — ${m.riskTables.overloadGroups.length}`} detail="Группа · заполняемость ›"
+            onClick={openOverload} />
         </div>
-      ) : (
-        <div className="flex items-center gap-3 rounded-3xl border border-emerald-500/20 bg-emerald-500/10 p-4">
-          <CheckCircle className="h-6 w-6 text-emerald-400" />
-          <p className="text-sm font-bold text-emerald-200">Острых рисков нет — показатели в норме.</p>
-        </div>
-      )}
+      </CollapsibleSection>
+
       {/* 4. ВОРОНКА ПРОДАЖ */}
-      <SectionTitle icon={Filter} title="Воронка продаж" />
+      <CollapsibleSection id="funnel" icon={Filter} title="Воронка продаж"
+        open={sectionOpen("funnel")} onToggle={() => toggleSection("funnel")}>
       <div className="grid gap-4 xl:grid-cols-3">
         <FunnelDayCard title="Сегодня" data={m.funnel.today} />
         <FunnelDayCard title="Вчера" data={m.funnel.yesterday} />
@@ -518,9 +587,11 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
           <p className="mt-3 text-[11px] text-slate-500">Этапы оцениваются по статусам учеников; точная дневная воронка накапливается из событий.</p>
         </section>
       </div>
+      </CollapsibleSection>
 
       {/* 5. ГРАФИКИ */}
-      <SectionTitle icon={LineChart} title="Графики" />
+      <CollapsibleSection id="charts" icon={LineChart} title="Графики"
+        open={sectionOpen("charts")} onToggle={() => toggleSection("charts")}>
       <div className="grid gap-4 xl:grid-cols-2">
         <ChartCard title="Выручка по месяцам" subtitle="текущий и прошлый год">
           <ResponsiveContainer width="100%" height="100%">
@@ -570,8 +641,11 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
           </ResponsiveContainer>
         </ChartCard>
       </div>
+      </CollapsibleSection>
 
       {/* 6. AI EXECUTIVE BRIEF */}
+      <CollapsibleSection id="brief" icon={Sparkles} title="AI Executive Brief"
+        open={sectionOpen("brief")} onToggle={() => toggleSection("brief")}>
       <section className="rounded-[2rem] border border-[#C5A059]/20 bg-[#C5A059]/10 p-5">
         <div className="flex items-start gap-3">
           <div className="rounded-2xl bg-[#C5A059] p-3 text-black"><Sparkles className="h-5 w-5" /></div>
@@ -583,15 +657,20 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
           </div>
         </div>
       </section>
+      </CollapsibleSection>
 
       {/* 7 + 8. ТРЕБУЮТ ВНИМАНИЯ + ТОЧКИ РОСТА */}
+      <CollapsibleSection id="growth" icon={TrendingUp} title="Точки роста и внимание"
+        open={sectionOpen("growth")} onToggle={() => toggleSection("growth")}>
       <div className="grid gap-4 xl:grid-cols-2">
         <ListPanel icon={AlertTriangle} tone="rose" title="Требуют внимания" items={m.attention} />
         <ListPanel icon={TrendingUp} tone="emerald" title="Точки роста" items={m.growth} />
       </div>
+      </CollapsibleSection>
 
       {/* 10. РЕЙТИНГИ */}
-      <SectionTitle icon={Trophy} title="Рейтинги" hint="Топ-5" />
+      <CollapsibleSection id="ratings" icon={Trophy} title="Рейтинги" hint="Топ-5"
+        open={sectionOpen("ratings")} onToggle={() => toggleSection("ratings")}>
       <div className="grid gap-4 xl:grid-cols-3">
         <RatingTabs title="Филиалы" onClick={() => go("branches")} tabs={[
           { label: "Выручка", rows: m.ratings.branches.byRevenue.map((b) => ({ name: b.name, main: money(b.revenue), sub: `удерж. ${b.retention ?? "—"}% · чек ${b.avgCheck ? money(b.avgCheck) : "—"}`, delta: b.growthPct })) },
@@ -611,8 +690,11 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
           { label: "Удержание", rows: m.ratings.groups.byRetention.map((g) => ({ name: g.name, main: g.retention === null ? "—" : `${g.retention}%`, sub: `выручка ${money(g.revenue)}`, delta: null })) }
         ]} />
       </div>
+      </CollapsibleSection>
 
       {/* 11. AI-АНАЛИЗ МЕСЯЦА */}
+      <CollapsibleSection id="aimonth" icon={FileText} title="AI-анализ месяца"
+        open={sectionOpen("aimonth")} onToggle={() => toggleSection("aimonth")}>
       <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
         <div className="flex items-center justify-between gap-3">
           <SectionTitle icon={FileText} title="AI-анализ месяца" hint="Финансы · продажи · удержание · заполняемость · проблемы · рекомендации" inline />
@@ -660,6 +742,9 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
           </div>
         )}
       </section>
+      </CollapsibleSection>
+
+      {riskTable && <RiskTableModal data={riskTable} onClose={() => setRiskTable(null)} />}
     </div>
   );
 }
@@ -683,6 +768,65 @@ function SectionTitle({ icon: Icon, title, hint, inline }: { icon: React.Element
       <Icon className="h-4 w-4 text-[#C5A059]" />
       <h2 className="text-sm font-black uppercase tracking-wider text-slate-200">{title}</h2>
       {hint && <span className="hidden text-xs text-slate-500 sm:inline">· {hint}</span>}
+    </div>
+  );
+}
+
+// Сворачиваемый блок дашборда: заголовок-переключатель + контент (▼ Развернуть / ▲ Свернуть).
+function CollapsibleSection({ id, icon: Icon, title, hint, open, onToggle, children }: {
+  id: string; icon: React.ElementType; title: string; hint?: string; open: boolean; onToggle: () => void; children: React.ReactNode;
+}) {
+  return (
+    <section className="space-y-3" data-section={id}>
+      <button onClick={onToggle} className="group mt-1 flex w-full items-center gap-2 text-left">
+        <Icon className="h-4 w-4 text-[#C5A059]" />
+        <h2 className="text-sm font-black uppercase tracking-wider text-slate-200">{title}</h2>
+        {hint && <span className="hidden text-xs text-slate-500 sm:inline">· {hint}</span>}
+        <span className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-lg border border-white/10 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-400 transition group-hover:border-[#C5A059]/40 group-hover:text-[#C5A059]">
+          {open ? <><ChevronUp className="h-3.5 w-3.5" /> Свернуть</> : <><ChevronDown className="h-3.5 w-3.5" /> Развернуть</>}
+        </span>
+      </button>
+      {open && <div className="space-y-3">{children}</div>}
+    </section>
+  );
+}
+
+// Цветная ячейка изменения удержания (мес→мес).
+function ChangeCell({ value }: { value: number | null }) {
+  if (value === null) return <span className="text-slate-500">—</span>;
+  const good = value >= 0;
+  return <span className={`font-bold ${good ? "text-emerald-400" : "text-rose-400"}`}>{value > 0 ? "+" : ""}{value}%</span>;
+}
+
+// Модальное окно с подробной таблицей риска.
+function RiskTableModal({ data, onClose }: { data: { title: string; columns: string[]; rows: React.ReactNode[][]; note?: string }; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
+      <div className="max-h-[82vh] w-full max-w-2xl overflow-auto rounded-[2rem] border border-white/10 bg-[#141414] p-5" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h3 className="text-base font-black text-white">{data.title}</h3>
+          <button onClick={onClose} className="rounded-xl border border-white/10 p-1.5 text-slate-400 transition hover:text-white"><X className="h-4 w-4" /></button>
+        </div>
+        {data.rows.length === 0 ? (
+          <p className="py-10 text-center text-sm text-slate-500">Данные накапливаются.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-white/10 text-left text-[11px] uppercase tracking-wider text-slate-500">
+                {data.columns.map((c) => <th key={c} className="py-2 pr-3 font-black">{c}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {data.rows.map((r, i) => (
+                <tr key={i} className="border-b border-white/5">
+                  {r.map((cell, j) => <td key={j} className="py-2.5 pr-3 text-slate-200">{cell}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {data.note && <p className="mt-3 text-[11px] leading-relaxed text-slate-500">{data.note}</p>}
+      </div>
     </div>
   );
 }
@@ -743,14 +887,12 @@ function DailyManagerReport({ report, scopeLabel, periodLabel, onOpenList, onGo 
   };
   const stats: { label: string; value: React.ReactNode; tone: string; hint?: string; onClick: () => void }[] = [
     { label: "Выручка сегодня", value: money(report.revenueToday), tone: "gold", hint: `${report.paymentsToday} ${report.paymentsToday === 1 ? "оплата" : "оплат"}`, onClick: () => onGo("finance") },
+    { label: "Записи на пробный", value: `${report.trialSignups.today} / ${report.trialSignups.yesterday}`, tone: "gold", hint: "сегодня / вчера", onClick: () => onOpenList({ ids: [...report.trialSignups.todayIds, ...report.trialSignups.yesterdayIds], label: "Записи на пробный (сегодня и вчера)" }) },
+    { label: "Продлили на след. период", value: report.renewedNextPeriod.count, tone: "emerald", hint: "уже купили след. месяц", onClick: () => onOpenList({ ids: report.renewedNextPeriod.ids, label: "Продлили на следующий период" }) },
     { label: "Активные абонементы", value: report.activeSubs, tone: "white", onClick: () => onOpenList({ segment: "active", label: "Активные ученики" }) },
     { label: "Должники", value: report.debtors.count, tone: report.debtors.count > 0 ? "rose" : "emerald", onClick: () => onOpenList({ ids: report.debtors.ids, label: "Должники" }) },
     { label: "Новые ученики", value: report.newStudents.count, tone: "gold", onClick: () => onOpenList({ ids: report.newStudents.ids, label: `Новые ученики · ${periodLabel}` }) },
-    { label: "Записи на будущее", value: report.futureEnrollments.count, tone: "white", onClick: () => onOpenList({ ids: report.futureEnrollments.ids, label: "Записи на будущее" }) },
-    { label: "Истекают через 3 дня", value: report.expiring3d.count, tone: report.expiring3d.count > 0 ? "amber" : "emerald", onClick: () => onOpenList({ ids: report.expiring3d.ids, label: "Истекают через 3 дня" }) },
   ];
-  const sevDot: Record<string, string> = { high: "bg-rose-500", mid: "bg-amber-400", low: "bg-slate-500" };
-  const sevBadge: Record<string, string> = { high: "bg-rose-500/15 text-rose-300", mid: "bg-amber-400/15 text-amber-300", low: "bg-white/10 text-slate-300" };
 
   return (
     <section className="rounded-[2rem] border border-[#C5A059]/25 bg-gradient-to-br from-[#1B160B] via-[#121212] to-black p-5 md:p-6">
@@ -775,34 +917,6 @@ function DailyManagerReport({ report, scopeLabel, periodLabel, onOpenList, onGo 
             </p>
           </button>
         ))}
-      </div>
-
-      {/* Главные риски — каждый ведёт к конкретному списку */}
-      <div className="mt-4">
-        <p className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider text-slate-300">
-          <AlertTriangle className="h-3.5 w-3.5 text-amber-400" /> Главные риски
-        </p>
-        {report.risks.length > 0 ? (
-          <div className="mt-2.5 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-            {report.risks.map((r) => (
-              <button key={r.id} onClick={() => onOpenList({ ids: r.studentIds, label: r.label })}
-                className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-2.5 text-left transition hover:border-[#C5A059]/40 hover:bg-white/[0.06]">
-                <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${sevDot[r.severity]}`} />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-white">{r.title}</p>
-                  <p className="truncate text-[11px] text-slate-500">{r.detail}</p>
-                </div>
-                <span className={`shrink-0 rounded-lg px-2 py-0.5 text-[11px] font-black ${sevBadge[r.severity]}`}>{r.count}</span>
-                <ArrowRight className="h-3.5 w-3.5 shrink-0 text-slate-500" />
-              </button>
-            ))}
-          </div>
-        ) : (
-          <div className="mt-2.5 flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-2.5">
-            <CheckCircle className="h-4 w-4 text-emerald-400" />
-            <p className="text-sm font-bold text-emerald-200">Острых рисков нет — показатели в норме.</p>
-          </div>
-        )}
       </div>
     </section>
   );

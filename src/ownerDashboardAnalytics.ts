@@ -223,6 +223,8 @@ export interface DailyReport {
   activeSubs: number;
   debtors: DailyReportEntry;
   newStudents: DailyReportEntry;        // новые за выбранный период
+  trialSignups: { today: number; todayIds: string[]; yesterday: number; yesterdayIds: string[] }; // новые записи на пробный урок
+  renewedNextPeriod: DailyReportEntry;  // уже продлили абонемент на следующий период
   futureEnrollments: DailyReportEntry;  // записаны на будущее (лиды/пробные)
   expiring3d: DailyReportEntry;         // истекают ЧЕРЕЗ 3 дня (в ближайшие 3 дня)
   expiring7d: DailyReportEntry;
@@ -266,6 +268,13 @@ export interface OwnerDashboardModel {
     retentionByDay: { day: string; value: number | null }[] | null;
   };
   risks: { id: string; severity: "high" | "mid" | "low"; title: string; detail: string }[];
+  // Таблицы для единого блока «Риски» (раскрываются по клику).
+  riskTables: {
+    groupRetention: { id: string; name: string; teacher: string; prev: number | null; cur: number | null; change: number | null }[];
+    lowFillGroups: { id: string; name: string; teacher: string; fill: number }[];
+    overloadGroups: { id: string; name: string; teacher: string; fill: number }[];
+    teacherLowRetention: { id: string; name: string; retention: number }[];
+  };
   attention: string[];
   growth: string[];
   brief: string[];
@@ -430,8 +439,6 @@ export function computeOwnerDashboard(
 
   // --- риски ---
   const risks: OwnerDashboardModel["risks"] = [];
-  if (renewals.d3 > 0) risks.push({ id: "renew3", severity: "high", title: `${renewals.d3} абонем. истекают за 3 дня`, detail: "Срочно связаться для продления" });
-  else if (renewals.d7 > 0) risks.push({ id: "renew7", severity: "mid", title: `${renewals.d7} абонем. истекают за 7 дней`, detail: "Запланировать звонки на продление" });
   if (debtorStudents.length > 0) risks.push({ id: "debt", severity: debtorStudents.length > 5 ? "high" : "mid", title: `${debtorStudents.length} должников`, detail: debtAmount > 0 ? `Сумма задолженности: ${debtAmount.toLocaleString("ru-RU")} ₸` : "Требуется сверка оплат" });
   const overloaded = occGroups.filter((g) => g.capacity && g.studentCount / g.capacity > 0.9);
   const over100 = occGroups.filter((g) => g.capacity && g.studentCount / g.capacity > 1);
@@ -525,7 +532,6 @@ export function computeOwnerDashboard(
   const brief: string[] = [];
   if (momRevPct !== null) brief.push(`Выручка ${momRevPct >= 0 ? "выросла" : "снизилась"} на ${Math.abs(momRevPct)}% относительно периода «${ranges.prev.label}» (${curRev.all.toLocaleString("ru-RU")} ₸).`);
   else brief.push(`Выручка периода: ${curRev.all.toLocaleString("ru-RU")} ₸ (нет данных за прошлый период для сравнения).`);
-  if (renewals.d7 > 0) brief.push(`${renewals.d7} учеников требуют продления в ближайшие 7 дней.`);
   if (over100.length > 0) brief.push(`${over100.length} групп перегружены (>100%).`);
   else if (overloaded.length > 0) brief.push(`${overloaded.length} групп близки к пределу заполняемости.`);
   const worstBranch = occByBranch.filter((b) => b.pct !== null).sort((a, b) => (a.pct! - b.pct!))[0];
@@ -601,20 +607,63 @@ export function computeOwnerDashboard(
   const retentionDropBranchIds = retentionDropBranchList.map((b) => b.id);
   const studentsOfBranches = (bids: Set<string>) => students.filter((s) => bids.has(s.branchId)).map((s) => s.id);
 
+  // --- Новые записи на пробный урок (по дате создания учеников со статусом «пробный») ---
+  const trialOf = (day: string) => students.filter((s) => s.status === "trial" && s.createdAt && s.createdAt.slice(0, 10) === day);
+  const trialToday = trialOf(todayStr);
+  const trialYesterday = trialOf(yStr);
+
+  // --- Продления на следующий период: абонемент покрывает ВЕСЬ следующий месяц
+  // (validUntil не раньше последнего дня след. месяца) — значит ученик уже оплатил следующий период,
+  // а не просто дотягивает текущим месячным абонементом до начала следующего. ---
+  const nextMonthEnd = iso(new Date(curY, now.getMonth() + 2, 0));
+  const renewedNext = students.filter((s) =>
+    (s.subscriptions || []).some((sub) => sub.validUntil && sub.validUntil >= nextMonthEnd));
+
+  // --- Таблицы рисков ---
+  const teacherName = (id?: string) => teachers.find((t) => t.id === id)?.name || "—";
+  // Удержание группы помесячно (по посещаемости — тот же прокси, что и график «удержание по дням»).
+  const curMonthRange: DateRange = { start: `${curMonthKey}-01`, end: todayStr, label: "" };
+  const prevMonthRange: DateRange = { start: `${prevMonthKey}-01`, end: iso(new Date(curY, now.getMonth(), 0)), label: "" };
+  const groupRetentionAll = groups.map((g) => {
+    const gs = students.filter((s) => (s.groupIds || []).includes(g.id));
+    const prev = attendanceRate(gs, prevMonthRange);
+    const cur = attendanceRate(gs, curMonthRange);
+    const change = prev !== null && cur !== null ? cur - prev : null;
+    return { id: g.id, name: g.name, teacher: teacherName(g.teacherId), prev, cur, change };
+  });
+  const groupRetentionTable = groupRetentionAll
+    .filter((r) => (r.change !== null && r.change < 0) || (r.cur !== null && r.cur < RETENTION_NORM))
+    .sort((a, b) => {
+      // сначала наибольшее падение, null-изменения в конец; вторичная сортировка по текущему удержанию
+      const ac = a.change, bc = b.change;
+      if (ac === null && bc === null) return (a.cur ?? 999) - (b.cur ?? 999);
+      if (ac === null) return 1;
+      if (bc === null) return -1;
+      return ac - bc;
+    });
+  const lowFillTable = occGroups
+    .map((g) => ({ id: g.id, name: g.name, teacher: teacherName(g.teacherId), fill: Math.round((g.studentCount / g.capacity!) * 100) }))
+    .filter((g) => g.fill < 50)
+    .sort((a, b) => a.fill - b.fill);
+  const overloadTable = occGroups
+    .map((g) => ({ id: g.id, name: g.name, teacher: teacherName(g.teacherId), fill: Math.round((g.studentCount / g.capacity!) * 100) }))
+    .filter((g) => g.fill > 90)
+    .sort((a, b) => b.fill - a.fill);
+  const teacherLowRetentionTable = teacherBase
+    .filter((t) => t.retention !== null && t.retention < RETENTION_NORM)
+    .map((t) => ({ id: t.id, name: t.name, retention: t.retention as number }))
+    .sort((a, b) => a.retention - b.retention);
+
   const dailyRisks: DailyRiskItem[] = [];
   const pushRisk = (id: string, severity: "high" | "mid" | "low", title: string, detail: string, kind: DailyRiskItem["kind"], studentIds: string[], label: string) => {
     if (studentIds.length === 0) return;
     dailyRisks.push({ id, severity, title, detail, count: studentIds.length, kind, studentIds, label });
   };
-  pushRisk("d-exp3", "high", `Абонементы истекают через 3 дня — ${exp3.length}`, "Срочно связаться для продления", "students", exp3, "Истекают через 3 дня");
-  pushRisk("d-exp7", "mid", `Абонементы истекают через 7 дней — ${exp7.length}`, "Запланировать продление", "students", exp7, "Истекают через 7 дней");
-  pushRisk("d-exp14", "low", `Абонементы истекают через 14 дней — ${exp14.length}`, "Взять на контроль", "students", exp14, "Истекают через 14 дней");
+  // Примечание: список рисков ежедневного отчёта оставлен в модели для совместимости,
+  // но в UI «Главные риски» больше не отображаются (см. единый блок «Риски»).
   pushRisk("d-debt", debtorStudents.length > 5 ? "high" : "mid", `Должники — ${debtorStudents.length}`, debtAmount > 0 ? `Сумма: ${debtAmount.toLocaleString("ru-RU")} ₸` : "Сверка оплат", "students", debtorStudents.map((s) => s.id), "Должники");
   pushRisk("d-unpaidcur", "mid", `Не оплатили текущий месяц — ${unpaidCurrent.length}`, "Нет оплаты за текущий месяц", "students", unpaidCurrent.map((s) => s.id), "Не оплатили текущий месяц");
   pushRisk("d-unpaidprev", "high", `Не оплатили прошлый месяц — ${unpaidPrev.length}`, "Задолженность за прошлый месяц", "students", unpaidPrev.map((s) => s.id), "Не оплатили прошлый месяц");
-  pushRisk("d-overload", over100.length > 0 ? "high" : "mid", `Перегруженные группы — ${overloaded.length}`, over100.length > 0 ? `${over100.length} групп свыше 100%` : "Близко к пределу", "groups", studentsOfGroups(new Set(overloadedGroupIds)), "Ученики перегруженных групп");
-  pushRisk("d-lowfill", "low", `Группы с низкой заполненностью — ${halfEmpty.length}`, "Свободные мощности — усилить набор", "groups", studentsOfGroups(new Set(lowFillGroupIds)), "Ученики низкозаполненных групп");
-  pushRisk("d-retdrop", "mid", `Филиалы с падением удержания — ${retentionDropBranchList.length}`, "Удержание ниже нормы/падает", "branches", studentsOfBranches(new Set(retentionDropBranchIds)), "Ученики филиалов с падением удержания");
 
   // Краткий AI-вывод (правила).
   const highCount = dailyRisks.filter((r) => r.severity === "high").length;
@@ -625,8 +674,8 @@ export function computeOwnerDashboard(
   if (attnNames.length === 0) halfEmpty.slice(0, 1).forEach((g) => attnNames.push(`группа «${g.name}»`));
   const summaryParts = [
     `Сегодня студия ${stateWord}.`,
-    `${prospects.length} ${plural(prospects.length, "новая запись", "новые записи", "новых записей")}, ${paymentsTodayCount} ${plural(paymentsTodayCount, "новая оплата", "новые оплаты", "новых оплат")}, ${debtorStudents.length} ${plural(debtorStudents.length, "должник", "должника", "должников")}.`,
-    `Через 3 дня ${plural(exp3.length, "истекает", "истекают", "истекают")} ${exp3.length} ${plural(exp3.length, "абонемент", "абонемента", "абонементов")}.`,
+    `${trialToday.length} ${plural(trialToday.length, "запись на пробный", "записи на пробный", "записей на пробный")} сегодня, ${paymentsTodayCount} ${plural(paymentsTodayCount, "новая оплата", "новые оплаты", "новых оплат")}, ${debtorStudents.length} ${plural(debtorStudents.length, "должник", "должника", "должников")}.`,
+    `На следующий период уже ${plural(renewedNext.length, "продлил", "продлили", "продлили")} ${renewedNext.length} ${plural(renewedNext.length, "ученик", "ученика", "учеников")}.`,
   ];
   if (attnNames.length > 0) summaryParts.push(`Требуют внимания: ${attnNames.slice(0, 3).join(", ")}.`);
   const dailySummary = summaryParts.join(" ");
@@ -638,6 +687,11 @@ export function computeOwnerDashboard(
     activeSubs: activeSubsCount,
     debtors: { count: debtorStudents.length, ids: debtorStudents.map((s) => s.id) },
     newStudents: { count: newPeriod, ids: newPeriodStudents.map((s) => s.id) },
+    trialSignups: {
+      today: trialToday.length, todayIds: trialToday.map((s) => s.id),
+      yesterday: trialYesterday.length, yesterdayIds: trialYesterday.map((s) => s.id),
+    },
+    renewedNextPeriod: { count: renewedNext.length, ids: renewedNext.map((s) => s.id) },
     futureEnrollments: { count: prospects.length, ids: prospects.map((s) => s.id) },
     expiring3d: { count: exp3.length, ids: exp3 },
     expiring7d: { count: exp7.length, ids: exp7 },
@@ -683,7 +737,14 @@ export function computeOwnerDashboard(
     renewals,
     funnel: { today: extras.funnelToday ?? null, yesterday: extras.funnelYesterday ?? null, month },
     charts: { revenueByMonth, avgCheckByMonth, subsByMonth, retentionByMonth, retentionByDay },
-    risks, attention, growth, brief,
+    risks,
+    riskTables: {
+      groupRetention: groupRetentionTable,
+      lowFillGroups: lowFillTable,
+      overloadGroups: overloadTable,
+      teacherLowRetention: teacherLowRetentionTable,
+    },
+    attention, growth, brief,
     ratings: { branches: branchRatings, teachers: teacherRatings, groups: groupRatings }
   };
 }
