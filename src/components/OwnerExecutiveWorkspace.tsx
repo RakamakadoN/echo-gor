@@ -80,6 +80,22 @@ function useCollapsedSections(userKey: string) {
 
 const pctOrDash = (v: number | null) => (v === null ? "—" : `${v}%`);
 
+// Данные универсального окна детализации (таблица или список учеников).
+type DetailModalData = {
+  title: string;
+  subtitle?: string;
+  columns: string[];
+  rows: React.ReactNode[][];
+  note?: string;
+  empty?: string;
+  footer?: { label: string; onClick: () => void };
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  lead: "Лид", trial: "Пробный", active: "Активный", paused: "Пауза",
+  debt: "Долг", left: "Ушёл", archived: "Архив", new: "Новый",
+};
+
 type StudentInput = { name?: string; branchId?: string; groupId?: string; teacherId?: string; parentName?: string; parentPhone?: string; status?: string; manualStatus?: string | null };
 type TrashStudent = { id: string; name: string; branchId: string; parentName: string; parentPhone: string; requestedBy: string; requestedAt: string; reason: string };
 type TeacherInput = { name?: string; phone?: string; specialization?: string; branchId?: string | null; role?: string };
@@ -343,8 +359,8 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
   const [customStart, setCustomStart] = useState<string>("");
   const [customEnd, setCustomEnd] = useState<string>("");
   const [extras, setExtras] = useState<DashExtras>({});
-  // Таблица риска, раскрываемая по клику (модальное окно).
-  const [riskTable, setRiskTable] = useState<{ title: string; columns: string[]; rows: React.ReactNode[][]; note?: string } | null>(null);
+  // Окно детализации, раскрываемое по клику (модальное окно с таблицей/списком).
+  const [riskTable, setRiskTable] = useState<DetailModalData | null>(null);
   // Состояние сворачивания блоков — запоминается по роли пользователя.
   const { isOpen: sectionOpen, toggle: toggleSection } = useCollapsedSections("owner");
 
@@ -368,9 +384,47 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
     [rawStudents, rawPayments, rawGroups, rawBranches, rawTeachers, period, level, branchId, groupId, teacherId, customStart, customEnd, extras]
   );
 
-  // Открыть «Ученики» с пресет-фильтром, сохранив выбранный филиал из дашборда.
-  const openList = (preset: RegistryPreset) =>
-    onOpenStudents?.({ branchFilter: level === "branch" && branchId ? branchId : "all", ...preset });
+  // --- хелперы для окон детализации ---
+  const studentById = useMemo(() => new Map<string, Student>((rawStudents || []).map((s: Student) => [s.id, s])), [rawStudents]);
+  const branchNameOf = (id?: string) => {
+    const b = (rawBranches || []).find((x: Branch) => x.id === id);
+    return b?.name || b?.city || "—";
+  };
+  const groupNamesOf = (s: Student) =>
+    (rawGroups || []).filter((g: Group) => (s.groupIds || []).includes(g.id)).map((g: Group) => g.name).join(", ") || "—";
+  const hasActiveSubLocal = (s: Student) => (s.subscriptions || []).some((sub) => sub.status === "active");
+  const studentRows = (ids: string[]): React.ReactNode[][] =>
+    ids.map((id) => studentById.get(id)).filter(Boolean).map((s) => {
+      const st = s as Student;
+      return [
+        <span className="font-bold text-white">{st.name}</span>,
+        branchNameOf(st.branchId),
+        groupNamesOf(st),
+        <span className={st.status === "debt" ? "text-rose-400 font-bold" : "text-slate-300"}>{STATUS_LABEL[st.status as string] || st.status || "—"}</span>,
+      ];
+    });
+
+  // Открыть окно со списком учеников (по id). В футере — переход в полный раздел «Ученики».
+  const openStudentsModal = (ids: string[], title: string, fullPreset?: RegistryPreset) => setRiskTable({
+    title,
+    subtitle: `${ids.length} ${ids.length % 10 === 1 && ids.length % 100 !== 11 ? "ученик" : ids.length % 10 >= 2 && ids.length % 10 <= 4 && (ids.length % 100 < 10 || ids.length % 100 >= 20) ? "ученика" : "учеников"}`,
+    columns: ["Ученик", "Филиал", "Группа", "Статус"],
+    rows: studentRows(ids),
+    empty: "Список пуст.",
+    footer: fullPreset && onOpenStudents ? { label: "Открыть в разделе «Ученики» ›", onClick: () => onOpenStudents({ branchFilter: level === "branch" && branchId ? branchId : "all", ...fullPreset }) } : undefined,
+  });
+
+  // Окно «показатель → значение».
+  const openInfo = (title: string, pairs: [string, React.ReactNode][], note?: string) => setRiskTable({
+    title, columns: ["Показатель", "Значение"], rows: pairs.map(([k, v]) => [k, v]), note,
+  });
+
+  // Совместимость: прежний openList(preset) теперь открывает окно (а не уводит на вкладку).
+  const openList = (preset: RegistryPreset) => {
+    let ids = preset.ids;
+    if (!ids && preset.segment === "active") ids = (rawStudents || []).filter(hasActiveSubLocal).map((s: Student) => s.id);
+    openStudentsModal(ids || [], preset.label || "Ученики", preset);
+  };
 
   // Сопоставление общих рисков (m.risks) с готовыми списками ежедневного отчёта.
   const dr = m.dailyReport;
@@ -413,6 +467,50 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
     rows: m.riskTables.overloadGroups.map((g) => [g.name, g.teacher, `${g.fill}%`]),
     note: "Группы с загрузкой выше нормы (>90%) — кандидаты на параллельные группы / набор педагогов.",
   });
+
+  // --- окна KPI ---
+  const openRevenue = () => openInfo("Выручка за период", [
+    ["Всего", <span className="font-black text-[#C5A059]">{money(m.revenue.total)}</span>],
+    ["Сегодня / вчера", `${money(m.revenue.today)} / ${money(m.revenue.yesterday)}`],
+    ["Новые / постоянные / вернувшиеся", `${money(m.revenue.new)} · ${money(m.revenue.regular)} · ${money(m.revenue.returning)}`],
+    ["К пред. периоду", <DeltaBadge pct={m.revenue.momPct} />],
+    ["Год к году", <DeltaBadge pct={m.revenue.yoyPct} />],
+  ]);
+  const openAvgCheck = () => openInfo("Средний чек", [
+    ["Все оплаты", m.avgCheck.all === null ? "—" : money(m.avgCheck.all)],
+    ["Новые", m.avgCheck.new === null ? "—" : money(m.avgCheck.new)],
+    ["Постоянные", m.avgCheck.regular === null ? "—" : money(m.avgCheck.regular)],
+    ["Вернувшиеся", m.avgCheck.returning === null ? "—" : money(m.avgCheck.returning)],
+    ["К пред. периоду", <DeltaBadge pct={m.avgCheck.momPct} />],
+  ]);
+  const openRetention = () => openInfo("Удержание (мес→мес)", [
+    ["Удержание", m.retention.pct === null ? "—" : `${m.retention.pct}%`],
+    ["Активны / всего", `${m.retention.activeStudents} / ${m.retention.totalStudents}`],
+    ["Отток", m.retention.pct === null ? "—" : `${100 - m.retention.pct}%`],
+    ["К пред. месяцу", <DeltaBadge pct={m.retention.momPct} />],
+    ["Год к году", <DeltaBadge pct={m.retention.yoyPct} />],
+  ], "Удержание — доля учеников с активным абонементом.");
+  const openOccupancy = () => setRiskTable({
+    title: "Заполняемость по филиалам",
+    subtitle: m.occupancy.pct === null ? undefined : `Сеть: ${m.occupancy.filled} / ${m.occupancy.capacity} · ${m.occupancy.pct}%`,
+    columns: ["Филиал", "Мест занято", "Заполняемость"],
+    rows: m.occupancy.byBranch.map((b) => [b.name, `${b.filled} / ${b.capacity || "—"}`, pctOrDash(b.pct)]),
+    empty: "Нет данных по вместимости групп.",
+  });
+  const openActiveSubs = () => openList({ segment: "active", label: "Активные ученики" });
+  const openDebtors = () => openStudentsModal(dr.debtors.ids, "Должники", { ids: dr.debtors.ids, label: "Должники" });
+  const openFuture = () => openStudentsModal(dr.futureEnrollments.ids, "Записи на будущее", { ids: dr.futureEnrollments.ids, label: "Записи на будущее" });
+  const openNewStudents = () => openStudentsModal(dr.newStudents.ids, `Новые ученики · ${m.ranges.cur.label}`, { ids: dr.newStudents.ids, label: "Новые ученики" });
+
+  // --- окна рейтингов и воронки ---
+  const openBranchDetail = (id: string, name: string) =>
+    openStudentsModal((rawStudents || []).filter((s: Student) => s.branchId === id).map((s: Student) => s.id), `Филиал: ${name}`, { branchFilter: id, label: `Филиал: ${name}` });
+  const openTeacherDetail = (id: string, name: string) =>
+    openStudentsModal((rawStudents || []).filter((s: Student) => s.teacherId === id).map((s: Student) => s.id), `Педагог: ${name}`);
+  const openGroupDetail = (id: string, name: string) =>
+    openStudentsModal((rawStudents || []).filter((s: Student) => (s.groupIds || []).includes(id)).map((s: Student) => s.id), `Группа: ${name}`);
+  const openStatusList = (statuses: string[], title: string) =>
+    openStudentsModal((rawStudents || []).filter((s: Student) => statuses.includes(s.status as string)).map((s: Student) => s.id), title);
 
   const periods: { id: PeriodKey; label: string }[] = [
     { id: "today", label: "Сегодня" }, { id: "yesterday", label: "Вчера" }, { id: "week", label: "Неделя" },
@@ -482,31 +580,31 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
       <CollapsibleSection id="daily" icon={ClipboardList} title="Ежедневный отчёт руководителя" hint="Здоровье студии за 30 секунд"
         open={sectionOpen("daily")} onToggle={() => toggleSection("daily")}>
         <DailyManagerReport report={m.dailyReport} scopeLabel={m.scope.label} periodLabel={m.ranges.cur.label}
-          onOpenList={openList} onGo={go} />
+          onOpenList={openList} onGo={go} onRevenue={openRevenue} />
       </CollapsibleSection>
 
       {/* 2. ОСНОВНЫЕ ПОКАЗАТЕЛИ */}
       <CollapsibleSection id="kpi" icon={BarChart3} title="Основные показатели"
         open={sectionOpen("kpi")} onToggle={() => toggleSection("kpi")}>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <BigKpi label="Выручка" value={money(m.revenue.total)} onClick={() => go("finance")}
+        <BigKpi label="Выручка" value={money(m.revenue.total)} onClick={openRevenue}
           rows={[
             { k: "К пред. периоду", v: <DeltaBadge pct={m.revenue.momPct} /> },
             { k: "Год к году", v: <DeltaBadge pct={m.revenue.yoyPct} /> },
             { k: "Сегодня / вчера", v: <span className="text-slate-200">{money(m.revenue.today)} / {money(m.revenue.yesterday)}</span> },
             { k: "Новые / пост. / верн.", v: <span className="text-slate-200 text-[11px]">{money(m.revenue.new)} · {money(m.revenue.regular)} · {money(m.revenue.returning)}</span> }
           ]} />
-        <BigKpi label="Активные абонементы" value={m.activeSubs.count} onClick={() => go("students")}
+        <BigKpi label="Активные абонементы" value={m.activeSubs.count} onClick={openActiveSubs}
           rows={[
             { k: "К пред. месяцу", v: <DeltaBadge pct={m.activeSubs.momPct} /> },
             { k: "Год к году", v: <DeltaBadge pct={m.activeSubs.yoyPct} /> }
           ]} />
-        <BigKpi label="Заполняемость" value={m.occupancy.pct === null ? "—" : `${m.occupancy.pct}%`} onClick={() => go("schedule")}
+        <BigKpi label="Заполняемость" value={m.occupancy.pct === null ? "—" : `${m.occupancy.pct}%`} onClick={openOccupancy}
           rows={[
             { k: "Мест занято", v: <span className="text-slate-200">{m.occupancy.filled} / {m.occupancy.capacity || "—"}</span> },
             ...(m.occupancy.byBranch.slice(0, 2).map((b) => ({ k: b.name, v: <span className="text-slate-300">{b.pct === null ? "—" : b.pct + "%"}</span> })))
           ]} />
-        <BigKpi label="Удержание (мес→мес)" value={m.retention.pct === null ? "—" : `${m.retention.pct}%`} onClick={() => go("analytics")}
+        <BigKpi label="Удержание (мес→мес)" value={m.retention.pct === null ? "—" : `${m.retention.pct}%`} onClick={openRetention}
           rows={[
             { k: "Активны / всего", v: <span className="text-slate-200">{m.retention.activeStudents} / {m.retention.totalStudents}</span> },
             { k: "К пред. месяцу", v: <DeltaBadge pct={m.retention.momPct} /> },
@@ -514,14 +612,14 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
           ]} />
       </div>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <BigKpi label="Средний чек" value={m.avgCheck.all === null ? "—" : money(m.avgCheck.all)} onClick={() => go("finance")}
+        <BigKpi label="Средний чек" value={m.avgCheck.all === null ? "—" : money(m.avgCheck.all)} onClick={openAvgCheck}
           rows={[
             { k: "Новые", v: <span className="text-slate-200">{m.avgCheck.new === null ? "—" : money(m.avgCheck.new)}</span> },
             { k: "Постоянные", v: <span className="text-slate-200">{m.avgCheck.regular === null ? "—" : money(m.avgCheck.regular)}</span> },
             { k: "Вернувшиеся", v: <span className="text-slate-200">{m.avgCheck.returning === null ? "—" : money(m.avgCheck.returning)}</span> },
             { k: "К пред. периоду", v: <DeltaBadge pct={m.avgCheck.momPct} /> }
           ]} />
-        <BigKpi label="Должники" value={m.debtors.total} tone={m.debtors.total > 0 ? "rose" : "emerald"} onClick={() => go("finance")}
+        <BigKpi label="Должники" value={m.debtors.total} tone={m.debtors.total > 0 ? "rose" : "emerald"} onClick={openDebtors}
           rows={m.debtors.aging
             ? [
                 { k: "1–7 дней", v: <span className="text-slate-200">{m.debtors.aging.d1_7}</span> },
@@ -532,12 +630,12 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
                 { k: "Сумма долга", v: <span className="text-slate-200">{m.debtors.debtAmount ? money(m.debtors.debtAmount) : "—"}</span> },
                 { k: "Разбивка по дням", v: <span className="text-slate-500 text-[11px]">накапливается</span> }
               ]} />
-        <BigKpi label="Записи на будущее" value={m.futureEnrollments.total} onClick={() => go("students")}
+        <BigKpi label="Записи на будущее" value={m.futureEnrollments.total} onClick={openFuture}
           rows={[
             ...(m.futureEnrollments.byBranch.slice(0, 2).map((b) => ({ k: b.name, v: <span className="text-slate-200">{b.n}</span> }))),
             { k: m.futureEnrollments.isProxy ? "Лиды + пробные (прокси)" : "По возрастам", v: <span className="text-slate-500 text-[11px]">{m.futureEnrollments.byAge.map((a) => `${a.label}:${a.n}`).join(" ") || "—"}</span> }
           ]} />
-        <BigKpi label="Новые ученики" value={m.newStudents.hasData ? m.newStudents.period : "—"} tone="gold" onClick={() => go("students")}
+        <BigKpi label="Новые ученики" value={m.newStudents.hasData ? m.newStudents.period : "—"} tone="gold" onClick={openNewStudents}
           rows={[
             { k: "Сегодня", v: <span className="text-slate-200">{m.newStudents.hasData ? m.newStudents.today : "—"}</span> },
             { k: "За период", v: <span className="text-slate-200">{m.newStudents.hasData ? m.newStudents.period : "нет данных"}</span> }
@@ -579,10 +677,10 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
         <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
           <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">За текущий месяц</p>
           <div className="mt-3 space-y-2.5">
-            <FunnelStage label="Лиды" n={m.funnel.month.leads} conv={null} />
-            <FunnelStage label="Записались" n={m.funnel.month.signed} conv={m.funnel.month.convSigned} />
-            <FunnelStage label="Пришли" n={m.funnel.month.came} conv={m.funnel.month.convCame} />
-            <FunnelStage label="Купили" n={m.funnel.month.bought} conv={m.funnel.month.convBought} />
+            <FunnelStage label="Лиды" n={m.funnel.month.leads} conv={null} onClick={() => openStatusList(["lead"], "Лиды")} />
+            <FunnelStage label="Записались" n={m.funnel.month.signed} conv={m.funnel.month.convSigned} onClick={() => openStatusList(["trial", "active"], "Записались")} />
+            <FunnelStage label="Пришли" n={m.funnel.month.came} conv={m.funnel.month.convCame} onClick={() => openStatusList(["trial", "active"], "Пришли на пробный")} />
+            <FunnelStage label="Купили" n={m.funnel.month.bought} conv={m.funnel.month.convBought} onClick={() => openStatusList(["active"], "Купили абонемент")} />
           </div>
           <p className="mt-3 text-[11px] text-slate-500">Этапы оцениваются по статусам учеников; точная дневная воронка накапливается из событий.</p>
         </section>
@@ -673,21 +771,21 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
         open={sectionOpen("ratings")} onToggle={() => toggleSection("ratings")}>
       <div className="grid gap-4 xl:grid-cols-3">
         <RatingTabs title="Филиалы" onClick={() => go("branches")} tabs={[
-          { label: "Выручка", rows: m.ratings.branches.byRevenue.map((b) => ({ name: b.name, main: money(b.revenue), sub: `удерж. ${b.retention ?? "—"}% · чек ${b.avgCheck ? money(b.avgCheck) : "—"}`, delta: b.growthPct })) },
-          { label: "Удержание", rows: m.ratings.branches.byRetention.map((b) => ({ name: b.name, main: b.retention === null ? "—" : `${b.retention}%`, sub: `выручка ${money(b.revenue)}`, delta: null })) },
-          { label: "Чек", rows: m.ratings.branches.byAvgCheck.map((b) => ({ name: b.name, main: b.avgCheck ? money(b.avgCheck) : "—", sub: `выручка ${money(b.revenue)}`, delta: null })) },
-          { label: "Рост", rows: m.ratings.branches.byGrowth.map((b) => ({ name: b.name, main: b.growthPct === null ? "—" : `${b.growthPct}%`, sub: `выручка ${money(b.revenue)}`, delta: b.growthPct })) }
+          { label: "Выручка", rows: m.ratings.branches.byRevenue.map((b) => ({ name: b.name, main: money(b.revenue), sub: `удерж. ${b.retention ?? "—"}% · чек ${b.avgCheck ? money(b.avgCheck) : "—"}`, delta: b.growthPct, onClick: () => openBranchDetail(b.id, b.name) })) },
+          { label: "Удержание", rows: m.ratings.branches.byRetention.map((b) => ({ name: b.name, main: b.retention === null ? "—" : `${b.retention}%`, sub: `выручка ${money(b.revenue)}`, delta: null, onClick: () => openBranchDetail(b.id, b.name) })) },
+          { label: "Чек", rows: m.ratings.branches.byAvgCheck.map((b) => ({ name: b.name, main: b.avgCheck ? money(b.avgCheck) : "—", sub: `выручка ${money(b.revenue)}`, delta: null, onClick: () => openBranchDetail(b.id, b.name) })) },
+          { label: "Рост", rows: m.ratings.branches.byGrowth.map((b) => ({ name: b.name, main: b.growthPct === null ? "—" : `${b.growthPct}%`, sub: `выручка ${money(b.revenue)}`, delta: b.growthPct, onClick: () => openBranchDetail(b.id, b.name) })) }
         ]} />
         <RatingTabs title="Педагоги" onClick={() => go("teachers")} tabs={[
-          { label: "Ученики", rows: m.ratings.teachers.byStudents.map((t) => ({ name: t.name, main: `${t.students} уч.`, sub: `удерж. ${t.retention ?? "—"}% · ${money(t.revenue)}`, delta: null })) },
-          { label: "Удержание", rows: m.ratings.teachers.byRetention.map((t) => ({ name: t.name, main: t.retention === null ? "—" : `${t.retention}%`, sub: `${t.students} уч.`, delta: null })) },
-          { label: "Выручка", rows: m.ratings.teachers.byRevenue.map((t) => ({ name: t.name, main: money(t.revenue), sub: `${t.students} уч. · удерж. ${t.retention ?? "—"}%`, delta: null })) },
-          { label: "Прирост", rows: m.ratings.teachers.byGrowth.map((t) => ({ name: t.name, main: t.growthPct === null ? "—" : `${t.growthPct}%`, sub: `${t.students} уч.`, delta: t.growthPct })) }
+          { label: "Ученики", rows: m.ratings.teachers.byStudents.map((t) => ({ name: t.name, main: `${t.students} уч.`, sub: `удерж. ${t.retention ?? "—"}% · ${money(t.revenue)}`, delta: null, onClick: () => openTeacherDetail(t.id, t.name) })) },
+          { label: "Удержание", rows: m.ratings.teachers.byRetention.map((t) => ({ name: t.name, main: t.retention === null ? "—" : `${t.retention}%`, sub: `${t.students} уч.`, delta: null, onClick: () => openTeacherDetail(t.id, t.name) })) },
+          { label: "Выручка", rows: m.ratings.teachers.byRevenue.map((t) => ({ name: t.name, main: money(t.revenue), sub: `${t.students} уч. · удерж. ${t.retention ?? "—"}%`, delta: null, onClick: () => openTeacherDetail(t.id, t.name) })) },
+          { label: "Прирост", rows: m.ratings.teachers.byGrowth.map((t) => ({ name: t.name, main: t.growthPct === null ? "—" : `${t.growthPct}%`, sub: `${t.students} уч.`, delta: t.growthPct, onClick: () => openTeacherDetail(t.id, t.name) })) }
         ]} />
         <RatingTabs title="Группы" onClick={() => go("schedule")} tabs={[
-          { label: "Выручка", rows: m.ratings.groups.byRevenue.map((g) => ({ name: g.name, main: money(g.revenue), sub: `запол. ${g.occupancy ?? "—"}% · удерж. ${g.retention ?? "—"}%`, delta: null })) },
-          { label: "Заполняемость", rows: m.ratings.groups.byOccupancy.map((g) => ({ name: g.name, main: g.occupancy === null ? "—" : `${g.occupancy}%`, sub: `выручка ${money(g.revenue)}`, delta: null })) },
-          { label: "Удержание", rows: m.ratings.groups.byRetention.map((g) => ({ name: g.name, main: g.retention === null ? "—" : `${g.retention}%`, sub: `выручка ${money(g.revenue)}`, delta: null })) }
+          { label: "Выручка", rows: m.ratings.groups.byRevenue.map((g) => ({ name: g.name, main: money(g.revenue), sub: `запол. ${g.occupancy ?? "—"}% · удерж. ${g.retention ?? "—"}%`, delta: null, onClick: () => openGroupDetail(g.id, g.name) })) },
+          { label: "Заполняемость", rows: m.ratings.groups.byOccupancy.map((g) => ({ name: g.name, main: g.occupancy === null ? "—" : `${g.occupancy}%`, sub: `выручка ${money(g.revenue)}`, delta: null, onClick: () => openGroupDetail(g.id, g.name) })) },
+          { label: "Удержание", rows: m.ratings.groups.byRetention.map((g) => ({ name: g.name, main: g.retention === null ? "—" : `${g.retention}%`, sub: `выручка ${money(g.revenue)}`, delta: null, onClick: () => openGroupDetail(g.id, g.name) })) }
         ]} />
       </div>
       </CollapsibleSection>
@@ -798,34 +896,50 @@ function ChangeCell({ value }: { value: number | null }) {
   return <span className={`font-bold ${good ? "text-emerald-400" : "text-rose-400"}`}>{value > 0 ? "+" : ""}{value}%</span>;
 }
 
-// Модальное окно с подробной таблицей риска.
-function RiskTableModal({ data, onClose }: { data: { title: string; columns: string[]; rows: React.ReactNode[][]; note?: string }; onClose: () => void }) {
+// Универсальное окно детализации с цветным градиентным заголовком.
+function RiskTableModal({ data, onClose }: { data: DetailModalData; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
-      <div className="max-h-[82vh] w-full max-w-2xl overflow-auto rounded-[2rem] border border-white/10 bg-[#141414] p-5" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <h3 className="text-base font-black text-white">{data.title}</h3>
-          <button onClick={onClose} className="rounded-xl border border-white/10 p-1.5 text-slate-400 transition hover:text-white"><X className="h-4 w-4" /></button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="flex max-h-[86vh] w-full max-w-2xl flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#141414] shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        {/* Градиентная шапка */}
+        <div className="flex items-start justify-between gap-3 bg-gradient-to-r from-rose-500 via-amber-400 to-emerald-400 px-5 py-4">
+          <div className="min-w-0">
+            <h3 className="truncate text-lg font-black text-white drop-shadow-sm">{data.title}</h3>
+            {data.subtitle && <p className="mt-0.5 text-xs font-bold text-white/90">{data.subtitle}</p>}
+          </div>
+          <button onClick={onClose} className="shrink-0 rounded-xl bg-black/20 p-1.5 text-white transition hover:bg-black/40"><X className="h-4 w-4" /></button>
         </div>
-        {data.rows.length === 0 ? (
-          <p className="py-10 text-center text-sm text-slate-500">Данные накапливаются.</p>
-        ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-white/10 text-left text-[11px] uppercase tracking-wider text-slate-500">
-                {data.columns.map((c) => <th key={c} className="py-2 pr-3 font-black">{c}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {data.rows.map((r, i) => (
-                <tr key={i} className="border-b border-white/5">
-                  {r.map((cell, j) => <td key={j} className="py-2.5 pr-3 text-slate-200">{cell}</td>)}
+        {/* Тело */}
+        <div className="overflow-auto p-5">
+          {data.rows.length === 0 ? (
+            <p className="py-10 text-center text-sm text-slate-500">{data.empty || "Данные накапливаются."}</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-white/10 text-left text-[11px] uppercase tracking-wider text-slate-500">
+                  {data.columns.map((c) => <th key={c} className="py-2 pr-3 font-black">{c}</th>)}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {data.rows.map((r, i) => (
+                  <tr key={i} className="border-b border-white/5 last:border-0">
+                    {r.map((cell, j) => <td key={j} className="py-2.5 pr-3 text-slate-200">{cell}</td>)}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {data.note && <p className="mt-3 text-[11px] leading-relaxed text-slate-500">{data.note}</p>}
+        </div>
+        {/* Футер (опц.) */}
+        {data.footer && (
+          <div className="border-t border-white/10 p-3">
+            <button onClick={data.footer.onClick}
+              className="w-full rounded-xl border border-[#C5A059]/30 bg-[#C5A059]/10 px-4 py-2.5 text-xs font-black uppercase tracking-wider text-[#C5A059] transition hover:bg-[#C5A059] hover:text-black">
+              {data.footer.label}
+            </button>
+          </div>
         )}
-        {data.note && <p className="mt-3 text-[11px] leading-relaxed text-slate-500">{data.note}</p>}
       </div>
     </div>
   );
@@ -875,18 +989,19 @@ function RiskTile({ severity, title, detail, onClick }: { key?: React.Key; sever
 }
 
 // ---------- Ежедневный отчёт руководителя: «Здоровье студии за 30 секунд» ----------
-function DailyManagerReport({ report, scopeLabel, periodLabel, onOpenList, onGo }: {
+function DailyManagerReport({ report, scopeLabel, periodLabel, onOpenList, onGo, onRevenue }: {
   report: DailyReport;
   scopeLabel: string;
   periodLabel: string;
   onOpenList: (preset: RegistryPreset) => void;
   onGo: (tab: string) => void;
+  onRevenue: () => void;
 }) {
   const toneCls: Record<string, string> = {
     gold: "text-[#C5A059]", white: "text-white", rose: "text-rose-400", emerald: "text-emerald-400", amber: "text-amber-400",
   };
   const stats: { label: string; value: React.ReactNode; tone: string; hint?: string; onClick: () => void }[] = [
-    { label: "Выручка сегодня", value: money(report.revenueToday), tone: "gold", hint: `${report.paymentsToday} ${report.paymentsToday === 1 ? "оплата" : "оплат"}`, onClick: () => onGo("finance") },
+    { label: "Выручка сегодня", value: money(report.revenueToday), tone: "gold", hint: `${report.paymentsToday} ${report.paymentsToday === 1 ? "оплата" : "оплат"}`, onClick: onRevenue },
     { label: "Записи на пробный", value: `${report.trialSignups.today} / ${report.trialSignups.yesterday}`, tone: "gold", hint: "сегодня / вчера", onClick: () => onOpenList({ ids: [...report.trialSignups.todayIds, ...report.trialSignups.yesterdayIds], label: "Записи на пробный (сегодня и вчера)" }) },
     { label: "Продлили на след. период", value: report.renewedNextPeriod.count, tone: "emerald", hint: "уже купили след. месяц", onClick: () => onOpenList({ ids: report.renewedNextPeriod.ids, label: "Продлили на следующий период" }) },
     { label: "Активные абонементы", value: report.activeSubs, tone: "white", onClick: () => onOpenList({ segment: "active", label: "Активные ученики" }) },
@@ -940,15 +1055,16 @@ function FunnelDayCard({ title, data }: { title: string; data: { leads: number; 
   );
 }
 
-function FunnelStage({ label, n, conv }: { label: string; n: number; conv: number | null }) {
+function FunnelStage({ label, n, conv, onClick }: { label: string; n: number; conv: number | null; onClick?: () => void }) {
   return (
-    <div className="flex items-center justify-between rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2">
+    <button onClick={onClick} disabled={!onClick}
+      className={`flex w-full items-center justify-between rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2 text-left transition ${onClick ? "hover:border-[#C5A059]/40 hover:bg-white/[0.06]" : "cursor-default"}`}>
       <span className="text-sm font-bold text-slate-200">{label}</span>
       <span className="flex items-center gap-3">
         <span className="text-base font-black text-white">{n}</span>
         {conv !== null && <span className="rounded-lg bg-[#C5A059]/15 px-2 py-0.5 text-[11px] font-bold text-[#C5A059]">{conv}%</span>}
       </span>
-    </div>
+    </button>
   );
 }
 
@@ -977,7 +1093,7 @@ function ListPanel({ icon: Icon, tone, title, items }: { icon: React.ElementType
   );
 }
 
-type RatingRow = { name: string; main: string; sub: string; delta: number | null };
+type RatingRow = { name: string; main: string; sub: string; delta: number | null; onClick?: () => void };
 function RatingTabs({ title, tabs, onClick }: { title: string; tabs: { label: string; rows: RatingRow[] }[]; onClick?: () => void }) {
   const [active, setActive] = useState(0);
   const rows = tabs[active]?.rows || [];
@@ -998,7 +1114,8 @@ function RatingTabs({ title, tabs, onClick }: { title: string; tabs: { label: st
       <div className="mt-3 space-y-2">
         {rows.length === 0 && <p className="text-sm text-slate-500">Нет данных</p>}
         {rows.map((r, i) => (
-          <div key={i} className="flex items-center gap-3 rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2">
+          <button key={i} onClick={r.onClick} disabled={!r.onClick}
+            className={`flex w-full items-center gap-3 rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2 text-left transition ${r.onClick ? "hover:border-[#C5A059]/40 hover:bg-white/[0.06]" : "cursor-default"}`}>
             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-[#C5A059]/15 text-xs font-black text-[#C5A059]">{i + 1}</span>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-bold text-white">{r.name}</p>
@@ -1008,7 +1125,7 @@ function RatingTabs({ title, tabs, onClick }: { title: string; tabs: { label: st
               <p className="text-sm font-black text-[#C5A059]">{r.main}</p>
               {r.delta !== null && <DeltaBadge pct={r.delta} />}
             </div>
-          </div>
+          </button>
         ))}
       </div>
     </section>
