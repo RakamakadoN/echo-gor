@@ -50,6 +50,11 @@ import {
   Plus,
   Pencil,
   Trash2,
+  Mic2,
+  PartyPopper,
+  ShoppingBag,
+  Package,
+  Boxes,
   X
 } from "lucide-react";
 import { Announcement, AnnouncementAudience, Branch, Competition, ExecutiveSummary, Group, Payment, Student, SubscriptionPlan, Teacher } from "../types";
@@ -59,6 +64,8 @@ import {
 } from "recharts";
 import StudentManagementCard, { SellSubscriptionInput } from "./StudentManagementCard";
 import StudentsRegistry, { type RegistryPreset } from "./StudentsRegistry";
+import AttendanceJournalView from "./AttendanceJournalView";
+import { BranchesGroupsView } from "./BranchesGroupsView";
 import { computeOwnerDashboard, type DashFilters, type PeriodKey, type LevelKey, type DashExtras, type Delta, type DailyReport } from "../ownerDashboardAnalytics";
 
 // Память состояния свёрнутых блоков дашборда — отдельно для каждого пользователя (по роли).
@@ -156,12 +163,19 @@ interface OwnerExecutiveWorkspaceProps {
   onCreateGroup?: (data: any) => Promise<boolean>;
   onUpdateGroup?: (id: string, data: any) => Promise<boolean>;
   onDeleteGroup?: (id: string) => Promise<boolean>;
+  onCreateHall?: (data: any) => Promise<boolean>;
+  onUpdateHall?: (id: string, data: any) => Promise<boolean>;
+  onDeleteHall?: (id: string) => Promise<boolean>;
   onCreateLesson?: (data: any) => Promise<boolean>;
   onUpdateLesson?: (id: string, data: any) => Promise<boolean>;
   onDeleteLesson?: (id: string) => Promise<boolean>;
+  onToggleAttendance?: any;
+  onBulkAttendance?: any;
+  journal?: any;
+  onJournalTask?: (p: { studentId: string; studentName: string; title: string }) => void;
 }
 
-type OwnerTab = "dashboard" | "eduerp" | "branches" | "students" | "teachers" | "schedule" | "finance" | "events" | "feed" | "announcements" | "analytics" | "ai" | "settings";
+type OwnerTab = "dashboard" | "eduerp" | "branches" | "students" | "teachers" | "payroll" | "journal" | "schedule" | "finance" | "performances" | "products" | "events" | "feed" | "announcements" | "analytics" | "ai" | "settings";
 
 const ownerTabs: { id: OwnerTab; label: string; short: string; icon: React.ElementType }[] = [
   { id: "dashboard", label: "Dashboard", short: "Главная", icon: Activity },
@@ -169,9 +183,13 @@ const ownerTabs: { id: OwnerTab; label: string; short: string; icon: React.Eleme
   { id: "branches", label: "Филиалы", short: "Филиалы", icon: Building2 },
   { id: "students", label: "Ученики", short: "Ученики", icon: Users },
   { id: "teachers", label: "Преподаватели", short: "Педагоги", icon: GraduationCap },
+  { id: "payroll", label: "Зарплаты", short: "Зарплаты", icon: Wallet },
+  { id: "journal", label: "Журнал посещаемости", short: "Журнал", icon: ClipboardList },
   { id: "schedule", label: "Расписание", short: "Расписание", icon: CalendarDays },
   { id: "finance", label: "Бухгалтерия", short: "Учёт", icon: Coins },
-  { id: "events", label: "Концерты", short: "Сцена", icon: Trophy },
+  { id: "performances", label: "Выступления", short: "Сцена", icon: Mic2 },
+  { id: "products", label: "Товары и склад", short: "Товары", icon: ShoppingBag },
+  { id: "events", label: "Концерты", short: "Концерты", icon: Trophy },
   { id: "feed", label: "Афиша СНГ", short: "Афиша", icon: CalendarDays },
   { id: "announcements", label: "Объявления", short: "Связь", icon: Megaphone },
   { id: "analytics", label: "Аналитика", short: "BI", icon: BarChart3 },
@@ -219,9 +237,16 @@ export function OwnerExecutiveWorkspace({
   onCreateGroup,
   onUpdateGroup,
   onDeleteGroup,
+  onCreateHall,
+  onUpdateHall,
+  onDeleteHall,
   onCreateLesson,
   onUpdateLesson,
   onDeleteLesson,
+  onToggleAttendance,
+  onBulkAttendance,
+  journal,
+  onJournalTask,
 }: OwnerExecutiveWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<OwnerTab>("dashboard");
   // Пресет-фильтр для вкладки «Ученики» — задаётся кликом по KPI/риску в дашборде.
@@ -310,10 +335,27 @@ export function OwnerExecutiveWorkspace({
             />
           )}
           {activeTab === "eduerp" && <OwnerEduErpView branches={branches} groups={groups} students={students} teachers={teachers} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
-          {activeTab === "branches" && <BranchesView branches={branchScorecards} rawBranches={branches} students={students} groups={groups} teachers={teachers} halls={halls} onCreateBranch={onCreateBranch} onUpdateBranch={onUpdateBranch} onDeleteBranch={onDeleteBranch} onCreateGroup={onCreateGroup} onUpdateGroup={onUpdateGroup} onDeleteGroup={onDeleteGroup} />}
+          {activeTab === "branches" && <BranchesGroupsView branches={branchScorecards} rawBranches={branches} students={students} groups={groups} teachers={teachers} halls={halls} payments={payments} onCreateBranch={onCreateBranch} onUpdateBranch={onUpdateBranch} onDeleteBranch={onDeleteBranch} onCreateGroup={onCreateGroup} onUpdateGroup={onUpdateGroup} onDeleteGroup={onDeleteGroup} onCreateHall={onCreateHall} onUpdateHall={onUpdateHall} onDeleteHall={onDeleteHall} onOpenStudents={openStudentsWithPreset} />}
           {activeTab === "students" && <StudentsNetworkView students={students} branches={branches} groups={groups} teachers={teachers} onCreateStudent={onCreateStudent} onUpdateStudent={onUpdateStudent} onDeleteStudent={onDeleteStudent} onOpenPayment={onOpenPayment} onSellSubscription={onSellSubscription} subscriptionPlans={subscriptionPlans} studentTrash={studentTrash} onRestoreStudent={onRestoreStudent} onConfirmDeleteStudent={onConfirmDeleteStudent} preset={studentsPreset} />}
-          {activeTab === "teachers" && <TeachersNetworkView teachers={teachers} metrics={metrics} branches={branches} onCreateTeacher={onCreateTeacher} onUpdateTeacher={onUpdateTeacher} onDeleteTeacher={onDeleteTeacher} />}
+          {activeTab === "teachers" && <TeachersNetworkView teachers={teachers} metrics={metrics} branches={branches} students={students} groups={groups} payments={payments} onCreateTeacher={onCreateTeacher} onUpdateTeacher={onUpdateTeacher} onDeleteTeacher={onDeleteTeacher} />}
+          {activeTab === "payroll" && <PayrollView teachers={teachers} students={students} groups={groups} payments={payments} />}
           {activeTab === "finance" && <BookkeepingView branches={branchScorecards} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
+          {activeTab === "performances" && <PerformancesView />}
+          {activeTab === "products" && <ProductsView />}
+          {activeTab === "journal" && (
+            <AttendanceJournalView
+              role="owner"
+              branches={branches}
+              groups={groups}
+              students={students}
+              teachers={teachers}
+              canEdit={true}
+              onToggleAttendance={onToggleAttendance}
+              onBulkAttendance={onBulkAttendance}
+              onCreateTask={onJournalTask}
+              journal={journal}
+            />
+          )}
           {activeTab === "schedule" && (
             <OwnerScheduleView
               branches={branches}
@@ -359,6 +401,8 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
   const [customStart, setCustomStart] = useState<string>("");
   const [customEnd, setCustomEnd] = useState<string>("");
   const [extras, setExtras] = useState<DashExtras>({});
+  // Выручка по новым направлениям (выступления, товары) — для блока «Выручка по направлениям».
+  const [streamRev, setStreamRev] = useState<{ perf: any; prod: any }>({ perf: null, prod: null });
   // Окно детализации, раскрываемое по клику (модальное окно с таблицей/списком).
   const [riskTable, setRiskTable] = useState<DetailModalData | null>(null);
   // Состояние сворачивания блоков — запоминается по роли пользователя.
@@ -374,6 +418,18 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
     fetch("/api/mvp/owner/snapshot", { method: "POST", headers: { "x-demo-role": "owner" } }).catch(() => {});
     return () => { alive = false; };
   }, []);
+
+  // Выручка от выступлений и товаров — синхронно с выбранным периодом дашборда.
+  useEffect(() => {
+    let alive = true;
+    const qs = period === "custom" && customStart && customEnd
+      ? `period=custom&from=${customStart}&to=${customEnd}`
+      : `period=${period}`;
+    const get = (url: string) => fetch(url, { headers: { "x-demo-role": "owner" } }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    Promise.all([get(`/api/mvp/performances/overview?${qs}`), get(`/api/mvp/products/overview?${qs}`)])
+      .then(([perf, prod]) => { if (alive) setStreamRev({ perf, prod }); });
+    return () => { alive = false; };
+  }, [period, customStart, customEnd]);
 
   const filters: DashFilters = { period, level, branchId, groupId, teacherId, customStart, customEnd };
   const m = useMemo(
@@ -476,6 +532,15 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
     ["К пред. периоду", <DeltaBadge pct={m.revenue.momPct} />],
     ["Год к году", <DeltaBadge pct={m.revenue.yoyPct} />],
   ]);
+  const subsTotal = m.revenue.total || 0;
+  const perfTotal = streamRev.perf?.revenue?.total || 0;
+  const prodTotal = streamRev.prod?.revenue?.total || 0;
+  const openTotalRevenue = () => openInfo("Общая выручка за период", [
+    ["Абонементы", money(subsTotal)],
+    ["Выступления", money(perfTotal)],
+    ["Товары", money(prodTotal)],
+    ["Итого", <span className="font-black text-emerald-400">{money(subsTotal + perfTotal + prodTotal)}</span>],
+  ], "Общая выручка = выручка от абонементов + выступлений + товаров.");
   const openAvgCheck = () => openInfo("Средний чек", [
     ["Все оплаты", m.avgCheck.all === null ? "—" : money(m.avgCheck.all)],
     ["Новые", m.avgCheck.new === null ? "—" : money(m.avgCheck.new)],
@@ -581,6 +646,36 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
         open={sectionOpen("daily")} onToggle={() => toggleSection("daily")}>
         <DailyManagerReport report={m.dailyReport} scopeLabel={m.scope.label} periodLabel={m.ranges.cur.label}
           onOpenList={openList} onGo={go} onRevenue={openRevenue} />
+      </CollapsibleSection>
+
+      {/* 1.7 ВЫРУЧКА ПО НАПРАВЛЕНИЯМ */}
+      <CollapsibleSection id="streams" icon={Coins} title="Выручка по направлениям" hint="Абонементы · выступления · товары · общая"
+        open={sectionOpen("streams")} onToggle={() => toggleSection("streams")}>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <BigKpi label="Выручка от абонементов" value={money(subsTotal)} onClick={openRevenue}
+            rows={[
+              { k: "К пред. периоду", v: <DeltaBadge pct={m.revenue.momPct} /> },
+              { k: "Год к году", v: <DeltaBadge pct={m.revenue.yoyPct} /> },
+            ]} />
+          <BigKpi label="Выручка от выступлений" value={money(perfTotal)} onClick={() => go("performances")}
+            rows={[
+              { k: "К пред. периоду", v: <DeltaBadge pct={streamRev.perf?.revenue?.momPct ?? null} /> },
+              { k: "Год к году", v: <DeltaBadge pct={streamRev.perf?.revenue?.yoyPct ?? null} /> },
+              { k: "Раздел", v: <span className="text-[#C5A059]">Выступления ›</span> },
+            ]} />
+          <BigKpi label="Выручка от товаров" value={money(prodTotal)} onClick={() => go("products")}
+            rows={[
+              { k: "К пред. периоду", v: <DeltaBadge pct={streamRev.prod?.revenue?.momPct ?? null} /> },
+              { k: "Год к году", v: <DeltaBadge pct={streamRev.prod?.revenue?.yoyPct ?? null} /> },
+              { k: "Раздел", v: <span className="text-[#C5A059]">Товары и склад ›</span> },
+            ]} />
+          <BigKpi label="Общая выручка" value={money(subsTotal + perfTotal + prodTotal)} tone="emerald" onClick={openTotalRevenue}
+            rows={[
+              { k: "Абонементы", v: <span className="text-slate-200">{money(subsTotal)}</span> },
+              { k: "Выступления", v: <span className="text-slate-200">{money(perfTotal)}</span> },
+              { k: "Товары", v: <span className="text-slate-200">{money(prodTotal)}</span> },
+            ]} />
+        </div>
       </CollapsibleSection>
 
       {/* 2. ОСНОВНЫЕ ПОКАЗАТЕЛИ */}
@@ -2050,10 +2145,13 @@ const ROLE_LABELS: Record<string, string> = {
   owner: "Владелец"
 };
 
-function TeachersNetworkView({ teachers, metrics, branches, onCreateTeacher, onUpdateTeacher, onDeleteTeacher }: {
+function TeachersNetworkView({ teachers, metrics, branches, students = [], groups = [], payments = [], onCreateTeacher, onUpdateTeacher, onDeleteTeacher }: {
   teachers: Teacher[];
   metrics: ExecutiveSummary;
   branches: Branch[];
+  students?: Student[];
+  groups?: Group[];
+  payments?: Payment[];
   onCreateTeacher?: (data: TeacherInput) => Promise<boolean>;
   onUpdateTeacher?: (id: string, data: TeacherInput) => Promise<boolean>;
   onDeleteTeacher?: (id: string) => Promise<boolean>;
@@ -2063,10 +2161,12 @@ function TeachersNetworkView({ teachers, metrics, branches, onCreateTeacher, onU
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<TeacherInput>(empty);
   const [busy, setBusy] = useState(false);
+  const [cardTeacherId, setCardTeacherId] = useState<string | null>(null);
   const canManage = Boolean(onCreateTeacher);
 
   const branchName = (id?: string | null) => branches.find((b) => b.id === id)?.name || "— не назначен —";
   const metricFor = (id: string) => metrics.teacherPerformance.find((m) => m.teacherId === id);
+  const cardTeacher = teachers.find((t) => t.id === cardTeacherId) || null;
 
   const startAdd = () => { setEditingId(null); setForm(empty); setAdding(true); };
   const startEdit = (t: Teacher) => {
@@ -2092,14 +2192,20 @@ function TeachersNetworkView({ teachers, metrics, branches, onCreateTeacher, onU
     await onDeleteTeacher(t.id);
   };
 
+  if (cardTeacher) {
+    return <TeacherCard teacher={cardTeacher} metric={metricFor(cardTeacher.id)} branchName={branchName(cardTeacher.branchId)}
+      students={students} groups={groups} payments={payments} onBack={() => setCardTeacherId(null)} />;
+  }
+
   return (
-    <OwnerScreen title="Преподаватели сети" subtitle="Статистика и управление персоналом. Владелец может добавлять, редактировать, архивировать сотрудников, назначать филиал и выдавать права (роль).">
+    <OwnerScreen title="Преподаватели сети" subtitle="Статистика и управление персоналом. Владелец может добавлять, редактировать, архивировать сотрудников, назначать филиал и выдавать права (роль). Нажмите на преподавателя, чтобы открыть карточку с KPI, зарплатой и стажировкой.">
       {/* Performance cards */}
       <div className="grid gap-4 xl:grid-cols-3">
         {metrics.teacherPerformance.map((teacherMetric) => {
           const teacher = teachers.find((item) => item.id === teacherMetric.teacherId);
           return (
-            <article key={teacherMetric.teacherId} className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+            <article key={teacherMetric.teacherId} onClick={() => setCardTeacherId(teacherMetric.teacherId)}
+              className="cursor-pointer rounded-[2rem] border border-white/10 bg-[#121212] p-5 transition hover:border-[#C5A059]/40">
               {teacher && <img src={teacher.photoUrl} alt={teacher.name} className="h-20 w-20 rounded-full border border-[#C5A059]/35 object-cover" />}
               <h3 className="mt-4 text-lg font-black text-white">{teacherMetric.teacherName}</h3>
               <div className="mt-4 grid grid-cols-2 gap-2">
@@ -2108,6 +2214,7 @@ function TeachersNetworkView({ teachers, metrics, branches, onCreateTeacher, onU
                 <MiniMetric label="Посещ." value={`${teacherMetric.averageAttendance}%`} />
                 <MiniMetric label="Спасибо" value="57" />
               </div>
+              <p className="mt-3 text-xs font-bold text-[#C5A059]">Открыть карточку ›</p>
             </article>
           );
         })}
@@ -2148,7 +2255,8 @@ function TeachersNetworkView({ teachers, metrics, branches, onCreateTeacher, onU
         {teachers.map((t) => {
           const m = metricFor(t.id);
           return (
-            <div key={t.id} className="grid grid-cols-2 gap-2 border-b border-white/5 px-5 py-3 text-sm md:grid-cols-12 md:items-center">
+            <div key={t.id} onClick={() => setCardTeacherId(t.id)}
+              className="grid cursor-pointer grid-cols-2 gap-2 border-b border-white/5 px-5 py-3 text-sm transition hover:bg-white/[0.03] md:grid-cols-12 md:items-center">
               <div className="col-span-3">
                 <p className="font-bold text-white">{t.name}</p>
                 <p className="text-xs text-slate-500">{t.phone || "—"}{m ? ` · ${m.studentsCount} уч.` : ""}</p>
@@ -2160,8 +2268,8 @@ function TeachersNetworkView({ teachers, metrics, branches, onCreateTeacher, onU
               </span>
               {canManage && (
                 <div className="col-span-1 flex justify-end gap-1">
-                  <button onClick={() => startEdit(t)} title="Редактировать" className="rounded-lg border border-white/10 p-1.5 text-slate-300 transition hover:border-[#C5A059]/40 hover:text-[#C5A059]"><Pencil className="h-4 w-4" /></button>
-                  <button onClick={() => remove(t)} title="Архивировать" className="rounded-lg border border-white/10 p-1.5 text-slate-300 transition hover:border-red-500/40 hover:text-red-400"><Trash2 className="h-4 w-4" /></button>
+                  <button onClick={(e) => { e.stopPropagation(); startEdit(t); }} title="Редактировать" className="rounded-lg border border-white/10 p-1.5 text-slate-300 transition hover:border-[#C5A059]/40 hover:text-[#C5A059]"><Pencil className="h-4 w-4" /></button>
+                  <button onClick={(e) => { e.stopPropagation(); remove(t); }} title="Архивировать" className="rounded-lg border border-white/10 p-1.5 text-slate-300 transition hover:border-red-500/40 hover:text-red-400"><Trash2 className="h-4 w-4" /></button>
                 </div>
               )}
             </div>
@@ -2169,6 +2277,471 @@ function TeachersNetworkView({ teachers, metrics, branches, onCreateTeacher, onU
         })}
         {teachers.length === 0 && <p className="px-5 py-6 text-center text-sm text-slate-500">Преподаватели не найдены.</p>}
       </div>
+    </OwnerScreen>
+  );
+}
+
+// ===================== КАРТОЧКА ПЕДАГОГА (миграция 020) =====================
+const COMP_SCHEME_LABEL: Record<string, string> = {
+  percent: "% от выручки групп",
+  per_lesson: "За проведённое занятие",
+  fixed: "Фиксированный оклад",
+  mixed: "Смешанная",
+};
+// Диапазоны периода на клиенте (cur/prev/yoy), синхронно с server periodRanges.
+function clientPeriodRange(period: string) {
+  const d = new Date(); d.setHours(0, 0, 0, 0);
+  const iso = (x: Date) => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+  const mk = (s: Date, e: Date) => ({ start: iso(s), end: iso(e) });
+  const Y = d.getFullYear(), M = d.getMonth();
+  switch (period) {
+    case "today": { const p = new Date(d); p.setDate(p.getDate() - 1); const y = new Date(d); y.setFullYear(y.getFullYear() - 1); return { cur: mk(d, d), prev: mk(p, p), yoy: mk(y, y) }; }
+    case "yesterday": { const c = new Date(d); c.setDate(c.getDate() - 1); const p = new Date(c); p.setDate(p.getDate() - 1); const y = new Date(c); y.setFullYear(y.getFullYear() - 1); return { cur: mk(c, c), prev: mk(p, p), yoy: mk(y, y) }; }
+    case "week": { const e = new Date(d); const s = new Date(d); s.setDate(s.getDate() - 6); const pe = new Date(s); pe.setDate(pe.getDate() - 1); const ps = new Date(pe); ps.setDate(ps.getDate() - 6); const ys = new Date(s); ys.setFullYear(ys.getFullYear() - 1); const ye = new Date(e); ye.setFullYear(ye.getFullYear() - 1); return { cur: mk(s, e), prev: mk(ps, pe), yoy: mk(ys, ye) }; }
+    case "quarter": { const q = Math.floor(M / 3); return { cur: mk(new Date(Y, q * 3, 1), new Date(Y, q * 3 + 3, 0)), prev: mk(new Date(Y, q * 3 - 3, 1), new Date(Y, q * 3, 0)), yoy: mk(new Date(Y - 1, q * 3, 1), new Date(Y - 1, q * 3 + 3, 0)) }; }
+    case "year": return { cur: mk(new Date(Y, 0, 1), new Date(Y, 11, 31)), prev: mk(new Date(Y - 1, 0, 1), new Date(Y - 1, 11, 31)), yoy: mk(new Date(Y - 1, 0, 1), new Date(Y - 1, 11, 31)) };
+    default: return { cur: mk(new Date(Y, M, 1), new Date(Y, M + 1, 0)), prev: mk(new Date(Y, M - 1, 1), new Date(Y, M, 0)), yoy: mk(new Date(Y - 1, M, 1), new Date(Y - 1, M + 1, 0)) };
+  }
+}
+
+function TeacherCard({ teacher, metric, branchName, students, groups, payments, onBack }: {
+  teacher: Teacher; metric?: any; branchName: string;
+  students: Student[]; groups: Group[]; payments: Payment[]; onBack: () => void;
+}) {
+  const [period, setPeriod] = useState("month");
+  const [card, setCard] = useState<any>(null);
+  const [comp, setComp] = useState<any>(null);
+  const [onboarding, setOnboarding] = useState<any[]>([]);
+  const [payouts, setPayouts] = useState<any[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [showPayout, setShowPayout] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = async () => {
+    try {
+      const res = await fetch(`/api/mvp/teachers/${teacher.id}/card?period=${period}`, ownerHdr);
+      if (!res.ok) throw new Error(await res.text());
+      const d = await res.json();
+      setCard(d); setComp(d.compensation); setOnboarding(d.onboarding || []); setPayouts(d.payouts || []);
+    } catch (e: any) { setError(e?.message || "Не удалось загрузить карточку"); }
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [teacher.id, period]);
+
+  // --- KPI из уже загруженных данных ---
+  const r = useMemo(() => clientPeriodRange(period), [period]);
+  const teacherGroups = useMemo(() => groups.filter((g) => g.teacherId === teacher.id), [groups, teacher.id]);
+  const groupIdSet = useMemo(() => new Set(teacherGroups.map((g) => g.id)), [teacherGroups]);
+  const teacherStudents = useMemo(() => students.filter((s) =>
+    s.teacherId === teacher.id || (s.groupIds || []).some((gid) => groupIdSet.has(gid))), [students, teacher.id, groupIdSet]);
+  const studentIdSet = useMemo(() => new Set(teacherStudents.map((s) => s.id)), [teacherStudents]);
+
+  const inRng = (date: string, rng: { start: string; end: string }) => date >= rng.start && date <= rng.end;
+  const revIn = (rng: { start: string; end: string }) => payments
+    .filter((p) => p.status === "paid" && studentIdSet.has(p.studentId) && inRng(p.date, rng))
+    .reduce((s, p) => s + p.amount, 0);
+  const revCur = revIn(r.cur), revPrev = revIn(r.prev), revYoy = revIn(r.yoy);
+  const growthPct = revPrev > 0 ? Math.round(((revCur - revPrev) / revPrev) * 1000) / 10 : null;
+  const yoyPct = revYoy > 0 ? Math.round(((revCur - revYoy) / revYoy) * 1000) / 10 : null;
+
+  const activeSubs = teacherStudents.filter((s) => (s.subscriptions || []).some((sub) => sub.status === "active")).length;
+  const retention = teacherStudents.length ? Math.round((activeSubs / teacherStudents.length) * 100) : null;
+  const attendance = metric?.averageAttendance ?? null;
+  const capacity = teacherGroups.reduce((s, g) => s + (g.capacity || 0), 0);
+  const filled = teacherGroups.reduce((s, g) => s + (g.studentCount || 0), 0);
+  const occupancy = capacity > 0 ? Math.round((filled / capacity) * 100) : null;
+  const ratingParts = [retention, attendance, occupancy].filter((x): x is number => x !== null);
+  const rating = ratingParts.length ? Math.round(ratingParts.reduce((a, b) => a + b, 0) / ratingParts.length) : null;
+
+  // --- Зарплата ---
+  const lessonsCompleted = card?.lessonsCompleted ?? 0;
+  const scheme = comp?.scheme || "percent";
+  const baseAmount = (scheme === "fixed" || scheme === "mixed") ? (comp?.baseSalary || 0) : 0;
+  const percentAmount = (scheme === "percent" || scheme === "mixed") ? Math.round(revCur * (comp?.percent || 0) / 100) : 0;
+  const perLessonAmount = (scheme === "per_lesson" || scheme === "mixed") ? lessonsCompleted * (comp?.perLessonRate || 0) : 0;
+  const salaryTotal = baseAmount + percentAmount + perLessonAmount;
+
+  const saveComp = async (next: any) => {
+    setBusy(true); setError(null);
+    try {
+      const res = await fetch(`/api/mvp/teachers/${teacher.id}/compensation`, { method: "PATCH", ...jsonOwnerHdr, body: JSON.stringify(next) });
+      if (!res.ok) throw new Error(await res.text());
+      setComp((await res.json()).compensation);
+    } catch (e: any) { setError(e?.message || "Не удалось сохранить схему"); } finally { setBusy(false); }
+  };
+  const toggleStep = async (step: any) => {
+    setOnboarding((prev) => prev.map((s) => s.id === step.id ? { ...s, done: !step.done } : s));
+    try { await fetch(`/api/mvp/teachers/${teacher.id}/onboarding/${step.id}`, { method: "PATCH", ...jsonOwnerHdr, body: JSON.stringify({ done: !step.done }) }); }
+    catch { load(); }
+  };
+  const addPayout = async (payload: any) => {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/mvp/teachers/${teacher.id}/payouts`, { method: "POST", ...jsonOwnerHdr, body: JSON.stringify(payload) });
+      if (!res.ok) throw new Error(await res.text());
+      setShowPayout(false); await load();
+    } catch (e: any) { setError(e?.message || "Не удалось добавить выплату"); } finally { setBusy(false); }
+  };
+  const delPayout = async (id: string) => { setBusy(true); try { await fetch(`/api/mvp/teachers/${teacher.id}/payouts/${id}`, { method: "DELETE", headers: { "x-demo-role": "owner" } }); await load(); } finally { setBusy(false); } };
+
+  const doneSteps = onboarding.filter((s) => s.done).length;
+  const onboardPct = onboarding.length ? Math.round((doneSteps / onboarding.length) * 100) : 0;
+
+  const payoutMonths = useMemo(() => {
+    const map: Record<string, { paid: number; planned: number }> = {};
+    payouts.forEach((p) => { const mo = String(p.periodStart).slice(0, 7); if (!map[mo]) map[mo] = { paid: 0, planned: 0 }; if (p.status === "paid") map[mo].paid += p.amount; else map[mo].planned += p.amount; });
+    return Object.keys(map).sort().map((mo) => ({ name: mo.slice(5) + "." + mo.slice(2, 4), Выплачено: map[mo].paid, Запланировано: map[mo].planned }));
+  }, [payouts]);
+
+  return (
+    <div className="space-y-5">
+      <button onClick={onBack} className="inline-flex items-center gap-1 text-sm font-bold text-slate-400 transition hover:text-white"><ChevronLeft className="h-4 w-4" /> К списку преподавателей</button>
+
+      {/* Профиль */}
+      <section className="rounded-[1.75rem] border border-[#C5A059]/25 bg-gradient-to-br from-[#1a1710] to-black p-5">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-4">
+            <img src={teacher.photoUrl} alt={teacher.name} className="h-20 w-20 rounded-2xl border border-[#C5A059]/35 object-cover" />
+            <div>
+              <h1 className="text-2xl font-black text-white">{teacher.name}</h1>
+              <p className="mt-1 text-sm text-slate-400">{teacher.specialties?.join(", ") || "Кавказский танец"}</p>
+              <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-400">
+                <span className="inline-flex items-center gap-1"><Building2 className="h-3.5 w-3.5" /> {branchName}</span>
+                <span className="inline-flex items-center gap-1"><Phone className="h-3.5 w-3.5" /> {teacher.phone || "—"}</span>
+                <span className="inline-flex items-center gap-1"><GraduationCap className="h-3.5 w-3.5" /> стаж {teacher.experienceYears} лет</span>
+                <span className="rounded-lg bg-white/5 px-2 py-0.5 font-bold text-[#C5A059]">{ROLE_LABELS[teacher.role || "teacher"]}</span>
+              </div>
+            </div>
+          </div>
+          <div className="text-center">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Рейтинг</p>
+            <p className="text-4xl font-black text-[#C5A059]">{rating === null ? "—" : rating}</p>
+            <p className="text-[11px] text-slate-500">из 100</p>
+          </div>
+        </div>
+      </section>
+
+      {/* Период */}
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-black uppercase tracking-wider text-white">KPI и качество</h3>
+        <PeriodChips period={period} onChange={setPeriod} />
+      </div>
+      {error && <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">{error}</div>}
+
+      {/* KPI */}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <StatPill label="Ученики" value={teacherStudents.length} tone="white" hint={`${teacherGroups.length} групп`} />
+        <StatPill label="Удержание" value={retention === null ? "—" : `${retention}%`} hint={`активных абон. ${activeSubs}`} />
+        <StatPill label="Посещаемость" value={attendance === null ? "—" : `${attendance}%`} />
+        <StatPill label="Заполняемость групп" value={occupancy === null ? "—" : `${occupancy}%`} hint={`${filled} / ${capacity || "—"} мест`} />
+        <StatPill label="Выручка групп" value={money(revCur)} hint={<DeltaBadge pct={growthPct} />} />
+        <StatPill label="Год к году" value={yoyPct === null ? "—" : `${yoyPct > 0 ? "+" : ""}${yoyPct}%`} />
+        <StatPill label="Проведено занятий" value={lessonsCompleted} tone="white" hint="за период" />
+        <StatPill label="Рейтинг" value={rating === null ? "—" : `${rating}/100`} tone="emerald" />
+      </div>
+
+      {/* Группы и ученики */}
+      <section className="rounded-[1.5rem] border border-white/10 bg-white/[0.02] p-5">
+        <h3 className="text-sm font-black uppercase tracking-wider text-white">Группы и ученики</h3>
+        {teacherGroups.length === 0 && <p className="mt-3 text-sm text-slate-500">У педагога пока нет групп.</p>}
+        <div className="mt-3 grid gap-2 md:grid-cols-2">
+          {teacherGroups.map((g) => (
+            <div key={g.id} className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+              <div>
+                <p className="text-sm font-bold text-white">{g.name}</p>
+                <p className="text-[11px] text-slate-500">{g.ageGroup} · {g.scheduleText || "по расписанию"}</p>
+              </div>
+              <span className="text-xs text-slate-300">{g.studentCount}{g.capacity ? ` / ${g.capacity}` : ""} уч.</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Зарплата */}
+      <CompensationBlock comp={comp} scheme={scheme} busy={busy} onSave={saveComp}
+        breakdown={{ baseAmount, percentAmount, perLessonAmount, salaryTotal, revCur, lessonsCompleted }}
+        onAccrue={() => { setShowPayout(true); }} />
+
+      {/* Выплаты */}
+      <section className="rounded-[1.5rem] border border-white/10 bg-white/[0.02] p-5">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-black uppercase tracking-wider text-white">Выплаты и начисления</h3>
+          <button onClick={() => setShowPayout(true)} className="inline-flex items-center gap-2 rounded-xl border border-[#C5A059]/40 px-3 py-1.5 text-xs font-black text-[#C5A059] hover:bg-[#C5A059]/10"><Plus className="h-4 w-4" /> Начислить</button>
+        </div>
+        {payouts.length === 0 && <p className="mt-3 text-sm text-slate-500">Выплат пока нет.</p>}
+        {payoutMonths.length > 0 && (
+          <div className="mt-3 h-44">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={payoutMonths}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
+                <XAxis dataKey="name" tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} width={70} tickFormatter={(v) => `${Math.round(v / 1000)}к`} />
+                <Tooltip formatter={(v: any) => money(Number(v))} contentStyle={{ background: "#0b0b0b", border: "1px solid #ffffff20", borderRadius: 12 }} labelStyle={{ color: "#fff" }} />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Bar dataKey="Выплачено" stackId="a" fill="#34d399" />
+                <Bar dataKey="Запланировано" stackId="a" fill="#C5A059" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+        <div className="mt-3 space-y-2">
+          {payouts.map((p) => (
+            <div key={p.id} className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+              <div>
+                <p className="text-sm font-bold text-white">{money(p.amount)} <span className={`ml-2 rounded-md px-1.5 py-0.5 text-[10px] font-bold ${p.status === "paid" ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-400/15 text-amber-300"}`}>{p.status === "paid" ? "Выплачено" : "Запланировано"}</span></p>
+                <p className="text-[11px] text-slate-500">{p.periodStart} — {p.periodEnd}{p.comment ? ` · ${p.comment}` : ""}</p>
+              </div>
+              <button onClick={() => delPayout(p.id)} className="rounded-lg p-1 text-slate-500 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Стажировка */}
+      <section className="rounded-[1.5rem] border border-white/10 bg-white/[0.02] p-5">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-black uppercase tracking-wider text-white">Стажировка / онбординг</h3>
+          <span className="text-xs font-bold text-[#C5A059]">{doneSteps}/{onboarding.length} · {onboardPct}%</span>
+        </div>
+        <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
+          <div className="h-full rounded-full bg-[#C5A059]" style={{ width: `${onboardPct}%` }} />
+        </div>
+        <div className="mt-3 space-y-1.5">
+          {onboarding.map((s) => (
+            <button key={s.id} onClick={() => toggleStep(s)} className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-left transition hover:border-[#C5A059]/30">
+              <CheckCircle className={`h-5 w-5 shrink-0 ${s.done ? "text-emerald-400" : "text-slate-600"}`} />
+              <span className={`text-sm ${s.done ? "text-slate-200" : "text-slate-400"}`}>{s.title}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {showPayout && <PayoutModal busy={busy} defaultAmount={salaryTotal} period={r.cur} onClose={() => setShowPayout(false)} onSubmit={addPayout} />}
+    </div>
+  );
+}
+
+function CompensationBlock({ comp, scheme, busy, onSave, breakdown, onAccrue }: any) {
+  const [form, setForm] = useState<any>({ scheme, baseSalary: comp?.baseSalary || 0, percent: comp?.percent || 0, perLessonRate: comp?.perLessonRate || 0 });
+  useEffect(() => { setForm({ scheme: comp?.scheme || "percent", baseSalary: comp?.baseSalary || 0, percent: comp?.percent || 0, perLessonRate: comp?.perLessonRate || 0 }); }, [comp]);
+  const set = (k: string, v: any) => setForm((s: any) => ({ ...s, [k]: v }));
+  const showPercent = form.scheme === "percent" || form.scheme === "mixed";
+  const showLesson = form.scheme === "per_lesson" || form.scheme === "mixed";
+  const showBase = form.scheme === "fixed" || form.scheme === "mixed";
+  return (
+    <section className="rounded-[1.5rem] border border-white/10 bg-white/[0.02] p-5">
+      <h3 className="text-sm font-black uppercase tracking-wider text-white">Зарплата</h3>
+      <div className="mt-3 grid gap-4 lg:grid-cols-2">
+        {/* Настройка схемы */}
+        <div className="space-y-3">
+          <label className="flex flex-col gap-1 text-[11px] text-slate-400">Схема расчёта
+            <select value={form.scheme} onChange={(e) => set("scheme", e.target.value)} className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white">
+              {Object.entries(COMP_SCHEME_LABEL).map(([k, v]) => <option key={k} value={k} className="bg-black">{v}</option>)}
+            </select></label>
+          <div className="grid grid-cols-2 gap-2">
+            {showBase && <ModalInput label="Оклад, ₸" type="number" value={form.baseSalary} onChange={(v) => set("baseSalary", v)} />}
+            {showPercent && <ModalInput label="% от выручки" type="number" value={form.percent} onChange={(v) => set("percent", v)} />}
+            {showLesson && <ModalInput label="Ставка за занятие, ₸" type="number" value={form.perLessonRate} onChange={(v) => set("perLessonRate", v)} />}
+          </div>
+          <button disabled={busy} onClick={() => onSave({ scheme: form.scheme, baseSalary: Number(form.baseSalary) || 0, percent: Number(form.percent) || 0, perLessonRate: Number(form.perLessonRate) || 0 })}
+            className="rounded-xl bg-[#C5A059] px-4 py-2 text-xs font-black text-black disabled:opacity-50">Сохранить схему</button>
+        </div>
+        {/* Расчёт за период */}
+        <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-[#1a1710] to-black p-4">
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Расчёт за период · {COMP_SCHEME_LABEL[scheme]}</p>
+          <div className="mt-2 space-y-1.5 text-sm">
+            {breakdown.baseAmount > 0 && <Row k="Оклад" v={money(breakdown.baseAmount)} />}
+            {breakdown.percentAmount > 0 && <Row k={`% от выручки (${money(breakdown.revCur)})`} v={money(breakdown.percentAmount)} />}
+            {breakdown.perLessonAmount > 0 && <Row k={`За занятия (${breakdown.lessonsCompleted})`} v={money(breakdown.perLessonAmount)} />}
+            <div className="flex items-center justify-between border-t border-white/10 pt-2">
+              <span className="font-bold text-white">Итого к выплате</span>
+              <span className="text-lg font-black text-emerald-400">{money(breakdown.salaryTotal)}</span>
+            </div>
+          </div>
+          <button onClick={onAccrue} className="mt-3 w-full rounded-xl border border-[#C5A059]/40 px-3 py-2 text-xs font-black text-[#C5A059] hover:bg-[#C5A059]/10">Начислить эту сумму ›</button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PayoutModal({ busy, defaultAmount, period, onClose, onSubmit }: any) {
+  const [amount, setAmount] = useState(String(defaultAmount || 0));
+  const [status, setStatus] = useState("planned");
+  const [periodStart, setPeriodStart] = useState(period?.start || new Date().toISOString().slice(0, 10));
+  const [periodEnd, setPeriodEnd] = useState(period?.end || new Date().toISOString().slice(0, 10));
+  const [comment, setComment] = useState("");
+  const submit = () => { if (Number(amount) <= 0) return; onSubmit({ amount: Number(amount), status, periodStart, periodEnd, comment }); };
+  return (
+    <ModalShell title="Начисление педагогу" onClose={onClose}>
+      <ModalInput label="Сумма, ₸" type="number" value={amount} onChange={setAmount} />
+      <label className="flex flex-col gap-1 text-[11px] text-slate-400">Статус
+        <select value={status} onChange={(e) => setStatus(e.target.value)} className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white">
+          <option value="planned" className="bg-black">Запланировано</option>
+          <option value="paid" className="bg-black">Выплачено</option>
+        </select></label>
+      <ModalInput label="Период с" type="date" value={periodStart} onChange={setPeriodStart} />
+      <ModalInput label="Период по" type="date" value={periodEnd} onChange={setPeriodEnd} />
+      <ModalInput label="Комментарий" value={comment} onChange={setComment} full />
+      <ModalActions busy={busy} onClose={onClose} onSubmit={submit} submitLabel="Начислить" />
+    </ModalShell>
+  );
+}
+
+// ===================== ВЕДОМОСТЬ ЗАРПЛАТ =====================
+function teacherStudentIdSet(teacher: Teacher, students: Student[], groups: Group[]) {
+  const gids = new Set(groups.filter((g) => g.teacherId === teacher.id).map((g) => g.id));
+  return new Set(students.filter((s) => s.teacherId === teacher.id || (s.groupIds || []).some((id) => gids.has(id))).map((s) => s.id));
+}
+
+export function PayrollView({ teachers, students, groups, payments, role = "owner" }: { teachers: Teacher[]; students: Student[]; groups: Group[]; payments: Payment[]; role?: string; }) {
+  const hdr = useMemo(() => ({ headers: { "x-demo-role": role } }), [role]);
+  const jhdr = useMemo(() => ({ headers: { "Content-Type": "application/json", "x-demo-role": role } }), [role]);
+  const [period, setPeriod] = useState("month");
+  const [data, setData] = useState<any>({ comp: {}, lessons: {}, paid: {} });
+  const [history, setHistory] = useState<any[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const r = useMemo(() => clientPeriodRange(period), [period]);
+
+  const load = async () => {
+    try {
+      const [pRes, hRes] = await Promise.all([
+        fetch(`/api/mvp/teachers/payroll?period=${period}`, hdr),
+        fetch(`/api/mvp/teachers/payouts/history?months=12`, hdr),
+      ]);
+      if (pRes.ok) setData(await pRes.json());
+      if (hRes.ok) setHistory((await hRes.json()).months || []);
+    } catch { /* no-op */ }
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [period]);
+
+  const autoclose = async () => {
+    setBusy(true); setMsg(null);
+    try {
+      const res = await fetch(`/api/mvp/lessons/autoclose`, { method: "POST", ...jhdr, body: "{}" });
+      const d = await res.json();
+      setMsg(`Закрыто прошедших уроков: ${d.closed ?? 0}`); await load();
+    } catch (e: any) { setMsg(e?.message || "Ошибка автозакрытия"); } finally { setBusy(false); }
+  };
+
+  const rows = useMemo(() => teachers.map((t) => {
+    const ids = teacherStudentIdSet(t, students, groups);
+    const revenue = payments.filter((p) => p.status === "paid" && ids.has(p.studentId) && p.date >= r.cur.start && p.date <= r.cur.end).reduce((s, p) => s + p.amount, 0);
+    const comp = data.comp[t.id] || { scheme: "percent", baseSalary: 0, percent: 0, perLessonRate: 0 };
+    const lessons = data.lessons[t.id] || 0;
+    const paid = data.paid[t.id] || 0;
+    const base = (comp.scheme === "fixed" || comp.scheme === "mixed") ? comp.baseSalary : 0;
+    const pct = (comp.scheme === "percent" || comp.scheme === "mixed") ? Math.round(revenue * comp.percent / 100) : 0;
+    const perLesson = (comp.scheme === "per_lesson" || comp.scheme === "mixed") ? lessons * comp.perLessonRate : 0;
+    const total = base + pct + perLesson;
+    return { t, scheme: comp.scheme, revenue, lessons, total, paid, balance: total - paid };
+  }), [teachers, students, groups, payments, data, r]);
+
+  const totals = rows.reduce((a, x) => ({ revenue: a.revenue + x.revenue, total: a.total + x.total, paid: a.paid + x.paid, balance: a.balance + x.balance }), { revenue: 0, total: 0, paid: 0, balance: 0 });
+
+  const accrueAll = async () => {
+    const items = rows.filter((x) => x.balance > 0).map((x) => ({ teacherId: x.t.id, amount: x.balance }));
+    if (items.length === 0) { setMsg("Нет сумм к начислению."); return; }
+    setBusy(true); setMsg(null);
+    try {
+      const res = await fetch(`/api/mvp/teachers/payroll/accrue`, { method: "POST", ...jhdr, body: JSON.stringify({ items, status: "planned", periodStart: r.cur.start, periodEnd: r.cur.end }) });
+      if (!res.ok) throw new Error(await res.text());
+      const d = await res.json(); setMsg(`Запланировано начислений: ${d.created}`); await load();
+    } catch (e: any) { setMsg(e?.message || "Ошибка начисления"); } finally { setBusy(false); }
+  };
+
+  const exportCsv = () => {
+    const header = ["Педагог", "Схема", "Выручка групп", "Занятий", "Начислено", "Выплачено", "К выплате"];
+    const body = rows.map((x) => [x.t.name, COMP_SCHEME_LABEL[x.scheme] || x.scheme, x.revenue, x.lessons, x.total, x.paid, x.balance]);
+    body.push(["ИТОГО", "", totals.revenue, "", totals.total, totals.paid, totals.balance]);
+    const csv = [header, ...body].map((row) => row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(";")).join("\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = `vedomost_${period}_${r.cur.start}.csv`; a.click(); URL.revokeObjectURL(url);
+  };
+
+  return (
+    <OwnerScreen title="Зарплаты" subtitle="Зарплатная ведомость по всем педагогам за период: расчёт по индивидуальным схемам (% от выручки, оклад, за занятие, смешанная), уже выплаченное и остаток к выплате. Можно начислить всем сразу и выгрузить ведомость.">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <PeriodChips period={period} onChange={setPeriod} />
+        <div className="flex flex-wrap gap-2">
+          <button disabled={busy} onClick={autoclose} className="inline-flex items-center gap-2 rounded-xl border border-white/10 px-4 py-2 text-xs font-bold text-slate-200 hover:border-[#C5A059]/40 disabled:opacity-50"><CheckCircle className="h-4 w-4" /> Закрыть прошедшие уроки</button>
+          <button onClick={exportCsv} className="inline-flex items-center gap-2 rounded-xl border border-white/10 px-4 py-2 text-xs font-bold text-slate-200 hover:border-[#C5A059]/40"><FileSpreadsheet className="h-4 w-4" /> Экспорт CSV</button>
+          <button disabled={busy} onClick={accrueAll} className="inline-flex items-center gap-2 rounded-xl bg-[#C5A059] px-4 py-2 text-xs font-black text-black hover:brightness-110 disabled:opacity-50"><Wallet className="h-4 w-4" /> Начислить всем за период</button>
+        </div>
+      </div>
+
+      {msg && <div className="rounded-2xl border border-[#C5A059]/30 bg-[#C5A059]/10 px-4 py-3 text-sm text-[#C5A059]">{msg}</div>}
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <StatPill label="Выручка групп" value={money(totals.revenue)} />
+        <StatPill label="Фонд оплаты (начислено)" value={money(totals.total)} tone="white" />
+        <StatPill label="Выплачено" value={money(totals.paid)} tone="emerald" />
+        <StatPill label="К выплате" value={money(totals.balance)} tone="rose" />
+      </div>
+
+      {history.some((h) => h.planned > 0 || h.paid > 0) && (
+        <section className="rounded-[1.5rem] border border-white/10 bg-white/[0.02] p-5">
+          <h3 className="text-sm font-black uppercase tracking-wider text-white">Фонд оплаты по месяцам</h3>
+          <div className="mt-3 h-52">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={history.map((h) => ({ name: h.month.slice(5) + "." + h.month.slice(2, 4), Выплачено: h.paid, Запланировано: h.planned }))}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
+                <XAxis dataKey="name" tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} width={70} tickFormatter={(v) => `${Math.round(v / 1000)}к`} />
+                <Tooltip formatter={(v: any) => money(Number(v))} contentStyle={{ background: "#0b0b0b", border: "1px solid #ffffff20", borderRadius: 12 }} labelStyle={{ color: "#fff" }} />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Bar dataKey="Выплачено" stackId="a" fill="#34d399" radius={[0, 0, 0, 0]} />
+                <Bar dataKey="Запланировано" stackId="a" fill="#C5A059" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </section>
+      )}
+
+      <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.02]">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px] text-left text-sm">
+            <thead className="border-b border-white/10 bg-white/[0.03] text-[10px] uppercase tracking-wider text-slate-500">
+              <tr>
+                <th className="px-4 py-3 font-bold">Педагог</th>
+                <th className="px-4 py-3 font-bold">Схема</th>
+                <th className="px-4 py-3 text-right font-bold">Выручка групп</th>
+                <th className="px-4 py-3 text-right font-bold">Занятий</th>
+                <th className="px-4 py-3 text-right font-bold">Начислено</th>
+                <th className="px-4 py-3 text-right font-bold">Выплачено</th>
+                <th className="px-4 py-3 text-right font-bold">К выплате</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500">Нет педагогов.</td></tr>}
+              {rows.map((x) => (
+                <tr key={x.t.id} className="border-b border-white/5">
+                  <td className="px-4 py-3 font-bold text-white">{x.t.name}</td>
+                  <td className="px-4 py-3 text-slate-400">{COMP_SCHEME_LABEL[x.scheme] || x.scheme}</td>
+                  <td className="px-4 py-3 text-right text-slate-300">{money(x.revenue)}</td>
+                  <td className="px-4 py-3 text-right text-slate-300">{x.lessons}</td>
+                  <td className="px-4 py-3 text-right font-bold text-white">{money(x.total)}</td>
+                  <td className="px-4 py-3 text-right text-emerald-400">{money(x.paid)}</td>
+                  <td className="px-4 py-3 text-right text-rose-300">{money(x.balance)}</td>
+                </tr>
+              ))}
+            </tbody>
+            {rows.length > 0 && (
+              <tfoot>
+                <tr className="border-t border-white/10 bg-white/[0.03] font-bold text-white">
+                  <td className="px-4 py-3" colSpan={2}>ИТОГО</td>
+                  <td className="px-4 py-3 text-right">{money(totals.revenue)}</td>
+                  <td className="px-4 py-3" />
+                  <td className="px-4 py-3 text-right">{money(totals.total)}</td>
+                  <td className="px-4 py-3 text-right text-emerald-400">{money(totals.paid)}</td>
+                  <td className="px-4 py-3 text-right text-rose-300">{money(totals.balance)}</td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      </section>
     </OwnerScreen>
   );
 }
@@ -2824,6 +3397,620 @@ const compStatusLabel: Record<string, { text: string; cls: string }> = {
   rehearsals: { text: "Репетиции", cls: "bg-amber-400/15 text-amber-300" },
   completed: { text: "Завершён", cls: "bg-emerald-500/15 text-emerald-300" }
 };
+
+// ===================== ВЫСТУПЛЕНИЯ (ТЗ §2) =====================
+const PERF_TYPE_LABEL: Record<string, string> = {
+  basic: "Базовый танец", interactive: "Танец с интерактивом", multi: "Несколько номеров",
+  individual: "Индивидуальное выступление", other: "Другое",
+};
+const PERF_STATUS: Record<string, { t: string; cls: string }> = {
+  planned: { t: "Запланировано", cls: "bg-sky-500/15 text-sky-300" },
+  partial: { t: "Частично оплачено", cls: "bg-amber-400/15 text-amber-300" },
+  paid: { t: "Оплачено", cls: "bg-emerald-500/15 text-emerald-300" },
+  cancelled: { t: "Отменено", cls: "bg-slate-500/15 text-slate-400" },
+};
+const PAY_METHOD_LABEL: Record<string, string> = { cash: "Наличные", card: "Карта", transfer: "Перевод", kaspi: "Kaspi" };
+const MODULE_PERIODS: { id: string; label: string }[] = [
+  { id: "today", label: "Сегодня" }, { id: "yesterday", label: "Вчера" }, { id: "week", label: "Неделя" },
+  { id: "month", label: "Месяц" }, { id: "quarter", label: "Квартал" }, { id: "year", label: "Год" },
+];
+const jsonOwnerHdr = { headers: { "Content-Type": "application/json", "x-demo-role": "owner" } };
+
+function StatPill({ label, value, hint, tone = "gold" }: { label: string; value: React.ReactNode; hint?: React.ReactNode; tone?: "gold" | "emerald" | "rose" | "white" }) {
+  const valColor = tone === "emerald" ? "text-emerald-400" : tone === "rose" ? "text-rose-400" : tone === "white" ? "text-white" : "text-[#C5A059]";
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+      <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{label}</p>
+      <p className={`mt-1.5 text-xl font-black ${valColor}`}>{value}</p>
+      {hint && <p className="mt-1 text-[11px] text-slate-400">{hint}</p>}
+    </div>
+  );
+}
+
+function PeriodChips({ period, onChange }: { period: string; onChange: (p: string) => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {MODULE_PERIODS.map((p) => (
+        <button key={p.id} onClick={() => onChange(p.id)}
+          className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${period === p.id ? "bg-[#C5A059] text-black" : "border border-white/10 bg-white/[0.04] text-slate-300 hover:border-[#C5A059]/40"}`}>
+          {p.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function PerformancesView() {
+  const [list, setList] = useState<any[]>([]);
+  const [overview, setOverview] = useState<any>(null);
+  const [period, setPeriod] = useState("month");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    setLoading(true); setError(null);
+    try {
+      const [lRes, oRes] = await Promise.all([
+        fetch(`/api/mvp/performances?status=${statusFilter}`, ownerHdr),
+        fetch(`/api/mvp/performances/overview?period=${period}`, ownerHdr),
+      ]);
+      if (!lRes.ok) throw new Error(await lRes.text());
+      setList((await lRes.json()).performances || []);
+      if (oRes.ok) setOverview(await oRes.json());
+    } catch (e: any) { setError(e?.message || "Не удалось загрузить выступления"); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [statusFilter, period]);
+
+  const selected = list.find((p) => p.id === selectedId) || null;
+
+  const addPayment = async (perfId: string, payload: any) => {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/mvp/performances/${perfId}/payments`, { method: "POST", ...jsonOwnerHdr, body: JSON.stringify(payload) });
+      if (!res.ok) throw new Error(await res.text());
+      await load();
+    } catch (e: any) { setError(e?.message || "Не удалось добавить оплату"); } finally { setBusy(false); }
+  };
+  const removePayment = async (perfId: string, pid: string) => { setBusy(true); try { await fetch(`/api/mvp/performances/${perfId}/payments/${pid}`, { method: "DELETE", headers: { "x-demo-role": "owner" } }); await load(); } finally { setBusy(false); } };
+  const cancelPerf = async (id: string) => { setBusy(true); try { await fetch(`/api/mvp/performances/${id}`, { method: "PATCH", ...jsonOwnerHdr, body: JSON.stringify({ status: "cancelled" }) }); await load(); } finally { setBusy(false); } };
+  const deletePerf = async (id: string) => { setBusy(true); try { await fetch(`/api/mvp/performances/${id}`, { method: "DELETE", headers: { "x-demo-role": "owner" } }); setSelectedId(null); await load(); } finally { setBusy(false); } };
+  const createPerf = async (payload: any) => {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/mvp/performances`, { method: "POST", ...jsonOwnerHdr, body: JSON.stringify(payload) });
+      if (!res.ok) throw new Error(await res.text());
+      setShowAdd(false); await load();
+    } catch (e: any) { setError(e?.message || "Не удалось создать выступление"); } finally { setBusy(false); }
+  };
+
+  const statusTabs: [string, string][] = [["all", "Все"], ["planned", "Запланированные"], ["partial", "Частично оплаченные"], ["paid", "Оплаченные"], ["cancelled", "Отменённые"]];
+  const monthLabel = (m: string) => m.slice(5) + "." + m.slice(2, 4);
+
+  return (
+    <OwnerScreen title="Выступления" subtitle="Учёт коммерческих выступлений: свадьбы, банкеты, корпоративы, дни рождения, мероприятия и концерты. Несколько поступлений по одному выступлению, статусы оплаты и аналитика по выручке.">
+      {error && <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">{error}</div>}
+
+      {/* Аналитика за период */}
+      <section className="rounded-[1.75rem] border border-white/10 bg-gradient-to-br from-[#141414] to-black p-5">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <h3 className="text-sm font-black uppercase tracking-wider text-white">Аналитика за период</h3>
+          <PeriodChips period={period} onChange={setPeriod} />
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <StatPill label="Выступлений" value={overview?.count ?? "—"} />
+          <StatPill label="Выручка" value={overview ? money(overview.revenue.total) : "—"} hint={overview && <DeltaBadge pct={overview.revenue.momPct} />} />
+          <StatPill label="Средний чек" value={overview ? money(overview.avgCheck) : "—"} />
+          <StatPill label="Неоплаченных" value={overview?.unpaidCount ?? "—"} tone="rose" />
+          <StatPill label="Остаток к оплате" value={overview ? money(overview.outstanding) : "—"} tone="rose" />
+        </div>
+        {overview?.byMonth?.length > 0 && (
+          <div className="mt-4 h-44">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={overview.byMonth.map((b: any) => ({ name: monthLabel(b.month), amount: b.amount }))}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
+                <XAxis dataKey="name" tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} width={70} tickFormatter={(v) => `${Math.round(v / 1000)}к`} />
+                <Tooltip formatter={(v: any) => money(Number(v))} contentStyle={{ background: "#0b0b0b", border: "1px solid #ffffff20", borderRadius: 12 }} labelStyle={{ color: "#fff" }} />
+                <Bar dataKey="amount" fill="#C5A059" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </section>
+
+      {/* Фильтры по статусу + кнопка */}
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {statusTabs.map(([id, label]) => (
+            <button key={id} onClick={() => setStatusFilter(id)}
+              className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${statusFilter === id ? "bg-white/15 text-white ring-1 ring-[#C5A059]/40" : "border border-white/10 bg-white/[0.04] text-slate-400 hover:text-white"}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <button onClick={() => setShowAdd(true)} className="inline-flex items-center gap-2 rounded-xl bg-[#C5A059] px-4 py-2 text-xs font-black text-black transition hover:brightness-110">
+          <Plus className="h-4 w-4" /> Добавить выступление
+        </button>
+      </div>
+
+      {/* Таблица выступлений */}
+      <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.02]">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[820px] text-left text-sm">
+            <thead className="border-b border-white/10 bg-white/[0.03] text-[10px] uppercase tracking-wider text-slate-500">
+              <tr>
+                <th className="px-4 py-3 font-bold">Дата</th>
+                <th className="px-4 py-3 font-bold">Клиент</th>
+                <th className="px-4 py-3 font-bold">Адрес</th>
+                <th className="px-4 py-3 font-bold">Время</th>
+                <th className="px-4 py-3 font-bold">Тип</th>
+                <th className="px-4 py-3 text-right font-bold">Стоимость</th>
+                <th className="px-4 py-3 text-right font-bold">Оплачено</th>
+                <th className="px-4 py-3 text-right font-bold">Остаток</th>
+                <th className="px-4 py-3 font-bold">Статус</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading && <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-500">Загрузка…</td></tr>}
+              {!loading && list.length === 0 && <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-500">Нет выступлений.</td></tr>}
+              {list.map((p) => (
+                <tr key={p.id} onClick={() => setSelectedId(selectedId === p.id ? null : p.id)}
+                  className={`cursor-pointer border-b border-white/5 transition hover:bg-white/[0.04] ${selectedId === p.id ? "bg-white/[0.05]" : ""}`}>
+                  <td className="px-4 py-3 text-slate-300">{p.eventDate}</td>
+                  <td className="px-4 py-3 font-bold text-white">{p.clientName}</td>
+                  <td className="px-4 py-3 text-slate-400">{p.address || "—"}</td>
+                  <td className="px-4 py-3 text-slate-400">{p.eventTime || "—"}</td>
+                  <td className="px-4 py-3 text-slate-400">{PERF_TYPE_LABEL[p.type] || p.type}</td>
+                  <td className="px-4 py-3 text-right font-bold text-white">{money(p.price)}</td>
+                  <td className="px-4 py-3 text-right text-emerald-400">{p.paid == null ? "—" : money(p.paid)}</td>
+                  <td className="px-4 py-3 text-right text-rose-300">{p.outstanding == null ? "—" : money(p.outstanding)}</td>
+                  <td className="px-4 py-3"><span className={`rounded-lg px-2 py-1 text-[11px] font-bold ${PERF_STATUS[p.status]?.cls}`}>{PERF_STATUS[p.status]?.t}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* Карточка выбранного выступления */}
+      {selected && (
+        <PerformanceCard perf={selected} busy={busy} onAddPayment={addPayment} onRemovePayment={removePayment} onCancel={cancelPerf} onDelete={deletePerf} onClose={() => setSelectedId(null)} />
+      )}
+
+      {showAdd && <PerfAddModal busy={busy} onClose={() => setShowAdd(false)} onSubmit={createPerf} />}
+    </OwnerScreen>
+  );
+}
+
+function PerformanceCard({ perf, busy, onAddPayment, onRemovePayment, onCancel, onDelete, onClose }: any) {
+  const [amount, setAmount] = useState("");
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [method, setMethod] = useState("cash");
+  const submit = () => { const a = Number(amount); if (!a || a <= 0) return; onAddPayment(perf.id, { amount: a, date, method }); setAmount(""); };
+  return (
+    <section className="rounded-[1.75rem] border border-[#C5A059]/25 bg-gradient-to-br from-[#1a1710] to-black p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-lg font-black text-white">{perf.clientName}</h3>
+          <span className={`mt-1 inline-block rounded-lg px-2 py-0.5 text-[11px] font-bold ${PERF_STATUS[perf.status]?.cls}`}>{PERF_STATUS[perf.status]?.t}</span>
+        </div>
+        <button onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:text-white"><X className="h-5 w-5" /></button>
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-3">
+        {/* Общая информация */}
+        <div className="space-y-1.5 text-sm">
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Общая информация</p>
+          <Row k="Дата мероприятия" v={perf.eventDate} />
+          <Row k="Время" v={perf.eventTime || "—"} />
+          <Row k="Адрес" v={perf.address || "—"} />
+          <Row k="Телефон" v={perf.clientPhone || "—"} />
+          <Row k="Тип выступления" v={PERF_TYPE_LABEL[perf.type] || perf.type} />
+          {perf.comment && <Row k="Комментарий" v={perf.comment} />}
+        </div>
+        {/* Финансы */}
+        <div className="space-y-1.5 text-sm">
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Финансы</p>
+          <Row k="Стоимость" v={<span className="font-black text-white">{money(perf.price)}</span>} />
+          <Row k="Оплачено" v={<span className="text-emerald-400">{money(perf.paid)}</span>} />
+          <Row k="Остаток" v={<span className="text-rose-300">{money(perf.outstanding)}</span>} />
+        </div>
+        {/* Поступления денег */}
+        <div className="space-y-2 text-sm">
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Поступления денег</p>
+          {(perf.payments || []).length === 0 && <p className="text-xs text-slate-500">Оплат пока нет.</p>}
+          {(perf.payments || []).map((pay: any) => (
+            <div key={pay.id} className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+              <div>
+                <p className="text-xs font-bold text-white">{money(pay.amount)}</p>
+                <p className="text-[11px] text-slate-500">{pay.date} · {PAY_METHOD_LABEL[pay.method] || pay.method}</p>
+              </div>
+              {perf.status !== "cancelled" && <button onClick={() => onRemovePayment(perf.id, pay.id)} className="rounded-lg p-1 text-slate-500 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button>}
+            </div>
+          ))}
+          <p className="pt-1 text-right text-xs text-slate-400">Итого оплачено: <span className="font-bold text-emerald-400">{money(perf.paid)}</span></p>
+        </div>
+      </div>
+
+      {/* Добавить поступление */}
+      {perf.status !== "cancelled" && (
+        <div className="mt-4 flex flex-wrap items-end gap-2 border-t border-white/10 pt-4">
+          <label className="flex flex-col gap-1 text-[11px] text-slate-400">Сумма
+            <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="100000" className="w-32 rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white" /></label>
+          <label className="flex flex-col gap-1 text-[11px] text-slate-400">Дата
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white" /></label>
+          <label className="flex flex-col gap-1 text-[11px] text-slate-400">Способ
+            <select value={method} onChange={(e) => setMethod(e.target.value)} className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white">
+              {Object.entries(PAY_METHOD_LABEL).map(([k, v]) => <option key={k} value={k} className="bg-black">{v}</option>)}
+            </select></label>
+          <button disabled={busy} onClick={submit} className="rounded-xl bg-[#C5A059] px-4 py-2 text-xs font-black text-black disabled:opacity-50">Добавить оплату</button>
+          <div className="flex-1" />
+          {perf.status !== "cancelled" && <button disabled={busy} onClick={() => onCancel(perf.id)} className="rounded-xl border border-white/10 px-3 py-2 text-xs font-bold text-slate-300 hover:text-white">Отменить</button>}
+          <button disabled={busy} onClick={() => onDelete(perf.id)} className="rounded-xl border border-rose-500/30 px-3 py-2 text-xs font-bold text-rose-300 hover:bg-rose-500/10">Удалить</button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Row({ k, v }: { k: string; v: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-slate-500">{k}</span>
+      <span className="text-right text-slate-200">{v}</span>
+    </div>
+  );
+}
+
+function PerfAddModal({ busy, onClose, onSubmit }: any) {
+  const [f, setF] = useState<any>({ clientName: "", clientPhone: "", address: "", eventDate: new Date().toISOString().slice(0, 10), eventTime: "", type: "basic", price: "", comment: "" });
+  const set = (k: string, v: any) => setF((s: any) => ({ ...s, [k]: v }));
+  const submit = () => { if (!f.clientName.trim()) return; onSubmit({ ...f, price: Number(f.price) || 0 }); };
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
+      <div className="w-full max-w-lg rounded-[1.75rem] border border-white/10 bg-[#0f0f0f] p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between"><h3 className="text-lg font-black text-white">Новое выступление</h3><button onClick={onClose} className="text-slate-400 hover:text-white"><X className="h-5 w-5" /></button></div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <ModalInput label="Клиент *" value={f.clientName} onChange={(v) => set("clientName", v)} />
+          <ModalInput label="Телефон" value={f.clientPhone} onChange={(v) => set("clientPhone", v)} />
+          <ModalInput label="Адрес" value={f.address} onChange={(v) => set("address", v)} full />
+          <ModalInput label="Дата" type="date" value={f.eventDate} onChange={(v) => set("eventDate", v)} />
+          <ModalInput label="Время" value={f.eventTime} onChange={(v) => set("eventTime", v)} placeholder="18:00" />
+          <label className="flex flex-col gap-1 text-[11px] text-slate-400">Тип выступления
+            <select value={f.type} onChange={(e) => set("type", e.target.value)} className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white">
+              {Object.entries(PERF_TYPE_LABEL).map(([k, v]) => <option key={k} value={k} className="bg-black">{v}</option>)}
+            </select></label>
+          <ModalInput label="Стоимость, ₸" type="number" value={f.price} onChange={(v) => set("price", v)} />
+          <ModalInput label="Комментарий" value={f.comment} onChange={(v) => set("comment", v)} full />
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-xl border border-white/10 px-4 py-2 text-xs font-bold text-slate-300">Отмена</button>
+          <button disabled={busy} onClick={submit} className="rounded-xl bg-[#C5A059] px-4 py-2 text-xs font-black text-black disabled:opacity-50">Создать</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ModalInput({ label, value, onChange, type = "text", placeholder, full }: { label: string; value: any; onChange: (v: string) => void; type?: string; placeholder?: string; full?: boolean }) {
+  return (
+    <label className={`flex flex-col gap-1 text-[11px] text-slate-400 ${full ? "sm:col-span-2" : ""}`}>{label}
+      <input type={type} value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white" />
+    </label>
+  );
+}
+
+// ===================== ТОВАРЫ И СКЛАД (ТЗ §3) =====================
+export function ProductsView({ role = "owner" }: { role?: string } = {}) {
+  // Роль определяет режим: владелец/управляющий — полный склад; администратор — «касса дня».
+  // Заголовок x-demo-role передаётся на бэк, который сам скоупит данные (продажи админа = только сегодня).
+  const isCashier = role === "admin";
+  const hdr = { headers: { "x-demo-role": role } };
+  const jhdr = { headers: { "Content-Type": "application/json", "x-demo-role": role } };
+
+  const [tab, setTab] = useState<"products" | "sales" | "stock" | "receipts">(isCashier ? "sales" : "products");
+  const [products, setProducts] = useState<any[]>([]);
+  const [sales, setSales] = useState<any[]>([]);
+  const [stock, setStock] = useState<any[]>([]);
+  const [receipts, setReceipts] = useState<any[]>([]);
+  const [overview, setOverview] = useState<any>(null);
+  const [period, setPeriod] = useState("month");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [modal, setModal] = useState<null | "product" | "sale" | "receipt">(null);
+
+  const load = async () => {
+    setLoading(true); setError(null);
+    try {
+      // Касса (админ): только справочник + сегодняшние продажи. Остальное недоступно по роли.
+      const reqs = isCashier
+        ? [fetch(`/api/mvp/products`, hdr), fetch(`/api/mvp/products/sales`, hdr)]
+        : [
+            fetch(`/api/mvp/products`, hdr),
+            fetch(`/api/mvp/products/sales`, hdr),
+            fetch(`/api/mvp/products/stock`, hdr),
+            fetch(`/api/mvp/products/receipts`, hdr),
+            fetch(`/api/mvp/products/overview?period=${period}`, hdr),
+          ];
+      const [pRes, sRes, stRes, rRes, oRes] = await Promise.all(reqs);
+      if (!pRes.ok) throw new Error(await pRes.text());
+      setProducts((await pRes.json()).products || []);
+      if (sRes?.ok) setSales((await sRes.json()).sales || []);
+      if (stRes?.ok) setStock((await stRes.json()).stock || []);
+      if (rRes?.ok) setReceipts((await rRes.json()).receipts || []);
+      if (oRes?.ok) setOverview(await oRes.json());
+    } catch (e: any) { setError(e?.message || "Не удалось загрузить товары"); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [period]);
+
+  const post = async (url: string, payload: any, errMsg: string) => {
+    setBusy(true);
+    try {
+      const res = await fetch(url, { method: "POST", ...jhdr, body: JSON.stringify(payload) });
+      if (!res.ok) throw new Error(await res.text());
+      setModal(null); await load();
+    } catch (e: any) { setError(e?.message || errMsg); } finally { setBusy(false); }
+  };
+  const createProduct = (p: any) => post(`/api/mvp/products`, p, "Не удалось создать товар");
+  const createSale = (p: any) => post(`/api/mvp/products/sales`, p, "Не удалось оформить продажу");
+  const createReceipt = (p: any) => post(`/api/mvp/products/receipts`, p, "Не удалось оформить поступление");
+
+  const cashierRevenue = sales.reduce((s, x) => s + (Number(x.amount) || 0), 0);
+  const tabs: [typeof tab, string][] = isCashier
+    ? [["sales", "Продажи за сегодня"], ["products", "Каталог"]]
+    : [["products", "Товары"], ["sales", "Продажи"], ["stock", "Остатки"], ["receipts", "Поступления"]];
+
+  return (
+    <OwnerScreen
+      title={isCashier ? "Товары и касса" : "Товары и склад"}
+      subtitle={isCashier
+        ? "Касса дня: продажи товаров и мерча за сегодня. Оформление продажи и список сегодняшних операций. Аналитика и остатки доступны управляющему и владельцу."
+        : "Учёт мерча, формы, аксессуаров и сувенирной продукции. Товары, продажи, остатки (приход − продажи) и поступления, контроль минимального остатка и аналитика по выручке и прибыли."}>
+      {error && <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">{error}</div>}
+
+      {/* Аналитика (владелец/управляющий) */}
+      {!isCashier && (
+      <section className="rounded-[1.75rem] border border-white/10 bg-gradient-to-br from-[#141414] to-black p-5">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <h3 className="text-sm font-black uppercase tracking-wider text-white">Аналитика за период</h3>
+          <PeriodChips period={period} onChange={setPeriod} />
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <StatPill label="Выручка от товаров" value={overview ? money(overview.revenue.total) : "—"} hint={overview && <DeltaBadge pct={overview.revenue.momPct} />} />
+          <StatPill label="Продано единиц" value={overview?.unitsSold ?? "—"} tone="white" />
+          <StatPill label="Средний чек" value={overview ? money(overview.avgCheck) : "—"} />
+          <StatPill label="Валовая прибыль" value={overview ? money(overview.grossProfit) : "—"} tone="emerald" hint={overview ? `${overview.margin}% маржинальность` : undefined} />
+          <StatPill label="Товары с низким остатком" value={overview?.lowStock?.length ?? "—"} tone="rose" hint="Требуют пополнения" />
+        </div>
+        {overview?.top?.length > 0 && (
+          <div className="mt-4">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Топ товаров</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {overview.top.map((t: any) => (
+                <span key={t.id} className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-slate-200">{t.name} · <span className="font-bold text-[#C5A059]">{money(t.revenue)}</span> · {t.qty} шт.</span>
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
+      )}
+
+      {/* Касса за сегодня (администратор) */}
+      {isCashier && (
+        <section className="rounded-[1.75rem] border border-white/10 bg-gradient-to-br from-[#141414] to-black p-5">
+          <h3 className="text-sm font-black uppercase tracking-wider text-white">Касса за сегодня</h3>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <StatPill label="Выручка от товаров за сегодня" value={money(cashierRevenue)} tone="emerald" />
+            <StatPill label="Продаж за сегодня" value={sales.length} tone="white" />
+          </div>
+        </section>
+      )}
+
+      {/* Подвкладки + кнопка */}
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {tabs.map(([id, label]) => (
+            <button key={id} onClick={() => setTab(id)}
+              className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${tab === id ? "bg-white/15 text-white ring-1 ring-[#C5A059]/40" : "border border-white/10 bg-white/[0.04] text-slate-400 hover:text-white"}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          {!isCashier && tab === "products" && <button onClick={() => setModal("product")} className="inline-flex items-center gap-2 rounded-xl bg-[#C5A059] px-4 py-2 text-xs font-black text-black hover:brightness-110"><Plus className="h-4 w-4" /> Добавить товар</button>}
+          {(tab === "products" || tab === "sales") && <button onClick={() => setModal("sale")} className="inline-flex items-center gap-2 rounded-xl border border-[#C5A059]/40 px-4 py-2 text-xs font-black text-[#C5A059] hover:bg-[#C5A059]/10"><ShoppingBag className="h-4 w-4" /> Оформить продажу</button>}
+          {!isCashier && (tab === "stock" || tab === "receipts") && <button onClick={() => setModal("receipt")} className="inline-flex items-center gap-2 rounded-xl border border-[#C5A059]/40 px-4 py-2 text-xs font-black text-[#C5A059] hover:bg-[#C5A059]/10"><Package className="h-4 w-4" /> Оформить поступление</button>}
+        </div>
+      </div>
+
+      {loading && <p className="px-1 text-sm text-slate-500">Загрузка…</p>}
+
+      {/* ТОВАРЫ */}
+      {!loading && tab === "products" && (
+        <ModuleTable cols={["Товар", "Категория", "Артикул", "Цена продажи", "Закупочная", "Остаток", "Мин. остаток", "Статус"]} empty={products.length === 0}>
+          {products.map((p) => (
+            <tr key={p.id} className="border-b border-white/5">
+              <td className="px-4 py-3 font-bold text-white">{p.name}</td>
+              <td className="px-4 py-3 text-slate-400">{p.category || "—"}</td>
+              <td className="px-4 py-3 text-slate-400">{p.sku || "—"}</td>
+              <td className="px-4 py-3 text-right text-white">{money(p.salePrice)}</td>
+              <td className="px-4 py-3 text-right text-slate-400">{money(p.costPrice)}</td>
+              <td className="px-4 py-3 text-right font-bold text-white">{p.stock} шт.</td>
+              <td className="px-4 py-3 text-right text-slate-400">{p.minStock} шт.</td>
+              <td className="px-4 py-3">{p.low
+                ? <span className="rounded-lg bg-rose-500/15 px-2 py-1 text-[11px] font-bold text-rose-300">Нужно пополнить</span>
+                : <span className="rounded-lg bg-emerald-500/15 px-2 py-1 text-[11px] font-bold text-emerald-300">В норме</span>}</td>
+            </tr>
+          ))}
+        </ModuleTable>
+      )}
+
+      {/* ПРОДАЖИ */}
+      {!loading && tab === "sales" && (
+        <ModuleTable cols={["Дата", "Товар", "Кол-во", "Сумма", "Способ", "Сотрудник"]} empty={sales.length === 0}>
+          {sales.map((s) => (
+            <tr key={s.id} className="border-b border-white/5">
+              <td className="px-4 py-3 text-slate-300">{s.date}</td>
+              <td className="px-4 py-3 font-bold text-white">{s.productName}</td>
+              <td className="px-4 py-3 text-slate-300">{s.qty} шт.</td>
+              <td className="px-4 py-3 text-right font-bold text-emerald-400">{money(s.amount)}</td>
+              <td className="px-4 py-3 text-slate-400">{PAY_METHOD_LABEL[s.method] || s.method}</td>
+              <td className="px-4 py-3 text-slate-400">{s.soldBy || "—"}</td>
+            </tr>
+          ))}
+        </ModuleTable>
+      )}
+
+      {/* ОСТАТКИ */}
+      {!loading && tab === "stock" && (
+        <ModuleTable cols={["Товар", "Артикул", "Приход", "Продано", "Остаток", "Мин. остаток", "Статус"]} empty={stock.length === 0}>
+          {stock.map((s) => (
+            <tr key={s.productId} className="border-b border-white/5">
+              <td className="px-4 py-3 font-bold text-white">{s.name}</td>
+              <td className="px-4 py-3 text-slate-400">{s.sku || "—"}</td>
+              <td className="px-4 py-3 text-right text-slate-300">{s.received}</td>
+              <td className="px-4 py-3 text-right text-slate-300">{s.sold}</td>
+              <td className="px-4 py-3 text-right font-bold text-white">{s.balance} шт.</td>
+              <td className="px-4 py-3 text-right text-slate-400">{s.minStock} шт.</td>
+              <td className="px-4 py-3">{s.low
+                ? <span className="rounded-lg bg-rose-500/15 px-2 py-1 text-[11px] font-bold text-rose-300">Низкий остаток</span>
+                : <span className="rounded-lg bg-emerald-500/15 px-2 py-1 text-[11px] font-bold text-emerald-300">В норме</span>}</td>
+            </tr>
+          ))}
+        </ModuleTable>
+      )}
+
+      {/* ПОСТУПЛЕНИЯ */}
+      {!loading && tab === "receipts" && (
+        <ModuleTable cols={["Дата", "Товар", "Кол-во", "Закупочная", "Комментарий"]} empty={receipts.length === 0}>
+          {receipts.map((r) => (
+            <tr key={r.id} className="border-b border-white/5">
+              <td className="px-4 py-3 text-slate-300">{r.date}</td>
+              <td className="px-4 py-3 font-bold text-white">{r.productName}</td>
+              <td className="px-4 py-3 text-slate-300">{r.qty} шт.</td>
+              <td className="px-4 py-3 text-right text-slate-400">{money(r.costPrice)}</td>
+              <td className="px-4 py-3 text-slate-400">{r.comment || "—"}</td>
+            </tr>
+          ))}
+        </ModuleTable>
+      )}
+
+      {modal === "product" && <ProductAddModal busy={busy} onClose={() => setModal(null)} onSubmit={createProduct} />}
+      {modal === "sale" && <SaleModal busy={busy} products={products} onClose={() => setModal(null)} onSubmit={createSale} />}
+      {modal === "receipt" && <ReceiptModal busy={busy} products={products} onClose={() => setModal(null)} onSubmit={createReceipt} />}
+    </OwnerScreen>
+  );
+}
+
+function ModuleTable({ cols, empty, children }: { cols: string[]; empty: boolean; children: React.ReactNode }) {
+  return (
+    <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.02]">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[720px] text-left text-sm">
+          <thead className="border-b border-white/10 bg-white/[0.03] text-[10px] uppercase tracking-wider text-slate-500">
+            <tr>{cols.map((c, i) => <th key={i} className={`px-4 py-3 font-bold ${i >= 3 && i <= 6 ? "text-right" : ""}`}>{c}</th>)}</tr>
+          </thead>
+          <tbody>
+            {empty ? <tr><td colSpan={cols.length} className="px-4 py-8 text-center text-slate-500">Нет данных.</td></tr> : children}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function ProductAddModal({ busy, onClose, onSubmit }: any) {
+  const [f, setF] = useState<any>({ name: "", category: "Мерч", sku: "", salePrice: "", costPrice: "", minStock: "", comment: "" });
+  const set = (k: string, v: any) => setF((s: any) => ({ ...s, [k]: v }));
+  const submit = () => { if (!f.name.trim()) return; onSubmit({ ...f, salePrice: Number(f.salePrice) || 0, costPrice: Number(f.costPrice) || 0, minStock: Number(f.minStock) || 0 }); };
+  return (
+    <ModalShell title="Новый товар" onClose={onClose}>
+      <ModalInput label="Название *" value={f.name} onChange={(v) => set("name", v)} full />
+      <ModalInput label="Категория" value={f.category} onChange={(v) => set("category", v)} />
+      <ModalInput label="Артикул" value={f.sku} onChange={(v) => set("sku", v)} />
+      <ModalInput label="Цена продажи, ₸" type="number" value={f.salePrice} onChange={(v) => set("salePrice", v)} />
+      <ModalInput label="Закупочная цена, ₸" type="number" value={f.costPrice} onChange={(v) => set("costPrice", v)} />
+      <ModalInput label="Минимальный остаток" type="number" value={f.minStock} onChange={(v) => set("minStock", v)} />
+      <ModalInput label="Комментарий" value={f.comment} onChange={(v) => set("comment", v)} full />
+      <ModalActions busy={busy} onClose={onClose} onSubmit={submit} submitLabel="Создать" />
+    </ModalShell>
+  );
+}
+
+function SaleModal({ busy, products, onClose, onSubmit }: any) {
+  const [productId, setProductId] = useState(products[0]?.id || "");
+  const [qty, setQty] = useState("1");
+  const [method, setMethod] = useState("cash");
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const prod = products.find((p: any) => p.id === productId);
+  const amount = (Number(qty) || 0) * (prod?.salePrice || 0);
+  const submit = () => { if (!productId || Number(qty) <= 0) return; onSubmit({ productId, qty: Number(qty), amount, method, date }); };
+  return (
+    <ModalShell title="Оформить продажу" onClose={onClose}>
+      <label className="flex flex-col gap-1 text-[11px] text-slate-400 sm:col-span-2">Товар
+        <select value={productId} onChange={(e) => setProductId(e.target.value)} className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white">
+          {products.map((p: any) => <option key={p.id} value={p.id} className="bg-black">{p.name} · {money(p.salePrice)} · ост. {p.stock}</option>)}
+        </select></label>
+      <ModalInput label="Количество" type="number" value={qty} onChange={setQty} />
+      <label className="flex flex-col gap-1 text-[11px] text-slate-400">Способ оплаты
+        <select value={method} onChange={(e) => setMethod(e.target.value)} className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white">
+          {Object.entries(PAY_METHOD_LABEL).map(([k, v]) => <option key={k} value={k} className="bg-black">{v}</option>)}
+        </select></label>
+      <ModalInput label="Дата" type="date" value={date} onChange={setDate} />
+      <div className="sm:col-span-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-300">Сумма к оплате: <span className="font-black text-[#C5A059]">{money(amount)}</span></div>
+      <ModalActions busy={busy} onClose={onClose} onSubmit={submit} submitLabel="Провести продажу" />
+    </ModalShell>
+  );
+}
+
+function ReceiptModal({ busy, products, onClose, onSubmit }: any) {
+  const [productId, setProductId] = useState(products[0]?.id || "");
+  const [qty, setQty] = useState("1");
+  const [costPrice, setCostPrice] = useState(String(products[0]?.costPrice || ""));
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [comment, setComment] = useState("");
+  const submit = () => { if (!productId || Number(qty) <= 0) return; onSubmit({ productId, qty: Number(qty), costPrice: Number(costPrice) || 0, date, comment }); };
+  return (
+    <ModalShell title="Поступление товара" onClose={onClose}>
+      <label className="flex flex-col gap-1 text-[11px] text-slate-400 sm:col-span-2">Товар
+        <select value={productId} onChange={(e) => { setProductId(e.target.value); const p = products.find((x: any) => x.id === e.target.value); if (p) setCostPrice(String(p.costPrice || "")); }} className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white">
+          {products.map((p: any) => <option key={p.id} value={p.id} className="bg-black">{p.name}</option>)}
+        </select></label>
+      <ModalInput label="Количество" type="number" value={qty} onChange={setQty} />
+      <ModalInput label="Закупочная цена, ₸" type="number" value={costPrice} onChange={setCostPrice} />
+      <ModalInput label="Дата" type="date" value={date} onChange={setDate} />
+      <ModalInput label="Комментарий" value={comment} onChange={setComment} full />
+      <ModalActions busy={busy} onClose={onClose} onSubmit={submit} submitLabel="Оприходовать" />
+    </ModalShell>
+  );
+}
+
+function ModalShell({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
+      <div className="w-full max-w-lg rounded-[1.75rem] border border-white/10 bg-[#0f0f0f] p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between"><h3 className="text-lg font-black text-white">{title}</h3><button onClick={onClose} className="text-slate-400 hover:text-white"><X className="h-5 w-5" /></button></div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function ModalActions({ busy, onClose, onSubmit, submitLabel }: { busy: boolean; onClose: () => void; onSubmit: () => void; submitLabel: string }) {
+  return (
+    <div className="mt-2 flex justify-end gap-2 sm:col-span-2">
+      <button onClick={onClose} className="rounded-xl border border-white/10 px-4 py-2 text-xs font-bold text-slate-300">Отмена</button>
+      <button disabled={busy} onClick={onSubmit} className="rounded-xl bg-[#C5A059] px-4 py-2 text-xs font-black text-black disabled:opacity-50">{submitLabel}</button>
+    </div>
+  );
+}
 
 function EventsView({ competitions, branches, students, teachers, onCreateCompetition, onUpdateCompetition, onDeleteCompetition }: {
   competitions: Competition[];

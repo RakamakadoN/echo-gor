@@ -40,13 +40,13 @@ export const initialBranches: Branch[] = [
 ];
 
 export const initialHalls: Hall[] = [
-  { id: "hall-almaty-1", branchId: "branch-almaty", name: "Зал Алатау (Большой)", capacity: 40 },
-  { id: "hall-almaty-2", branchId: "branch-almaty", name: "Зал Кок-Тобе (Средний)", capacity: 25 },
-  { id: "hall-almaty-3", branchId: "branch-almaty", name: "Зал Медео (Малый)", capacity: 15 },
-  { id: "hall-ast-1", branchId: "branch-astana", name: "Зал Байтерек", capacity: 30 },
-  { id: "hall-ast-2", branchId: "branch-astana", name: "Зал Хан Шатыр", capacity: 20 },
-  { id: "hall-shym-1", branchId: "branch-shymkent", name: "Зал Орда (Главный)", capacity: 35 },
-  { id: "hall-shym-2", branchId: "branch-shymkent", name: "Зал Арыс (Малый)", capacity: 15 }
+  { id: "hall-almaty-1", branchId: "branch-almaty", name: "Зал Алатау (Большой)", capacity: 40, description: "Большой зал с зеркалами и сценой", status: "active" },
+  { id: "hall-almaty-2", branchId: "branch-almaty", name: "Зал Кок-Тобе (Средний)", capacity: 25, description: "Средний зал для групповых занятий", status: "active" },
+  { id: "hall-almaty-3", branchId: "branch-almaty", name: "Зал Медео (Малый)", capacity: 15, description: "Малый зал для индивидуальных занятий", status: "active" },
+  { id: "hall-ast-1", branchId: "branch-astana", name: "Зал Байтерек", capacity: 30, description: "Просторный зал", status: "active" },
+  { id: "hall-ast-2", branchId: "branch-astana", name: "Зал Хан Шатыр", capacity: 20, description: "Малый зал", status: "active" },
+  { id: "hall-shym-1", branchId: "branch-shymkent", name: "Зал Орда (Главный)", capacity: 35, description: "Главный зал филиала", status: "active" },
+  { id: "hall-shym-2", branchId: "branch-shymkent", name: "Зал Арыс (Малый)", capacity: 15, description: "Малый зал", status: "active" }
 ];
 
 export const initialTeachers: Teacher[] = [
@@ -95,6 +95,7 @@ export const initialGroups: Group[] = [
     time: "19:30",
     ageGroup: "16+ лет",
     level: "Ансамбль",
+    capacity: 20,
     studentCount: 4
   },
   {
@@ -109,6 +110,7 @@ export const initialGroups: Group[] = [
     time: "16:00",
     ageGroup: "6-8 лет",
     level: "Начинающие",
+    capacity: 16,
     studentCount: 3
   },
   {
@@ -123,6 +125,7 @@ export const initialGroups: Group[] = [
     time: "16:30",
     ageGroup: "9-13 лет",
     level: "Продолжающие",
+    capacity: 18,
     studentCount: 3
   }
 ];

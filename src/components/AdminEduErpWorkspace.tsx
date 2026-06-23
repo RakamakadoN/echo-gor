@@ -22,6 +22,7 @@ import {
   Search,
   Send,
   Settings,
+  ShoppingBag,
   ShieldCheck,
   Sparkles,
   Tags,
@@ -33,6 +34,8 @@ import {
 import { Announcement, AnnouncementAudience, AuditLog, Branch, Group, Hall, Payment, Student, Teacher, AdminTask, AdminTaskStatus, AdminTaskPriority, SubscriptionPlan, LeadSource } from "../types";
 import StudentManagementCard, { SellSubscriptionInput } from "./StudentManagementCard";
 import StudentsRegistry from "./StudentsRegistry";
+import AttendanceJournalView from "./AttendanceJournalView";
+import { ProductsView } from "./OwnerExecutiveWorkspace";
 
 // --- Лёгкая система всплывающих уведомлений (toast) ---
 // Даёт видимый отклик кнопкам, у которых пока нет полноценного бэкенда,
@@ -119,6 +122,9 @@ interface AdminEduErpWorkspaceProps {
   onCreateLeadSource?: (data: any) => Promise<boolean>;
   onUpdateLeadSource?: (id: string, data: any) => Promise<boolean>;
   onDeleteLeadSource?: (id: string) => Promise<boolean>;
+  onBulkAttendance?: any;
+  journal?: any;
+  onJournalTask?: (p: { studentId: string; studentName: string; title: string }) => void;
 }
 
 type AdminTab =
@@ -127,6 +133,7 @@ type AdminTab =
   | "journal"
   | "calendar"
   | "billing"
+  | "products"
   | "reports"
   | "messages"
   | "tasks"
@@ -139,6 +146,7 @@ const tabs: { id: AdminTab; label: string; short: string; icon: React.ElementTyp
   { id: "journal", label: "Журнал", short: "Журнал", icon: ClipboardList },
   { id: "calendar", label: "Расписание", short: "Календарь", icon: CalendarDays },
   { id: "billing", label: "Счета и абонементы", short: "Оплата", icon: Receipt },
+  { id: "products", label: "Товары и мерч", short: "Товары", icon: ShoppingBag },
   { id: "reports", label: "Отчеты", short: "Отчеты", icon: BarChart3 },
   { id: "messages", label: "Рассылки", short: "Связь", icon: Send },
   { id: "tasks", label: "Задачи", short: "Задачи", icon: CheckCircle },
@@ -183,6 +191,9 @@ export function AdminEduErpWorkspace({
   onCreateLeadSource,
   onUpdateLeadSource,
   onDeleteLeadSource,
+  onBulkAttendance,
+  journal,
+  onJournalTask,
 }: AdminEduErpWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<AdminTab>("dashboard");
   const [search, setSearch] = useState("");
@@ -303,11 +314,18 @@ export function AdminEduErpWorkspace({
             />
           )}
           {activeTab === "journal" && (
-            <JournalView
+            <AttendanceJournalView
+              role="admin"
+              branches={branches}
               groups={groups}
               students={students}
-              branches={branches}
-              onToggleAttendance={onToggleAttendance}
+              teachers={teachers}
+              currentBranchId={branches?.[0]?.id}
+              canEdit={true}
+              onToggleAttendance={onToggleAttendance as any}
+              onBulkAttendance={onBulkAttendance as any}
+              onCreateTask={onJournalTask}
+              journal={journal}
             />
           )}
           {activeTab === "calendar" && (
@@ -328,6 +346,7 @@ export function AdminEduErpWorkspace({
             />
           )}
           {activeTab === "billing" && <BillingView students={students} groups={groups} branches={branches} payments={payments} debt={debt} renewals={renewals} onOpenPayment={onOpenPayment} />}
+          {activeTab === "products" && <ProductsView role="admin" />}
           {activeTab === "reports" && <ReportsView branches={branches} groups={groups} students={students} payments={payments} teachers={teachers} todayRevenue={todayRevenue} monthRevenue={monthRevenue} attendanceRate={attendanceRate} />}
           {activeTab === "messages" && <MessagesView announcements={announcements} branches={branches} groups={groups} onCreateAnnouncement={onCreateAnnouncement} />}
           {activeTab === "tasks" && <TasksView auditLogs={auditLogs} students={students} tasks={tasks} adminBranchId={branches[0]?.id || ""} onCreateTask={onCreateTask} onUpdateTask={onUpdateTask} onDeleteTask={onDeleteTask} />}

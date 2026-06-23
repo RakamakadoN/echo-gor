@@ -109,7 +109,9 @@ import {
   SubscriptionPlan,
   LeadSource,
   Homework,
-  StudentProgressNote
+  StudentProgressNote,
+  AttendanceStatus,
+  AbsenceReason
 } from "./types";
 
 import { getAvailableAchievements, getExecutiveSummary } from "./dataMock";
@@ -958,7 +960,7 @@ export default function App() {
   };
 
   // --- Owner: branch management ---
-  const handleCreateBranch = async (data: { name: string; city: string; address?: string; phone?: string }) => {
+  const handleCreateBranch = async (data: { name: string; city: string; address?: string; phone?: string; managerName?: string; comment?: string; status?: string }) => {
     try {
       const response = await fetch("/api/mvp/branches", {
         method: "POST",
@@ -975,7 +977,7 @@ export default function App() {
     }
   };
 
-  const handleUpdateBranch = async (id: string, data: { name?: string; city?: string; address?: string; phone?: string }) => {
+  const handleUpdateBranch = async (id: string, data: { name?: string; city?: string; address?: string; phone?: string; managerName?: string; comment?: string; status?: string }) => {
     try {
       const response = await fetch(`/api/mvp/branches/${id}`, {
         method: "PATCH",
@@ -1061,6 +1063,55 @@ export default function App() {
       return true;
     } catch (error: any) {
       setMvpDataError(error.message || "Не удалось удалить группу");
+      return false;
+    }
+  };
+
+  // ─── Halls CRUD (ТЗ §6) ──────────────────────────────────────────────────────
+
+  const handleCreateHall = async (data: { name: string; branchId: string; capacity?: number; description?: string; status?: string }) => {
+    try {
+      const response = await fetch("/api/mvp/halls", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await loadMvpBootstrap(activeRole);
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось создать зал");
+      return false;
+    }
+  };
+
+  const handleUpdateHall = async (id: string, data: Partial<{ name: string; branchId: string; capacity: number; description: string; status: string }>) => {
+    try {
+      const response = await fetch(`/api/mvp/halls/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await loadMvpBootstrap(activeRole);
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось обновить зал");
+      return false;
+    }
+  };
+
+  const handleDeleteHall = async (id: string) => {
+    try {
+      const response = await fetch(`/api/mvp/halls/${id}`, {
+        method: "DELETE",
+        headers: { "x-demo-role": getMvpRoleHeader() },
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await loadMvpBootstrap(activeRole);
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось удалить зал");
       return false;
     }
   };
@@ -1332,7 +1383,12 @@ export default function App() {
   };
 
   // Switch attendance directly in the tracker table
-  const toggleAttendance = async (studId: string, date: string, status: "present" | "absent" | "sick") => {
+  const toggleAttendance = async (
+    studId: string,
+    date: string,
+    status: AttendanceStatus,
+    opts?: { absenceReason?: AbsenceReason | null; isTrial?: boolean }
+  ) => {
     if (mvpDataMode === "supabase") {
       try {
         const response = await fetch("/api/mvp/attendance", {
@@ -1344,7 +1400,9 @@ export default function App() {
           body: JSON.stringify({
             studentId: studId,
             date,
-            status
+            status,
+            absenceReason: opts?.absenceReason ?? null,
+            isTrial: opts?.isTrial ?? undefined
           })
         });
         if (!response.ok) throw new Error(await response.text());
@@ -1363,6 +1421,8 @@ export default function App() {
             date,
             status,
             markedBy: "Учитель Аслан Плиев",
+            absenceReason: opts?.absenceReason ?? null,
+            isTrial: opts?.isTrial,
           };
           return {
             ...s,
@@ -1498,7 +1558,7 @@ export default function App() {
   const bulkMarkAttendance = async (
     groupId: string,
     date: string,
-    status: "present" | "absent" | "sick" = "present"
+    status: AttendanceStatus = "present"
   ): Promise<number> => {
     if (mvpDataMode === "supabase") {
       try {
@@ -1528,6 +1588,49 @@ export default function App() {
     );
     addAuditLog("Массовая посещаемость", `Группа ${groupId}: отмечено ${count} учеников (${status})`);
     return count;
+  };
+
+  // --- API раздела «Журнал посещаемости» (ТЗ) ---
+  const journalApi = useMemo(() => ({
+    loadDashboard: async (params: { branchId?: string | null; groupId?: string | null; from?: string; to?: string }) => {
+      const qs = new URLSearchParams();
+      if (params.branchId) qs.set("branchId", params.branchId);
+      if (params.groupId) qs.set("groupId", params.groupId);
+      if (params.from) qs.set("from", params.from);
+      if (params.to) qs.set("to", params.to);
+      const r = await fetch(`/api/mvp/journal/dashboard?${qs.toString()}`, { headers: { "x-demo-role": getMvpRoleHeader() } });
+      if (!r.ok) throw new Error(await r.text());
+      return r.json();
+    },
+    loadRecalculations: async (studentId?: string) => {
+      const qs = studentId ? `?studentId=${studentId}` : "";
+      const r = await fetch(`/api/mvp/recalculations${qs}`, { headers: { "x-demo-role": getMvpRoleHeader() } });
+      if (!r.ok) return [];
+      const d = await r.json();
+      return d.recalculations || [];
+    },
+    createRecalculation: async (payload: any) => {
+      const r = await fetch("/api/mvp/recalculations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+        body: JSON.stringify(payload),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Ошибка перерасчёта");
+      return r.json();
+    },
+    setPayLater: async (studentId: string, enabled: boolean) => {
+      const r = await fetch(`/api/mvp/students/${studentId}/pay-later`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+        body: JSON.stringify({ enabled }),
+      });
+      if (r.ok) await loadMvpBootstrap(activeRole);
+      return r.ok;
+    },
+  }), [activeRole, mvpDataMode]);
+
+  const handleJournalTask = (payload: { studentId: string; studentName: string; title: string }) => {
+    addAuditLog("Журнал · задача", `${payload.title} (${payload.studentName})`);
   };
 
   // AI: план занятия / свободный педагогический запрос (gemini + локальный фолбэк)
@@ -3088,6 +3191,10 @@ export default function App() {
                onAssignHomework={assignHomework}
                onUpdateHomework={updateHomework}
                onBulkAttendance={bulkMarkAttendance}
+               journal={journalApi}
+               onJournalTask={handleJournalTask}
+               branches={branches}
+               teachers={teachers}
                onGenerateLessonPlan={generateLessonPlan}
                onGenerateStudentPlan={generateStudentDevPlan}
                onSubmitReaction={submitReaction}
@@ -3121,6 +3228,9 @@ export default function App() {
               onDeleteStudent={handleDeleteStudent}
               onCreateAnnouncement={handleCreateAnnouncement}
               onToggleAttendance={toggleAttendance}
+              onBulkAttendance={bulkMarkAttendance}
+              journal={journalApi}
+              onJournalTask={handleJournalTask}
             />
           ) : activeRole === "owner" ? (
             <OwnerExecutiveWorkspace
@@ -3163,9 +3273,16 @@ export default function App() {
               onCreateGroup={handleCreateGroup}
               onUpdateGroup={handleUpdateGroup}
               onDeleteGroup={handleDeleteGroup}
+              onCreateHall={handleCreateHall}
+              onUpdateHall={handleUpdateHall}
+              onDeleteHall={handleDeleteHall}
               onCreateLesson={handleCreateLesson}
               onUpdateLesson={handleUpdateLesson}
               onDeleteLesson={handleDeleteLesson}
+              onToggleAttendance={toggleAttendance}
+              onBulkAttendance={bulkMarkAttendance}
+              journal={journalApi}
+              onJournalTask={handleJournalTask}
             />
           ) : activeRole === "admin" ? (
             <AdminEduErpWorkspace
@@ -3187,6 +3304,9 @@ export default function App() {
               onUpdateLesson={handleUpdateLesson}
               onDeleteLesson={handleDeleteLesson}
               onToggleAttendance={toggleAttendance}
+              onBulkAttendance={bulkMarkAttendance}
+              journal={journalApi}
+              onJournalTask={handleJournalTask}
               onCreateStudent={handleCreateStudent}
               onUpdateStudent={handleUpdateStudent}
               onDeleteStudent={handleDeleteStudent}

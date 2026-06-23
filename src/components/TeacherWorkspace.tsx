@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { Group, Student, Competition, Announcement, Homework } from '../types';
 import StudentManagementCard from './StudentManagementCard';
+import AttendanceJournalView from './AttendanceJournalView';
 import { motion, AnimatePresence } from 'motion/react';
 // @ts-ignore
 import teacherProfileCard from '../assets/images/teacher_profile_card.png';
@@ -36,6 +37,10 @@ interface TeacherWorkspaceProps {
   onGenerateStudentPlan?: (student: Student) => Promise<DevPlan>;
   onSubmitReaction?: (reactionKey: string, opts?: { studentId?: string; groupId?: string; teacherId?: string }) => Promise<boolean>;
   onLoadReactions?: (filters?: { from?: string; to?: string; groupId?: string }) => Promise<ReactionSummary | null>;
+  branches?: any[];
+  teachers?: any[];
+  journal?: any;
+  onJournalTask?: (p: { studentId: string; studentName: string; title: string }) => void;
 }
 
 type ReactionSummary = { total: number; byKey: Record<string, number>; byGroup: { groupId: string; count: number }[] };
@@ -68,6 +73,10 @@ export function TeacherWorkspace({
   onGenerateStudentPlan,
   onSubmitReaction,
   onLoadReactions,
+  branches = [],
+  teachers = [],
+  journal,
+  onJournalTask,
 }: TeacherWorkspaceProps) {
 
   const [activeTab, setActiveTab] = useState<'today' | 'profile' | 'groups' | 'students' | 'journal' | 'feedback' | 'more'>('today');
@@ -242,10 +251,17 @@ export function TeacherWorkspace({
           )}
 
           {activeTab === 'journal' && (
-            <TeacherJournalView
-              groups={teacherGroups}
-              students={teacherStudents}
-              onToggleAttendance={onToggleAttendance}
+            <AttendanceJournalView
+              role="teacher"
+              branches={branches}
+              groups={groups}
+              students={students}
+              teachers={teachers}
+              canEdit={true}
+              onToggleAttendance={onToggleAttendance as any}
+              onBulkAttendance={onBulkAttendance as any}
+              onCreateTask={onJournalTask}
+              journal={journal}
             />
           )}
 

@@ -29,6 +29,8 @@ export interface Branch {
   managerName: string;
   phone: string;
   hallsCount: number;
+  comment?: string; // ТЗ §2.4 — комментарий к филиалу
+  status?: string; // active | archived
 }
 
 export interface Hall {
@@ -36,6 +38,8 @@ export interface Hall {
   branchId: string;
   name: string;
   capacity: number;
+  description?: string; // ТЗ §6.1 — описание зала
+  status?: string; // active | archived
 }
 
 export interface Teacher {
@@ -78,11 +82,94 @@ export interface Group {
   studentCount: number;
 }
 
+// Статусы посещения (ТЗ §5): Был / Не был / Уважительная причина / Перерасчёт / Не отмечено.
+// 'sick' оставлен для обратной совместимости со старыми отметками.
+export type AttendanceStatus =
+  | 'present'   // Был
+  | 'absent'    // Не был
+  | 'excused'   // Уважительная причина
+  | 'recalc'    // Перерасчёт
+  | 'trial'     // Пробный урок
+  | 'sick'      // legacy
+  | 'unmarked'; // Не отмечено
+
+// Причины отсутствия (ТЗ §6).
+export type AbsenceReason =
+  | 'illness'      // Болезнь
+  | 'certificate'  // Справка
+  | 'left'         // Уехал
+  | 'family'       // Семейные обстоятельства
+  | 'no_notice'    // Не предупредил
+  | 'other';       // Другое
+
 export interface Attendance {
   date: string; // YYYY-MM-DD
-  status: 'present' | 'absent' | 'sick' | 'unmarked';
+  status: AttendanceStatus;
   markedBy?: string;
   note?: string;
+  absenceReason?: AbsenceReason | null;
+  isTrial?: boolean;
+  trialOutcome?: 'pending' | 'converted' | 'lost' | null;
+}
+
+// Перерасчёт (ТЗ §10). Заморозок нет — используется перерасчёт.
+export interface Recalculation {
+  id: string;
+  organizationId?: string;
+  branchId?: string | null;
+  studentId: string;
+  studentName?: string;
+  subscriptionId?: string | null;
+  periodFrom?: string | null; // YYYY-MM-DD
+  periodTo?: string | null;   // YYYY-MM-DD
+  lessonsCount: number;
+  reason?: AbsenceReason | string | null;
+  amount: number;
+  comment?: string | null;
+  attachmentUrl?: string | null;
+  attachmentName?: string | null;
+  status: 'pending' | 'applied' | 'cancelled';
+  createdByName?: string | null;
+  createdAt?: string;
+  appliedAt?: string | null;
+}
+
+// Запись в KPI «Педагоги не закрыли журнал» (ТЗ §3).
+export interface OpenJournalAlert {
+  lessonId: string;
+  groupId: string;
+  groupName: string;
+  teacherId?: string | null;
+  teacherName: string;
+  branchId?: string | null;
+  startsAt: string;
+  endsAt: string;
+  timeLabel: string;       // «14:30 – 16:00»
+  unmarkedCount: number;
+  minutesOverdue: number;  // минут после окончания занятия
+}
+
+// Сводка дашборда журнала (ТЗ §2). Каждый показатель отдаёт и число, и список id.
+export interface JournalDashboard {
+  rangeFrom: string;
+  rangeTo: string;
+  visited: { count: number; studentIds: string[] };           // Посетили занятия
+  unpaid: { count: number; studentIds: string[] };            // Посещают без оплаты
+  trialNotBought: { count: number; studentIds: string[] };    // Были на ПУ и не купили
+  trialBought: { count: number; studentIds: string[] };       // Были на ПУ и сразу купили
+  openJournals: OpenJournalAlert[];                           // Группы без отметок / KPI педагогов
+}
+
+// Статистика посещаемости по группе (ТЗ §11).
+export interface JournalGroupStats {
+  groupId: string;
+  lessonsCount: number;
+  visitsCount: number;
+  missesCount: number;
+  avgAttendance: number;     // среднее число учеников на занятии
+  attendanceRate: number;    // процент посещаемости 0..100
+  frequentMissers: { studentId: string; name: string; misses: number }[];
+  noMissStudents: { studentId: string; name: string }[];
 }
 
 export interface FinanceTransaction {
@@ -192,6 +279,7 @@ export interface Student {
   status?: string; // статус из БД: lead|trial|active|paused|debt|left|archived
   manualStatus?: string | null; // ручной статус (ТЗ §7): Каникулы, Лист ожидания, ...
   returned?: boolean; // признак вернувшегося ученика (фиолетовый, ТЗ §2)
+  payLater?: boolean; // ручной статус «Оплатит позже» (Журнал §8, §9)
 }
 
 export type AnnouncementAudience = "all" | "branches" | "teachers" | "parents" | "students";

@@ -16,6 +16,7 @@ import {
   Plus,
   Search,
   Send,
+  ShoppingBag,
   Clock,
   X,
   Settings,
@@ -28,6 +29,8 @@ import {
 import { Announcement, AnnouncementAudience, Attendance, Branch, Competition, Group, Hall, Payment, Student, SubscriptionPlan, Teacher } from "../types";
 import StudentManagementCard, { SellSubscriptionInput } from "./StudentManagementCard";
 import StudentsRegistry from "./StudentsRegistry";
+import AttendanceJournalView from "./AttendanceJournalView";
+import { PayrollView, ProductsView } from "./OwnerExecutiveWorkspace";
 
 interface BranchManagerWorkspaceProps {
   branchId?: string;
@@ -56,9 +59,12 @@ interface BranchManagerWorkspaceProps {
   onSellSubscription?: (payload: SellSubscriptionInput) => Promise<boolean> | boolean;
   subscriptionPlans?: SubscriptionPlan[];
   onToggleAttendance?: (studentId: string, date: string, status: "present" | "absent" | "sick") => void;
+  onBulkAttendance?: any;
+  journal?: any;
+  onJournalTask?: (p: { studentId: string; studentName: string; title: string }) => void;
 }
 
-type BranchTab = "dashboard" | "students" | "teachers" | "groups" | "schedule" | "journal" | "finance" | "announcements" | "quality" | "ai" | "settings";
+type BranchTab = "dashboard" | "students" | "teachers" | "groups" | "schedule" | "journal" | "finance" | "payroll" | "products" | "announcements" | "quality" | "ai" | "settings";
 
 const branchTabs: { id: BranchTab; label: string; short: string; icon: React.ElementType }[] = [
   { id: "dashboard", label: "Dashboard", short: "Главная", icon: Activity },
@@ -68,6 +74,8 @@ const branchTabs: { id: BranchTab; label: string; short: string; icon: React.Ele
   { id: "schedule", label: "Расписание", short: "Расписание", icon: CalendarDays },
   { id: "journal", label: "Журнал", short: "Журнал", icon: BookOpen },
   { id: "finance", label: "Финансы", short: "Финансы", icon: Coins },
+  { id: "payroll", label: "Зарплаты", short: "Зарплаты", icon: WalletCards },
+  { id: "products", label: "Товары и мерч", short: "Товары", icon: ShoppingBag },
   { id: "announcements", label: "Объявления", short: "Связь", icon: Megaphone },
   { id: "quality", label: "Качество филиала", short: "Качество", icon: ShieldCheck },
   { id: "ai", label: "AI Ассистент", short: "AI", icon: Sparkles },
@@ -101,6 +109,9 @@ export function BranchManagerWorkspace({
   onSellSubscription,
   subscriptionPlans = [],
   onToggleAttendance,
+  onBulkAttendance,
+  journal,
+  onJournalTask,
 }: BranchManagerWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<BranchTab>("dashboard");
   const [studentSearch, setStudentSearch] = useState("");
@@ -242,13 +253,23 @@ export function BranchManagerWorkspace({
             />
           )}
           {activeTab === "journal" && (
-            <BranchJournalView
-              groups={branchGroups}
-              students={branchStudents}
-              onToggleAttendance={onToggleAttendance}
+            <AttendanceJournalView
+              role="branch_manager"
+              branches={branches}
+              groups={groups}
+              students={students}
+              teachers={teachers}
+              currentBranchId={branchId}
+              canEdit={false}
+              onToggleAttendance={onToggleAttendance as any}
+              onBulkAttendance={onBulkAttendance as any}
+              onCreateTask={onJournalTask}
+              journal={journal}
             />
           )}
           {activeTab === "finance" && <FinanceView payments={branchPayments} students={branchStudents} monthRevenue={monthRevenue} debt={debt} renewals={renewals} />}
+          {activeTab === "payroll" && <PayrollView teachers={branchTeachers} students={branchStudents} groups={branchGroups} payments={branchPayments} role="branch_manager" />}
+          {activeTab === "products" && <ProductsView role="branch_manager" />}
           {activeTab === "announcements" && <AnnouncementsView announcements={branchAnnouncements} groups={branchGroups} onCreateAnnouncement={onCreateAnnouncement} />}
           {activeTab === "quality" && <QualityView attendanceWeek={attendanceWeek} attendanceMonth={attendanceMonth} teachers={branchTeachers} groups={branchGroups} />}
           {activeTab === "ai" && <AIAssistantView riskStudents={riskStudents} renewals={renewals} groups={branchGroups} debt={debt} />}
