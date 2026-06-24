@@ -321,6 +321,9 @@ export function AdminEduErpWorkspace({
               waitlist={waitlist}
               onAddToWaitlist={onAddToWaitlist}
               onRemoveFromWaitlist={onRemoveFromWaitlist}
+              onCreateLeadSource={onCreateLeadSource}
+              onUpdateLeadSource={onUpdateLeadSource}
+              onDeleteLeadSource={onDeleteLeadSource}
             />
           )}
           {activeTab === "journal" && (
@@ -437,7 +440,7 @@ function DashboardView({ branches, groups, students, teachers, todayRevenue, mon
 }
 
 // Раздел «Ученики» (ТЗ): полноценный реестр клиентской базы.
-function VisitorsView({ students, groups, branches, teachers, adminBranchId, onCreateStudent, onUpdateStudent, onDeleteStudent, onOpenPayment, onSellSubscription, plans, leadSources, waitlist, onAddToWaitlist, onRemoveFromWaitlist }: any) {
+function VisitorsView({ students, groups, branches, teachers, adminBranchId, onCreateStudent, onUpdateStudent, onDeleteStudent, onOpenPayment, onSellSubscription, plans, leadSources, waitlist, onAddToWaitlist, onRemoveFromWaitlist, onCreateLeadSource, onUpdateLeadSource, onDeleteLeadSource }: any) {
   return (
     <StudentsRegistry
       students={students}
@@ -455,6 +458,9 @@ function VisitorsView({ students, groups, branches, teachers, adminBranchId, onC
       waitlist={waitlist}
       onAddToWaitlist={onAddToWaitlist}
       onRemoveFromWaitlist={onRemoveFromWaitlist}
+      onCreateLeadSource={onCreateLeadSource}
+      onUpdateLeadSource={onUpdateLeadSource}
+      onDeleteLeadSource={onDeleteLeadSource}
     />
   );
 }

@@ -280,6 +280,7 @@ export interface Student {
   manualStatus?: string | null; // ручной статус (ТЗ §7): Каникулы, Лист ожидания, ...
   returned?: boolean; // признак вернувшегося ученика (фиолетовый, ТЗ §2)
   payLater?: boolean; // ручной статус «Оплатит позже» (Журнал §8, §9)
+  payPromiseDate?: string | null; // дата обещанной оплаты для статуса «Был на пробном, оплатит» (дожим)
   gender?: "male" | "female" | null; // пол (ТЗ «Ученики»: окно нового ученика)
   birthday?: string | null; // дата рождения (YYYY-MM-DD) — для авто-расчёта возраста
   phone?: string; // личный телефон ученика

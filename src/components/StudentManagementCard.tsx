@@ -25,8 +25,12 @@ import {
   CheckCircle2,
   Wallet,
   ChevronRight,
+  TrendingUp,
+  Award,
+  Megaphone,
 } from "lucide-react";
-import { Branch, Group, Student, Subscription, SubscriptionPlan, Teacher } from "../types";
+import { Branch, Group, LeadSource, Student, Subscription, SubscriptionPlan, Teacher } from "../types";
+import { getEnrollmentMonths, formatDuration, getLtvSegment, LTV_BADGE } from "../studentSegments";
 
 /** Полезная нагрузка продажи абонемента из инлайн-формы карточки. */
 export interface SellSubscriptionInput {
@@ -62,6 +66,8 @@ export interface StudentManagementCardProps {
   onOpenPayment?: () => void;
   /** Доступные планы абонементов организации (для формы продажи) */
   plans?: SubscriptionPlan[];
+  /** Справочник рекламных источников (для отображения «Откуда узнал»). */
+  leadSources?: LeadSource[];
   /** Продать абонемент: создаёт student_subscription. Если задан — открывает инлайн-форму. */
   onSellSubscription?: (payload: SellSubscriptionInput) => Promise<boolean> | boolean;
   /** Запись на пробный урок (UI-форма; вызывается при сохранении) */
@@ -123,6 +129,7 @@ export default function StudentManagementCard({
   onDelete,
   onOpenPayment,
   plans = [],
+  leadSources = [],
   onSellSubscription,
   onTrial,
   onTransfer,
@@ -158,6 +165,32 @@ export default function StudentManagementCard({
   };
 
   const [trialForm, setTrialForm] = useState({ date: "", time: "", note: "" });
+  const [manualTrial, setManualTrial] = useState(false);
+
+  // Доступные слоты пробного урока из расписания группы (вперёд от сегодня).
+  // Админ выбирает доступную дату — система подставляет дату и время занятия группы.
+  const trialSlots = useMemo(() => {
+    const dayNums = (group?.days || [])
+      .map((d) => SHORT_WD_TO_NUM[d])
+      .filter((n) => n !== undefined);
+    if (!dayNums.length) return [] as { iso: string; label: string; time: string }[];
+    const out: { iso: string; label: string; time: string }[] = [];
+    const cursor = new Date();
+    cursor.setHours(0, 0, 0, 0);
+    let guard = 0;
+    while (out.length < 8 && guard < 90) {
+      if (dayNums.includes(cursor.getDay())) {
+        out.push({
+          iso: isoOf(cursor),
+          label: `${FULL_WEEKDAY[cursor.getDay()]}, ${ddmm(cursor)}`,
+          time: group?.time || "",
+        });
+      }
+      cursor.setDate(cursor.getDate() + 1);
+      guard += 1;
+    }
+    return out;
+  }, [group]);
   const [transferForm, setTransferForm] = useState({
     groupId: student.groupIds?.[0] || "",
     branchId: student.branchId || "",
@@ -191,9 +224,15 @@ export default function StudentManagementCard({
     if (!onTransfer) return;
     setBusy(true);
     try {
-      const ok = await onTransfer(transferForm);
+      // Педагог закреплён за группой: подтягиваем его автоматически по выбранной группе.
+      const targetGroup = allGroups.find((g) => g.id === transferForm.groupId);
+      const ok = await onTransfer({
+        groupId: transferForm.groupId,
+        branchId: transferForm.branchId,
+        teacherId: targetGroup?.teacherId || "",
+      });
       if (ok !== false) {
-        const groupName = allGroups.find((g) => g.id === transferForm.groupId)?.name;
+        const groupName = targetGroup?.name;
         setDone(`Ученик переведён${groupName ? ` в «${groupName}»` : ""}`);
         setPanel(null);
       }
@@ -219,6 +258,28 @@ export default function StudentManagementCard({
   const groupLabel = group?.name || group?.level || "Без группы";
   const branchLabel = branch?.name || branch?.city || "Основная база";
   const teacherLabel = teacher?.name || "Не назначен";
+
+  // ── Аналитика ученика для карточки: LTV-статус, срок, выручка, средний LTV, источник ──
+  const insights = useMemo(() => {
+    const months = getEnrollmentMonths(student);
+    const ltv = getLtvSegment(student);
+    const totalRevenue = (student.subscriptions || []).reduce(
+      (sum, s) => sum + (Number(s.price) || 0),
+      0
+    );
+    const avgPerMonth = months > 0 ? Math.round(totalRevenue / months) : totalRevenue;
+    const sourceName =
+      leadSources.find((s) => s.id === student.sourceId)?.name ||
+      (student.sourceId ? "—" : "Не указан");
+    return {
+      months,
+      ltv,
+      durationLabel: months > 0 ? formatDuration(months) : "меньше месяца",
+      totalRevenue,
+      avgPerMonth,
+      sourceName,
+    };
+  }, [student, leadSources]);
 
   return (
     <div className="w-full overflow-hidden rounded-3xl border border-slate-200 bg-white text-slate-900 shadow-xl">
@@ -284,8 +345,46 @@ export default function StudentManagementCard({
                 <GraduationCap className="h-4 w-4 text-slate-400" />
                 Педагог: {teacherLabel.split(" ")[0]}
               </span>
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ${LTV_BADGE[insights.ltv]}`}
+              >
+                <Award className="h-3.5 w-3.5" />
+                {insights.ltv}
+              </span>
             </div>
           </div>
+        </div>
+
+        {/* Аналитика ученика: продолжительность, выручка, средний LTV, источник */}
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <InsightCard
+            icon={Clock}
+            tone="violet"
+            label="Стаж занятий"
+            value={insights.durationLabel}
+            hint="продолжительность в студии"
+          />
+          <InsightCard
+            icon={Wallet}
+            tone="emerald"
+            label="Выручка за всё время"
+            value={money(insights.totalRevenue)}
+            hint="сумма всех абонементов"
+          />
+          <InsightCard
+            icon={TrendingUp}
+            tone="amber"
+            label="Средний LTV / мес"
+            value={money(insights.avgPerMonth)}
+            hint={`за ${insights.durationLabel}`}
+          />
+          <InsightCard
+            icon={Megaphone}
+            tone="sky"
+            label="Рекламный источник"
+            value={insights.sourceName}
+            hint="откуда узнал о студии"
+          />
         </div>
 
         {/* Кнопки действий */}
@@ -373,44 +472,104 @@ export default function StudentManagementCard({
         {/* Форма: пробный урок */}
         {panel === "trial" && (
           <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <p className="mb-3 text-sm font-bold text-slate-700">Запись на пробный урок</p>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-slate-500">Дата</span>
-                <input
-                  type="date"
-                  value={trialForm.date}
-                  onChange={(e) => setTrialForm((f) => ({ ...f, date: e.target.value }))}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
-                />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-slate-500">Время</span>
-                <input
-                  type="time"
-                  value={trialForm.time}
-                  onChange={(e) => setTrialForm((f) => ({ ...f, time: e.target.value }))}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
-                />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-slate-500">Заметка</span>
-                <input
-                  type="text"
-                  value={trialForm.note}
-                  onChange={(e) => setTrialForm((f) => ({ ...f, note: e.target.value }))}
-                  placeholder="Комментарий"
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder-slate-400"
-                />
-              </label>
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-sm font-bold text-slate-700">Запись на пробный урок</p>
+              {trialSlots.length > 0 && (
+                <button
+                  onClick={() => { setManualTrial((v) => !v); setTrialForm((f) => ({ ...f, date: "", time: "" })); }}
+                  className="text-xs font-bold text-rose-500 transition hover:text-rose-600"
+                >
+                  {manualTrial ? "← Из расписания группы" : "Указать дату вручную"}
+                </button>
+              )}
             </div>
+
+            {/* Доступное расписание группы — админ выбирает слот, время подставляется автоматически */}
+            {trialSlots.length > 0 && !manualTrial ? (
+              <>
+                <p className="mb-2 text-xs font-semibold text-slate-500">
+                  Доступные занятия{group?.name ? ` · ${group.name}` : ""}
+                  {group?.time ? ` · ${group.time}` : ""}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {trialSlots.map((slot) => {
+                    const on = trialForm.date === slot.iso;
+                    return (
+                      <button
+                        key={slot.iso}
+                        type="button"
+                        onClick={() => setTrialForm((f) => ({ ...f, date: slot.iso, time: slot.time }))}
+                        className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-bold transition ${
+                          on
+                            ? "border-rose-300 bg-rose-50 text-rose-600"
+                            : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                        }`}
+                      >
+                        {on && <CheckCircle2 className="h-3.5 w-3.5" />}
+                        <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                        {slot.label}{slot.time ? ` · ${slot.time}` : ""}
+                      </button>
+                    );
+                  })}
+                </div>
+                <label className="mt-3 flex flex-col gap-1">
+                  <span className="text-xs font-semibold text-slate-500">Заметка</span>
+                  <input
+                    type="text"
+                    value={trialForm.note}
+                    onChange={(e) => setTrialForm((f) => ({ ...f, note: e.target.value }))}
+                    placeholder="Комментарий"
+                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder-slate-400"
+                  />
+                </label>
+              </>
+            ) : (
+              <>
+                {trialSlots.length === 0 && (
+                  <p className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+                    У группы не задано расписание — укажите дату и время вручную или настройте график группы в разделе «Филиалы и группы».
+                  </p>
+                )}
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs font-semibold text-slate-500">Дата</span>
+                    <input
+                      type="date"
+                      value={trialForm.date}
+                      onChange={(e) => setTrialForm((f) => ({ ...f, date: e.target.value }))}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs font-semibold text-slate-500">Время</span>
+                    <input
+                      type="time"
+                      value={trialForm.time}
+                      onChange={(e) => setTrialForm((f) => ({ ...f, time: e.target.value }))}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs font-semibold text-slate-500">Заметка</span>
+                    <input
+                      type="text"
+                      value={trialForm.note}
+                      onChange={(e) => setTrialForm((f) => ({ ...f, note: e.target.value }))}
+                      placeholder="Комментарий"
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder-slate-400"
+                    />
+                  </label>
+                </div>
+              </>
+            )}
+
             <div className="mt-3 flex gap-2">
               <button
                 onClick={submitTrial}
                 disabled={busy || !trialForm.date}
                 className="rounded-xl bg-rose-500 px-4 py-2 text-sm font-bold text-white transition hover:bg-rose-600 disabled:opacity-40"
               >
-                {busy ? "Сохранение…" : "Записать"}
+                {busy ? "Сохранение…" : "Записать на пробный"}
               </button>
               <button
                 onClick={() => setPanel(null)}
@@ -458,22 +617,16 @@ export default function StudentManagementCard({
                   </select>
                 </label>
               )}
-              {allTeachers.length > 0 && (
-                <label className="flex flex-col gap-1">
+              {/* Педагог не выбирается вручную: за каждой группой закреплён один педагог,
+                  он подтягивается автоматически по выбранной группе. */}
+              {transferForm.groupId && (
+                <div className="flex flex-col gap-1">
                   <span className="text-xs font-semibold text-slate-500">Педагог</span>
-                  <select
-                    value={transferForm.teacherId}
-                    onChange={(e) => setTransferForm((f) => ({ ...f, teacherId: e.target.value }))}
-                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
-                  >
-                    <option value="">Не назначен</option>
-                    {allTeachers.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                  <div className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-600">
+                    <GraduationCap className="h-4 w-4 text-slate-400" />
+                    {allTeachers.find((t) => t.id === allGroups.find((g) => g.id === transferForm.groupId)?.teacherId)?.name || "Закреплён за группой"}
+                  </div>
+                </div>
               )}
             </div>
             <div className="mt-3 flex gap-2">
@@ -571,6 +724,37 @@ export default function StudentManagementCard({
           onClose={() => setOpenSub(null)}
         />
       )}
+    </div>
+  );
+}
+
+function InsightCard({
+  icon: Icon,
+  tone,
+  label,
+  value,
+  hint,
+}: {
+  icon: React.ElementType;
+  tone: "violet" | "emerald" | "amber" | "sky";
+  label: string;
+  value: string;
+  hint?: string;
+}) {
+  const toneCls: Record<string, string> = {
+    violet: "bg-violet-50 text-violet-600",
+    emerald: "bg-emerald-50 text-emerald-600",
+    amber: "bg-amber-50 text-amber-600",
+    sky: "bg-sky-50 text-sky-600",
+  };
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+      <div className={`mb-2 inline-flex h-7 w-7 items-center justify-center rounded-lg ${toneCls[tone]}`}>
+        <Icon className="h-4 w-4" />
+      </div>
+      <p className="truncate text-sm font-black text-slate-800" title={value}>{value}</p>
+      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">{label}</p>
+      {hint && <p className="mt-0.5 truncate text-[11px] text-slate-400">{hint}</p>}
     </div>
   );
 }
@@ -722,12 +906,11 @@ const SELL_DISCOUNTS: { label: string; kind: "none" | "pct" | "custom"; pct?: nu
   { label: "Скидка руководителя (20%)", kind: "pct", pct: 20 },
 ];
 
+// Счёт поступления: по требованию заказчика оставляем только два варианта —
+// наличный расчёт и Kaspi Pay.
 const SELL_METHODS: { label: string; value: SellSubscriptionInput["method"] }[] = [
   { label: "Наличные", value: "cash" },
   { label: "Kaspi Pay", value: "kaspi" },
-  { label: "Kaspi перевод", value: "kaspi" },
-  { label: "Банковская карта", value: "card" },
-  { label: "Безналичный расчёт", value: "transfer" },
 ];
 const DEFAULT_METHOD_IDX = 1; // Kaspi Pay по умолчанию
 
@@ -912,12 +1095,12 @@ function SellSubscriptionPanel({
             {disc.kind === "custom" && (
               <label className="flex flex-col gap-1">
                 <span className="text-xs font-semibold text-slate-500">Размер ручной скидки (тг)</span>
-                <input type="number" min={0} value={customDiscount} onChange={(e) => setCustomDiscount(Number(e.target.value))} className={fieldCls} />
+                <input type="number" min={0} value={customDiscount || ""} placeholder="0" onChange={(e) => setCustomDiscount(Number(e.target.value))} className={fieldCls} />
               </label>
             )}
             <label className="flex flex-col gap-1">
               <span className="text-xs font-semibold text-slate-500">Перерасчёт (вычтется из цены)</span>
-              <input type="number" min={0} step={500} value={recalc} onChange={(e) => setRecalc(Number(e.target.value))} className={fieldCls} />
+              <input type="number" min={0} step={500} value={recalc || ""} placeholder="0" onChange={(e) => setRecalc(Number(e.target.value))} className={fieldCls} />
             </label>
             <label className="flex flex-col gap-1">
               <span className="text-xs font-semibold text-slate-500">Дата начала</span>
@@ -1014,13 +1197,6 @@ function SellSubscriptionPanel({
               className="rounded-xl bg-gradient-to-r from-violet-500 to-rose-500 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:brightness-105 disabled:opacity-40"
             >
               {busy === "sell" ? "Продаём…" : "Продать абонемент"}
-            </button>
-            <button
-              onClick={() => submit(false)}
-              disabled={busy !== null}
-              className="rounded-xl border border-violet-300 bg-white px-5 py-2.5 text-sm font-bold text-violet-600 transition hover:bg-violet-50 disabled:opacity-40"
-            >
-              {busy === "save" ? "Сохраняем…" : "Сохранить счёт"}
             </button>
             <button
               onClick={onClose}

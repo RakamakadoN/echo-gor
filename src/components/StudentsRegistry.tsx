@@ -30,6 +30,10 @@ import {
   SlidersHorizontal,
   UserPlus,
   Trash2,
+  ChevronDown,
+  Calendar,
+  UserX,
+  CheckCircle2,
 } from "lucide-react";
 import { Branch, Group, LeadSource, Student, SubscriptionPlan, Teacher, WaitlistEntry } from "../types";
 import StudentManagementCard, { SellSubscriptionInput } from "./StudentManagementCard";
@@ -71,6 +75,7 @@ type StudentInput = {
   comment?: string;
   status?: string;
   manualStatus?: string | null;
+  payPromiseDate?: string | null;
 };
 
 /**
@@ -105,6 +110,10 @@ export interface StudentsRegistryProps {
   waitlist?: WaitlistEntry[];
   onAddToWaitlist?: (payload: { studentId: string; branchId?: string | null; groupId?: string | null; comment?: string | null }) => Promise<boolean>;
   onRemoveFromWaitlist?: (id: string, reason?: string) => Promise<boolean>;
+  /** Управление справочником источников (откуда о нас узнали). */
+  onCreateLeadSource?: (data: { name: string }) => Promise<boolean>;
+  onUpdateLeadSource?: (id: string, data: { name?: string; status?: string }) => Promise<boolean>;
+  onDeleteLeadSource?: (id: string) => Promise<boolean>;
 }
 
 /* ---------- helpers ---------- */
@@ -155,6 +164,19 @@ const loadColumnPrefs = (): Record<ColKey, boolean> => {
   return base;
 };
 
+// Этапы воронки продаж — сопоставлены со статусами getStudentState (studentSegments).
+const FUNNEL_STAGES: {
+  key: string; label: string; hint?: string;
+  icon: React.ElementType; tone: string; bg: string; border: string;
+}[] = [
+  { key: "lead", label: "Новые лиды", hint: "оставили заявку", icon: UserPlus, tone: "text-sky-600", bg: "bg-sky-50", border: "border-sky-200" },
+  { key: "trial", label: "Записаны на пробный", icon: Calendar, tone: "text-indigo-600", bg: "bg-indigo-50", border: "border-indigo-200" },
+  { key: "trial_missed", label: "Не пришли на пробный", hint: "перезаписать", icon: UserX, tone: "text-rose-600", bg: "bg-rose-50", border: "border-rose-200" },
+  { key: "trial_rebooked", label: "Перезаписаны", icon: RefreshCw, tone: "text-amber-600", bg: "bg-amber-50", border: "border-amber-200" },
+  { key: "trial_lost", label: "Были, не купили", hint: "дожать", icon: AlertTriangle, tone: "text-orange-600", bg: "bg-orange-50", border: "border-orange-200" },
+  { key: "visitor_new", label: "Купили абонемент", hint: "новый посетитель", icon: CheckCircle2, tone: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-200" },
+];
+
 export default function StudentsRegistry({
   students,
   groups,
@@ -172,6 +194,9 @@ export default function StudentsRegistry({
   waitlist = [],
   onAddToWaitlist,
   onRemoveFromWaitlist,
+  onCreateLeadSource,
+  onUpdateLeadSource,
+  onDeleteLeadSource,
 }: StudentsRegistryProps) {
   const now = useMemo(() => new Date(), []);
   const canManage = Boolean(onCreateStudent || onUpdateStudent);
@@ -251,6 +276,8 @@ export default function StudentsRegistry({
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [massNote, setMassNote] = useState<string | null>(null);
+  const [showSources, setShowSources] = useState(false);
+  const canManageSources = Boolean(onCreateLeadSource || onUpdateLeadSource || onDeleteLeadSource);
 
   const groupName = (id?: string) => groups.find((g) => g.id === id)?.name || "—";
   const branchName = (id?: string) => {
@@ -318,6 +345,37 @@ export default function StudentsRegistry({
     ];
   }, [data, now, activeWaitlist.length]);
 
+  /* ---------- Воронка продаж (по автоматическим статусам пробных уроков) ---------- */
+  const funnel = useMemo(() => {
+    const buckets: Record<string, string[]> = {
+      lead: [], trial: [], trial_missed: [], trial_rebooked: [], trial_lost: [], visitor_new: [],
+    };
+    for (const s of data) {
+      if (isLeft(s)) continue;
+      const st = getStudentState(s, now);
+      if (buckets[st.statusKey]) buckets[st.statusKey].push(s.id);
+    }
+    return buckets;
+  }, [data, now]);
+
+  const openFunnel = (key: string, label: string) => {
+    const ids = funnel[key] || [];
+    setView("registry");
+    setSegment("all"); setStatusFilter("all"); setGroupFilter("all");
+    setLtvFilter("all"); setArchiveFilter("all"); setSearch("");
+    setPresetIds(new Set(ids));
+    setPresetLabel(`Воронка продаж · ${label}`);
+    setPage(0);
+  };
+
+  // Рекомендации «Магомеда»: кого дожать (был на пробном, не купил) и кого перезаписать (не пришёл).
+  const recommendations = useMemo(() => {
+    const byId = (id: string) => data.find((s) => s.id === id);
+    const lost = (funnel.trial_lost || []).map(byId).filter(Boolean) as Student[];
+    const missed = (funnel.trial_missed || []).map(byId).filter(Boolean) as Student[];
+    return { lost, missed };
+  }, [funnel, data]);
+
   /* ---------- выбор строк ---------- */
   const allOnPageSelected = pageRows.length > 0 && pageRows.every((s) => selected.has(s.id));
   const toggleAll = () => {
@@ -344,11 +402,19 @@ export default function StudentsRegistry({
   const massSetStatus = async (value: string) => {
     if (!value) return;
     const manual = DEFAULT_MANUAL_STATUSES.includes(value);
+    // Статус «… оплатит» — спрашиваем дату обещанной оплаты для контроля дожима.
+    let promiseDate: string | null = null;
+    if (manual && /оплат/i.test(value)) {
+      const today = new Date().toISOString().slice(0, 10);
+      const input = window.prompt("Дата обещанной оплаты (ГГГГ-ММ-ДД):", today);
+      if (input === null) return; // отмена
+      promiseDate = input.trim() || null;
+    }
     const payload: StudentInput = manual
-      ? { manualStatus: value, status: value === "Каникулы" || value === "Медицинская пауза" ? "paused" : undefined }
-      : { status: value, manualStatus: null };
+      ? { manualStatus: value, status: value === "Каникулы" || value === "Медицинская пауза" ? "paused" : undefined, ...(promiseDate !== null ? { payPromiseDate: promiseDate } : {}) }
+      : { status: value, manualStatus: null, payPromiseDate: null };
     for (const s of selectedStudents) {
-      applyOverride(s.id, manual ? { manualStatus: value } : { status: value, manualStatus: null });
+      applyOverride(s.id, manual ? { manualStatus: value, ...(promiseDate ? { payPromiseDate: promiseDate } : {}) } : { status: value, manualStatus: null, payPromiseDate: null });
       if (onUpdateStudent) await onUpdateStudent(s.id, payload);
     }
     setMassNote(`Статус «${value}» применён к ${selectedStudents.length} ученикам`);
@@ -548,22 +614,89 @@ export default function StudentsRegistry({
         ))}
       </div>
 
-      {/* KPI */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        {kpis.map((k) => (
-          <div key={k.label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className={`mb-2 inline-flex h-8 w-8 items-center justify-center rounded-xl ${k.bg}`}>
-              <k.icon className={`h-4 w-4 ${k.tone}`} />
+      {/* ───── Основные показатели ───── */}
+      <div>
+        <p className="mb-2 text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Основные показатели</p>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          {kpis.map((k) => (
+            <div key={k.label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className={`mb-2 inline-flex h-8 w-8 items-center justify-center rounded-xl ${k.bg}`}>
+                <k.icon className={`h-4 w-4 ${k.tone}`} />
+              </div>
+              <p className="text-2xl font-black">{k.value}</p>
+              <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">{k.label}</p>
             </div>
-            <p className="text-2xl font-black">{k.value}</p>
-            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">{k.label}</p>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
+
+      {/* ───── Воронка продаж ───── */}
+      <div>
+        <p className="mb-2 text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Воронка продаж</p>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          {FUNNEL_STAGES.map((st, i) => {
+            const ids = funnel[st.key] || [];
+            return (
+              <button
+                key={st.key}
+                onClick={() => openFunnel(st.key, st.label)}
+                className={`group relative flex flex-col items-start rounded-2xl border ${st.border} ${st.bg} p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md`}
+              >
+                <div className="flex w-full items-center justify-between">
+                  <st.icon className={`h-4 w-4 ${st.tone}`} />
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-300">{i + 1}</span>
+                </div>
+                <p className="mt-2 text-2xl font-black text-slate-800">{ids.length}</p>
+                <p className="text-[11px] font-bold leading-tight text-slate-600">{st.label}</p>
+                {st.hint && <p className={`mt-1 text-[10px] font-bold ${st.tone}`}>{st.hint}</p>}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ───── Рекомендации Магомеда ───── */}
+      {(recommendations.lost.length > 0 || recommendations.missed.length > 0) && (
+        <div className="overflow-hidden rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 to-amber-50 shadow-sm">
+          <div className="flex items-center gap-2 border-b border-violet-100 px-4 py-2.5">
+            <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-violet-500 text-white">
+              <Sparkles className="h-4 w-4" />
+            </span>
+            <div>
+              <p className="text-sm font-black text-slate-800">Рекомендации Магомеда</p>
+              <p className="text-[11px] text-slate-500">Кого дожать и кого перезаписать по итогам пробных уроков</p>
+            </div>
+          </div>
+          <div className="grid gap-3 p-4 sm:grid-cols-2">
+            <RecoBlock
+              tone="amber"
+              title="Дожать продажу"
+              subtitle="Были на пробном, абонемент не купили"
+              students={recommendations.lost}
+              phoneOf={studentPhone}
+              groupOf={(s) => groupName(studentGroupId(s))}
+              onOpen={(id) => setOpenId(id)}
+              actionLabel="предложить абонемент"
+            />
+            <RecoBlock
+              tone="rose"
+              title="Перезаписать на пробный"
+              subtitle="Не пришли на пробный урок"
+              students={recommendations.missed}
+              phoneOf={studentPhone}
+              groupOf={(s) => groupName(studentGroupId(s))}
+              onOpen={(id) => setOpenId(id)}
+              actionLabel="перезаписать"
+            />
+          </div>
+        </div>
+      )}
 
       {view === "waitlist" ? (
         <WaitlistTable
           rows={waitlistRows}
+          branches={branches}
+          groups={groups}
           branchName={branchName}
           groupName={groupName}
           studentGroupId={studentGroupId}
@@ -724,7 +857,21 @@ export default function StudentsRegistry({
                         {colOn("subEnd") && <td className="p-3 text-slate-500">{st.subscriptionEndLabel}</td>}
                         {colOn("debt") && <td className={`p-3 font-bold ${st.debt > 0 ? "text-rose-600" : "text-slate-400"}`}>{st.debt > 0 ? money(st.debt) : "0 ₸"}</td>}
                         {colOn("ltv") && <td className="p-3"><span className={`inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-bold ${LTV_BADGE[st.ltv]}`}>{st.ltv}</span></td>}
-                        {colOn("status") && <td className="p-3"><span className={`inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-bold ${STATUS_BADGE_CLASS[st.tone]}`}>{st.statusLabel}</span></td>}
+                        {colOn("status") && (
+                          <td className="p-3">
+                            <div className="flex flex-wrap items-center gap-1">
+                              <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-bold ${STATUS_BADGE_CLASS[st.tone]}`}>{st.statusLabel}</span>
+                              {st.trialCount > 0 && (
+                                <span
+                                  title={st.trialOverLimit ? "Превышен регламент: более 2 пробных уроков" : "Количество пробных уроков"}
+                                  className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-black ${st.trialOverLimit ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-500"}`}
+                                >
+                                  ПУ ×{st.trialCount}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                        )}
                         <td className="p-3">
                           <div className="flex items-center gap-1">
                             <IconLink icon={MessageCircle} title="WhatsApp" href={waHref(phone)} tone="text-emerald-600 hover:bg-emerald-50" />
@@ -805,6 +952,18 @@ export default function StudentsRegistry({
           saving={saving}
           onSave={saveForm}
           onClose={closeForm}
+          onManageSources={canManageSources ? () => setShowSources(true) : undefined}
+        />
+      )}
+
+      {/* Управление справочником источников */}
+      {showSources && canManageSources && (
+        <SourcesManagerModal
+          sources={leadSources}
+          onCreate={onCreateLeadSource}
+          onUpdate={onUpdateLeadSource}
+          onDelete={onDeleteLeadSource}
+          onClose={() => setShowSources(false)}
         />
       )}
 
@@ -832,6 +991,7 @@ export default function StudentsRegistry({
                 onDelete={onDeleteStudent ? async () => { await onDeleteStudent(openStudent.id); applyOverride(openStudent.id, { status: "left" }); setOpenId(null); } : undefined}
                 onOpenPayment={onOpenPayment ? () => onOpenPayment(openStudent) : undefined}
                 plans={plans}
+                leadSources={leadSources}
                 onSellSubscription={onSellSubscription}
                 onTransfer={onUpdateStudent ? (payload) => onUpdateStudent(openStudent.id, payload) : undefined}
                 onAddToWaitlist={onAddToWaitlist}
@@ -849,9 +1009,11 @@ export default function StudentsRegistry({
 type WaitRow = { entry: WaitlistEntry; student?: Student };
 
 function WaitlistTable({
-  rows, branchName, groupName, studentGroupId, studentPhone, onOpen, onRemove, now,
+  rows, branches, groups, branchName, groupName, studentGroupId, studentPhone, onOpen, onRemove, now,
 }: {
   rows: WaitRow[];
+  branches: Branch[];
+  groups: Group[];
   branchName: (id?: string) => string;
   groupName: (id?: string) => string;
   studentGroupId: (s: Student) => string;
@@ -860,12 +1022,36 @@ function WaitlistTable({
   onRemove?: (entryId: string) => void;
   now: Date;
 }) {
+  // Фильтры по филиалу и желаемой группе (корректировка ТЗ — заказчик, 24 июня).
+  const [wlBranch, setWlBranch] = useState("all");
+  const [wlGroup, setWlGroup] = useState("all");
+  const wantBranchOf = (r: WaitRow) => r.entry.branchId || r.student?.branchId || "";
+  const wantGroupOf = (r: WaitRow) => r.entry.groupId || (r.student ? studentGroupId(r.student) : "");
+  const visibleGroups = wlBranch === "all" ? groups : groups.filter((g) => g.branchId === wlBranch);
+  const filteredRows = rows.filter((r) => {
+    if (wlBranch !== "all" && wantBranchOf(r) !== wlBranch) return false;
+    if (wlGroup !== "all" && wantGroupOf(r) !== wlGroup) return false;
+    return true;
+  });
+
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
         <div>
           <p className="text-sm font-black">Лист ожидания</p>
           <p className="text-xs text-slate-400">Очередь по дате постановки: кому звонить первым, в какой филиал и группу хотел попасть, сколько ждёт.</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <FilterSelect
+            value={wlBranch}
+            onChange={(v) => { setWlBranch(v); setWlGroup("all"); }}
+            options={[{ value: "all", label: "Все филиалы" }, ...branches.map((b) => ({ value: b.id, label: b.name || b.city }))]}
+          />
+          <FilterSelect
+            value={wlGroup}
+            onChange={setWlGroup}
+            options={[{ value: "all", label: "Все группы" }, ...visibleGroups.map((g) => ({ value: g.id, label: g.name }))]}
+          />
         </div>
       </div>
       <div className="overflow-x-auto">
@@ -887,10 +1073,10 @@ function WaitlistTable({
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 && (
-              <tr><td colSpan={12} className="p-10 text-center text-sm text-slate-400">Лист ожидания пуст. Добавьте ученика из его карточки кнопкой «Добавить в лист ожидания».</td></tr>
+            {filteredRows.length === 0 && (
+              <tr><td colSpan={12} className="p-10 text-center text-sm text-slate-400">{rows.length === 0 ? "Лист ожидания пуст. Добавьте ученика из его карточки кнопкой «Добавить в лист ожидания»." : "По выбранным фильтрам никого нет."}</td></tr>
             )}
-            {rows.map((r, i) => {
+            {filteredRows.map((r, i) => {
               const s = r.student!;
               const phone = studentPhone(s) || "—";
               const prio = getWaitPriority(r.entry.addedAt, now);
@@ -935,7 +1121,7 @@ function WaitlistTable({
 
 /* ============================ Окно «Новый ученик» ============================ */
 function StudentFormModal({
-  editing, form, setField, branches, groups, sourceOptions, age, valid, saving, onSave, onClose,
+  editing, form, setField, branches, groups, sourceOptions, age, valid, saving, onSave, onClose, onManageSources,
 }: {
   editing: boolean;
   form: { firstName: string; lastName: string; phone: string; gender: "" | "male" | "female"; birthday: string; branchId: string; groupId: string; sourceId: string; parentName: string; comment: string };
@@ -948,6 +1134,7 @@ function StudentFormModal({
   saving: boolean;
   onSave: () => void;
   onClose: () => void;
+  onManageSources?: () => void;
 }) {
   return (
     <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 backdrop-blur-sm" onClick={onClose}>
@@ -990,7 +1177,19 @@ function StudentFormModal({
           </div>
           <FSelect label="Филиал *" value={form.branchId} onChange={(v) => setField({ branchId: v, groupId: "" })} options={branches.map((b) => ({ value: b.id, label: b.name || b.city }))} />
           <FSelect label="Группа" value={form.groupId} onChange={(v) => setField({ groupId: v })} options={[{ value: "", label: "Без группы" }, ...groups.map((g) => ({ value: g.id, label: g.name }))]} />
-          <FSelect label="Источник (откуда о нас узнали)" value={form.sourceId} onChange={(v) => setField({ sourceId: v })} options={[{ value: "", label: "Не указан" }, ...sourceOptions]} />
+          <label className="flex flex-col gap-1">
+            <span className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wide text-slate-400">
+              Источник (откуда о нас узнали)
+              {onManageSources && (
+                <button type="button" onClick={onManageSources} className="inline-flex items-center gap-1 text-[10px] font-black text-amber-600 transition hover:text-amber-700">
+                  <SlidersHorizontal className="h-3 w-3" /> Изменить список
+                </button>
+              )}
+            </span>
+            <select value={form.sourceId} onChange={(e) => setField({ sourceId: e.target.value })} className="rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400">
+              {[{ value: "", label: "Не указан" }, ...sourceOptions].map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </label>
           <FInput label="Имя родителя" value={form.parentName} onChange={(v) => setField({ parentName: v })} placeholder="Для семейного кабинета" />
           <label className="flex flex-col gap-1 sm:col-span-2">
             <span className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Комментарий</span>
@@ -1003,6 +1202,107 @@ function StudentFormModal({
           <button onClick={onSave} disabled={saving || !valid} className="rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-black text-white transition hover:bg-amber-600 disabled:opacity-40">
             {saving ? "Сохранение…" : editing ? "Сохранить" : "Сохранить и открыть карточку"}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ Управление источниками ============================ */
+function SourcesManagerModal({
+  sources, onCreate, onUpdate, onDelete, onClose,
+}: {
+  sources: LeadSource[];
+  onCreate?: (data: { name: string }) => Promise<boolean>;
+  onUpdate?: (id: string, data: { name?: string; status?: string }) => Promise<boolean>;
+  onDelete?: (id: string) => Promise<boolean>;
+  onClose: () => void;
+}) {
+  const [newName, setNewName] = useState("");
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const add = async () => {
+    if (!newName.trim() || !onCreate) return;
+    setBusy(true);
+    const ok = await onCreate({ name: newName.trim() });
+    setBusy(false);
+    if (ok) setNewName("");
+  };
+  const saveEdit = async () => {
+    if (!editId || !editName.trim() || !onUpdate) return;
+    setBusy(true);
+    const ok = await onUpdate(editId, { name: editName.trim() });
+    setBusy(false);
+    if (ok) { setEditId(null); setEditName(""); }
+  };
+  const remove = async (id: string, name: string) => {
+    if (!onDelete) return;
+    if (!window.confirm(`Удалить источник «${name}»? У существующих учеников он станет «не указан».`)) return;
+    setBusy(true);
+    await onDelete(id);
+    setBusy(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="my-12 w-full max-w-md rounded-3xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-6 py-4">
+          <div>
+            <p className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.18em] text-rose-500">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-rose-500" /> Справочник
+            </p>
+            <h2 className="mt-0.5 text-xl font-black tracking-tight">Источники привлечения</h2>
+          </div>
+          <button onClick={onClose} className="rounded-xl p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"><X className="h-5 w-5" /></button>
+        </div>
+
+        <div className="space-y-3 p-6">
+          {onCreate && (
+            <div className="flex items-center gap-2">
+              <input
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") add(); }}
+                placeholder="Новый источник (напр. Билборд)"
+                className="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400"
+              />
+              <button onClick={add} disabled={busy || !newName.trim()} className="inline-flex items-center gap-1 rounded-xl bg-amber-500 px-3 py-2 text-sm font-black text-white transition hover:bg-amber-600 disabled:opacity-40">
+                <Plus className="h-4 w-4" /> Добавить
+              </button>
+            </div>
+          )}
+
+          <ul className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-100">
+            {sources.length === 0 && (
+              <li className="px-3 py-6 text-center text-sm text-slate-400">Источников пока нет. Добавьте первый выше.</li>
+            )}
+            {sources.map((s) => (
+              <li key={s.id} className="flex items-center gap-2 px-3 py-2">
+                {editId === s.id ? (
+                  <>
+                    <input
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") saveEdit(); }}
+                      className="flex-1 rounded-lg border border-amber-300 px-2.5 py-1.5 text-sm outline-none"
+                      autoFocus
+                    />
+                    <button onClick={saveEdit} disabled={busy} className="rounded-lg bg-emerald-500 px-2.5 py-1.5 text-xs font-black text-white hover:bg-emerald-600">Сохранить</button>
+                    <button onClick={() => { setEditId(null); setEditName(""); }} className="rounded-lg px-2 py-1.5 text-xs font-bold text-slate-400 hover:bg-slate-100">Отмена</button>
+                  </>
+                ) : (
+                  <>
+                    <span className="flex-1 text-sm font-semibold text-slate-700">{s.name}</span>
+                    {onUpdate && <IconBtn icon={SlidersHorizontal} title="Переименовать" onClick={() => { setEditId(s.id); setEditName(s.name); }} tone="text-slate-500 hover:bg-slate-100" />}
+                    {onDelete && <IconBtn icon={Trash2} title="Удалить" onClick={() => remove(s.id, s.name)} tone="text-rose-500 hover:bg-rose-50" />}
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-slate-400">Источники используются в окне нового ученика и в фильтрах. Изменения видят все сотрудники.</p>
         </div>
       </div>
     </div>
@@ -1028,11 +1328,72 @@ function FSelect({ label, value, onChange, options }: { label: string; value: st
     </label>
   );
 }
-function FilterSelect({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
+function RecoBlock({
+  tone, title, subtitle, students, phoneOf, groupOf, onOpen, actionLabel,
+}: {
+  tone: "amber" | "rose";
+  title: string;
+  subtitle: string;
+  students: Student[];
+  phoneOf: (s: Student) => string;
+  groupOf: (s: Student) => string;
+  onOpen: (id: string) => void;
+  actionLabel: string;
+}) {
+  const head = tone === "amber" ? "text-amber-700" : "text-rose-700";
+  const dot = tone === "amber" ? "bg-amber-500" : "bg-rose-500";
+  const waHref = (phone: string) => `https://wa.me/${phone.replace(/[^\d]/g, "")}`;
   return (
-    <select value={value} onChange={(e) => onChange(e.target.value)} className="rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400">
-      {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
+    <div className="rounded-xl border border-white/60 bg-white/70 p-3">
+      <div className="mb-2 flex items-center gap-2">
+        <span className={`h-2 w-2 rounded-full ${dot}`} />
+        <p className={`text-sm font-black ${head}`}>{title}</p>
+        <span className="ml-auto rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-black text-slate-500">{students.length}</span>
+      </div>
+      <p className="mb-2 text-[11px] text-slate-500">{subtitle}</p>
+      {students.length === 0 ? (
+        <p className="text-xs text-slate-400">Никого — всё под контролем.</p>
+      ) : (
+        <div className="grid gap-1.5">
+          {students.slice(0, 5).map((s) => {
+            const phone = phoneOf(s);
+            return (
+              <div key={s.id} className="flex items-center justify-between gap-2 rounded-lg bg-white px-2.5 py-1.5 shadow-sm">
+                <button onClick={() => onOpen(s.id)} className="min-w-0 text-left">
+                  <p className="truncate text-sm font-bold text-slate-700">{s.name}</p>
+                  <p className="truncate text-[11px] text-slate-400">{groupOf(s)} · {actionLabel}</p>
+                </button>
+                {phone && (
+                  <a href={waHref(phone)} target="_blank" rel="noreferrer" title="WhatsApp" className="shrink-0 rounded-lg bg-emerald-50 p-1.5 text-emerald-600 transition hover:bg-emerald-100">
+                    <MessageCircle className="h-4 w-4" />
+                  </a>
+                )}
+              </div>
+            );
+          })}
+          {students.length > 5 && (
+            <p className="text-[11px] font-bold text-slate-400">…и ещё {students.length - 5}</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FilterSelect({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
+  // appearance-none + bg-white + явный шрифт и chevron: на узких колонках
+  // нативный select «замыливался» (текст наезжал на стрелку). Теперь рендерится чётко.
+  return (
+    <div className="relative">
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full min-w-[8.5rem] cursor-pointer appearance-none rounded-xl border border-slate-200 bg-white py-2 pl-3 pr-9 text-sm font-semibold text-slate-700 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+      >
+        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+    </div>
   );
 }
 function IconLink({ icon: Icon, href, title, tone }: { icon: React.ElementType; href: string; title: string; tone: string }) {

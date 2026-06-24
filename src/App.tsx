@@ -632,7 +632,7 @@ export default function App() {
   };
 
   // --- Owner: student management ---
-  type StudentInput = { name?: string; firstName?: string; lastName?: string; branchId?: string; groupId?: string; teacherId?: string; parentName?: string; parentPhone?: string; phone?: string; gender?: string | null; birthday?: string | null; sourceId?: string | null; comment?: string; status?: string; manualStatus?: string | null };
+  type StudentInput = { name?: string; firstName?: string; lastName?: string; branchId?: string; groupId?: string; teacherId?: string; parentName?: string; parentPhone?: string; phone?: string; gender?: string | null; birthday?: string | null; sourceId?: string | null; comment?: string; status?: string; manualStatus?: string | null; payPromiseDate?: string | null };
   // Возвращает id созданного ученика (или null) — нужно, чтобы сразу открыть карточку (ТЗ).
   const handleCreateStudent = async (data: StudentInput): Promise<string | null> => {
     try {
@@ -3295,6 +3295,9 @@ export default function App() {
               waitlist={waitlist}
               onAddToWaitlist={handleAddToWaitlist}
               onRemoveFromWaitlist={handleRemoveFromWaitlist}
+              onCreateLeadSource={handleCreateLeadSource}
+              onUpdateLeadSource={handleUpdateLeadSource}
+              onDeleteLeadSource={handleDeleteLeadSource}
               studentTrash={studentTrash}
               onRestoreStudent={handleRestoreStudent}
               onConfirmDeleteStudent={handleConfirmDeleteStudent}

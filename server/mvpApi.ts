@@ -269,6 +269,7 @@ function mapDbStudent(row: any, attendanceByStudent: Map<string, Record<string, 
     manualStatus: row.manual_status || null,
     returned: Boolean(row.returned_at),
     payLater: Boolean(row.pay_later),
+    payPromiseDate: row.pay_promise_date || null,
     gender: row.gender || null,
     birthday: row.birthday || null,
     phone: row.phone || "",
@@ -827,6 +828,7 @@ export function registerMvpApi(app: express.Express) {
     if (payload.comment !== undefined) updates.comment = payload.comment || null;
     if (payload.status !== undefined) updates.status = payload.status;
     if (payload.manualStatus !== undefined) updates.manual_status = payload.manualStatus || null;
+    if (payload.payPromiseDate !== undefined) updates.pay_promise_date = payload.payPromiseDate || null;
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({ error: "Нет полей для обновления" });
     }

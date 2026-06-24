@@ -200,6 +200,45 @@ export const isReturned = (s: Student): boolean =>
   s.status === "returned" ||
   (s.manualStatus || "").toLowerCase().includes("верн");
 
+/* ============================ Воронка пробных уроков ============================ */
+/* Корректировка ТЗ «Ученики» (заказчик, 24 июня): статусы воронки продаж
+   считаются автоматически по отметкам пробных уроков в журнале посещаемости.
+   «Был (+)» → present; «Не был (−)» → absent; результат пробного — trialOutcome
+   ('converted' = купил абонемент, 'lost' = был, но не купил). */
+
+export interface TrialInfo {
+  /** Сколько раз ученик был записан на пробный урок (число пробных отметок). */
+  count: number;
+  /** На скольких пробных присутствовал. */
+  attended: number;
+  /** Сколько пробных пропустил (не пришёл). */
+  missed: number;
+  /** Купил абонемент после пробного. */
+  converted: boolean;
+  /** Был на пробном, но абонемент не купил. */
+  lost: boolean;
+  /** Превышен регламент перезаписи (более 2 пробных). */
+  overLimit: boolean;
+}
+
+/** Анализ пробных уроков ученика по журналу посещаемости. */
+export const getTrialInfo = (student: Student): TrialInfo => {
+  const records = Object.values(student.attendance || {}).filter(
+    (a): a is NonNullable<typeof a> => Boolean(a) && (Boolean(a.isTrial) || a.status === "trial")
+  );
+  let attended = 0;
+  let missed = 0;
+  let converted = false;
+  let lost = false;
+  for (const a of records) {
+    if (a.status === "absent") missed += 1;
+    else attended += 1; // present / trial / excused — фактически пришёл
+    if (a.trialOutcome === "converted") converted = true;
+    if (a.trialOutcome === "lost") lost = true;
+  }
+  return { count: records.length, attended, missed, converted, lost, overLimit: records.length > 2 };
+};
+
 /* ============================ Автоматический статус ============================ */
 
 export type RowTone =
@@ -221,6 +260,10 @@ export interface StudentState {
   statusKey: string;
   statusLabel: string;
   tone: RowTone;
+  /** Количество пробных уроков (для отображения «ПУ ×N» в воронке). */
+  trialCount: number;
+  /** Превышен регламент перезаписи на пробный (более 2 раз). */
+  trialOverLimit: boolean;
 }
 
 /**
@@ -233,6 +276,8 @@ export const getStudentState = (student: Student, now: Date = new Date()): Stude
   const ltv = getLtvSegmentByMonths(enrollmentMonths);
   const subscriptionEnd = getSubscriptionEnd(student);
   const debt = getDebt(student);
+  const trial = getTrialInfo(student);
+  const hasActiveSub = (student.subscriptions || []).some((s) => s.status === "active");
 
   let statusKey = "active";
   let statusLabel = "Активный";
@@ -248,8 +293,53 @@ export const getStudentState = (student: Student, now: Date = new Date()): Stude
     tone = "neutral";
   } else if (student.manualStatus) {
     statusKey = "manual";
-    statusLabel = student.manualStatus;
-    tone = isReturned(student) ? "purple" : "neutral";
+    // Ручной статус «… оплатит» — показываем дату дожима и подсвечиваем просрочку.
+    const promise = parseDate(student.payPromiseDate);
+    if (promise && /оплат/i.test(student.manualStatus)) {
+      const overdue = promise.getTime() < now.getTime();
+      statusLabel = `${student.manualStatus} до ${formatRuDate(promise)}`;
+      tone = overdue ? "red" : "yellow";
+    } else {
+      statusLabel = student.manualStatus;
+      tone = isReturned(student) ? "purple" : "neutral";
+    }
+  } else if (
+    !hasActiveSub &&
+    !trial.converted &&
+    (student.status === "lead" || student.status === "trial" || isTrial(student) || trial.count > 0)
+  ) {
+    // ── Воронка пробных уроков (автоматические статусы) ──
+    if (trial.attended > 0 && trial.lost) {
+      statusKey = "trial_lost";
+      statusLabel = "Пришёл на пробный, не купил";
+      tone = "yellow";
+    } else if (trial.missed > 0) {
+      if (trial.count >= 2) {
+        statusKey = "trial_rebooked";
+        statusLabel = "Перезаписан на пробный урок";
+        tone = "yellow";
+      } else {
+        statusKey = "trial_missed";
+        statusLabel = "Не пришёл на пробный урок";
+        tone = "red";
+      }
+    } else if (trial.count >= 2) {
+      statusKey = "trial_rebooked";
+      statusLabel = "Перезаписан на пробный урок";
+      tone = "yellow";
+    } else if (trial.count >= 1 || student.status === "trial") {
+      statusKey = "trial";
+      statusLabel = "Записан на пробный урок";
+      tone = "blue";
+    } else {
+      statusKey = "lead";
+      statusLabel = "Новый лид";
+      tone = "blue";
+    }
+  } else if (trial.converted && !hasActiveSub) {
+    statusKey = "visitor_new";
+    statusLabel = "Новый посетитель";
+    tone = "green";
   } else if (isReturned(student)) {
     statusKey = "returned";
     statusLabel = "Вернувшийся ученик";
@@ -304,6 +394,8 @@ export const getStudentState = (student: Student, now: Date = new Date()): Stude
     statusKey,
     statusLabel,
     tone,
+    trialCount: trial.count,
+    trialOverLimit: trial.overLimit,
   };
 };
 
@@ -422,10 +514,12 @@ export const AUTO_STATUS_GROUPS: { title: string; items: string[] }[] = [
   {
     title: "Воронка продаж",
     items: [
+      "Новый лид",
       "Записан на пробный урок",
       "Не пришёл на пробный урок",
-      "Был на пробном, не купил",
-      "Купил после пробного урока",
+      "Перезаписан на пробный урок",
+      "Пришёл на пробный, не купил",
+      "Новый посетитель",
     ],
   },
   {
