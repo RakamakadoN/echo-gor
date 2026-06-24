@@ -2292,7 +2292,7 @@ export default function App() {
               aria-label="Войти"
               onPointerDown={primeLoginVideoAudio}
               onClick={() => handleDesktopLogin()}
-              className="absolute left-[8.2%] top-[77.6%] h-[5.1%] w-[83.6%] rounded-[24px] outline-none focus:ring-2 focus:ring-white/80 active:bg-white/5"
+              className="absolute left-[8.2%] top-[77.6%] h-[5.1%] w-[83.6%] rounded-[24px] appearance-none bg-transparent border-0 outline-none focus:ring-2 focus:ring-white/80 active:bg-white/5"
             />
             <button
               type="button"
@@ -2300,7 +2300,7 @@ export default function App() {
               onClick={() => {
                 alert("Регистрация студийных аккаунтов доступна внутри CRM в разделе «Ученики». Для демо нажмите «Войти».");
               }}
-              className="absolute left-[8.2%] top-[83.7%] h-[5.0%] w-[83.6%] rounded-[22px] outline-none focus:ring-2 focus:ring-[#C5A059]/80 active:bg-white/5"
+              className="absolute left-[8.2%] top-[83.7%] h-[5.0%] w-[83.6%] rounded-[22px] appearance-none bg-transparent border-0 outline-none focus:ring-2 focus:ring-[#C5A059]/80 active:bg-white/5"
             />
             <button
               type="button"
@@ -2308,7 +2308,7 @@ export default function App() {
               onClick={() => {
                 setIsLoggingInWithGoogle(true);
               }}
-              className="absolute left-[8.2%] top-[92.5%] h-[5.0%] w-[83.6%] rounded-[22px] outline-none focus:ring-2 focus:ring-white/80 active:bg-white/5"
+              className="absolute left-[8.2%] top-[92.5%] h-[5.0%] w-[83.6%] rounded-[22px] appearance-none bg-transparent border-0 outline-none focus:ring-2 focus:ring-white/80 active:bg-white/5"
             />
           </div>
 
@@ -6806,7 +6806,7 @@ export default function App() {
                       addAuditLog("Авторизация", "Ученик открыл экран ввода номера телефона на мобилке");
                     }}
                     onPointerDown={primeLoginVideoAudio}
-                    className="absolute left-[8.2%] top-[77.6%] h-[5.1%] w-[83.6%] rounded-[24px] outline-none focus:ring-2 focus:ring-white/80 active:bg-white/5"
+                    className="absolute left-[8.2%] top-[77.6%] h-[5.1%] w-[83.6%] rounded-[24px] appearance-none bg-transparent border-0 outline-none focus:ring-2 focus:ring-white/80 active:bg-white/5"
                   />
                   <button
                     type="button"
@@ -6814,7 +6814,7 @@ export default function App() {
                     onClick={() => {
                       setMobileAuthStep("login");
                     }}
-                    className="absolute left-[8.2%] top-[83.7%] h-[5.0%] w-[83.6%] rounded-[22px] outline-none focus:ring-2 focus:ring-[#C5A059]/80 active:bg-white/5"
+                    className="absolute left-[8.2%] top-[83.7%] h-[5.0%] w-[83.6%] rounded-[22px] appearance-none bg-transparent border-0 outline-none focus:ring-2 focus:ring-[#C5A059]/80 active:bg-white/5"
                   />
                   <button
                     type="button"
@@ -6822,7 +6822,7 @@ export default function App() {
                     onClick={() => {
                       setIsLoggingInWithGoogle(true);
                     }}
-                    className="absolute left-[8.2%] top-[92.5%] h-[5.0%] w-[83.6%] rounded-[22px] outline-none focus:ring-2 focus:ring-white/80 active:bg-white/5"
+                    className="absolute left-[8.2%] top-[92.5%] h-[5.0%] w-[83.6%] rounded-[22px] appearance-none bg-transparent border-0 outline-none focus:ring-2 focus:ring-white/80 active:bg-white/5"
                   />
                 </div>
               )}

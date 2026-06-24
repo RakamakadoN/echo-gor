@@ -346,7 +346,7 @@ export default function AttendanceJournalView(props: Props) {
               <table className="border-separate border-spacing-0 text-xs">
                 <thead>
                   <tr>
-                    <th className="sticky left-0 z-10 bg-[#0d1117] px-2 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Ученик</th>
+                    <th className="sticky left-0 z-10 bg-[#0c0c0c] px-2 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Ученик</th>
                     {lessonDates.map((d) => (
                       <th key={d} className="px-1.5 py-2 text-center text-[10px] font-bold text-slate-400">
                         <div>{fmtDay(d)}</div><div className="text-slate-600">{fmtWd(d)}</div>
@@ -398,13 +398,13 @@ export default function AttendanceJournalView(props: Props) {
 function FragmentRows({ seg, lessonDates, saving, canEdit, onCell, cellMenu, onMark }: any) {
   return (
     <>
-      <tr><td colSpan={lessonDates.length + 1} className={`sticky left-0 bg-[#0d1117] px-2 pt-3 pb-1 text-[10px] font-black uppercase tracking-wider ${seg.tone}`}>{seg.label}</td></tr>
+      <tr><td colSpan={lessonDates.length + 1} className={`sticky left-0 bg-[#0c0c0c] px-2 pt-3 pb-1 text-[10px] font-black uppercase tracking-wider ${seg.tone}`}>{seg.label}</td></tr>
       {seg.list.map((s: Student) => (
         <tr key={s.id} className="group">
-          <td className="sticky left-0 z-10 bg-[#0d1117] px-2 py-1.5">
+          <td className="sticky left-0 z-10 bg-[#0c0c0c] px-2 py-1.5">
             <div className="flex items-center gap-2">
-              <img src={s.photoUrl} alt="" className="h-7 w-7 shrink-0 rounded-lg object-cover" />
-              <span className="max-w-[140px] truncate text-xs font-semibold text-white">{s.name}</span>
+              <img src={s.photoUrl} alt="" className="h-8 w-8 shrink-0 rounded-lg object-cover" />
+              <span className="max-w-[160px] truncate text-sm font-semibold tracking-tight text-white" title={s.name}>{s.name}</span>
             </div>
           </td>
           {lessonDates.map((d: string) => {
@@ -432,7 +432,7 @@ function CellMenu({ state, student, onClose, onMark, onRecalc }: any) {
   const [reasonFor, setReasonFor] = useState<AttendanceStatus | null>(null);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
-      <div className="w-full max-w-xs rounded-2xl border border-white/10 bg-[#11161d] p-4" onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-xs rounded-2xl border border-white/10 bg-[#11121A] p-4" onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 flex items-center justify-between">
           <div><p className="text-sm font-bold text-white">{student?.name}</p><p className="text-[11px] text-slate-500">{new Date(state.date).toLocaleDateString("ru-RU")}</p></div>
           <button onClick={onClose} className="text-slate-500 hover:text-white"><X className="h-4 w-4" /></button>
@@ -619,7 +619,7 @@ function RecalcModal({ student, journal, onClose, onDone }: { student: Student; 
 function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
-      <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-white/10 bg-[#11161d] p-5" onClick={(e) => e.stopPropagation()}>
+      <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-white/10 bg-[#11121A] p-5" onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-base font-black text-white">{title}</h3>
           <button onClick={onClose} className="text-slate-500 hover:text-white"><X className="h-5 w-5" /></button>
