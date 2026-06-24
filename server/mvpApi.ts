@@ -3269,11 +3269,12 @@ export function registerMvpApi(app: express.Express) {
   // ---------- НАСТРОЙКИ: СПРАВОЧНИКИ (settings_lists) ----------
   // Настраиваемые списки: типы выступлений, категории товаров, уровни групп.
   // Читают все рабочие роли (для выпадающих списков), правит только владелец.
-  const SETTINGS_KINDS = ["performance_type", "product_category", "group_level"];
+  const SETTINGS_KINDS = ["performance_type", "product_category", "group_level", "document_category"];
   const SETTINGS_DEFAULTS: Record<string, string[]> = {
     performance_type: ["Базовый танец", "Танец с интерактивом", "Несколько номеров", "Индивидуальное выступление", "Другое"],
     product_category: ["Мерч", "Форма", "Аксессуары", "Сувениры"],
     group_level: ["Продолжающая группа", "Ансамбль", "Индивидуальные", "Мини-группа", "Другое"],
+    document_category: ["Аренда", "Услуги — уборка", "Услуги — вывоз мусора", "Подрядчики / поставщики", "Прочее"],
   };
   const mockSettings: any[] = [];
 
@@ -4264,5 +4265,250 @@ export function registerMvpApi(app: express.Express) {
     } catch (error: any) {
       res.status(400).json({ error: error.message || "Не удалось обновить статус. Проверьте миграцию 016." });
     }
+  }));
+
+  // ============================================================================
+  // ДОКУМЕНТОЛОГ — хранилище договоров + генератор (только владелец). Миграция 027.
+  // ============================================================================
+  const DOC_STATUSES = ["draft", "active", "expired", "terminated"];
+  const REMIND_DAYS = 30;          // порог «истекает скоро»
+  const orgName = "Эхо Гор";
+
+  // Mock-хранилище (когда Supabase не настроен / демо / E2E).
+  const mockDocuments: any[] = [
+    { id: uid(), organization_id: orgId, category: "Аренда", contractor: "ТОО «Алматы Молл»", subject: "Зал 120 м², 3 этаж", amount: 450000, currency: "₸", date_start: "2026-01-01", date_end: "2026-07-15", auto_renew: false, status: "active", scan_url: null, comment: "", created_at: "2026-01-01T00:00:00Z" },
+    { id: uid(), organization_id: orgId, category: "Услуги — уборка", contractor: "ИП Клининг Сервис", subject: "Ежедневная уборка залов", amount: 90000, currency: "₸", date_start: "2026-03-01", date_end: "2027-03-01", auto_renew: true, status: "active", scan_url: null, comment: "", created_at: "2026-03-01T00:00:00Z" },
+    { id: uid(), organization_id: orgId, category: "Услуги — вывоз мусора", contractor: "Тазалык", subject: "Вывоз ТБО 2 раза/нед", amount: 25000, currency: "₸", date_start: "2025-09-01", date_end: "2026-06-30", auto_renew: false, status: "active", scan_url: null, comment: "", created_at: "2025-09-01T00:00:00Z" },
+  ];
+  const mockTemplates: any[] = [
+    {
+      id: uid(), organization_id: orgId, name: "Договор аренды помещения", category: "Аренда", sort_order: 0,
+      body: '<h2 style="text-align:center">ДОГОВОР АРЕНДЫ ПОМЕЩЕНИЯ</h2><p style="text-align:right">г. {{city}}, {{today}}</p><p>{{org_name}}, именуемое «Арендатор», и {{contractor}}, именуемый «Арендодатель», заключили настоящий договор.</p><p><b>1. Предмет.</b> Арендодатель передаёт во временное пользование помещение: {{subject}}.</p><p><b>2. Срок.</b> Договор действует с {{date_start}} по {{date_end}}.[[if auto_renew]] По окончании срок продлевается автоматически на тот же период, если ни одна из сторон не заявит об отказе за 30 дней.[[/if]]</p><p><b>3. Арендная плата.</b> {{amount}} {{currency}} в месяц.[[if vat]] В том числе НДС.[[/if]][[if !vat]] НДС не облагается.[[/if]] [[if prepay]]Оплата авансом до 5 числа месяца.[[/if]][[if !prepay]]Оплата по факту до 10 числа следующего месяца.[[/if]]</p><p><b>4. Подписи сторон.</b></p><p>Арендатор: {{org_name}} ____________</p><p>Арендодатель: {{contractor}} ____________</p>',
+      fields: [
+        { key: "contractor", label: "Арендодатель (контрагент)", type: "text", required: true },
+        { key: "subject", label: "Помещение / адрес", type: "text", required: true },
+        { key: "amount", label: "Арендная плата в месяц", type: "number", required: true },
+        { key: "date_start", label: "Дата начала", type: "date", required: true },
+        { key: "date_end", label: "Дата окончания", type: "date", required: false },
+        { key: "city", label: "Город", type: "text", required: false },
+      ],
+      toggles: [
+        { key: "vat", label: "С НДС", default: false },
+        { key: "prepay", label: "Предоплата (аванс)", default: true },
+        { key: "auto_renew", label: "Автопролонгация", default: false },
+      ],
+    },
+    {
+      id: uid(), organization_id: orgId, name: "Договор оказания услуг", category: "Подрядчики / поставщики", sort_order: 1,
+      body: '<h2 style="text-align:center">ДОГОВОР ОКАЗАНИЯ УСЛУГ</h2><p style="text-align:right">г. {{city}}, {{today}}</p><p>{{org_name}}, именуемое «Заказчик», и {{contractor}}, именуемый «Исполнитель», заключили договор.</p><p><b>1. Предмет.</b> Исполнитель оказывает услуги: {{subject}}.</p><p><b>2. Срок.</b> С {{date_start}} по {{date_end}}.[[if auto_renew]] Договор продлевается автоматически, если стороны не заявят об отказе за 30 дней.[[/if]]</p><p><b>3. Стоимость.</b> {{amount}} {{currency}}.[[if vat]] В том числе НДС.[[/if]][[if !vat]] НДС не облагается.[[/if]] [[if prepay]]Предоплата 100%.[[/if]][[if !prepay]]Оплата по факту.[[/if]][[if act]] Приёмка оформляется актом выполненных работ.[[/if]]</p><p><b>4. Подписи.</b></p><p>Заказчик: {{org_name}} ____________</p><p>Исполнитель: {{contractor}} ____________</p>',
+      fields: [
+        { key: "contractor", label: "Исполнитель (контрагент)", type: "text", required: true },
+        { key: "subject", label: "Какие услуги", type: "text", required: true },
+        { key: "amount", label: "Стоимость", type: "number", required: true },
+        { key: "date_start", label: "Дата начала", type: "date", required: true },
+        { key: "date_end", label: "Дата окончания", type: "date", required: false },
+        { key: "city", label: "Город", type: "text", required: false },
+      ],
+      toggles: [
+        { key: "vat", label: "С НДС", default: false },
+        { key: "prepay", label: "Предоплата", default: false },
+        { key: "act", label: "С актом приёмки", default: true },
+        { key: "auto_renew", label: "Автопролонгация", default: false },
+      ],
+    },
+  ];
+
+  const docExpiry = (row: any) => {
+    if (!row.date_end || row.status === "terminated") return { daysLeft: null, expiring: false, expired: false };
+    const end = new Date(row.date_end + "T00:00:00");
+    const days = Math.ceil((end.getTime() - Date.now()) / 86400000);
+    return { daysLeft: days, expiring: days >= 0 && days <= REMIND_DAYS, expired: days < 0 };
+  };
+  const docOut = (r: any) => ({
+    id: r.id,
+    category: r.category ?? null,
+    contractor: r.contractor ?? null,
+    subject: r.subject ?? null,
+    amount: Number(r.amount) || 0,
+    currency: r.currency ?? "₸",
+    dateStart: r.date_start ?? null,
+    dateEnd: r.date_end ?? null,
+    autoRenew: !!r.auto_renew,
+    status: r.status ?? "draft",
+    scanUrl: r.scan_url ?? null,
+    templateId: r.template_id ?? null,
+    comment: r.comment ?? null,
+    createdAt: r.created_at ?? null,
+    ...docExpiry(r),
+  });
+
+  // Подстановка плейсхолдеров {{key}} и условных блоков [[if flag]]/[[if !flag]]…[[/if]].
+  const renderTemplate = (body: string, values: Record<string, any>, toggles: Record<string, boolean>) => {
+    let out = String(body || "");
+    // Условные блоки (сначала, чтобы внутри тоже подставились значения).
+    out = out.replace(/\[\[if\s+(!?)([a-z_]+)\]\]([\s\S]*?)\[\[\/if\]\]/gi, (_m, neg, key, inner) => {
+      const on = !!toggles[key];
+      return (neg ? !on : on) ? inner : "";
+    });
+    // Плейсхолдеры.
+    out = out.replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (_m, key) => {
+      const v = values[key];
+      return v === undefined || v === null || v === "" ? "—" : String(v);
+    });
+    return out;
+  };
+
+  const requireOwner = (req: express.Request, res: express.Response) => {
+    const session = getSession(req);
+    if (session.role !== "owner") { res.status(403).json({ error: "Раздел «Документолог» доступен только владельцу" }); return null; }
+    return session;
+  };
+
+  // Список договоров (+ фильтры category/status), со сводкой по срокам.
+  app.get("/api/mvp/documents", ah(async (req, res) => {
+    const session = requireOwner(req, res); if (!session) return;
+    const q = req.query as Record<string, string>;
+    let rows: any[];
+    if (!supabaseEnabled) {
+      rows = mockDocuments.filter((d) => d.organization_id === session.organizationId);
+    } else {
+      let query = `select=*&organization_id=eq.${session.organizationId}&order=created_at.desc`;
+      if (q.category) query += `&category=eq.${encodeURIComponent(q.category)}`;
+      if (q.status) query += `&status=eq.${encodeURIComponent(q.status)}`;
+      rows = await supabaseFetch<any[]>("documents", query);
+    }
+    let items = rows.map(docOut);
+    if (!supabaseEnabled) {
+      if (q.category) items = items.filter((d) => d.category === q.category);
+      if (q.status) items = items.filter((d) => d.status === q.status);
+    }
+    const summary = {
+      total: items.length,
+      active: items.filter((d) => d.status === "active").length,
+      expiring: items.filter((d) => d.expiring).length,
+      expired: items.filter((d) => d.expired).length,
+    };
+    res.json({ documents: items, summary, remindDays: REMIND_DAYS });
+  }));
+
+  // Создать запись договора.
+  app.post("/api/mvp/documents", ah(async (req, res) => {
+    const session = requireOwner(req, res); if (!session) return;
+    const b = req.body || {};
+    const rec = {
+      organization_id: session.organizationId,
+      category: b.category || null,
+      contractor: (b.contractor || "").trim() || null,
+      subject: (b.subject || "").trim() || null,
+      amount: Number(b.amount) || 0,
+      currency: b.currency || "₸",
+      date_start: b.dateStart || null,
+      date_end: b.dateEnd || null,
+      auto_renew: !!b.autoRenew,
+      status: DOC_STATUSES.includes(b.status) ? b.status : "draft",
+      scan_url: b.scanUrl || null,
+      template_id: b.templateId || null,
+      comment: b.comment || null,
+    };
+    if (!supabaseEnabled) {
+      const row = { id: uid(), created_at: new Date().toISOString(), ...rec };
+      mockDocuments.unshift(row);
+      return res.status(201).json({ document: docOut(row) });
+    }
+    const inserted = await supabaseFetch<any[]>("documents", "", { method: "POST", body: JSON.stringify(rec) });
+    res.status(201).json({ document: docOut(inserted[0]) });
+  }));
+
+  // Изменить договор (статус, поля, ссылка на скан).
+  app.patch("/api/mvp/documents/:id", ah(async (req, res) => {
+    const session = requireOwner(req, res); if (!session) return;
+    const b = req.body || {};
+    const map: Record<string, string> = { contractor: "contractor", subject: "subject", category: "category", currency: "currency", comment: "comment", dateStart: "date_start", dateEnd: "date_end", scanUrl: "scan_url" };
+    const patch: Record<string, any> = {};
+    for (const [k, col] of Object.entries(map)) if (b[k] !== undefined) patch[col] = b[k] === "" ? null : b[k];
+    if (b.amount !== undefined) patch.amount = Number(b.amount) || 0;
+    if (b.autoRenew !== undefined) patch.auto_renew = !!b.autoRenew;
+    if (b.status !== undefined) { if (!DOC_STATUSES.includes(b.status)) return res.status(400).json({ error: "Неизвестный статус" }); patch.status = b.status; }
+    patch.updated_at = new Date().toISOString();
+    if (!supabaseEnabled) {
+      const row = mockDocuments.find((d) => d.id === req.params.id);
+      if (!row) return res.status(404).json({ error: "Договор не найден" });
+      Object.assign(row, patch);
+      return res.json({ document: docOut(row) });
+    }
+    const rows = await supabaseFetch<any[]>("documents", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", body: JSON.stringify(patch) });
+    res.json({ document: rows[0] ? docOut(rows[0]) : null });
+  }));
+
+  // Удалить договор.
+  app.delete("/api/mvp/documents/:id", ah(async (req, res) => {
+    const session = requireOwner(req, res); if (!session) return;
+    if (!supabaseEnabled) {
+      const i = mockDocuments.findIndex((d) => d.id === req.params.id);
+      if (i >= 0) mockDocuments.splice(i, 1);
+      return res.json({ ok: true });
+    }
+    await supabaseFetch("documents", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+    res.json({ ok: true });
+  }));
+
+  // Список шаблонов генератора.
+  app.get("/api/mvp/documents/templates", ah(async (req, res) => {
+    const session = requireOwner(req, res); if (!session) return;
+    let rows: any[];
+    if (!supabaseEnabled) {
+      rows = mockTemplates.filter((t) => t.organization_id === session.organizationId);
+    } else {
+      rows = await supabaseFetch<any[]>("document_templates", `select=*&organization_id=eq.${session.organizationId}&is_active=eq.true&order=sort_order.asc`);
+    }
+    res.json({ templates: rows.map((t) => ({ id: t.id, name: t.name, category: t.category ?? null, fields: t.fields || [], toggles: t.toggles || [] })) });
+  }));
+
+  // Генерация договора: собрать тело из шаблона + полей + переключателей,
+  // создать запись-черновик в хранилище, вернуть HTML для скачивания (.doc).
+  app.post("/api/mvp/documents/generate", ah(async (req, res) => {
+    const session = requireOwner(req, res); if (!session) return;
+    const b = req.body || {};
+    const templateId = b.templateId;
+    const values: Record<string, any> = b.values || {};
+    const toggles: Record<string, boolean> = b.toggles || {};
+    let tpl: any;
+    if (!supabaseEnabled) {
+      tpl = mockTemplates.find((t) => t.id === templateId);
+    } else {
+      const rows = await supabaseFetch<any[]>("document_templates", `select=*&id=eq.${templateId}&organization_id=eq.${session.organizationId}&limit=1`);
+      tpl = rows[0];
+    }
+    if (!tpl) return res.status(404).json({ error: "Шаблон не найден" });
+
+    const today = new Date().toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+    const ctx = { ...values, org_name: orgName, today, currency: values.currency || "₸" };
+    const inner = renderTemplate(tpl.body || "", ctx, toggles);
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${tpl.name}</title></head><body style="font-family:'Times New Roman',serif;font-size:14px;line-height:1.5;max-width:720px;margin:0 auto">${inner}</body></html>`;
+
+    // Завести черновик в хранилище.
+    const rec = {
+      organization_id: session.organizationId,
+      category: tpl.category || null,
+      contractor: (values.contractor || "").trim() || null,
+      subject: (values.subject || "").trim() || null,
+      amount: Number(values.amount) || 0,
+      currency: ctx.currency,
+      date_start: values.date_start || null,
+      date_end: values.date_end || null,
+      auto_renew: !!toggles.auto_renew,
+      status: "draft",
+      template_id: tpl.id,
+    };
+    let document: any;
+    if (!supabaseEnabled) {
+      const row = { id: uid(), created_at: new Date().toISOString(), scan_url: null, comment: null, ...rec };
+      mockDocuments.unshift(row);
+      document = docOut(row);
+    } else {
+      const inserted = await supabaseFetch<any[]>("documents", "", { method: "POST", body: JSON.stringify(rec) });
+      document = docOut(inserted[0]);
+    }
+    res.json({ html, filename: `${tpl.name}.doc`, document });
   }));
 }

@@ -188,7 +188,7 @@ interface OwnerExecutiveWorkspaceProps {
   onJournalTask?: (p: { studentId: string; studentName: string; title: string }) => void;
 }
 
-type OwnerTab = "dashboard" | "eduerp" | "branches" | "students" | "teachers" | "payroll" | "journal" | "schedule" | "finance" | "performances" | "products" | "marketing" | "events" | "feed" | "announcements" | "analytics" | "ai" | "settings";
+type OwnerTab = "dashboard" | "eduerp" | "branches" | "students" | "teachers" | "payroll" | "journal" | "schedule" | "finance" | "performances" | "products" | "documents" | "marketing" | "events" | "feed" | "announcements" | "analytics" | "ai" | "settings";
 
 const ownerTabs: { id: OwnerTab; label: string; short: string; icon: React.ElementType }[] = [
   { id: "dashboard", label: "Dashboard", short: "Главная", icon: Activity },
@@ -202,6 +202,7 @@ const ownerTabs: { id: OwnerTab; label: string; short: string; icon: React.Eleme
   { id: "finance", label: "Бухгалтерия", short: "Учёт", icon: Coins },
   { id: "performances", label: "Выступления", short: "Сцена", icon: Mic2 },
   { id: "products", label: "Товары и склад", short: "Товары", icon: ShoppingBag },
+  { id: "documents", label: "Документолог", short: "Договоры", icon: FileText },
   { id: "marketing", label: "Маркетинг", short: "Маркетинг", icon: Send },
   { id: "events", label: "Концерты", short: "Концерты", icon: Trophy },
   { id: "feed", label: "Афиша СНГ", short: "Афиша", icon: CalendarDays },
@@ -375,6 +376,7 @@ export function OwnerExecutiveWorkspace({
           {activeTab === "finance" && <BookkeepingView branches={branchScorecards} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
           {activeTab === "performances" && <PerformancesView />}
           {activeTab === "products" && <ProductsView />}
+          {activeTab === "documents" && <DocumentologistView />}
           {activeTab === "journal" && (
             <AttendanceJournalView
               role="owner"
@@ -3654,6 +3656,288 @@ const MODULE_PERIODS: { id: string; label: string }[] = [
   { id: "month", label: "Месяц" }, { id: "quarter", label: "Квартал" }, { id: "year", label: "Год" },
 ];
 const jsonOwnerHdr = { headers: { "Content-Type": "application/json", "x-demo-role": "owner" } };
+
+// ───────────────────────────── ДОКУМЕНТОЛОГ ─────────────────────────────────
+const DOC_STATUS_META: Record<string, { label: string; cls: string }> = {
+  draft:      { label: "Черновик",  cls: "border-white/15 bg-white/5 text-slate-300" },
+  active:     { label: "Действует", cls: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" },
+  expired:    { label: "Истёк",     cls: "border-rose-500/30 bg-rose-500/10 text-rose-300" },
+  terminated: { label: "Расторгнут",cls: "border-slate-600/40 bg-slate-700/20 text-slate-400" },
+};
+const docInputCls = "mt-1 w-full rounded-xl border border-white/10 bg-[#0C0C0C] px-3 py-2 text-sm text-white outline-none focus:border-[#C5A059]/50";
+
+function ExpiryBadge({ doc }: { doc: any }) {
+  if (doc.expired) return <span className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[11px] font-bold text-rose-300">истёк</span>;
+  if (doc.expiring) return <span className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-bold text-amber-300">через {doc.daysLeft} дн.</span>;
+  if (doc.dateEnd) return <span className="text-[11px] text-slate-500">до {doc.dateEnd}</span>;
+  return <span className="text-[11px] text-slate-600">бессрочный</span>;
+}
+
+export function DocumentologistView() {
+  const hdr = { headers: { "x-demo-role": "owner" } };
+  const jhdr = { headers: { "Content-Type": "application/json", "x-demo-role": "owner" } };
+
+  const [documents, setDocuments] = useState<any[]>([]);
+  const [summary, setSummary] = useState<any>(null);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [activeCat, setActiveCat] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [editDoc, setEditDoc] = useState<any | null>(null);
+  const [genOpen, setGenOpen] = useState(false);
+
+  const load = async () => {
+    setLoading(true); setError(null);
+    try {
+      const [d, t, c] = await Promise.all([
+        fetch("/api/mvp/documents", hdr),
+        fetch("/api/mvp/documents/templates", hdr),
+        fetch("/api/mvp/settings/lists?kind=document_category", hdr),
+      ]);
+      if (!d.ok) throw new Error(await d.text());
+      const dj = await d.json();
+      setDocuments(dj.documents || []); setSummary(dj.summary || null);
+      if (t.ok) setTemplates((await t.json()).templates || []);
+      if (c.ok) setCategories(((await c.json()).items || []).map((i: any) => i.label));
+    } catch (e: any) { setError(e?.message || "Не удалось загрузить договоры"); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+
+  const saveDoc = async (id: string | null, payload: any) => {
+    setBusy(true); setError(null);
+    try {
+      const url = id ? `/api/mvp/documents/${id}` : "/api/mvp/documents";
+      const res = await fetch(url, { method: id ? "PATCH" : "POST", ...jhdr, body: JSON.stringify(payload) });
+      if (!res.ok) throw new Error(await res.text());
+      setEditDoc(null); await load();
+    } catch (e: any) { setError(e?.message || "Не удалось сохранить договор"); } finally { setBusy(false); }
+  };
+  const deleteDoc = async (id: string) => {
+    if (!confirm("Удалить договор из хранилища?")) return;
+    setBusy(true);
+    try { await fetch(`/api/mvp/documents/${id}`, { method: "DELETE", ...hdr }); setEditDoc(null); await load(); }
+    catch (e: any) { setError(e?.message || "Не удалось удалить"); } finally { setBusy(false); }
+  };
+
+  const counts = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const d of documents) { const k = d.category || "Без категории"; m[k] = (m[k] || 0) + 1; }
+    return m;
+  }, [documents]);
+
+  const filtered = documents.filter((d) =>
+    (activeCat === "all" || (d.category || "Без категории") === activeCat) &&
+    (statusFilter === "all" || d.status === statusFilter)
+  );
+  const folders = ["all", ...categories, ...Object.keys(counts).filter((c) => c === "Без категории")];
+
+  return (
+    <OwnerScreen
+      title="Документолог"
+      subtitle="Хранилище договоров по папкам-категориям и генератор новых договоров с условной логикой. Аренда, услуги (уборка, вывоз мусора), подрядчики. Контроль сроков с напоминанием об истечении.">
+      {error && <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">{error}</div>}
+
+      {/* Сводка по срокам */}
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <StatPill label="Всего договоров" value={summary?.total ?? "—"} tone="white" />
+        <StatPill label="Действуют" value={summary?.active ?? "—"} tone="emerald" />
+        <StatPill label="Истекают скоро" value={summary?.expiring ?? "—"} tone="gold" hint="ближайшие 30 дней" />
+        <StatPill label="Истёкшие" value={summary?.expired ?? "—"} tone="rose" />
+      </section>
+
+      {/* Договоры на контроле */}
+      {documents.some((d) => d.expiring || d.expired) && (
+        <section className="rounded-[1.5rem] border border-amber-500/25 bg-amber-500/[0.06] p-4">
+          <div className="flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-amber-400" /><h3 className="text-sm font-black uppercase tracking-wider text-amber-200">Договоры на контроле</h3></div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {documents.filter((d) => d.expiring || d.expired).map((d) => (
+              <button key={d.id} onClick={() => setEditDoc(d)} className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-slate-200 hover:border-[#C5A059]/40">
+                {d.contractor || "Договор"} · <ExpiryBadge doc={d} />
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-2">
+          {["all", "draft", "active", "expired", "terminated"].map((s) => (
+            <button key={s} onClick={() => setStatusFilter(s)} className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${statusFilter === s ? "border border-[#C5A059]/30 bg-[#C5A059]/10 text-[#C5A059]" : "border border-white/10 text-slate-400 hover:text-white"}`}>
+              {s === "all" ? "Все статусы" : DOC_STATUS_META[s].label}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => setEditDoc({ _new: true, status: "active", currency: "₸" })} className="flex items-center gap-1.5 rounded-xl border border-white/10 px-3 py-2 text-xs font-bold text-slate-200 hover:border-white/30"><Plus className="h-4 w-4" /> Загрузить договор</button>
+          <button onClick={() => setGenOpen(true)} className="flex items-center gap-1.5 rounded-xl bg-[#C5A059] px-3 py-2 text-xs font-black text-black hover:bg-[#d4af6a]"><FileText className="h-4 w-4" /> Создать договор</button>
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
+        {/* Папки-категории */}
+        <aside className="space-y-1.5">
+          {folders.map((cat) => (
+            <button key={cat} onClick={() => setActiveCat(cat)} className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition ${activeCat === cat ? "border border-[#C5A059]/25 bg-[#C5A059]/10 text-[#C5A059]" : "text-slate-300 hover:bg-white/5"}`}>
+              <span className="truncate">{cat === "all" ? "Все папки" : cat}</span>
+              <span className="ml-2 shrink-0 text-xs text-slate-500">{cat === "all" ? documents.length : (counts[cat] || 0)}</span>
+            </button>
+          ))}
+        </aside>
+
+        {/* Таблица договоров */}
+        <div className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.02]">
+          {loading ? (
+            <p className="py-16 text-center text-sm text-slate-500">Загрузка…</p>
+          ) : filtered.length === 0 ? (
+            <p className="py-16 text-center text-sm text-slate-500">В этой папке пока нет договоров.</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead><tr className="border-b border-white/5 text-[11px] uppercase tracking-wider text-slate-500">
+                <th className="p-3 text-left">Контрагент</th><th className="p-3 text-left">Предмет</th><th className="p-3 text-left">Папка</th>
+                <th className="p-3 text-right">Сумма</th><th className="p-3 text-left">Срок</th><th className="p-3 text-left">Статус</th><th className="p-3 text-left">Скан</th>
+              </tr></thead>
+              <tbody>
+                {filtered.map((d) => (
+                  <tr key={d.id} onClick={() => setEditDoc(d)} className="cursor-pointer border-b border-white/5 transition hover:bg-white/[0.03]">
+                    <td className="p-3 font-bold text-white">{d.contractor || "—"}</td>
+                    <td className="p-3 text-slate-400">{d.subject || "—"}</td>
+                    <td className="p-3 text-slate-400">{d.category || "—"}</td>
+                    <td className="p-3 text-right text-slate-200">{d.amount ? money(d.amount) : "—"}</td>
+                    <td className="p-3"><ExpiryBadge doc={d} /></td>
+                    <td className="p-3"><span className={`rounded-lg border px-2 py-0.5 text-[11px] font-bold ${DOC_STATUS_META[d.status]?.cls}`}>{DOC_STATUS_META[d.status]?.label}</span></td>
+                    <td className="p-3">{d.scanUrl ? <span className="text-[11px] text-emerald-400">есть</span> : <span className="text-[11px] text-slate-600">нет</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+      {editDoc && <DocEditModal doc={editDoc} categories={categories} busy={busy} onClose={() => setEditDoc(null)} onSave={saveDoc} onDelete={deleteDoc} />}
+      {genOpen && <DocGeneratorModal templates={templates} busy={busy} onClose={() => setGenOpen(false)} onGenerated={() => { setGenOpen(false); load(); }} setError={setError} />}
+    </OwnerScreen>
+  );
+}
+
+function DocEditModal({ doc, categories, busy, onClose, onSave, onDelete }: { doc: any; categories: string[]; busy: boolean; onClose: () => void; onSave: (id: string | null, payload: any) => void; onDelete: (id: string) => void }) {
+  const isNew = !!doc._new;
+  const [f, setF] = useState<any>({
+    category: doc.category || (categories[0] || ""), contractor: doc.contractor || "", subject: doc.subject || "",
+    amount: doc.amount || "", dateStart: doc.dateStart || "", dateEnd: doc.dateEnd || "", autoRenew: !!doc.autoRenew,
+    status: doc.status || "active", scanUrl: doc.scanUrl || "", comment: doc.comment || "",
+  });
+  const submit = () => onSave(isNew ? null : doc.id, f);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="flex max-h-[88vh] w-full max-w-lg flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#141414]" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-white/5 px-5 py-4">
+          <h3 className="text-base font-black text-white">{isNew ? "Новый договор" : "Карточка договора"}</h3>
+          <button onClick={onClose} className="rounded-xl bg-white/5 p-1.5 text-white hover:bg-white/10"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="space-y-3 overflow-auto p-5">
+          <label className="block text-xs text-slate-400">Папка-категория
+            <select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })} className={docInputCls}>
+              {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </label>
+          <label className="block text-xs text-slate-400">Контрагент<input value={f.contractor} onChange={(e) => setF({ ...f, contractor: e.target.value })} className={docInputCls} placeholder="ТОО / ИП / ФИО" /></label>
+          <label className="block text-xs text-slate-400">Предмет договора<input value={f.subject} onChange={(e) => setF({ ...f, subject: e.target.value })} className={docInputCls} placeholder="Что предмет договора" /></label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-xs text-slate-400">Сумма<input type="number" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} className={docInputCls} /></label>
+            <label className="block text-xs text-slate-400">Статус
+              <select value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })} className={docInputCls}>
+                {Object.entries(DOC_STATUS_META).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+              </select>
+            </label>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-xs text-slate-400">Дата начала<input type="date" value={f.dateStart} onChange={(e) => setF({ ...f, dateStart: e.target.value })} className={docInputCls} /></label>
+            <label className="block text-xs text-slate-400">Дата окончания<input type="date" value={f.dateEnd} onChange={(e) => setF({ ...f, dateEnd: e.target.value })} className={docInputCls} /></label>
+          </div>
+          <label className="flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" checked={f.autoRenew} onChange={(e) => setF({ ...f, autoRenew: e.target.checked })} /> Автопролонгация</label>
+          <label className="block text-xs text-slate-400">Ссылка на PDF-скан подписанного договора<input value={f.scanUrl} onChange={(e) => setF({ ...f, scanUrl: e.target.value })} className={docInputCls} placeholder="https://… или путь в хранилище" /></label>
+          <label className="block text-xs text-slate-400">Комментарий<textarea value={f.comment} onChange={(e) => setF({ ...f, comment: e.target.value })} className={docInputCls} rows={2} /></label>
+        </div>
+        <div className="flex items-center justify-between gap-2 border-t border-white/5 px-5 py-4">
+          {!isNew ? <button onClick={() => onDelete(doc.id)} className="flex items-center gap-1.5 rounded-xl border border-rose-500/30 px-3 py-2 text-xs font-bold text-rose-300 hover:bg-rose-500/10"><Trash2 className="h-4 w-4" /> Удалить</button> : <span />}
+          <button onClick={submit} disabled={busy} className="rounded-xl bg-[#C5A059] px-5 py-2 text-sm font-black text-black hover:bg-[#d4af6a] disabled:opacity-50">{busy ? "Сохранение…" : "Сохранить"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DocGeneratorModal({ templates, busy, onClose, onGenerated, setError }: { templates: any[]; busy: boolean; onClose: () => void; onGenerated: () => void; setError: (e: string | null) => void }) {
+  const [tplId, setTplId] = useState<string>(templates[0]?.id || "");
+  const tpl = templates.find((t) => t.id === tplId);
+  const [values, setValues] = useState<Record<string, any>>({});
+  const [toggles, setToggles] = useState<Record<string, boolean>>({});
+  const [working, setWorking] = useState(false);
+
+  useEffect(() => {
+    if (!tpl) return;
+    const v: Record<string, any> = {}; (tpl.fields || []).forEach((f: any) => { v[f.key] = ""; });
+    const t: Record<string, boolean> = {}; (tpl.toggles || []).forEach((x: any) => { t[x.key] = !!x.default; });
+    setValues(v); setToggles(t);
+  }, [tplId]); // eslint-disable-line
+
+  const generate = async () => {
+    if (!tpl) return;
+    const missing = (tpl.fields || []).filter((f: any) => f.required && !values[f.key]);
+    if (missing.length) { setError(`Заполните: ${missing.map((m: any) => m.label).join(", ")}`); return; }
+    setWorking(true); setError(null);
+    try {
+      const res = await fetch("/api/mvp/documents/generate", { method: "POST", headers: { "Content-Type": "application/json", "x-demo-role": "owner" }, body: JSON.stringify({ templateId: tplId, values, toggles }) });
+      if (!res.ok) throw new Error(await res.text());
+      const { html, filename } = await res.json();
+      const blob = new Blob(["﻿", html], { type: "application/msword" });
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename || "Договор.doc"; a.click(); URL.revokeObjectURL(a.href);
+      onGenerated();
+    } catch (e: any) { setError(e?.message || "Не удалось сгенерировать договор"); } finally { setWorking(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="flex max-h-[88vh] w-full max-w-lg flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#141414]" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between bg-gradient-to-r from-[#C5A059] to-[#d4af6a] px-5 py-4">
+          <h3 className="text-base font-black text-black">Генератор договоров</h3>
+          <button onClick={onClose} className="rounded-xl bg-black/15 p-1.5 text-black hover:bg-black/25"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="space-y-3 overflow-auto p-5">
+          <label className="block text-xs text-slate-400">Тип договора
+            <select value={tplId} onChange={(e) => setTplId(e.target.value)} className={docInputCls}>
+              {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+          </label>
+          {tpl && (tpl.fields || []).map((f: any) => (
+            <label key={f.key} className="block text-xs text-slate-400">{f.label}{f.required && <span className="text-rose-400"> *</span>}
+              <input type={f.type === "number" ? "number" : f.type === "date" ? "date" : "text"} value={values[f.key] || ""} onChange={(e) => setValues({ ...values, [f.key]: e.target.value })} className={docInputCls} />
+            </label>
+          ))}
+          {tpl && (tpl.toggles || []).length > 0 && (
+            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+              <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-slate-500">Условия договора</p>
+              <div className="grid grid-cols-2 gap-2">
+                {(tpl.toggles || []).map((x: any) => (
+                  <label key={x.key} className="flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" checked={!!toggles[x.key]} onChange={(e) => setToggles({ ...toggles, [x.key]: e.target.checked })} /> {x.label}</label>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-white/5 px-5 py-4">
+          <p className="mr-auto text-[11px] text-slate-500">Файл .doc скачается, договор появится в хранилище как черновик.</p>
+          <button onClick={generate} disabled={working || busy || !tpl} className="rounded-xl bg-[#C5A059] px-5 py-2 text-sm font-black text-black hover:bg-[#d4af6a] disabled:opacity-50">{working ? "Генерация…" : "Сгенерировать"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function StatPill({ label, value, hint, tone = "gold" }: { label: string; value: React.ReactNode; hint?: React.ReactNode; tone?: "gold" | "emerald" | "rose" | "white" }) {
   const valColor = tone === "emerald" ? "text-emerald-400" : tone === "rose" ? "text-rose-400" : tone === "white" ? "text-white" : "text-[#C5A059]";
