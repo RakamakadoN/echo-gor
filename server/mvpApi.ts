@@ -98,7 +98,12 @@ async function supabaseFetch<T>(table: string, query = "select=*", init: Request
     throw new Error(await response.text());
   }
 
-  return response.json() as Promise<T>;
+  // Запросы с Prefer: return=minimal (а также 204 No Content) возвращают пустое тело —
+  // response.json() на нём падает с "Unexpected end of JSON input". Возвращаем undefined.
+  if (response.status === 204) return undefined as T;
+  const text = await response.text();
+  if (!text) return undefined as T;
+  return JSON.parse(text) as T;
 }
 
 const toDate = (value?: string | null) => value ? value.slice(0, 10) : new Date().toISOString().slice(0, 10);
@@ -157,6 +162,7 @@ function fallbackPayload(session: MvpSession) {
     leadSources: [],
     groups,
     students,
+    waitlist: [],
     announcements: initialAnnouncements,
     payments,
     financeTransactions: initialFinanceTransactions,
@@ -219,6 +225,19 @@ function mapDbLeadSource(row: any) {
   return { id: row.id, name: row.name, status: row.status || "active" };
 }
 
+function mapDbWaitlist(row: any) {
+  return {
+    id: row.id,
+    studentId: row.student_id,
+    branchId: row.branch_id || null,
+    groupId: row.group_id || null,
+    comment: row.comment || null,
+    addedAt: row.added_at,
+    removedAt: row.removed_at || null,
+    removedReason: row.removed_reason || null
+  };
+}
+
 function mapDbUserToTeacher(user: any) {
   return {
     id: user.id,
@@ -250,6 +269,12 @@ function mapDbStudent(row: any, attendanceByStudent: Map<string, Record<string, 
     manualStatus: row.manual_status || null,
     returned: Boolean(row.returned_at),
     payLater: Boolean(row.pay_later),
+    gender: row.gender || null,
+    birthday: row.birthday || null,
+    phone: row.phone || "",
+    sourceId: row.source_id || null,
+    comment: row.comment || "",
+    waitlistAddedAt: row.__waitlist_added_at || null,
     parentName: row.parent_name || "Родитель",
     parentPhone: row.parent_phone || "",
     balance: row.status === "debt" ? -1 : 0,
@@ -311,7 +336,7 @@ function mapDbSubscription(row: any, planName?: string) {
 async function dbBootstrap(session: MvpSession) {
   const orgFilter = `organization_id=eq.${session.organizationId}`;
   
-  const [branches, halls, users, groups, studentsRaw, paymentsRaw, lessons, attendanceRaw, subscriptionsRaw, plans, financeTransactions, tasksRaw, leadSourcesRaw] = await Promise.all([
+  const [branches, halls, users, groups, studentsRaw, paymentsRaw, lessons, attendanceRaw, subscriptionsRaw, plans, financeTransactions, tasksRaw, leadSourcesRaw, waitlistRaw] = await Promise.all([
     supabaseFetch<any[]>("branches", `select=*&${orgFilter}&status=neq.archived`),
     supabaseFetch<any[]>("halls", `select=*`), // Halls are filtered by branch in mapping
     supabaseFetch<any[]>("users", `select=*&${orgFilter}`),
@@ -325,8 +350,14 @@ async function dbBootstrap(session: MvpSession) {
     supabaseFetch<any[]>("finance_transactions", `select=*&${orgFilter}&order=created_at.desc`),
     // tasks/lead_sources не имеют organization_id — фильтруем по филиалу в коде
     supabaseFetch<any[]>("tasks", `select=*&order=created_at.desc`).catch(() => [] as any[]),
-    supabaseFetch<any[]>("lead_sources", `select=*&order=name.asc`).catch(() => [] as any[])
+    supabaseFetch<any[]>("lead_sources", `select=*&order=name.asc`).catch(() => [] as any[]),
+    // активный лист ожидания (миграция 021); .catch — если миграция ещё не применена
+    supabaseFetch<any[]>("student_waitlist", `select=*&${orgFilter}&removed_at=is.null&order=added_at.asc`).catch(() => [] as any[])
   ]);
+
+  // Дата постановки в активный лист ожидания — по ученику.
+  const waitlistAddedByStudent = new Map<string, string>();
+  waitlistRaw.forEach((w) => { if (!waitlistAddedByStudent.has(w.student_id)) waitlistAddedByStudent.set(w.student_id, w.added_at); });
 
   const groupById = new Map(groups.map((group) => [group.id, group]));
   const lessonById = new Map(lessons.map((lesson) => [lesson.id, lesson]));
@@ -394,10 +425,13 @@ async function dbBootstrap(session: MvpSession) {
     })
     .map((student) => {
       const group = groupById.get(student.group_id);
-      return mapDbStudent({ ...student, teacher_id: student.teacher_id || group?.teacher_id }, attendanceByStudent, subsByStudent);
+      return mapDbStudent({ ...student, teacher_id: student.teacher_id || group?.teacher_id, __waitlist_added_at: waitlistAddedByStudent.get(student.id) || null }, attendanceByStudent, subsByStudent);
     });
 
   const visibleStudentIds = new Set(students.map((student) => student.id));
+  const waitlist = waitlistRaw
+    .filter((w) => visibleStudentIds.has(w.student_id))
+    .map(mapDbWaitlist);
   const payments = paymentsRaw.filter((payment) => visibleStudentIds.has(payment.student_id)).map(mapDbPayment);
 
   const branchesVisible = branches
@@ -446,6 +480,7 @@ async function dbBootstrap(session: MvpSession) {
     leadSources,
     groups: groupsVisible,
     students,
+    waitlist,
     announcements: initialAnnouncements,
     payments,
     financeTransactions,
@@ -734,19 +769,26 @@ export function registerMvpApi(app: express.Express) {
       return res.status(503).json({ error: "Supabase is not configured" });
     }
 
-    const [firstName, ...rest] = String(payload.name).trim().split(/\s+/);
+    // Имя/фамилия: либо явные поля, либо разбор строки name по пробелу.
+    const [splitFirst, ...splitRest] = String(payload.name).trim().split(/\s+/);
+    const firstName = payload.firstName || splitFirst || payload.name;
+    const lastName = payload.lastName || splitRest.join(" ") || "-";
     const inserted = await supabaseFetch<any[]>("students", "", {
       method: "POST",
       body: JSON.stringify({
         organization_id: session.organizationId,
         branch_id: payload.branchId,
         group_id: payload.groupId || null,
-        first_name: firstName || payload.name,
-        last_name: rest.join(" ") || "-",
+        source_id: payload.sourceId || null,
+        first_name: firstName,
+        last_name: lastName,
+        gender: payload.gender || null,
+        birthday: payload.birthday || null,
+        phone: payload.phone || null,
         teacher_id: payload.teacherId || null,
         parent_name: payload.parentName || null,
         parent_phone: payload.parentPhone || null,
-        status: payload.status || "active",
+        status: payload.status || "lead",
         manual_status: payload.manualStatus || null,
         comment: payload.comment || null
       })
@@ -765,16 +807,24 @@ export function registerMvpApi(app: express.Express) {
       return res.status(403).json({ error: "Branch access denied" });
     }
     const updates: Record<string, unknown> = {};
-    if (payload.name !== undefined) {
+    if (payload.firstName !== undefined || payload.lastName !== undefined) {
+      if (payload.firstName !== undefined) updates.first_name = payload.firstName || "-";
+      if (payload.lastName !== undefined) updates.last_name = payload.lastName || "-";
+    } else if (payload.name !== undefined) {
       const [firstName, ...rest] = String(payload.name).trim().split(/\s+/);
       updates.first_name = firstName || payload.name;
       updates.last_name = rest.join(" ") || "-";
     }
     if (payload.branchId !== undefined) updates.branch_id = payload.branchId;
     if (payload.groupId !== undefined) updates.group_id = payload.groupId || null;
+    if (payload.sourceId !== undefined) updates.source_id = payload.sourceId || null;
     if (payload.teacherId !== undefined) updates.teacher_id = payload.teacherId || null;
+    if (payload.gender !== undefined) updates.gender = payload.gender || null;
+    if (payload.birthday !== undefined) updates.birthday = payload.birthday || null;
+    if (payload.phone !== undefined) updates.phone = payload.phone || null;
     if (payload.parentName !== undefined) updates.parent_name = payload.parentName || null;
     if (payload.parentPhone !== undefined) updates.parent_phone = payload.parentPhone || null;
+    if (payload.comment !== undefined) updates.comment = payload.comment || null;
     if (payload.status !== undefined) updates.status = payload.status;
     if (payload.manualStatus !== undefined) updates.manual_status = payload.manualStatus || null;
     if (Object.keys(updates).length === 0) {
@@ -829,6 +879,64 @@ export function registerMvpApi(app: express.Express) {
       res.json({ student: rows[0], trashed: true });
     } catch (error: any) {
       res.status(400).json({ error: error.message || "Не удалось переместить ученика в корзину" });
+    }
+  });
+
+  // ===== Лист ожидания (student_waitlist) =====
+  // Поставить ученика в лист ожидания (ТЗ «Лист ожидания»). Идемпотентно:
+  // активный пункт у ученика только один (уникальный индекс), поэтому при повторе
+  // обновляем существующий.
+  app.post("/api/mvp/waitlist", async (req, res) => {
+    const session = getSession(req);
+    const payload = req.body || {};
+    if (!payload.studentId) return res.status(400).json({ error: "studentId is required" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    if (payload.branchId && !canSeeBranch(session, payload.branchId)) {
+      return res.status(403).json({ error: "Branch access denied" });
+    }
+    try {
+      const existing = await supabaseFetch<any[]>(
+        "student_waitlist",
+        `select=id&${`organization_id=eq.${session.organizationId}`}&student_id=eq.${payload.studentId}&removed_at=is.null`
+      );
+      const body = {
+        organization_id: session.organizationId,
+        student_id: payload.studentId,
+        branch_id: payload.branchId || null,
+        group_id: payload.groupId || null,
+        comment: payload.comment || null
+      };
+      let rows: any[];
+      if (existing[0]) {
+        rows = await supabaseFetch<any[]>(
+          "student_waitlist",
+          `id=eq.${existing[0].id}`,
+          { method: "PATCH", body: JSON.stringify({ branch_id: body.branch_id, group_id: body.group_id, comment: body.comment }) }
+        );
+      } else {
+        rows = await supabaseFetch<any[]>("student_waitlist", "", { method: "POST", body: JSON.stringify(body) });
+      }
+      res.status(201).json({ entry: mapDbWaitlist(rows[0]) });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось добавить в лист ожидания" });
+    }
+  });
+
+  // Убрать из листа ожидания (закрыть пункт). По умолчанию reason='manual';
+  // при зачислении в группу с абонементом фронт/бэк передаёт reason='enrolled'.
+  app.delete("/api/mvp/waitlist/:id", async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      const reason = (req.body && req.body.reason) || "manual";
+      const rows = await supabaseFetch<any[]>(
+        "student_waitlist",
+        `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}&removed_at=is.null`,
+        { method: "PATCH", body: JSON.stringify({ removed_at: new Date().toISOString(), removed_reason: reason }) }
+      );
+      res.json({ entry: rows[0] ? mapDbWaitlist(rows[0]) : null, removed: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось убрать из листа ожидания" });
     }
   });
 
@@ -1044,9 +1152,24 @@ export function registerMvpApi(app: express.Express) {
         });
       }
 
+      // ТЗ «Лист ожидания»: при продаже абонемента ученик автоматически уходит из
+      // листа ожидания (история сохраняется через removed_at/removed_reason).
+      let waitlistClosed = false;
+      if (paid) {
+        try {
+          const closed = await supabaseFetch<any[]>(
+            "student_waitlist",
+            `student_id=eq.${studentId}&organization_id=eq.${session.organizationId}&removed_at=is.null`,
+            { method: "PATCH", body: JSON.stringify({ removed_at: new Date().toISOString(), removed_reason: "enrolled" }) }
+          );
+          waitlistClosed = closed.length > 0;
+        } catch { /* лист ожидания не критичен для продажи */ }
+      }
+
       res.status(201).json({
         subscription: mapDbSubscription(insertedSub[0], plan.name),
-        payment
+        payment,
+        waitlistClosed
       });
     } catch (error: any) {
       res.status(400).json({ error: error.message || "Не удалось продать абонемент" });
