@@ -14,6 +14,8 @@ import { GoogleGenAI } from "@google/genai";
 const apiKey = process.env.GEMINI_API_KEY;
 // gemini-2.0-flash отключён Google с 01.06.2026 — дефолт на актуальную модель.
 const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+// Модель генерации изображений (фото товара). Переопределяется GEMINI_IMAGE_MODEL.
+const imageModel = process.env.GEMINI_IMAGE_MODEL || "gemini-2.0-flash-preview-image-generation";
 const genai = apiKey ? new GoogleGenAI({ apiKey }) : null;
 
 async function generateJson(prompt: string): Promise<unknown> {
@@ -108,6 +110,29 @@ child=${JSON.stringify({ childName, childAge, attendanceRate })}`;
       res.json(await generateJson(prompt));
     } catch (e: any) {
       res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
+
+  // Генерация красивого фото товара нейросетью (для каталога и магазина родителя).
+  // Возвращает data-URL (base64 PNG), который фронт кладёт в photoUrl товара.
+  app.post("/api/gemini/product-image", async (req, res) => {
+    if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });
+    const { name, category, description } = req.body || {};
+    if (!String(name || "").trim()) return res.status(400).json({ error: "Укажите название товара" });
+    const prompt = `Профессиональное рекламное фото товара для интернет-магазина школы кавказского танца «Эхо Гор»: ${name}${category ? `, категория: ${category}` : ""}${description ? `. ${description}` : ""}. Студийный свет, чистый светлый фон, товар по центру, высокая детализация, эстетично, без текста, водяных знаков и логотипов.`;
+    try {
+      const response: any = await genai.models.generateContent({
+        model: imageModel,
+        contents: prompt,
+        config: { responseModalities: ["IMAGE", "TEXT"] } as any,
+      });
+      const parts = response?.candidates?.[0]?.content?.parts || [];
+      const img = parts.find((p: any) => p?.inlineData?.data);
+      if (!img?.inlineData?.data) return res.status(502).json({ error: "Модель не вернула изображение" });
+      const mime = img.inlineData.mimeType || "image/png";
+      res.json({ dataUrl: `data:${mime};base64,${img.inlineData.data}` });
+    } catch (e: any) {
+      res.status(502).json({ error: e?.message || "Не удалось сгенерировать изображение" });
     }
   });
 }

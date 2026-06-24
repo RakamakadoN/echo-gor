@@ -287,6 +287,10 @@ export interface Student {
   sourceId?: string | null; // источник (lead_sources.id): откуда о нас узнали
   comment?: string; // свободный комментарий
   waitlistAddedAt?: string | null; // дата постановки в активный лист ожидания (если в нём состоит)
+  archivedAt?: string | null; // дата перевода в архив (если в архиве); данные сохраняются
+  archiveReason?: string | null; // «Почему он ушёл?» (обязателен при архивации)
+  archiveComment?: string | null; // свободный комментарий при архивации
+  archivedBy?: string | null; // кто перевёл в архив
 }
 
 /**

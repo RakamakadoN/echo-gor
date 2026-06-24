@@ -894,6 +894,59 @@ export default function App() {
 
   // --- Корзина учеников (владелец подтверждает удаление) ---
   const [studentTrash, setStudentTrash] = useState<any[]>([]);
+  // --- Архив учеников (сохранение базы для маркетинга) ---
+  const [studentArchive, setStudentArchive] = useState<any[]>([]);
+
+  const loadStudentArchive = async () => {
+    try {
+      const response = await fetch("/api/mvp/students/archive", {
+        headers: { "x-demo-role": getMvpRoleHeader() }
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      setStudentArchive(data.students || []);
+    } catch {
+      // тихо: архив просто останется пустым
+    }
+  };
+
+  // Перевод ученика в архив с обязательными комментариями (причина + свободный).
+  const handleArchiveStudent = async (id: string, reason: string, comment: string) => {
+    try {
+      const response = await fetch(`/api/mvp/students/${id}/archive`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+        body: JSON.stringify({ reason, comment })
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await loadStudentArchive();
+      await loadStudentTrash();
+      await loadMvpBootstrap(activeRole);
+      addAuditLog("Архив ученика", `Ученик переведён в архив (${id}): ${reason}`);
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось перевести ученика в архив");
+      return false;
+    }
+  };
+
+  // Вернуть ученика из архива в активный реестр.
+  const handleUnarchiveStudent = async (id: string) => {
+    try {
+      const response = await fetch(`/api/mvp/students/${id}/unarchive`, {
+        method: "POST",
+        headers: { "x-demo-role": getMvpRoleHeader() }
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await loadStudentArchive();
+      await loadMvpBootstrap(activeRole);
+      addAuditLog("Возврат из архива", `Ученик возвращён из архива (${id})`);
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось вернуть ученика из архива");
+      return false;
+    }
+  };
 
   const loadStudentTrash = async () => {
     try {
@@ -944,6 +997,7 @@ export default function App() {
 
   useEffect(() => {
     if (activeRole === "owner") loadStudentTrash();
+    if (["owner", "branch_manager", "admin"].includes(activeRole)) loadStudentArchive();
   }, [activeRole]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- Owner: teacher / staff management ---
@@ -3263,6 +3317,7 @@ export default function App() {
               onCreateStudent={handleCreateStudent}
               onUpdateStudent={handleUpdateStudent}
               onDeleteStudent={handleDeleteStudent}
+              onArchiveStudent={handleArchiveStudent}
               waitlist={waitlist}
               onAddToWaitlist={handleAddToWaitlist}
               onRemoveFromWaitlist={handleRemoveFromWaitlist}
@@ -3301,6 +3356,9 @@ export default function App() {
               studentTrash={studentTrash}
               onRestoreStudent={handleRestoreStudent}
               onConfirmDeleteStudent={handleConfirmDeleteStudent}
+              studentArchive={studentArchive}
+              onArchiveStudent={handleArchiveStudent}
+              onUnarchiveStudent={handleUnarchiveStudent}
               onCreateTeacher={handleCreateTeacher}
               onUpdateTeacher={handleUpdateTeacher}
               onDeleteTeacher={handleDeleteTeacher}
@@ -3357,6 +3415,7 @@ export default function App() {
               onCreateStudent={handleCreateStudent}
               onUpdateStudent={handleUpdateStudent}
               onDeleteStudent={handleDeleteStudent}
+              onArchiveStudent={handleArchiveStudent}
               onCreateAnnouncement={handleCreateAnnouncement}
               onOpenPayment={openPaymentForStudent}
               onSellSubscription={handleSellSubscription}

@@ -50,6 +50,7 @@ import {
   Plus,
   Pencil,
   Trash2,
+  Archive,
   Mic2,
   PartyPopper,
   ShoppingBag,
@@ -64,6 +65,7 @@ import {
 } from "recharts";
 import StudentManagementCard, { SellSubscriptionInput } from "./StudentManagementCard";
 import StudentsRegistry, { type RegistryPreset } from "./StudentsRegistry";
+import { ArchiveReasonModal } from "./ArchiveReasonModal";
 import AttendanceJournalView from "./AttendanceJournalView";
 import { BranchesGroupsView } from "./BranchesGroupsView";
 import { computeOwnerDashboard, type DashFilters, type PeriodKey, type LevelKey, type DashExtras, type Delta, type DailyReport } from "../ownerDashboardAnalytics";
@@ -105,6 +107,7 @@ const STATUS_LABEL: Record<string, string> = {
 
 type StudentInput = { name?: string; firstName?: string; lastName?: string; branchId?: string; groupId?: string; teacherId?: string; parentName?: string; parentPhone?: string; phone?: string; gender?: string | null; birthday?: string | null; sourceId?: string | null; comment?: string; status?: string; manualStatus?: string | null };
 type TrashStudent = { id: string; name: string; branchId: string; parentName: string; parentPhone: string; requestedBy: string; requestedAt: string; reason: string };
+type ArchiveStudent = { id: string; name: string; branchId: string; phone?: string; parentName?: string; parentPhone?: string; archivedAt: string; archivedBy: string; archiveReason: string; archiveComment: string };
 type TeacherInput = { name?: string; phone?: string; specialization?: string; branchId?: string | null; role?: string };
 type CompetitionInput = {
   title?: string;
@@ -139,6 +142,9 @@ interface OwnerExecutiveWorkspaceProps {
   studentTrash?: TrashStudent[];
   onRestoreStudent?: (id: string) => Promise<boolean>;
   onConfirmDeleteStudent?: (id: string) => Promise<boolean>;
+  studentArchive?: ArchiveStudent[];
+  onArchiveStudent?: (id: string, reason: string, comment: string) => Promise<boolean | void> | void;
+  onUnarchiveStudent?: (id: string) => Promise<boolean>;
   leadSources?: LeadSource[];
   waitlist?: WaitlistEntry[];
   onAddToWaitlist?: (payload: { studentId: string; branchId?: string | null; groupId?: string | null; comment?: string | null }) => Promise<boolean>;
@@ -182,7 +188,7 @@ interface OwnerExecutiveWorkspaceProps {
   onJournalTask?: (p: { studentId: string; studentName: string; title: string }) => void;
 }
 
-type OwnerTab = "dashboard" | "eduerp" | "branches" | "students" | "teachers" | "payroll" | "journal" | "schedule" | "finance" | "performances" | "products" | "events" | "feed" | "announcements" | "analytics" | "ai" | "settings";
+type OwnerTab = "dashboard" | "eduerp" | "branches" | "students" | "teachers" | "payroll" | "journal" | "schedule" | "finance" | "performances" | "products" | "marketing" | "events" | "feed" | "announcements" | "analytics" | "ai" | "settings";
 
 const ownerTabs: { id: OwnerTab; label: string; short: string; icon: React.ElementType }[] = [
   { id: "dashboard", label: "Dashboard", short: "Главная", icon: Activity },
@@ -196,6 +202,7 @@ const ownerTabs: { id: OwnerTab; label: string; short: string; icon: React.Eleme
   { id: "finance", label: "Бухгалтерия", short: "Учёт", icon: Coins },
   { id: "performances", label: "Выступления", short: "Сцена", icon: Mic2 },
   { id: "products", label: "Товары и склад", short: "Товары", icon: ShoppingBag },
+  { id: "marketing", label: "Маркетинг", short: "Маркетинг", icon: Send },
   { id: "events", label: "Концерты", short: "Концерты", icon: Trophy },
   { id: "feed", label: "Афиша СНГ", short: "Афиша", icon: CalendarDays },
   { id: "announcements", label: "Объявления", short: "Связь", icon: Megaphone },
@@ -225,6 +232,9 @@ export function OwnerExecutiveWorkspace({
   studentTrash = [],
   onRestoreStudent,
   onConfirmDeleteStudent,
+  studentArchive = [],
+  onArchiveStudent,
+  onUnarchiveStudent,
   leadSources = [],
   waitlist = [],
   onAddToWaitlist,
@@ -263,6 +273,8 @@ export function OwnerExecutiveWorkspace({
   onJournalTask,
 }: OwnerExecutiveWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<OwnerTab>("dashboard");
+  // Сворачивание бокового меню — любой раздел можно открыть на всю ширину.
+  const [navCollapsed, setNavCollapsed] = useState(false);
   // Пресет-фильтр для вкладки «Ученики» — задаётся кликом по KPI/риску в дашборде.
   const [studentsPreset, setStudentsPreset] = useState<RegistryPreset | null>(null);
   const openStudentsWithPreset = (preset: RegistryPreset) => {
@@ -297,7 +309,7 @@ export function OwnerExecutiveWorkspace({
   return (
     <div className="min-h-full bg-[#080808] text-slate-200">
       <div className="mx-auto flex max-w-[1560px] gap-0 lg:gap-5">
-        <aside className="sticky top-0 hidden h-[calc(100vh-64px)] w-76 shrink-0 border-r border-white/5 bg-[#0F0F0F] p-4 lg:block">
+        <aside className={`sticky top-0 hidden h-[calc(100vh-64px)] w-76 shrink-0 border-r border-white/5 bg-[#0F0F0F] p-4 ${navCollapsed ? "lg:hidden" : "lg:block"}`}>
           <div className="rounded-[2rem] border border-[#C5A059]/25 bg-gradient-to-br from-[#2A2110] to-[#111] p-4">
             <div className="flex items-center gap-3">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#C5A059] text-black">
@@ -323,6 +335,12 @@ export function OwnerExecutiveWorkspace({
         </aside>
 
         <main className="min-w-0 flex-1 px-4 pb-24 pt-4 md:px-6 md:pt-6 lg:pb-8">
+          {/* Тумблер бокового меню (десктоп): спрятать/показать вкладки для полноэкранного раздела */}
+          <button onClick={() => setNavCollapsed((v) => !v)}
+            className="mb-3 hidden items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-slate-200 hover:bg-white/10 lg:inline-flex">
+            {navCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+            {navCollapsed ? "Показать меню" : "Скрыть меню"}
+          </button>
           <div className="sticky top-0 z-30 -mx-4 mb-4 border-b border-white/5 bg-[#080808]/90 px-4 py-3 backdrop-blur-xl md:-mx-6 md:px-6 lg:hidden">
             <div className="flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#C5A059] text-black"><Crown className="h-5 w-5" /></div>
@@ -340,6 +358,7 @@ export function OwnerExecutiveWorkspace({
               rawGroups={groups}
               rawTeachers={teachers}
               rawPayments={payments}
+              rawWaitlist={waitlist}
               branchScorecards={branchScorecards}
               onNavigate={(tab: OwnerTab) => setActiveTab(tab)}
               onOpenStudents={openStudentsWithPreset}
@@ -350,7 +369,7 @@ export function OwnerExecutiveWorkspace({
           )}
           {activeTab === "eduerp" && <OwnerEduErpView branches={branches} groups={groups} students={students} teachers={teachers} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
           {activeTab === "branches" && <BranchesGroupsView branches={branchScorecards} rawBranches={branches} students={students} groups={groups} teachers={teachers} halls={halls} payments={payments} onCreateBranch={onCreateBranch} onUpdateBranch={onUpdateBranch} onDeleteBranch={onDeleteBranch} onCreateGroup={onCreateGroup} onUpdateGroup={onUpdateGroup} onDeleteGroup={onDeleteGroup} onCreateHall={onCreateHall} onUpdateHall={onUpdateHall} onDeleteHall={onDeleteHall} onOpenStudents={openStudentsWithPreset} />}
-          {activeTab === "students" && <StudentsNetworkView students={students} branches={branches} groups={groups} teachers={teachers} onCreateStudent={onCreateStudent} onUpdateStudent={onUpdateStudent} onDeleteStudent={onDeleteStudent} onOpenPayment={onOpenPayment} onSellSubscription={onSellSubscription} subscriptionPlans={subscriptionPlans} studentTrash={studentTrash} onRestoreStudent={onRestoreStudent} onConfirmDeleteStudent={onConfirmDeleteStudent} leadSources={leadSources} waitlist={waitlist} onAddToWaitlist={onAddToWaitlist} onRemoveFromWaitlist={onRemoveFromWaitlist} onCreateLeadSource={onCreateLeadSource} onUpdateLeadSource={onUpdateLeadSource} onDeleteLeadSource={onDeleteLeadSource} preset={studentsPreset} />}
+          {activeTab === "students" && <StudentsNetworkView students={students} branches={branches} groups={groups} teachers={teachers} onCreateStudent={onCreateStudent} onUpdateStudent={onUpdateStudent} onDeleteStudent={onDeleteStudent} onOpenPayment={onOpenPayment} onSellSubscription={onSellSubscription} subscriptionPlans={subscriptionPlans} studentTrash={studentTrash} onRestoreStudent={onRestoreStudent} onConfirmDeleteStudent={onConfirmDeleteStudent} studentArchive={studentArchive} onArchiveStudent={onArchiveStudent} onUnarchiveStudent={onUnarchiveStudent} leadSources={leadSources} waitlist={waitlist} onAddToWaitlist={onAddToWaitlist} onRemoveFromWaitlist={onRemoveFromWaitlist} onCreateLeadSource={onCreateLeadSource} onUpdateLeadSource={onUpdateLeadSource} onDeleteLeadSource={onDeleteLeadSource} preset={studentsPreset} />}
           {activeTab === "teachers" && <TeachersNetworkView teachers={teachers} metrics={metrics} branches={branches} students={students} groups={groups} payments={payments} onCreateTeacher={onCreateTeacher} onUpdateTeacher={onUpdateTeacher} onDeleteTeacher={onDeleteTeacher} />}
           {activeTab === "payroll" && <PayrollView teachers={teachers} students={students} groups={groups} payments={payments} />}
           {activeTab === "finance" && <BookkeepingView branches={branchScorecards} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
@@ -392,6 +411,7 @@ export function OwnerExecutiveWorkspace({
           {activeTab === "announcements" && <OwnerAnnouncementsView announcements={announcements} branches={branches} onCreateAnnouncement={onCreateAnnouncement} onUpdateAnnouncement={onUpdateAnnouncement} onDeleteAnnouncement={onDeleteAnnouncement} />}
           {activeTab === "analytics" && <ExecutiveAnalyticsView branches={branchScorecards} groups={groups} teachers={teachers} students={students} payments={payments} metrics={metrics} />}
           {activeTab === "ai" && <OwnerAiView branches={branchScorecards} renewals={renewals} debt={debt} aiResult={aiResult} aiGenerating={aiGenerating} onTriggerAiReport={onTriggerAiReport} />}
+          {activeTab === "marketing" && <MarketingView studentArchive={studentArchive} branches={branches} />}
           {activeTab === "settings" && <NetworkSettingsView branches={branches} teachers={teachers} />}
         </main>
       </div>
@@ -405,7 +425,7 @@ export function OwnerExecutiveWorkspace({
   );
 }
 
-function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawPayments, branchScorecards, onNavigate, onOpenStudents, onTriggerAiReport, aiResult, aiGenerating }: any) {
+function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawPayments, rawWaitlist, branchScorecards, onNavigate, onOpenStudents, onTriggerAiReport, aiResult, aiGenerating }: any) {
   const go = (tab: string) => onNavigate?.(tab);
   const [period, setPeriod] = useState<PeriodKey>("month");
   const [level, setLevel] = useState<LevelKey>("network");
@@ -417,6 +437,8 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
   const [extras, setExtras] = useState<DashExtras>({});
   // Выручка по новым направлениям (выступления, товары) — для блока «Выручка по направлениям».
   const [streamRev, setStreamRev] = useState<{ perf: any; prod: any }>({ perf: null, prod: null });
+  // Список выступлений для блока на дашборде (этот месяц / предстоящие).
+  const [perfList, setPerfList] = useState<any[]>([]);
   // Окно детализации, раскрываемое по клику (модальное окно с таблицей/списком).
   const [riskTable, setRiskTable] = useState<DetailModalData | null>(null);
   // Состояние сворачивания блоков — запоминается по роли пользователя.
@@ -445,6 +467,57 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
     return () => { alive = false; };
   }, [period, customStart, customEnd]);
 
+  // Список выступлений (для блока «Выступления» на дашборде) — грузим один раз.
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/mvp/performances", { headers: { "x-demo-role": "owner" } })
+      .then((r) => (r.ok ? r.json() : { performances: [] }))
+      .then((d) => { if (alive) setPerfList(d.performances || []); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  // Сводка выступлений: этот месяц и предстоящие (с чистой прибылью).
+  const perfSummary = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const ym = today.slice(0, 7);
+    const active = perfList.filter((p) => p.status !== "cancelled");
+    const thisMonth = active.filter((p) => String(p.eventDate).slice(0, 7) === ym);
+    const upcoming = active.filter((p) => String(p.eventDate) >= today).sort((a, b) => String(a.eventDate).localeCompare(String(b.eventDate)));
+    return {
+      monthCount: thisMonth.length,
+      monthGross: thisMonth.reduce((s, p) => s + (p.price || 0), 0),
+      monthNet: thisMonth.reduce((s, p) => s + (p.netProfit ?? (p.price || 0) - (p.expense || 0)), 0),
+      upcomingCount: upcoming.length,
+      upcoming: upcoming.slice(0, 4),
+    };
+  }, [perfList]);
+
+  // AI-инсайты по продажам, складу и выступлениям (правила, без LLM).
+  const bizInsights = useMemo(() => {
+    const out: { tone: "good" | "warn" | "info"; text: string }[] = [];
+    const prod = streamRev.prod, perf = streamRev.perf;
+    const low = prod?.lowStock || [];
+    if (low.length > 0) {
+      const names = low.slice(0, 4).map((x: any) => x.name).join(", ");
+      out.push({ tone: "warn", text: `Пора докупить товар: ниже минимума ${low.length} поз.${names ? " — " + names : ""}.` });
+    } else if (prod) {
+      out.push({ tone: "good", text: "Складские остатки в норме — докупать срочно нечего." });
+    }
+    if (prod) {
+      if (typeof prod.stockValue === "number") out.push({ tone: "info", text: `На складе товара на ${money(prod.stockValue)} по закупке (${prod.stockUnits || 0} ед.).` });
+      if (prod.revenue) out.push({ tone: (prod.margin ?? 0) >= 30 ? "good" : "info", text: `Продажи за период: ${money(prod.revenue.total)}, маржа ${prod.margin ?? 0}%.` });
+    }
+    if (perfSummary.monthCount > 0) {
+      out.push({ tone: "good", text: `Выступления в этом месяце: ${perfSummary.monthCount} на ${money(perfSummary.monthGross)}, чистая прибыль ${money(perfSummary.monthNet)}.` });
+    }
+    if (perfSummary.upcomingCount > 0) {
+      out.push({ tone: "info", text: `Предстоит выступлений: ${perfSummary.upcomingCount}${perfSummary.upcoming[0] ? ` (ближайшее ${perfSummary.upcoming[0].eventDate})` : ""}.` });
+    }
+    if (perf?.outstanding > 0) out.push({ tone: "warn", text: `Не закрыта оплата по выступлениям: ${money(perf.outstanding)} (${perf.unpaidCount || 0} шт.).` });
+    return out;
+  }, [streamRev, perfSummary]);
+
   const filters: DashFilters = { period, level, branchId, groupId, teacherId, customStart, customEnd };
   const m = useMemo(
     () => computeOwnerDashboard(
@@ -453,6 +526,27 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
     ),
     [rawStudents, rawPayments, rawGroups, rawBranches, rawTeachers, period, level, branchId, groupId, teacherId, customStart, customEnd, extras]
   );
+
+  // Запас прочности: общее количество учеников и лист ожидания с учётом фильтра
+  // (сеть / филиал / группа). Помогает понять, нужен ли набор или есть очередь.
+  const capacityInfo = useMemo(() => {
+    const inScope = (s: Student) => {
+      if (level === "branch" && branchId) return s.branchId === branchId;
+      if (level === "group" && groupId) return (s.groupIds || []).includes(groupId);
+      return true;
+    };
+    const totalStudents = (rawStudents || []).filter(inScope).length;
+    const waitInScope = (w: any) => {
+      if (w.removedAt) return false;
+      if (level === "branch" && branchId) return w.branchId === branchId;
+      if (level === "group" && groupId) return w.groupId === groupId;
+      return true;
+    };
+    const waitlistTotal = (rawWaitlist || []).filter(waitInScope).length;
+    const capacity = m.occupancy.capacity || 0;
+    const freeSpots = capacity > 0 ? Math.max(0, capacity - m.occupancy.filled) : null;
+    return { totalStudents, waitlistTotal, freeSpots };
+  }, [rawStudents, rawWaitlist, level, branchId, groupId, m.occupancy.capacity, m.occupancy.filled]);
 
   // --- хелперы для окон детализации ---
   const studentById = useMemo(() => new Map<string, Student>((rawStudents || []).map((s: Student) => [s.id, s])), [rawStudents]);
@@ -692,6 +786,43 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
         </div>
       </CollapsibleSection>
 
+      {/* Выступления + AI-инсайты по продажам и складу */}
+      <CollapsibleSection id="opsbiz" icon={Mic2} title="Выступления и склад" hint="Банкеты, продажи, остатки + AI-выводы"
+        open={sectionOpen("opsbiz")} onToggle={() => toggleSection("opsbiz")}>
+        <div className="grid gap-3 lg:grid-cols-3">
+          <BigKpi label="Выступления в этом месяце" value={perfSummary.monthCount} onClick={() => go("performances")}
+            rows={[
+              { k: "Стоимость", v: <span className="text-slate-200">{money(perfSummary.monthGross)}</span> },
+              { k: "Чистая прибыль", v: <span className="text-emerald-400">{money(perfSummary.monthNet)}</span> },
+            ]} />
+          <BigKpi label="Предстоящие выступления" value={perfSummary.upcomingCount} tone="gold" onClick={() => go("performances")}
+            rows={perfSummary.upcoming.length
+              ? perfSummary.upcoming.slice(0, 3).map((p: any) => ({ k: p.eventDate, v: <span className="text-slate-200 text-[11px]">{p.clientName}</span> }))
+              : [{ k: "Ближайших нет", v: <span className="text-slate-500 text-[11px]">—</span> }]} />
+          <BigKpi label="Товар на складе" value={streamRev.prod ? money(streamRev.prod.stockValue ?? 0) : "—"} onClick={() => go("products")}
+            rows={[
+              { k: "Единиц на складе", v: <span className="text-slate-200">{streamRev.prod?.stockUnits ?? "—"}</span> },
+              { k: "Ниже минимума", v: <span className={streamRev.prod?.lowStock?.length ? "text-rose-400" : "text-emerald-400"}>{streamRev.prod?.lowStock?.length ?? "—"}</span> },
+            ]} />
+        </div>
+        {/* AI-выводы (правила): здоровье студии с позиции продаж и выступлений */}
+        <div className="mt-3 rounded-2xl border border-[#C5A059]/20 bg-gradient-to-br from-[#19160f] to-black p-4">
+          <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">AI-выводы · продажи · склад · выступления</p>
+          {bizInsights.length === 0 ? (
+            <p className="mt-2 text-sm text-slate-500">Данные накапливаются — выводы появятся после первых продаж и выступлений.</p>
+          ) : (
+            <ul className="mt-2 space-y-1.5">
+              {bizInsights.map((it, i) => (
+                <li key={i} className="flex gap-2 text-sm">
+                  <span className={it.tone === "warn" ? "text-rose-400" : it.tone === "good" ? "text-emerald-400" : "text-[#C5A059]"}>•</span>
+                  <span className="text-slate-100">{it.text}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </CollapsibleSection>
+
       {/* 2. ОСНОВНЫЕ ПОКАЗАТЕЛИ */}
       <CollapsibleSection id="kpi" icon={BarChart3} title="Основные показатели"
         open={sectionOpen("kpi")} onToggle={() => toggleSection("kpi")}>
@@ -750,6 +881,19 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
             { k: "За период", v: <span className="text-slate-200">{m.newStudents.hasData ? m.newStudents.period : "нет данных"}</span> }
           ]} />
       </div>
+      {/* Запас прочности: всего учеников и лист ожидания (с учётом фильтра) */}
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <BigKpi label="Учеников всего" value={capacityInfo.totalStudents} tone="white" onClick={onOpenStudents ? () => onOpenStudents() : undefined}
+          rows={[
+            { k: "Активных", v: <span className="text-slate-200">{m.retention.activeStudents}</span> },
+            { k: "Свободных мест", v: <span className="text-slate-200">{capacityInfo.freeSpots === null ? "—" : capacityInfo.freeSpots}</span> }
+          ]} />
+        <BigKpi label="В листе ожидания" value={capacityInfo.waitlistTotal} tone={capacityInfo.waitlistTotal > 0 ? "gold" : "white"} onClick={() => go("students")}
+          rows={[
+            { k: "Запас прочности", v: <span className="text-slate-300 text-[11px]">{capacityInfo.waitlistTotal > 0 ? "есть кого пригласить" : "очередь пуста"}</span> },
+            { k: "Свободно мест", v: <span className="text-slate-200">{capacityInfo.freeSpots === null ? "—" : capacityInfo.freeSpots}</span> }
+          ]} />
+      </div>
       </CollapsibleSection>
 
       {/* 3. РИСКИ */}
@@ -774,6 +918,9 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
           <RiskTile severity={m.riskTables.overloadGroups.length > 0 ? "high" : "low"}
             title={`Перегруз групп — ${m.riskTables.overloadGroups.length}`} detail="Группа · заполняемость ›"
             onClick={openOverload} />
+          <RiskTile severity={(streamRev.prod?.lowStock?.length || 0) > 0 ? "high" : "low"}
+            title={`Пора докупить товар — ${streamRev.prod?.lowStock?.length ?? 0}`} detail="Товары ниже минимума ›"
+            onClick={() => go("products")} />
         </div>
       </CollapsibleSection>
 
@@ -2002,7 +2149,7 @@ function OwnerEduErpView({ branches, groups, students, teachers, payments, month
   );
 }
 
-function StudentsNetworkView({ students, branches, groups, teachers, onCreateStudent, onUpdateStudent, onDeleteStudent, onOpenPayment, onSellSubscription, subscriptionPlans = [], studentTrash = [], onRestoreStudent, onConfirmDeleteStudent, leadSources = [], waitlist = [], onAddToWaitlist, onRemoveFromWaitlist, onCreateLeadSource, onUpdateLeadSource, onDeleteLeadSource, preset }: {
+function StudentsNetworkView({ students, branches, groups, teachers, onCreateStudent, onUpdateStudent, onDeleteStudent, onOpenPayment, onSellSubscription, subscriptionPlans = [], studentTrash = [], onRestoreStudent, onConfirmDeleteStudent, studentArchive = [], onArchiveStudent, onUnarchiveStudent, leadSources = [], waitlist = [], onAddToWaitlist, onRemoveFromWaitlist, onCreateLeadSource, onUpdateLeadSource, onDeleteLeadSource, preset }: {
   students: Student[];
   branches: Branch[];
   groups: Group[];
@@ -2016,6 +2163,9 @@ function StudentsNetworkView({ students, branches, groups, teachers, onCreateStu
   studentTrash?: TrashStudent[];
   onRestoreStudent?: (id: string) => Promise<boolean>;
   onConfirmDeleteStudent?: (id: string) => Promise<boolean>;
+  studentArchive?: ArchiveStudent[];
+  onArchiveStudent?: (id: string, reason: string, comment: string) => Promise<boolean | void> | void;
+  onUnarchiveStudent?: (id: string) => Promise<boolean>;
   leadSources?: LeadSource[];
   waitlist?: WaitlistEntry[];
   onAddToWaitlist?: (payload: { studentId: string; branchId?: string | null; groupId?: string | null; comment?: string | null }) => Promise<boolean>;
@@ -2026,6 +2176,10 @@ function StudentsNetworkView({ students, branches, groups, teachers, onCreateStu
   preset?: RegistryPreset | null;
 }) {
   const [trashBusy, setTrashBusy] = useState<string | null>(null);
+  // Ученик из корзины, которого владелец переводит в архив (модалка комментариев).
+  const [archiveTarget, setArchiveTarget] = useState<{ id: string; name: string } | null>(null);
+  const [archiveBusy, setArchiveBusy] = useState(false);
+  const [unarchiveBusy, setUnarchiveBusy] = useState<string | null>(null);
   const branchNameById = (id: string) => branches.find((b) => b.id === id)?.name || "—";
   const restore = async (t: TrashStudent) => {
     if (!onRestoreStudent) return;
@@ -2033,12 +2187,19 @@ function StudentsNetworkView({ students, branches, groups, teachers, onCreateStu
     await onRestoreStudent(t.id);
     setTrashBusy(null);
   };
-  const confirmDelete = async (t: TrashStudent) => {
-    if (!onConfirmDeleteStudent) return;
-    if (!window.confirm(`Окончательно удалить ученика «${t.name}»? Карточка будет архивирована, история оплат и посещений сохранится.`)) return;
-    setTrashBusy(t.id);
-    await onConfirmDeleteStudent(t.id);
-    setTrashBusy(null);
+  const confirmArchive = async (reason: string, comment: string) => {
+    if (!onArchiveStudent || !archiveTarget) return;
+    setArchiveBusy(true);
+    await onArchiveStudent(archiveTarget.id, reason, comment);
+    setArchiveBusy(false);
+    setArchiveTarget(null);
+  };
+  const unarchive = async (a: ArchiveStudent) => {
+    if (!onUnarchiveStudent) return;
+    if (!window.confirm(`Вернуть «${a.name}» из архива в активный реестр?`)) return;
+    setUnarchiveBusy(a.id);
+    await onUnarchiveStudent(a.id);
+    setUnarchiveBusy(null);
   };
 
   return (
@@ -2051,6 +2212,7 @@ function StudentsNetworkView({ students, branches, groups, teachers, onCreateStu
         onCreateStudent={onCreateStudent}
         onUpdateStudent={onUpdateStudent}
         onDeleteStudent={onDeleteStudent}
+        onArchiveStudent={onArchiveStudent}
         onOpenPayment={onOpenPayment}
         onSellSubscription={onSellSubscription}
         plans={subscriptionPlans}
@@ -2070,7 +2232,7 @@ function StudentsNetworkView({ students, branches, groups, teachers, onCreateStu
             <div className="rounded-2xl bg-rose-500/15 p-2.5 text-rose-400"><Trash2 className="h-5 w-5" /></div>
             <div>
               <h3 className="font-black text-white">Корзина учеников</h3>
-              <p className="text-xs text-slate-500">Заявки на удаление от руководителей филиалов. Подтверждает только владелец.</p>
+              <p className="text-xs text-slate-500">Заявки на удаление от руководителей филиалов. Владелец возвращает ученика или переводит в архив (данные сохраняются).</p>
             </div>
           </div>
           <span className={`rounded-full px-3 py-1 text-xs font-black ${studentTrash.length ? "bg-rose-500/15 text-rose-400" : "bg-white/5 text-slate-500"}`}>{studentTrash.length}</span>
@@ -2092,12 +2254,61 @@ function StudentsNetworkView({ students, branches, groups, teachers, onCreateStu
               </div>
               <div className="flex justify-end gap-2 md:col-span-3">
                 <button onClick={() => restore(t)} disabled={trashBusy === t.id} className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-400 transition hover:bg-emerald-500/20 disabled:opacity-40">Восстановить</button>
-                <button onClick={() => confirmDelete(t)} disabled={trashBusy === t.id} className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-bold text-rose-400 transition hover:bg-rose-500/20 disabled:opacity-40">{trashBusy === t.id ? "…" : "Удалить"}</button>
+                <button onClick={() => setArchiveTarget({ id: t.id, name: t.name })} disabled={trashBusy === t.id || !onArchiveStudent} className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-bold text-amber-300 transition hover:bg-amber-500/20 disabled:opacity-40">В архив</button>
               </div>
             </div>
           ))
         )}
       </div>
+
+      {/* Архив учеников — сохранённая база для будущих рассылок и возврата. */}
+      <div className="mt-6 overflow-hidden rounded-[2rem] border border-amber-500/20 bg-[#14110d]">
+        <div className="flex items-center justify-between gap-3 border-b border-amber-500/15 px-5 py-4">
+          <div className="flex items-center gap-3">
+            <div className="rounded-2xl bg-amber-500/15 p-2.5 text-amber-300"><Archive className="h-5 w-5" /></div>
+            <div>
+              <h3 className="font-black text-white">Архив учеников</h3>
+              <p className="text-xs text-slate-500">Ушедшие ученики с сохранёнными данными. Основа для маркетинговых рассылок и возврата.</p>
+            </div>
+          </div>
+          <span className={`rounded-full px-3 py-1 text-xs font-black ${studentArchive.length ? "bg-amber-500/15 text-amber-300" : "bg-white/5 text-slate-500"}`}>{studentArchive.length}</span>
+        </div>
+
+        {studentArchive.length === 0 ? (
+          <p className="px-5 py-6 text-center text-sm text-slate-500">Архив пуст.</p>
+        ) : (
+          studentArchive.map((a) => (
+            <div key={a.id} className="grid grid-cols-1 gap-3 border-b border-white/5 px-5 py-3 text-sm md:grid-cols-12 md:items-start">
+              <div className="md:col-span-3">
+                <p className="font-bold text-white">{a.name}</p>
+                <p className="text-xs text-slate-500">{branchNameById(a.branchId)} · {a.phone || a.parentPhone || "—"}</p>
+              </div>
+              <div className="md:col-span-3">
+                <p className="text-[11px] uppercase tracking-wider text-slate-600">Почему ушёл</p>
+                <p className="text-slate-200">{a.archiveReason || "—"}</p>
+              </div>
+              <div className="md:col-span-4">
+                <p className="text-[11px] uppercase tracking-wider text-slate-600">Комментарий</p>
+                <p className="text-slate-300">{a.archiveComment || "—"}</p>
+                <p className="mt-1 text-[11px] text-slate-600">{a.archivedBy} · {a.archivedAt ? new Date(a.archivedAt).toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric" }) : ""}</p>
+              </div>
+              <div className="flex justify-end md:col-span-2">
+                <button onClick={() => unarchive(a)} disabled={unarchiveBusy === a.id || !onUnarchiveStudent} className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-400 transition hover:bg-emerald-500/20 disabled:opacity-40">{unarchiveBusy === a.id ? "…" : "Вернуть"}</button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {archiveTarget && (
+        <ArchiveReasonModal
+          title={`В архив: ${archiveTarget.name}`}
+          subtitle="Укажите причину ухода и комментарий"
+          busy={archiveBusy}
+          onConfirm={confirmArchive}
+          onCancel={() => setArchiveTarget(null)}
+        />
+      )}
     </OwnerScreen>
   );
 }
@@ -3468,6 +3679,21 @@ function PeriodChips({ period, onChange }: { period: string; onChange: (p: strin
   );
 }
 
+// Загрузка настраиваемого справочника (типы выступлений / категории товаров / уровни групп).
+// Если своих значений ещё нет — бэкенд отдаёт дефолты, поэтому список не бывает пустым.
+function useSettingsList(kind: string, role: string = "owner") {
+  const [items, setItems] = useState<{ id: string; label: string }[]>([]);
+  useEffect(() => {
+    let alive = true;
+    fetch(`/api/mvp/settings/lists?kind=${kind}`, { headers: { "x-demo-role": role } })
+      .then((r) => (r.ok ? r.json() : { items: [] }))
+      .then((d) => { if (alive) setItems(d.items || []); })
+      .catch(() => { /* пусто — модалка просто без подсказок */ });
+    return () => { alive = false; };
+  }, [kind, role]);
+  return items;
+}
+
 function PerformancesView() {
   const [list, setList] = useState<any[]>([]);
   const [overview, setOverview] = useState<any>(null);
@@ -3529,9 +3755,12 @@ function PerformancesView() {
           <h3 className="text-sm font-black uppercase tracking-wider text-white">Аналитика за период</h3>
           <PeriodChips period={period} onChange={setPeriod} />
         </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          <StatPill label="Выступлений" value={overview?.count ?? "—"} />
-          <StatPill label="Выручка" value={overview ? money(overview.revenue.total) : "—"} hint={overview && <DeltaBadge pct={overview.revenue.momPct} />} />
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <StatPill label="Выступлений" value={overview?.count ?? "—"} hint={overview?.performers ? `${overview.performers} выступающих` : undefined} />
+          <StatPill label="Выручка (поступления)" value={overview ? money(overview.revenue.total) : "—"} hint={overview && <DeltaBadge pct={overview.revenue.momPct} />} />
+          <StatPill label="Стоимость выступлений" value={overview ? money(overview.gross ?? 0) : "—"} />
+          <StatPill label="Расход" value={overview ? money(overview.expense ?? 0) : "—"} tone="rose" />
+          <StatPill label="Чистая прибыль" value={overview ? money(overview.netProfit ?? 0) : "—"} tone="emerald" hint="стоимость − расход" />
           <StatPill label="Средний чек" value={overview ? money(overview.avgCheck) : "—"} />
           <StatPill label="Неоплаченных" value={overview?.unpaidCount ?? "—"} tone="rose" />
           <StatPill label="Остаток к оплате" value={overview ? money(overview.outstanding) : "—"} tone="rose" />
@@ -3578,14 +3807,15 @@ function PerformancesView() {
                 <th className="px-4 py-3 font-bold">Время</th>
                 <th className="px-4 py-3 font-bold">Тип</th>
                 <th className="px-4 py-3 text-right font-bold">Стоимость</th>
+                <th className="px-4 py-3 text-right font-bold">Чистая прибыль</th>
                 <th className="px-4 py-3 text-right font-bold">Оплачено</th>
                 <th className="px-4 py-3 text-right font-bold">Остаток</th>
                 <th className="px-4 py-3 font-bold">Статус</th>
               </tr>
             </thead>
             <tbody>
-              {loading && <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-500">Загрузка…</td></tr>}
-              {!loading && list.length === 0 && <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-500">Нет выступлений.</td></tr>}
+              {loading && <tr><td colSpan={10} className="px-4 py-8 text-center text-slate-500">Загрузка…</td></tr>}
+              {!loading && list.length === 0 && <tr><td colSpan={10} className="px-4 py-8 text-center text-slate-500">Нет выступлений.</td></tr>}
               {list.map((p) => (
                 <tr key={p.id} onClick={() => setSelectedId(selectedId === p.id ? null : p.id)}
                   className={`cursor-pointer border-b border-white/5 transition hover:bg-white/[0.04] ${selectedId === p.id ? "bg-white/[0.05]" : ""}`}>
@@ -3593,8 +3823,9 @@ function PerformancesView() {
                   <td className="px-4 py-3 font-bold text-white">{p.clientName}</td>
                   <td className="px-4 py-3 text-slate-400">{p.address || "—"}</td>
                   <td className="px-4 py-3 text-slate-400">{p.eventTime || "—"}</td>
-                  <td className="px-4 py-3 text-slate-400">{PERF_TYPE_LABEL[p.type] || p.type}</td>
+                  <td className="px-4 py-3 text-slate-400">{PERF_TYPE_LABEL[p.type] || p.type}{p.performersCount ? ` · ${p.performersCount} чел.` : ""}</td>
                   <td className="px-4 py-3 text-right font-bold text-white">{money(p.price)}</td>
+                  <td className="px-4 py-3 text-right font-bold text-emerald-400">{p.netProfit == null ? "—" : money(p.netProfit)}</td>
                   <td className="px-4 py-3 text-right text-emerald-400">{p.paid == null ? "—" : money(p.paid)}</td>
                   <td className="px-4 py-3 text-right text-rose-300">{p.outstanding == null ? "—" : money(p.outstanding)}</td>
                   <td className="px-4 py-3"><span className={`rounded-lg px-2 py-1 text-[11px] font-bold ${PERF_STATUS[p.status]?.cls}`}>{PERF_STATUS[p.status]?.t}</span></td>
@@ -3639,12 +3870,16 @@ function PerformanceCard({ perf, busy, onAddPayment, onRemovePayment, onCancel, 
           <Row k="Адрес" v={perf.address || "—"} />
           <Row k="Телефон" v={perf.clientPhone || "—"} />
           <Row k="Тип выступления" v={PERF_TYPE_LABEL[perf.type] || perf.type} />
+          {perf.performersCount != null && <Row k="Выступающих" v={`${perf.performersCount} чел.`} />}
+          {perf.paymentMethod && <Row k="Тип оплаты" v={PAY_METHOD_LABEL[perf.paymentMethod] || perf.paymentMethod} />}
           {perf.comment && <Row k="Комментарий" v={perf.comment} />}
         </div>
         {/* Финансы */}
         <div className="space-y-1.5 text-sm">
           <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Финансы</p>
           <Row k="Стоимость" v={<span className="font-black text-white">{money(perf.price)}</span>} />
+          <Row k="Расход" v={<span className="text-rose-300">{money(perf.expense || 0)}</span>} />
+          <Row k="Чистая прибыль" v={<span className="font-black text-emerald-400">{money(perf.netProfit ?? (perf.price - (perf.expense || 0)))}</span>} />
           <Row k="Оплачено" v={<span className="text-emerald-400">{money(perf.paid)}</span>} />
           <Row k="Остаток" v={<span className="text-rose-300">{money(perf.outstanding)}</span>} />
         </div>
@@ -3696,25 +3931,47 @@ function Row({ k, v }: { k: string; v: React.ReactNode }) {
 }
 
 function PerfAddModal({ busy, onClose, onSubmit }: any) {
-  const [f, setF] = useState<any>({ clientName: "", clientPhone: "", address: "", eventDate: new Date().toISOString().slice(0, 10), eventTime: "", type: "basic", price: "", comment: "" });
+  const types = useSettingsList("performance_type");
+  const [f, setF] = useState<any>({ clientName: "", clientPhone: "", address: "", eventDate: new Date().toISOString().slice(0, 10), eventTime: "", type: "", performersCount: "", price: "", expense: "", paymentMethod: "cash", status: "planned", comment: "" });
   const set = (k: string, v: any) => setF((s: any) => ({ ...s, [k]: v }));
-  const submit = () => { if (!f.clientName.trim()) return; onSubmit({ ...f, price: Number(f.price) || 0 }); };
+  // тип по умолчанию — первый из справочника
+  useEffect(() => { if (!f.type && types[0]) set("type", types[0].label); /* eslint-disable-next-line */ }, [types]);
+  const price = Number(f.price) || 0;
+  const expense = Number(f.expense) || 0;
+  const net = price - expense;
+  const submit = () => { if (!f.clientName.trim()) return; onSubmit({ ...f, price, expense }); };
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
-      <div className="w-full max-w-lg rounded-[1.75rem] border border-white/10 bg-[#0f0f0f] p-6" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-md" onClick={onClose}>
+      <div className="w-full max-w-lg rounded-[1.75rem] border border-white/10 bg-[#0f0f0f] p-6 max-h-[92vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between"><h3 className="text-lg font-black text-white">Новое выступление</h3><button onClick={onClose} className="text-slate-400 hover:text-white"><X className="h-5 w-5" /></button></div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <ModalInput label="Клиент *" value={f.clientName} onChange={(v) => set("clientName", v)} />
           <ModalInput label="Телефон" value={f.clientPhone} onChange={(v) => set("clientPhone", v)} />
-          <ModalInput label="Адрес" value={f.address} onChange={(v) => set("address", v)} full />
+          <ModalInput label="Адрес выступления / ресторан" value={f.address} onChange={(v) => set("address", v)} placeholder="Напр.: Достык 5 — ресторан «Алтын»" full />
           <ModalInput label="Дата" type="date" value={f.eventDate} onChange={(v) => set("eventDate", v)} />
           <ModalInput label="Время" value={f.eventTime} onChange={(v) => set("eventTime", v)} placeholder="18:00" />
           <label className="flex flex-col gap-1 text-[11px] text-slate-400">Тип выступления
             <select value={f.type} onChange={(e) => set("type", e.target.value)} className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white">
-              {Object.entries(PERF_TYPE_LABEL).map(([k, v]) => <option key={k} value={k} className="bg-black">{v}</option>)}
+              {types.map((t) => <option key={t.id} value={t.label} className="bg-black">{t.label}</option>)}
             </select></label>
+          <ModalInput label="Кол-во выступающих" type="number" value={f.performersCount} onChange={(v) => set("performersCount", v)} placeholder="напр. 4" />
           <ModalInput label="Стоимость, ₸" type="number" value={f.price} onChange={(v) => set("price", v)} />
+          <ModalInput label="Расход (выступающие, ответственный), ₸" type="number" value={f.expense} onChange={(v) => set("expense", v)} />
+          <label className="flex flex-col gap-1 text-[11px] text-slate-400">Тип оплаты
+            <select value={f.paymentMethod} onChange={(e) => set("paymentMethod", e.target.value)} className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white">
+              {Object.entries(PAY_METHOD_LABEL).map(([k, v]) => <option key={k} value={k} className="bg-black">{v}</option>)}
+            </select></label>
+          <label className="flex flex-col gap-1 text-[11px] text-slate-400">Статус
+            <select value={f.status} onChange={(e) => set("status", e.target.value)} className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white">
+              <option value="planned" className="bg-black">Запланировано</option>
+              <option value="paid" className="bg-black">Оплачено</option>
+            </select></label>
           <ModalInput label="Комментарий" value={f.comment} onChange={(v) => set("comment", v)} full />
+        </div>
+        {/* Чистая прибыль = стоимость − расход (на счёт поступает только она) */}
+        <div className="mt-4 flex items-center justify-between rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.06] px-4 py-3">
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Чистая прибыль</span>
+          <span className={`text-lg font-black ${net < 0 ? "text-rose-400" : "text-emerald-400"}`}>{money(net)}</span>
         </div>
         <div className="mt-5 flex justify-end gap-2">
           <button onClick={onClose} className="rounded-xl border border-white/10 px-4 py-2 text-xs font-bold text-slate-300">Отмена</button>
@@ -3741,38 +3998,49 @@ export function ProductsView({ role = "owner" }: { role?: string } = {}) {
   const hdr = { headers: { "x-demo-role": role } };
   const jhdr = { headers: { "Content-Type": "application/json", "x-demo-role": role } };
 
-  const [tab, setTab] = useState<"products" | "sales" | "stock" | "receipts">(isCashier ? "sales" : "products");
+  const [tab, setTab] = useState<"products" | "sales" | "stock" | "receipts" | "writeoffs" | "orders">(isCashier ? "sales" : "products");
   const [products, setProducts] = useState<any[]>([]);
   const [sales, setSales] = useState<any[]>([]);
   const [stock, setStock] = useState<any[]>([]);
+  const [stockSummary, setStockSummary] = useState<any>(null);
   const [receipts, setReceipts] = useState<any[]>([]);
+  const [writeoffs, setWriteoffs] = useState<any[]>([]);
+  const [orders, setOrders] = useState<any[]>([]);
   const [overview, setOverview] = useState<any>(null);
   const [period, setPeriod] = useState("month");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [modal, setModal] = useState<null | "product" | "sale" | "receipt">(null);
+  const [modal, setModal] = useState<null | "product" | "sale" | "receipt" | "writeoff">(null);
 
   const load = async () => {
     setLoading(true); setError(null);
     try {
       // Касса (админ): только справочник + сегодняшние продажи. Остальное недоступно по роли.
       const reqs = isCashier
-        ? [fetch(`/api/mvp/products`, hdr), fetch(`/api/mvp/products/sales`, hdr)]
+        ? [fetch(`/api/mvp/products`, hdr), fetch(`/api/mvp/products/sales`, hdr), fetch(`/api/mvp/shop/orders`, hdr)]
         : [
             fetch(`/api/mvp/products`, hdr),
             fetch(`/api/mvp/products/sales`, hdr),
             fetch(`/api/mvp/products/stock`, hdr),
             fetch(`/api/mvp/products/receipts`, hdr),
             fetch(`/api/mvp/products/overview?period=${period}`, hdr),
+            fetch(`/api/mvp/products/writeoffs`, hdr),
+            fetch(`/api/mvp/shop/orders`, hdr),
           ];
-      const [pRes, sRes, stRes, rRes, oRes] = await Promise.all(reqs);
-      if (!pRes.ok) throw new Error(await pRes.text());
-      setProducts((await pRes.json()).products || []);
-      if (sRes?.ok) setSales((await sRes.json()).sales || []);
-      if (stRes?.ok) setStock((await stRes.json()).stock || []);
-      if (rRes?.ok) setReceipts((await rRes.json()).receipts || []);
-      if (oRes?.ok) setOverview(await oRes.json());
+      const all = await Promise.all(reqs);
+      const P = all[0]; if (!P.ok) throw new Error(await P.text());
+      setProducts((await P.json()).products || []);
+      const S = all[1]; if (S?.ok) setSales((await S.json()).sales || []);
+      if (!isCashier) {
+        const ST = all[2]; if (ST?.ok) { const sd = await ST.json(); setStock(sd.stock || []); setStockSummary(sd.summary || null); }
+        const R = all[3]; if (R?.ok) setReceipts((await R.json()).receipts || []);
+        const O = all[4]; if (O?.ok) setOverview(await O.json());
+        const W = all[5]; if (W?.ok) setWriteoffs((await W.json()).writeoffs || []);
+        const ORD = all[6]; if (ORD?.ok) setOrders((await ORD.json()).orders || []);
+      } else {
+        const ORD = all[2]; if (ORD?.ok) setOrders((await ORD.json()).orders || []);
+      }
     } catch (e: any) { setError(e?.message || "Не удалось загрузить товары"); }
     finally { setLoading(false); }
   };
@@ -3789,11 +4057,19 @@ export function ProductsView({ role = "owner" }: { role?: string } = {}) {
   const createProduct = (p: any) => post(`/api/mvp/products`, p, "Не удалось создать товар");
   const createSale = (p: any) => post(`/api/mvp/products/sales`, p, "Не удалось оформить продажу");
   const createReceipt = (p: any) => post(`/api/mvp/products/receipts`, p, "Не удалось оформить поступление");
+  const createWriteoff = (p: any) => post(`/api/mvp/products/writeoffs`, p, "Не удалось оформить списание");
+  const setOrderStatus = async (id: string, status: string) => {
+    setBusy(true);
+    try { await fetch(`/api/mvp/shop/orders/${id}`, { method: "PATCH", ...jhdr, body: JSON.stringify({ status }) }); await load(); }
+    catch (e: any) { setError(e?.message || "Не удалось обновить заказ"); } finally { setBusy(false); }
+  };
 
   const cashierRevenue = sales.reduce((s, x) => s + (Number(x.amount) || 0), 0);
+  const newOrders = orders.filter((o) => o.status === "new").length;
+  const ordersLabel = `Заказы${newOrders ? ` (${newOrders})` : ""}`;
   const tabs: [typeof tab, string][] = isCashier
-    ? [["sales", "Продажи за сегодня"], ["products", "Каталог"]]
-    : [["products", "Товары"], ["sales", "Продажи"], ["stock", "Остатки"], ["receipts", "Поступления"]];
+    ? [["sales", "Продажи за сегодня"], ["products", "Каталог"], ["orders", ordersLabel]]
+    : [["products", "Товары"], ["sales", "Продажи"], ["stock", "Остатки"], ["receipts", "Поступления"], ["writeoffs", "Списания"], ["orders", ordersLabel]];
 
   return (
     <OwnerScreen
@@ -3810,11 +4086,13 @@ export function ProductsView({ role = "owner" }: { role?: string } = {}) {
           <h3 className="text-sm font-black uppercase tracking-wider text-white">Аналитика за период</h3>
           <PeriodChips period={period} onChange={setPeriod} />
         </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <StatPill label="Выручка от товаров" value={overview ? money(overview.revenue.total) : "—"} hint={overview && <DeltaBadge pct={overview.revenue.momPct} />} />
           <StatPill label="Продано единиц" value={overview?.unitsSold ?? "—"} tone="white" />
           <StatPill label="Средний чек" value={overview ? money(overview.avgCheck) : "—"} />
           <StatPill label="Валовая прибыль" value={overview ? money(overview.grossProfit) : "—"} tone="emerald" hint={overview ? `${overview.margin}% маржинальность` : undefined} />
+          <StatPill label="Товар на складе (по закупке)" value={overview ? money(overview.stockValue ?? 0) : "—"} tone="gold" hint={overview ? `${overview.stockUnits ?? 0} ед. на складе` : undefined} />
+          <StatPill label="Товар на складе (по продаже)" value={overview ? money(overview.retailValue ?? 0) : "—"} tone="white" hint="потенциальная выручка остатка" />
           <StatPill label="Товары с низким остатком" value={overview?.lowStock?.length ?? "—"} tone="rose" hint="Требуют пополнения" />
         </div>
         {overview?.top?.length > 0 && (
@@ -3855,6 +4133,7 @@ export function ProductsView({ role = "owner" }: { role?: string } = {}) {
           {!isCashier && tab === "products" && <button onClick={() => setModal("product")} className="inline-flex items-center gap-2 rounded-xl bg-[#C5A059] px-4 py-2 text-xs font-black text-black hover:brightness-110"><Plus className="h-4 w-4" /> Добавить товар</button>}
           {(tab === "products" || tab === "sales") && <button onClick={() => setModal("sale")} className="inline-flex items-center gap-2 rounded-xl border border-[#C5A059]/40 px-4 py-2 text-xs font-black text-[#C5A059] hover:bg-[#C5A059]/10"><ShoppingBag className="h-4 w-4" /> Оформить продажу</button>}
           {!isCashier && (tab === "stock" || tab === "receipts") && <button onClick={() => setModal("receipt")} className="inline-flex items-center gap-2 rounded-xl border border-[#C5A059]/40 px-4 py-2 text-xs font-black text-[#C5A059] hover:bg-[#C5A059]/10"><Package className="h-4 w-4" /> Оформить поступление</button>}
+          {!isCashier && (tab === "stock" || tab === "writeoffs") && <button onClick={() => setModal("writeoff")} className="inline-flex items-center gap-2 rounded-xl border border-rose-500/40 px-4 py-2 text-xs font-black text-rose-300 hover:bg-rose-500/10"><Trash2 className="h-4 w-4" /> Оформить списание</button>}
         </div>
       </div>
 
@@ -3865,7 +4144,14 @@ export function ProductsView({ role = "owner" }: { role?: string } = {}) {
         <ModuleTable cols={["Товар", "Категория", "Артикул", "Цена продажи", "Закупочная", "Остаток", "Мин. остаток", "Статус"]} empty={products.length === 0}>
           {products.map((p) => (
             <tr key={p.id} className="border-b border-white/5">
-              <td className="px-4 py-3 font-bold text-white">{p.name}</td>
+              <td className="px-4 py-3 font-bold text-white">
+                <div className="flex items-center gap-2.5">
+                  {p.photoUrl
+                    ? <img src={p.photoUrl} alt="" className="h-9 w-9 flex-shrink-0 rounded-lg object-cover" />
+                    : <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-white/5 text-slate-600"><Package className="h-4 w-4" /></div>}
+                  <span>{p.name}</span>
+                </div>
+              </td>
               <td className="px-4 py-3 text-slate-400">{p.category || "—"}</td>
               <td className="px-4 py-3 text-slate-400">{p.sku || "—"}</td>
               <td className="px-4 py-3 text-right text-white">{money(p.salePrice)}</td>
@@ -3898,18 +4184,44 @@ export function ProductsView({ role = "owner" }: { role?: string } = {}) {
 
       {/* ОСТАТКИ */}
       {!loading && tab === "stock" && (
-        <ModuleTable cols={["Товар", "Артикул", "Приход", "Продано", "Остаток", "Мин. остаток", "Статус"]} empty={stock.length === 0}>
-          {stock.map((s) => (
-            <tr key={s.productId} className="border-b border-white/5">
-              <td className="px-4 py-3 font-bold text-white">{s.name}</td>
-              <td className="px-4 py-3 text-slate-400">{s.sku || "—"}</td>
-              <td className="px-4 py-3 text-right text-slate-300">{s.received}</td>
-              <td className="px-4 py-3 text-right text-slate-300">{s.sold}</td>
-              <td className="px-4 py-3 text-right font-bold text-white">{s.balance} шт.</td>
-              <td className="px-4 py-3 text-right text-slate-400">{s.minStock} шт.</td>
-              <td className="px-4 py-3">{s.low
-                ? <span className="rounded-lg bg-rose-500/15 px-2 py-1 text-[11px] font-bold text-rose-300">Низкий остаток</span>
-                : <span className="rounded-lg bg-emerald-500/15 px-2 py-1 text-[11px] font-bold text-emerald-300">В норме</span>}</td>
+        <>
+          {stockSummary && (
+            <div className="mb-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <StatPill label="Товара на складе" value={`${stockSummary.units} ед.`} tone="white" hint={`${stockSummary.positions} позиций`} />
+              <StatPill label="Стоимость склада (по закупке)" value={money(stockSummary.stockValue)} tone="gold" />
+              <StatPill label="Стоимость склада (по продаже)" value={money(stockSummary.retailValue)} />
+              <StatPill label="Потенциальная наценка" value={money(stockSummary.retailValue - stockSummary.stockValue)} tone="emerald" />
+            </div>
+          )}
+          <ModuleTable cols={["Товар", "Артикул", "Приход", "Продано", "Списано", "Остаток", "Сумма (закуп)", "Статус"]} empty={stock.length === 0}>
+            {stock.map((s) => (
+              <tr key={s.productId} className="border-b border-white/5">
+                <td className="px-4 py-3 font-bold text-white">{s.name}</td>
+                <td className="px-4 py-3 text-slate-400">{s.sku || "—"}</td>
+                <td className="px-4 py-3 text-right text-slate-300">{s.received}</td>
+                <td className="px-4 py-3 text-right text-slate-300">{s.sold}</td>
+                <td className="px-4 py-3 text-right text-rose-300">{s.written || 0}</td>
+                <td className="px-4 py-3 text-right font-bold text-white">{s.balance} шт.</td>
+                <td className="px-4 py-3 text-right text-slate-300">{money(s.stockValue ?? 0)}</td>
+                <td className="px-4 py-3">{s.low
+                  ? <span className="rounded-lg bg-rose-500/15 px-2 py-1 text-[11px] font-bold text-rose-300">Низкий остаток</span>
+                  : <span className="rounded-lg bg-emerald-500/15 px-2 py-1 text-[11px] font-bold text-emerald-300">В норме</span>}</td>
+              </tr>
+            ))}
+          </ModuleTable>
+        </>
+      )}
+
+      {/* СПИСАНИЯ */}
+      {!loading && tab === "writeoffs" && (
+        <ModuleTable cols={["Дата", "Товар", "Кол-во", "Причина", "Комментарий"]} empty={writeoffs.length === 0}>
+          {writeoffs.map((w) => (
+            <tr key={w.id} className="border-b border-white/5">
+              <td className="px-4 py-3 text-slate-300">{w.date}</td>
+              <td className="px-4 py-3 font-bold text-white">{w.productName}</td>
+              <td className="px-4 py-3 text-slate-300">{w.qty} шт.</td>
+              <td className="px-4 py-3 text-slate-400">{w.reason || "—"}</td>
+              <td className="px-4 py-3 text-slate-400">{w.comment || "—"}</td>
             </tr>
           ))}
         </ModuleTable>
@@ -3930,9 +4242,37 @@ export function ProductsView({ role = "owner" }: { role?: string } = {}) {
         </ModuleTable>
       )}
 
-      {modal === "product" && <ProductAddModal busy={busy} onClose={() => setModal(null)} onSubmit={createProduct} />}
+      {/* ЗАКАЗЫ ИЗ МАГАЗИНА */}
+      {!loading && tab === "orders" && (
+        <ModuleTable cols={["Дата", "Покупатель", "Телефон", "Состав", "Сумма", "Статус"]} empty={orders.length === 0}>
+          {orders.map((o) => (
+            <tr key={o.id} className="border-b border-white/5 align-top">
+              <td className="px-4 py-3 text-slate-300">{o.createdAt ? new Date(o.createdAt).toLocaleDateString("ru-RU", { day: "numeric", month: "short" }) : "—"}</td>
+              <td className="px-4 py-3 font-bold text-white">{o.customerName || "—"}</td>
+              <td className="px-4 py-3 text-slate-300">{o.customerPhone || "—"}</td>
+              <td className="px-4 py-3 text-slate-400">
+                {(o.items || []).map((it: any, i: number) => <div key={i}>{it.productName} × {it.qty}</div>)}
+                {o.comment && <div className="mt-1 text-[11px] text-slate-600">{o.comment}</div>}
+              </td>
+              <td className="px-4 py-3 text-right font-bold text-emerald-400">{money(o.total)}</td>
+              <td className="px-4 py-3">
+                <select value={o.status} disabled={busy} onChange={(e) => setOrderStatus(o.id, e.target.value)} className="rounded-lg border border-white/10 bg-black/40 px-2 py-1 text-xs text-white">
+                  <option value="new" className="bg-black">Новый</option>
+                  <option value="confirmed" className="bg-black">Подтверждён</option>
+                  <option value="ready" className="bg-black">Готов к выдаче</option>
+                  <option value="done" className="bg-black">Выдан</option>
+                  <option value="cancelled" className="bg-black">Отменён</option>
+                </select>
+              </td>
+            </tr>
+          ))}
+        </ModuleTable>
+      )}
+
+      {modal === "product" && <ProductAddModal busy={busy} role={role} onClose={() => setModal(null)} onSubmit={createProduct} />}
       {modal === "sale" && <SaleModal busy={busy} products={products} onClose={() => setModal(null)} onSubmit={createSale} />}
       {modal === "receipt" && <ReceiptModal busy={busy} products={products} onClose={() => setModal(null)} onSubmit={createReceipt} />}
+      {modal === "writeoff" && <WriteoffModal busy={busy} products={products} onClose={() => setModal(null)} onSubmit={createWriteoff} />}
     </OwnerScreen>
   );
 }
@@ -3954,20 +4294,78 @@ function ModuleTable({ cols, empty, children }: { cols: string[]; empty: boolean
   );
 }
 
-function ProductAddModal({ busy, onClose, onSubmit }: any) {
-  const [f, setF] = useState<any>({ name: "", category: "Мерч", sku: "", salePrice: "", costPrice: "", minStock: "", comment: "" });
+function ProductAddModal({ busy, onClose, onSubmit, role = "owner" }: any) {
+  const categories = useSettingsList("product_category", role);
+  const [f, setF] = useState<any>({ name: "", category: "", sku: "", salePrice: "", costPrice: "", minStock: "", comment: "", photoUrl: "" });
+  const [genBusy, setGenBusy] = useState(false);
+  const [genErr, setGenErr] = useState<string | null>(null);
   const set = (k: string, v: any) => setF((s: any) => ({ ...s, [k]: v }));
+  useEffect(() => { if (!f.category && categories[0]) set("category", categories[0].label); /* eslint-disable-next-line */ }, [categories]);
+
+  const generatePhoto = async () => {
+    if (!f.name.trim()) { setGenErr("Сначала укажите название товара"); return; }
+    setGenBusy(true); setGenErr(null);
+    try {
+      const res = await fetch("/api/gemini/product-image", { method: "POST", headers: { "Content-Type": "application/json", "x-demo-role": role }, body: JSON.stringify({ name: f.name, category: f.category, description: f.comment }) });
+      if (!res.ok) { const t = await res.json().catch(() => ({})); throw new Error(t.error || "Генерация недоступна"); }
+      const d = await res.json();
+      if (d.dataUrl) set("photoUrl", d.dataUrl);
+    } catch (e: any) { setGenErr(e?.message || "Не удалось сгенерировать фото"); }
+    finally { setGenBusy(false); }
+  };
+
   const submit = () => { if (!f.name.trim()) return; onSubmit({ ...f, salePrice: Number(f.salePrice) || 0, costPrice: Number(f.costPrice) || 0, minStock: Number(f.minStock) || 0 }); };
   return (
     <ModalShell title="Новый товар" onClose={onClose}>
       <ModalInput label="Название *" value={f.name} onChange={(v) => set("name", v)} full />
-      <ModalInput label="Категория" value={f.category} onChange={(v) => set("category", v)} />
+      <label className="flex flex-col gap-1 text-[11px] text-slate-400">Категория
+        <select value={f.category} onChange={(e) => set("category", e.target.value)} className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white">
+          {categories.map((c) => <option key={c.id} value={c.label} className="bg-black">{c.label}</option>)}
+        </select></label>
       <ModalInput label="Артикул" value={f.sku} onChange={(v) => set("sku", v)} />
       <ModalInput label="Цена продажи, ₸" type="number" value={f.salePrice} onChange={(v) => set("salePrice", v)} />
       <ModalInput label="Закупочная цена, ₸" type="number" value={f.costPrice} onChange={(v) => set("costPrice", v)} />
       <ModalInput label="Минимальный остаток" type="number" value={f.minStock} onChange={(v) => set("minStock", v)} />
+      <div className="sm:col-span-2">
+        <div className="flex items-end gap-2">
+          <div className="flex-1"><ModalInput label="Фото товара (ссылка или сгенерировать)" value={f.photoUrl} onChange={(v) => set("photoUrl", v)} placeholder="https://…" full /></div>
+          <button type="button" onClick={generatePhoto} disabled={genBusy} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border border-[#C5A059]/40 px-3 py-2 text-xs font-black text-[#C5A059] hover:bg-[#C5A059]/10 disabled:opacity-50">
+            <Sparkles className="h-4 w-4" /> {genBusy ? "Генерация…" : "Сгенерировать"}
+          </button>
+        </div>
+        {genErr && <p className="mt-1 text-[11px] text-rose-400">{genErr}</p>}
+        {f.photoUrl ? <img src={f.photoUrl} alt="" className="mt-2 h-32 w-32 rounded-xl object-cover" /> : null}
+      </div>
       <ModalInput label="Комментарий" value={f.comment} onChange={(v) => set("comment", v)} full />
       <ModalActions busy={busy} onClose={onClose} onSubmit={submit} submitLabel="Создать" />
+    </ModalShell>
+  );
+}
+
+function WriteoffModal({ busy, products, onClose, onSubmit }: any) {
+  const REASONS = ["Брак", "Порча", "Потеря", "Подарок", "Витрина / образец", "Другое"];
+  const [productId, setProductId] = useState(products[0]?.id || "");
+  const [qty, setQty] = useState("1");
+  const [reason, setReason] = useState(REASONS[0]);
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [comment, setComment] = useState("");
+  const prod = products.find((p: any) => p.id === productId);
+  const submit = () => { if (!productId || Number(qty) <= 0) return; onSubmit({ productId, qty: Number(qty), reason, date, comment }); };
+  return (
+    <ModalShell title="Списание товара" onClose={onClose}>
+      <label className="flex flex-col gap-1 text-[11px] text-slate-400 sm:col-span-2">Товар
+        <select value={productId} onChange={(e) => setProductId(e.target.value)} className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white">
+          {products.map((p: any) => <option key={p.id} value={p.id} className="bg-black">{p.name} · ост. {p.stock}</option>)}
+        </select></label>
+      <ModalInput label="Количество" type="number" value={qty} onChange={setQty} />
+      <label className="flex flex-col gap-1 text-[11px] text-slate-400">Причина
+        <select value={reason} onChange={(e) => setReason(e.target.value)} className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white">
+          {REASONS.map((r) => <option key={r} value={r} className="bg-black">{r}</option>)}
+        </select></label>
+      <ModalInput label="Дата" type="date" value={date} onChange={setDate} />
+      <ModalInput label="Комментарий" value={comment} onChange={setComment} full />
+      {prod && Number(qty) > prod.stock ? <div className="sm:col-span-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">Списываемое количество больше остатка ({prod.stock}).</div> : null}
+      <ModalActions busy={busy} onClose={onClose} onSubmit={submit} submitLabel="Списать" />
     </ModalShell>
   );
 }
@@ -4022,8 +4420,8 @@ function ReceiptModal({ busy, products, onClose, onSubmit }: any) {
 
 function ModalShell({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
-      <div className="w-full max-w-lg rounded-[1.75rem] border border-white/10 bg-[#0f0f0f] p-6" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-md" onClick={onClose}>
+      <div className="w-full max-w-lg max-h-[92vh] overflow-y-auto rounded-[1.75rem] border border-white/10 bg-[#0f0f0f] p-6" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between"><h3 className="text-lg font-black text-white">{title}</h3><button onClick={onClose} className="text-slate-400 hover:text-white"><X className="h-5 w-5" /></button></div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">{children}</div>
       </div>
@@ -5116,9 +5514,149 @@ function OwnerAiView({ branches, renewals, debt, aiResult, aiGenerating, onTrigg
   );
 }
 
+// Маркетинг: возврат учеников из архива. Список архива + шаблон приглашения +
+// массовая отправка в WhatsApp (по образцу массовых действий «Учеников»).
+function MarketingView({ studentArchive = [], branches = [] }: { studentArchive?: any[]; branches?: Branch[] }) {
+  const [archive, setArchive] = useState<any[]>(studentArchive);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [branchFilter, setBranchFilter] = useState("");
+  const [template, setTemplate] = useState("Здравствуйте, {имя}! Это студия кавказского танца «Эхо Гор». Мы готовим новый набор и будем рады видеть вас снова — приходите на бесплатное пробное занятие. Записать вас?");
+  const [sent, setSent] = useState<Set<string>>(new Set());
+
+  // Подтянуть свежий архив (на случай, если открыли вкладку напрямую).
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/mvp/students/archive", { headers: { "x-demo-role": "owner" } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (alive && d) setArchive(d.students || []); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  const branchName = (id?: string) => branches.find((b) => b.id === id)?.name || "—";
+  const list = archive.filter((a) => !branchFilter || a.branchId === branchFilter);
+  const toggle = (id: string) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const allSelected = list.length > 0 && list.every((a) => selected.has(a.id));
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(list.map((a) => a.id)));
+
+  const phoneOf = (a: any) => (a.phone || a.parentPhone || "").replace(/[^\d+]/g, "");
+  const msgFor = (a: any) => encodeURIComponent(template.replace(/\{имя\}/g, (a.name || "").split(" ")[0] || a.name || ""));
+  const waLink = (a: any) => { const p = phoneOf(a).replace(/^\+/, ""); return p ? `https://wa.me/${p}?text=${msgFor(a)}` : ""; };
+
+  const [autoBusy, setAutoBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const markSent = (targets: any[]) => setSent((s) => { const n = new Set(s); targets.forEach((a) => n.add(a.id)); return n; });
+
+  const sendSelected = () => {
+    const targets = list.filter((a) => selected.has(a.id) && phoneOf(a));
+    targets.slice(0, 10).forEach((a) => { const url = waLink(a); if (url) window.open(url, "_blank"); });
+    markSent(targets);
+    setNote(`Открыто диалогов: ${Math.min(10, targets.length)}${targets.length > 10 ? ` из ${targets.length}` : ""}.`);
+  };
+
+  // Автоматическая отправка через WhatsApp API (если настроен на сервере),
+  // иначе откатываемся на ручное открытие диалогов.
+  const sendAuto = async () => {
+    const targets = list.filter((a) => selected.has(a.id) && phoneOf(a));
+    if (targets.length === 0) return;
+    setAutoBusy(true); setNote(null);
+    try {
+      const res = await fetch("/api/mvp/marketing/broadcast", {
+        method: "POST", headers: { "Content-Type": "application/json", "x-demo-role": "owner" },
+        body: JSON.stringify({ template, recipients: targets.map((a) => ({ phone: phoneOf(a), name: a.name })) }),
+      });
+      if (res.status === 503) { setNote("Авторассылка не подключена (нужен WhatsApp Business API). Открываю диалоги вручную."); sendSelected(); return; }
+      if (!res.ok) { const t = await res.json().catch(() => ({})); throw new Error(t.error || "Ошибка отправки"); }
+      const d = await res.json();
+      markSent(targets);
+      setNote(`Автоматически отправлено: ${d.sent} из ${d.total}.`);
+    } catch (e: any) { setNote(e?.message || "Не удалось отправить"); }
+    finally { setAutoBusy(false); }
+  };
+
+  return (
+    <OwnerScreen title="Маркетинг и возврат" subtitle="Реактивация ушедших учеников из архива: персональные приглашения вернуться на занятия. Шаблон с подстановкой имени и массовая отправка в WhatsApp.">
+      <section className="rounded-[1.75rem] border border-white/10 bg-gradient-to-br from-[#141414] to-black p-5">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <StatPill label="В архиве учеников" value={archive.length} tone="white" />
+          <StatPill label="Выбрано для рассылки" value={selected.size} tone="gold" />
+          <StatPill label="Отправлено приглашений" value={sent.size} tone="emerald" />
+        </div>
+        <label className="mt-4 block">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Шаблон приглашения (подстановка: {"{имя}"})</span>
+          <textarea value={template} onChange={(e) => setTemplate(e.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#C5A059]/50" />
+        </label>
+        <p className="mt-2 text-[11px] text-slate-500">Массовая отправка открывает диалоги WhatsApp с готовым текстом (до 10 за раз). Для полностью автоматической рассылки подключается WhatsApp Business API.</p>
+      </section>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)} className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white">
+          <option value="" className="bg-black">Все филиалы</option>
+          {branches.map((b) => <option key={b.id} value={b.id} className="bg-black">{b.name}</option>)}
+        </select>
+        <button onClick={toggleAll} className="rounded-xl border border-white/10 px-3 py-2 text-xs font-bold text-slate-300 hover:text-white">{allSelected ? "Снять выбор" : "Выбрать всех"}</button>
+        <button onClick={sendSelected} disabled={selected.size === 0} className="inline-flex items-center gap-2 rounded-xl bg-[#25D366] px-4 py-2 text-xs font-black text-black disabled:opacity-40">
+          <Send className="h-4 w-4" /> Открыть в WhatsApp ({selected.size})
+        </button>
+        <button onClick={sendAuto} disabled={selected.size === 0 || autoBusy} className="inline-flex items-center gap-2 rounded-xl border border-[#25D366]/40 px-4 py-2 text-xs font-black text-[#25D366] hover:bg-[#25D366]/10 disabled:opacity-40">
+          <Send className="h-4 w-4" /> {autoBusy ? "Отправка…" : "Отправить автоматически"}
+        </button>
+      </div>
+      {note && <p className="text-xs text-slate-400">{note}</p>}
+
+      <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.02]">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px] text-left text-sm">
+            <thead className="border-b border-white/10 bg-white/[0.03] text-[10px] uppercase tracking-wider text-slate-500">
+              <tr>
+                <th className="px-3 py-3"><input type="checkbox" checked={allSelected} onChange={toggleAll} /></th>
+                <th className="px-4 py-3 font-bold">Ученик</th>
+                <th className="px-4 py-3 font-bold">Филиал</th>
+                <th className="px-4 py-3 font-bold">Телефон</th>
+                <th className="px-4 py-3 font-bold">Почему ушёл</th>
+                <th className="px-4 py-3 font-bold">В архиве с</th>
+                <th className="px-4 py-3 font-bold">Действие</th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500">Архив пуст — приглашать пока некого.</td></tr>}
+              {list.map((a) => (
+                <tr key={a.id} className={`border-b border-white/5 ${sent.has(a.id) ? "bg-emerald-500/[0.04]" : ""}`}>
+                  <td className="px-3 py-3"><input type="checkbox" checked={selected.has(a.id)} onChange={() => toggle(a.id)} /></td>
+                  <td className="px-4 py-3 font-bold text-white">{a.name}{sent.has(a.id) && <span className="ml-2 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-bold text-emerald-300">приглашён</span>}</td>
+                  <td className="px-4 py-3 text-slate-400">{branchName(a.branchId)}</td>
+                  <td className="px-4 py-3 text-slate-300">{a.phone || a.parentPhone || "—"}</td>
+                  <td className="px-4 py-3 text-slate-400">{a.archiveReason || "—"}</td>
+                  <td className="px-4 py-3 text-slate-500">{a.archivedAt ? new Date(a.archivedAt).toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric" }) : "—"}</td>
+                  <td className="px-4 py-3">
+                    {phoneOf(a)
+                      ? <a href={waLink(a)} target="_blank" rel="noreferrer" onClick={() => setSent((s) => new Set(s).add(a.id))} className="inline-flex items-center gap-1.5 rounded-lg border border-[#25D366]/40 px-2.5 py-1 text-[11px] font-bold text-[#25D366] hover:bg-[#25D366]/10"><Send className="h-3.5 w-3.5" /> WhatsApp</a>
+                      : <span className="text-[11px] text-slate-600">нет телефона</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </OwnerScreen>
+  );
+}
+
 function NetworkSettingsView({ branches, teachers }: { branches: Branch[]; teachers: Teacher[] }) {
   return (
-    <OwnerScreen title="Настройки сети" subtitle="Филиалы, роли, права доступа, тарифы, шаблоны, audit log, интеграции и лицензия.">
+    <OwnerScreen title="Настройки сети" subtitle="Справочники, филиалы, роли, права доступа, тарифы, шаблоны, audit log, интеграции и лицензия.">
+      {/* Настраиваемые справочники: владелец добавляет значения, остальные выбирают из готового. */}
+      <section className="rounded-[1.75rem] border border-white/10 bg-gradient-to-br from-[#141414] to-black p-5">
+        <h3 className="text-sm font-black uppercase tracking-wider text-white">Справочники</h3>
+        <p className="mt-1 text-xs text-slate-500">Эти списки используются в выпадающих полях. Управленцы и администраторы выбирают из готовых значений.</p>
+        <div className="mt-4 grid gap-4 lg:grid-cols-3">
+          <SettingsListEditor kind="performance_type" title="Типы выступлений" />
+          <SettingsListEditor kind="product_category" title="Категории товаров" />
+          <SettingsListEditor kind="group_level" title="Уровни групп" />
+        </div>
+      </section>
+
       <div className="grid gap-4 lg:grid-cols-2">
         <ExecutivePanel icon={<Shield />} title="RBAC владельца" text="Полный доступ к сети, филиалам, финансам, ролям, настройкам, лицензии и audit log." />
         <ExecutivePanel icon={<Settings />} title="Глобальные настройки" text={`Филиалов: ${branches.length}. Преподавателей: ${teachers.length}. Управление тарифами и шаблонами уведомлений.`} />
@@ -5126,6 +5664,58 @@ function NetworkSettingsView({ branches, teachers }: { branches: Branch[]; teach
         <ExecutivePanel icon={<Activity />} title="Audit log сети" text="Все действия владельца, руководителей филиалов, администраторов и преподавателей фиксируются." />
       </div>
     </OwnerScreen>
+  );
+}
+
+// Редактор одного справочника (settings_lists). Владелец добавляет/удаляет значения.
+function SettingsListEditor({ kind, title }: { kind: string; title: string }) {
+  const [items, setItems] = useState<{ id: string; label: string }[]>([]);
+  const [isDefault, setIsDefault] = useState(true);
+  const [val, setVal] = useState("");
+  const [busy, setBusy] = useState(false);
+  const jhdr = { headers: { "Content-Type": "application/json", "x-demo-role": "owner" } };
+
+  const load = async () => {
+    try {
+      const r = await fetch(`/api/mvp/settings/lists?kind=${kind}`, { headers: { "x-demo-role": "owner" } });
+      if (!r.ok) return;
+      const d = await r.json();
+      setItems(d.items || []); setIsDefault(!!d.isDefault);
+    } catch { /* пусто */ }
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [kind]);
+
+  const add = async () => {
+    const label = val.trim();
+    if (!label) return;
+    setBusy(true);
+    try { await fetch(`/api/mvp/settings/lists`, { method: "POST", ...jhdr, body: JSON.stringify({ kind, label }) }); setVal(""); await load(); }
+    finally { setBusy(false); }
+  };
+  const remove = async (id: string) => {
+    if (id.startsWith("def:")) return; // дефолты не удаляются — добавьте свои значения
+    setBusy(true);
+    try { await fetch(`/api/mvp/settings/lists/${id}`, { method: "DELETE", headers: { "x-demo-role": "owner" } }); await load(); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+      <p className="text-[11px] font-black uppercase tracking-wider text-slate-400">{title}</p>
+      {isDefault && <p className="mt-1 text-[10px] text-slate-600">Показаны значения по умолчанию. Добавьте своё — список станет настраиваемым.</p>}
+      <div className="mt-3 space-y-1.5">
+        {items.map((it) => (
+          <div key={it.id} className="flex items-center justify-between gap-2 rounded-lg border border-white/5 bg-black/30 px-3 py-1.5">
+            <span className="text-sm text-slate-200">{it.label}</span>
+            {!it.id.startsWith("def:") && <button onClick={() => remove(it.id)} disabled={busy} className="text-slate-500 hover:text-rose-400"><Trash2 className="h-3.5 w-3.5" /></button>}
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 flex gap-2">
+        <input value={val} onChange={(e) => setVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} placeholder="Новое значение" className="flex-1 rounded-lg border border-white/10 bg-black/40 px-2.5 py-1.5 text-sm text-white outline-none focus:border-[#C5A059]/50" />
+        <button onClick={add} disabled={busy || !val.trim()} className="rounded-lg bg-[#C5A059] px-3 py-1.5 text-xs font-black text-black disabled:opacity-40">Добавить</button>
+      </div>
+    </div>
   );
 }
 

@@ -107,6 +107,7 @@ interface AdminEduErpWorkspaceProps {
   onCreateStudent?: (data: any) => Promise<string | boolean | null>;
   onUpdateStudent?: (id: string, data: any) => Promise<boolean>;
   onDeleteStudent?: (id: string) => Promise<boolean>;
+  onArchiveStudent?: (id: string, reason: string, comment: string) => Promise<boolean | void> | void;
   waitlist?: WaitlistEntry[];
   onAddToWaitlist?: (payload: { studentId: string; branchId?: string | null; groupId?: string | null; comment?: string | null }) => Promise<boolean>;
   onRemoveFromWaitlist?: (id: string, reason?: string) => Promise<boolean>;
@@ -179,6 +180,7 @@ export function AdminEduErpWorkspace({
   onCreateStudent,
   onUpdateStudent,
   onDeleteStudent,
+  onArchiveStudent,
   waitlist = [],
   onAddToWaitlist,
   onRemoveFromWaitlist,
@@ -202,6 +204,8 @@ export function AdminEduErpWorkspace({
   onJournalTask,
 }: AdminEduErpWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<AdminTab>("dashboard");
+  // Сворачивание бокового меню — раздел открывается на всю ширину.
+  const [navCollapsed, setNavCollapsed] = useState(false);
   const [search, setSearch] = useState("");
   const [branchFilter, setBranchFilter] = useState("all");
 
@@ -240,7 +244,7 @@ export function AdminEduErpWorkspace({
     <div className="min-h-full bg-[#080808] text-slate-200">
       <ToastHost />
       <div className="mx-auto flex max-w-[1560px] gap-0 lg:gap-5">
-        <aside className="sticky top-0 hidden h-[calc(100vh-64px)] w-76 shrink-0 border-r border-white/5 bg-[#0F0F0F] p-4 lg:block">
+        <aside className={`sticky top-0 hidden h-[calc(100vh-64px)] w-76 shrink-0 border-r border-white/5 bg-[#0F0F0F] p-4 ${navCollapsed ? "lg:hidden" : "lg:block"}`}>
           <section className="rounded-[2rem] border border-[#C5A059]/25 bg-gradient-to-br from-[#2B2315] to-[#111] p-4">
             <div className="flex items-center gap-3">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#C5A059] text-black">
@@ -272,6 +276,10 @@ export function AdminEduErpWorkspace({
         </aside>
 
         <main className="min-w-0 flex-1 px-4 pb-24 pt-4 md:px-6 md:pt-6 lg:pb-8">
+          <button onClick={() => setNavCollapsed((v) => !v)}
+            className="mb-3 hidden rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-slate-200 hover:bg-white/10 lg:inline-flex">
+            {navCollapsed ? "Меню ›" : "‹ Скрыть меню"}
+          </button>
           <header className="sticky top-0 z-30 -mx-4 mb-4 border-b border-white/5 bg-[#080808]/90 px-4 py-3 backdrop-blur-xl md:-mx-6 md:px-6 lg:hidden">
             <div className="flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#C5A059] text-black">
@@ -314,6 +322,7 @@ export function AdminEduErpWorkspace({
               onCreateStudent={onCreateStudent}
               onUpdateStudent={onUpdateStudent}
               onDeleteStudent={onDeleteStudent}
+              onArchiveStudent={onArchiveStudent}
               onOpenPayment={onOpenPayment}
               onSellSubscription={onSellSubscription}
               plans={subscriptionPlans}
@@ -440,7 +449,7 @@ function DashboardView({ branches, groups, students, teachers, todayRevenue, mon
 }
 
 // Раздел «Ученики» (ТЗ): полноценный реестр клиентской базы.
-function VisitorsView({ students, groups, branches, teachers, adminBranchId, onCreateStudent, onUpdateStudent, onDeleteStudent, onOpenPayment, onSellSubscription, plans, leadSources, waitlist, onAddToWaitlist, onRemoveFromWaitlist, onCreateLeadSource, onUpdateLeadSource, onDeleteLeadSource }: any) {
+function VisitorsView({ students, groups, branches, teachers, adminBranchId, onCreateStudent, onUpdateStudent, onDeleteStudent, onArchiveStudent, onOpenPayment, onSellSubscription, plans, leadSources, waitlist, onAddToWaitlist, onRemoveFromWaitlist, onCreateLeadSource, onUpdateLeadSource, onDeleteLeadSource }: any) {
   return (
     <StudentsRegistry
       students={students}
@@ -451,6 +460,7 @@ function VisitorsView({ students, groups, branches, teachers, adminBranchId, onC
       onCreateStudent={onCreateStudent}
       onUpdateStudent={onUpdateStudent}
       onDeleteStudent={onDeleteStudent}
+      onArchiveStudent={onArchiveStudent}
       onOpenPayment={onOpenPayment}
       onSellSubscription={onSellSubscription}
       plans={plans}

@@ -8,6 +8,7 @@
  * массовые действия, поиск, пагинация, окно «Новый ученик», лист ожидания.
  */
 import React, { useEffect, useMemo, useState } from "react";
+import { ArchiveReasonModal } from "./ArchiveReasonModal";
 import {
   Search,
   Plus,
@@ -100,6 +101,8 @@ export interface StudentsRegistryProps {
   onCreateStudent?: (data: StudentInput) => Promise<string | boolean | null>;
   onUpdateStudent?: (id: string, data: StudentInput) => Promise<boolean>;
   onDeleteStudent?: (id: string) => Promise<boolean | void> | void;
+  /** Перевод в архив с обязательными комментариями (причина + свободный). */
+  onArchiveStudent?: (id: string, reason: string, comment: string) => Promise<boolean | void> | void;
   onOpenPayment?: (student: Student) => void;
   plans?: SubscriptionPlan[];
   onSellSubscription?: (payload: SellSubscriptionInput) => Promise<boolean> | boolean;
@@ -186,6 +189,7 @@ export default function StudentsRegistry({
   onCreateStudent,
   onUpdateStudent,
   onDeleteStudent,
+  onArchiveStudent,
   onOpenPayment,
   plans = [],
   onSellSubscription,
@@ -217,6 +221,9 @@ export default function StudentsRegistry({
   const waitlistStudentIds = useMemo(() => new Set(activeWaitlist.map((w) => w.studentId)), [activeWaitlist]);
 
   const [view, setView] = useState<"registry" | "waitlist">("registry");
+  // Модалка перевода в архив (массово). Хранит выбранных учеников и busy-состояние.
+  const [archiveModal, setArchiveModal] = useState<Student[] | null>(null);
+  const [archiveBusy, setArchiveBusy] = useState(false);
 
   const [segment, setSegment] = useState<SegmentId>("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -441,14 +448,23 @@ export default function StudentsRegistry({
     );
   };
 
-  const massArchive = async () => {
-    if (!onDeleteStudent) return;
-    if (!window.confirm(`Перевести в архив ${selectedStudents.length} учеников? История сохранится.`)) return;
-    for (const s of selectedStudents) {
-      applyOverride(s.id, { status: "left" });
-      await onDeleteStudent(s.id);
+  // Открыть модалку архива для выбранных (комментарии обязательны).
+  const massArchive = () => {
+    if (!onArchiveStudent || selectedStudents.length === 0) return;
+    setArchiveModal(selectedStudents);
+  };
+
+  const confirmArchive = async (reason: string, comment: string) => {
+    if (!onArchiveStudent || !archiveModal) return;
+    setArchiveBusy(true);
+    let ok = 0;
+    for (const s of archiveModal) {
+      const res = await onArchiveStudent(s.id, reason, comment);
+      if (res !== false) ok += 1;
     }
-    setMassNote(`В архив переведено: ${selectedStudents.length}`);
+    setArchiveBusy(false);
+    setArchiveModal(null);
+    setMassNote(`В архив переведено: ${ok}`);
     clearSelection();
   };
 
@@ -800,7 +816,7 @@ export default function StudentsRegistry({
               )}
               <MassBtn icon={MessageCircle} label="WhatsApp" onClick={massWhatsApp} />
               <MassBtn icon={Download} label="Excel" onClick={() => exportCsv(selectedStudents)} />
-              {onDeleteStudent && <MassBtn icon={Archive} label="В архив" tone="rose" onClick={massArchive} />}
+              {onArchiveStudent && <MassBtn icon={Archive} label="В архив" tone="rose" onClick={massArchive} />}
               <button onClick={clearSelection} className="ml-auto rounded-xl px-3 py-1.5 text-xs font-bold text-slate-500 hover:bg-white">Снять выделение</button>
             </div>
           )}
@@ -1000,6 +1016,16 @@ export default function StudentsRegistry({
             </div>
           </div>
         </div>
+      )}
+
+      {archiveModal && (
+        <ArchiveReasonModal
+          title={archiveModal.length === 1 ? `В архив: ${archiveModal[0].name}` : `В архив: ${archiveModal.length} учеников`}
+          subtitle="Укажите причину ухода и комментарий"
+          busy={archiveBusy}
+          onConfirm={confirmArchive}
+          onCancel={() => setArchiveModal(null)}
+        />
       )}
     </div>
   );

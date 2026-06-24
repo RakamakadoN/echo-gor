@@ -7,7 +7,7 @@
  * Каждая со сворачиваемым дашбордом (состояние запоминается в localStorage),
  * таблицей, модалками создания/редактирования и карточками-деталями.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Building2, Users, UserCog, DoorOpen, CalendarDays, Plus, Pencil, Trash2, X,
   Eye, ChevronDown, ChevronUp, TrendingUp, TrendingDown, Coins, Percent,
@@ -465,8 +465,21 @@ function GroupsTab({ groupData, canManage, rawBranches, teachers, halls, student
   const [fHall, setFHall] = useState("");
   const [fLevel, setFLevel] = useState("");
   const [fFill, setFFill] = useState("");
+  // Настраиваемые уровни групп из «Настроек» (settings_lists). Если своих нет — дефолты.
+  const [settingsLevels, setSettingsLevels] = useState<string[]>([]);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/mvp/settings/lists?kind=group_level", { headers: { "x-demo-role": "owner" } })
+      .then((r) => (r.ok ? r.json() : { items: [] }))
+      .then((d) => { if (alive) setSettingsLevels((d.items || []).map((i: any) => i.label)); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
-  const levels = useMemo(() => Array.from(new Set([...LEVELS_DEFAULT, ...groupData.map((x: any) => x.g.level).filter(Boolean)])), [groupData]);
+  const levels = useMemo(
+    () => Array.from(new Set([...(settingsLevels.length ? settingsLevels : LEVELS_DEFAULT), ...groupData.map((x: any) => x.g.level).filter(Boolean)])),
+    [groupData, settingsLevels]
+  );
 
   const filtered = groupData.filter(({ g, fill }: any) => {
     if (fBranch && g.branchId !== fBranch) return false;

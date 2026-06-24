@@ -270,6 +270,10 @@ function mapDbStudent(row: any, attendanceByStudent: Map<string, Record<string, 
     returned: Boolean(row.returned_at),
     payLater: Boolean(row.pay_later),
     payPromiseDate: row.pay_promise_date || null,
+    archivedAt: row.archived_at || null,
+    archiveReason: row.archive_reason || null,
+    archiveComment: row.archive_comment || null,
+    archivedBy: row.archived_by || null,
     gender: row.gender || null,
     birthday: row.birthday || null,
     phone: row.phone || "",
@@ -342,7 +346,7 @@ async function dbBootstrap(session: MvpSession) {
     supabaseFetch<any[]>("halls", `select=*`), // Halls are filtered by branch in mapping
     supabaseFetch<any[]>("users", `select=*&${orgFilter}`),
     supabaseFetch<any[]>("groups", `select=*&${orgFilter}`),
-    supabaseFetch<any[]>("students", `select=*&${orgFilter}&status=neq.archived&deletion_requested_at=is.null`),
+    supabaseFetch<any[]>("students", `select=*&${orgFilter}&status=neq.archived&deletion_requested_at=is.null&archived_at=is.null`),
     supabaseFetch<any[]>("payments", `select=*&${orgFilter}&order=paid_at.desc`),
     supabaseFetch<any[]>("schedule_lessons", `select=*&order=starts_at.desc`), // Cross-org lessons are unlikely but we keep mapping safe
     supabaseFetch<any[]>("attendance", "select=*"),
@@ -614,7 +618,7 @@ export function registerMvpApi(app: express.Express) {
         supabaseFetch<any[]>("student_status_events", `select=to_status&${orgFilter}&occurred_at=gte.${dayStart(yesterday)}&occurred_at=lte.${dayEnd(yesterday)}`),
         supabaseFetch<any[]>("invoices", `select=due_on,status&${orgFilter}&due_on=lt.${today}&status=in.(sent,overdue)`),
         supabaseFetch<any[]>("student_subscriptions", `select=student_id,branch_id,starts_on&starts_on=gt.${today}`),
-        supabaseFetch<any[]>("students", `select=id,branch_id,birthday&${orgFilter}&status=neq.archived`)
+        supabaseFetch<any[]>("students", `select=id,branch_id,birthday&${orgFilter}&status=neq.archived&archived_at=is.null`)
       ]);
       const snapshots = snapsRaw.map((s) => ({
         periodMonth: toDate(s.period_month), branchId: s.branch_id,
@@ -679,7 +683,7 @@ export function registerMvpApi(app: express.Express) {
       const periodMonth = `${monthPrefix}-01`;
       const [branches, students, payments, subs] = await Promise.all([
         supabaseFetch<any[]>("branches", `select=id&${orgFilter}&status=neq.archived`),
-        supabaseFetch<any[]>("students", `select=id,branch_id,status,created_at&${orgFilter}&status=neq.archived`),
+        supabaseFetch<any[]>("students", `select=id,branch_id,status,created_at&${orgFilter}&status=neq.archived&archived_at=is.null`),
         supabaseFetch<any[]>("payments", `select=amount,branch_id,paid_at,status&${orgFilter}`),
         supabaseFetch<any[]>("student_subscriptions", `select=branch_id,status`)
       ]);
@@ -1015,6 +1019,91 @@ export function registerMvpApi(app: express.Express) {
       res.status(400).json({ error: error.message || "Не удалось удалить ученика" });
     }
   });
+
+  // ===== Архив учеников (сохранение базы для маркетинга) =====
+  // В архив переводят владелец / руководитель / администратор (в рамках своих филиалов).
+  // Два комментария обязательны: «Почему он ушёл?» (reason) и свободный (comment).
+  // Данные ученика сохраняются; ученик исчезает из активного реестра, но виден в Архиве.
+  app.post("/api/mvp/students/:id/archive", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const reason = (req.body && String(req.body.reason || "").trim()) || "";
+    const comment = (req.body && String(req.body.comment || "").trim()) || "";
+    if (!reason) return res.status(400).json({ error: "Укажите причину ухода ученика" });
+    if (!comment) return res.status(400).json({ error: "Укажите комментарий" });
+    const existing = await supabaseFetch<any[]>(
+      "students",
+      `select=id,branch_id&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`
+    );
+    if (!existing[0]) return res.status(404).json({ error: "Ученик не найден" });
+    if (!canSeeBranch(session, existing[0].branch_id)) {
+      return res.status(403).json({ error: "Branch access denied" });
+    }
+    const archivedBy = ({ owner: "Владелец", branch_manager: "Руководитель филиала", admin: "Администратор", teacher: "Преподаватель" } as Record<string, string>)[session.role] || session.role;
+    const rows = await supabaseFetch<any[]>(
+      "students",
+      `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
+      { method: "PATCH", body: JSON.stringify({
+        archived_at: new Date().toISOString(),
+        archive_reason: reason,
+        archive_comment: comment,
+        archived_by: archivedBy,
+        // если ученик был в корзине — заявка закрывается переводом в архив
+        deletion_requested_at: null,
+        deletion_requested_by: null,
+        deletion_reason: null
+      }) }
+    );
+    res.json({ student: rows[0], archived: true });
+  }));
+
+  // Вернуть ученика из архива в активный реестр (очищаем поля архива).
+  app.post("/api/mvp/students/:id/unarchive", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const existing = await supabaseFetch<any[]>(
+      "students",
+      `select=id,branch_id&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`
+    );
+    if (!existing[0]) return res.status(404).json({ error: "Ученик не найден" });
+    if (!canSeeBranch(session, existing[0].branch_id)) {
+      return res.status(403).json({ error: "Branch access denied" });
+    }
+    const rows = await supabaseFetch<any[]>(
+      "students",
+      `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
+      { method: "PATCH", body: JSON.stringify({
+        archived_at: null, archive_reason: null, archive_comment: null, archived_by: null
+      }) }
+    );
+    if (!rows[0]) return res.status(404).json({ error: "Ученик не найден" });
+    res.json({ student: rows[0], restored: true });
+  }));
+
+  // Список архива. Владелец видит всю сеть, остальные — свои филиалы.
+  app.get("/api/mvp/students/archive", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const rows = await supabaseFetch<any[]>(
+      "students",
+      `select=*&organization_id=eq.${session.organizationId}&archived_at=not.is.null&order=archived_at.desc`
+    );
+    const students = rows
+      .filter((row) => canSeeBranch(session, row.branch_id))
+      .map((row) => ({
+        id: row.id,
+        name: [row.first_name, row.last_name].filter(Boolean).join(" ") || row.full_name || "Ученик",
+        branchId: row.branch_id,
+        phone: row.phone || row.parent_phone || "",
+        parentName: row.parent_name || "",
+        parentPhone: row.parent_phone || "",
+        archivedAt: row.archived_at,
+        archivedBy: row.archived_by || "—",
+        archiveReason: row.archive_reason || "",
+        archiveComment: row.archive_comment || ""
+      }));
+    res.json({ students });
+  }));
 
   app.post("/api/mvp/payments", async (req, res) => {
     const session = getSession(req);
@@ -2938,6 +3027,7 @@ export function registerMvpApi(app: express.Express) {
   const perfOut = (perf: any, payments: any[]) => {
     const paid = payments.reduce((s, p) => s + Number(p.amount), 0);
     const price = Number(perf.price) || 0;
+    const expense = Number(perf.expense ?? 0) || 0;
     const cancelled = (perf.status || perf.status) === "cancelled";
     const status = cancelled ? "cancelled" : paid <= 0 ? "planned" : paid >= price && price > 0 ? "paid" : "partial";
     return {
@@ -2948,7 +3038,12 @@ export function registerMvpApi(app: express.Express) {
       eventDate: perf.eventDate ?? perf.event_date,
       eventTime: perf.eventTime ?? perf.event_time ?? null,
       type: perf.type || "basic",
+      typeLabel: perf.typeLabel ?? perf.type_label ?? null,
+      performersCount: perf.performersCount ?? perf.performers_count ?? null,
+      paymentMethod: perf.paymentMethod ?? perf.payment_method ?? null,
       price, paid, outstanding: Math.max(0, price - paid),
+      expense,
+      netProfit: price - expense, // чистая прибыль (на счёт поступает только она)
       status,
       comment: perf.comment ?? null,
       branchId: perf.branchId ?? perf.branch_id ?? null,
@@ -3003,6 +3098,9 @@ export function registerMvpApi(app: express.Express) {
     const inCur = list.filter((p) => inRange(p.eventDate, r.cur));
     const count = inCur.length;
     const grossCur = inCur.reduce((s, p) => s + p.price, 0);
+    const expenseCur = inCur.reduce((s, p) => s + (p.expense || 0), 0);
+    const netCur = grossCur - expenseCur; // чистая прибыль за период
+    const performersCur = inCur.reduce((s, p) => s + (p.performersCount || 0), 0);
     const avgCheck = count > 0 ? Math.round(grossCur / count) : 0;
     const unpaid = list.filter((p) => p.outstanding > 0);
     const outstanding = unpaid.reduce((s, p) => s + p.outstanding, 0);
@@ -3014,6 +3112,7 @@ export function registerMvpApi(app: express.Express) {
     res.json({
       revenue: { total: curRev, momPct: pctDelta(curRev, prevRev), yoyPct: pctDelta(curRev, yoyRev) },
       count, avgCheck, unpaidCount: unpaid.length, outstanding, byMonth,
+      gross: grossCur, expense: expenseCur, netProfit: netCur, performers: performersCur,
     });
   }));
 
@@ -3033,24 +3132,41 @@ export function registerMvpApi(app: express.Express) {
     if (session.role !== "owner") return res.status(403).json({ error: "Создавать может только владелец" });
     const p = req.body || {};
     if (!String(p.clientName || "").trim()) return res.status(400).json({ error: "Укажите клиента" });
-    const type = PERF_TYPES.includes(p.type) ? p.type : "basic";
+    // Тип выступления теперь свободный (настраивается в «Настройках»); enum оставлен для совместимости.
+    const type = p.type ? String(p.type) : "basic";
+    const price = Number(p.price) || 0;
+    const expense = Number(p.expense) || 0;
+    const performersCount = p.performersCount != null && p.performersCount !== "" ? Math.max(0, parseInt(p.performersCount, 10)) || 0 : null;
+    const paymentMethod = p.paymentMethod || null;
+    const markPaid = p.status === "paid"; // владелец сразу отметил «Оплачено»
     if (!supabaseEnabled) {
+      const payments = markPaid && price > 0 ? [{ id: uid(), amount: price, paidDate: p.eventDate || todayStr(), method: paymentMethod || "cash", comment: null }] : [];
       const rec = { id: uid(), clientName: String(p.clientName).trim(), clientPhone: p.clientPhone || null, address: p.address || null,
-        eventDate: p.eventDate || todayStr(), eventTime: p.eventTime || null, type, price: Number(p.price) || 0,
-        status: "planned", comment: p.comment || null, branchId: p.branchId || session.dbBranchId || demoBranchAlmaty, payments: [] };
+        eventDate: p.eventDate || todayStr(), eventTime: p.eventTime || null, type, typeLabel: p.typeLabel || null, price, expense,
+        performersCount, paymentMethod, status: "planned", comment: p.comment || null, branchId: p.branchId || session.dbBranchId || demoBranchAlmaty, payments };
       mockPerformances.unshift(rec);
-      return res.status(201).json({ performance: perfOut(rec, []) });
+      return res.status(201).json({ performance: perfOut(rec, payments) });
     }
     const inserted = await supabaseFetch<any[]>("performances", "", {
       method: "POST",
       body: JSON.stringify({
         organization_id: session.organizationId, branch_id: p.branchId || session.dbBranchId || null,
         client_name: String(p.clientName).trim(), client_phone: p.clientPhone || null, address: p.address || null,
-        event_date: p.eventDate || todayStr(), event_time: p.eventTime || null, type, price: Number(p.price) || 0,
+        event_date: p.eventDate || todayStr(), event_time: p.eventTime || null, type, type_label: p.typeLabel || null,
+        price, expense, performers_count: performersCount, payment_method: paymentMethod,
         status: "planned", comment: p.comment || null,
       }),
     });
-    res.status(201).json({ performance: perfOut(inserted[0], []) });
+    // Если отмечено «Оплачено» — фиксируем поступление на всю стоимость (аналитика считает по поступлениям).
+    let pays: any[] = [];
+    if (markPaid && price > 0 && inserted[0]) {
+      await supabaseFetch("performance_payments", "", {
+        method: "POST",
+        body: JSON.stringify({ organization_id: session.organizationId, performance_id: inserted[0].id, amount: price, paid_date: p.eventDate || todayStr(), method: paymentMethod || "cash", comment: "Оплата при создании" }),
+      });
+      pays = await supabaseFetch<any[]>("performance_payments", `select=*&performance_id=eq.${inserted[0].id}`);
+    }
+    res.status(201).json({ performance: perfOut(inserted[0], pays) });
   }));
 
   // Изменить / отменить выступление (владелец)
@@ -3066,8 +3182,12 @@ export function registerMvpApi(app: express.Express) {
       if (p.address !== undefined) rec.address = p.address;
       if (p.eventDate !== undefined) rec.eventDate = p.eventDate;
       if (p.eventTime !== undefined) rec.eventTime = p.eventTime;
-      if (p.type !== undefined && PERF_TYPES.includes(p.type)) rec.type = p.type;
+      if (p.type !== undefined) rec.type = p.type;
+      if (p.typeLabel !== undefined) rec.typeLabel = p.typeLabel || null;
       if (p.price !== undefined) rec.price = Number(p.price) || 0;
+      if (p.expense !== undefined) rec.expense = Number(p.expense) || 0;
+      if (p.performersCount !== undefined) rec.performersCount = p.performersCount === "" || p.performersCount == null ? null : Math.max(0, parseInt(p.performersCount, 10)) || 0;
+      if (p.paymentMethod !== undefined) rec.paymentMethod = p.paymentMethod || null;
       if (p.status !== undefined) rec.status = p.status === "cancelled" ? "cancelled" : "planned";
       if (p.comment !== undefined) rec.comment = p.comment;
       return res.json({ performance: perfOut(rec, rec.payments || []) });
@@ -3078,8 +3198,12 @@ export function registerMvpApi(app: express.Express) {
     if (p.address !== undefined) patch.address = p.address || null;
     if (p.eventDate !== undefined) patch.event_date = p.eventDate;
     if (p.eventTime !== undefined) patch.event_time = p.eventTime || null;
-    if (p.type !== undefined && PERF_TYPES.includes(p.type)) patch.type = p.type;
+    if (p.type !== undefined) patch.type = p.type;
+    if (p.typeLabel !== undefined) patch.type_label = p.typeLabel || null;
     if (p.price !== undefined) patch.price = Number(p.price) || 0;
+    if (p.expense !== undefined) patch.expense = Number(p.expense) || 0;
+    if (p.performersCount !== undefined) patch.performers_count = p.performersCount === "" || p.performersCount == null ? null : Math.max(0, parseInt(p.performersCount, 10)) || 0;
+    if (p.paymentMethod !== undefined) patch.payment_method = p.paymentMethod || null;
     if (p.status !== undefined) patch.status = p.status === "cancelled" ? "cancelled" : "planned";
     if (p.comment !== undefined) patch.comment = p.comment || null;
     const rows = await supabaseFetch<any[]>("performances", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", body: JSON.stringify(patch) });
@@ -3142,13 +3266,95 @@ export function registerMvpApi(app: express.Express) {
     res.json({ performance: rows[0] ? perfOut(rows[0], pays) : null });
   }));
 
+  // ---------- НАСТРОЙКИ: СПРАВОЧНИКИ (settings_lists) ----------
+  // Настраиваемые списки: типы выступлений, категории товаров, уровни групп.
+  // Читают все рабочие роли (для выпадающих списков), правит только владелец.
+  const SETTINGS_KINDS = ["performance_type", "product_category", "group_level"];
+  const SETTINGS_DEFAULTS: Record<string, string[]> = {
+    performance_type: ["Базовый танец", "Танец с интерактивом", "Несколько номеров", "Индивидуальное выступление", "Другое"],
+    product_category: ["Мерч", "Форма", "Аксессуары", "Сувениры"],
+    group_level: ["Продолжающая группа", "Ансамбль", "Индивидуальные", "Мини-группа", "Другое"],
+  };
+  const mockSettings: any[] = [];
+
+  // Список значений справочника (с дефолтами, если своих ещё нет).
+  app.get("/api/mvp/settings/lists", ah(async (req, res) => {
+    const session = getSession(req);
+    const kind = String((req.query as any).kind || "");
+    if (!SETTINGS_KINDS.includes(kind)) return res.status(400).json({ error: "Неизвестный справочник" });
+    let rows: any[];
+    if (!supabaseEnabled) {
+      rows = mockSettings.filter((s) => s.kind === kind && s.organizationId === session.organizationId);
+    } else {
+      rows = await supabaseFetch<any[]>("settings_lists", `select=*&organization_id=eq.${session.organizationId}&kind=eq.${kind}&is_active=eq.true&order=sort_order.asc,created_at.asc`);
+    }
+    const items = rows.map((r) => ({ id: r.id, label: r.label, sortOrder: r.sort_order ?? r.sortOrder ?? 0 }));
+    const isDefault = items.length === 0;
+    const out = isDefault ? SETTINGS_DEFAULTS[kind].map((label, i) => ({ id: `def:${kind}:${i}`, label, sortOrder: i })) : items;
+    res.json({ kind, items: out, isDefault });
+  }));
+
+  // Добавить значение (владелец).
+  app.post("/api/mvp/settings/lists", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "Изменять справочники может только владелец" });
+    const kind = String((req.body || {}).kind || "");
+    const label = String((req.body || {}).label || "").trim();
+    if (!SETTINGS_KINDS.includes(kind)) return res.status(400).json({ error: "Неизвестный справочник" });
+    if (!label) return res.status(400).json({ error: "Укажите название" });
+    const sortOrder = Number((req.body || {}).sortOrder) || 0;
+    if (!supabaseEnabled) {
+      const rec = { id: uid(), organizationId: session.organizationId, kind, label, sort_order: sortOrder, is_active: true };
+      mockSettings.push(rec);
+      return res.status(201).json({ item: { id: rec.id, label, sortOrder } });
+    }
+    const inserted = await supabaseFetch<any[]>("settings_lists", "", {
+      method: "POST",
+      body: JSON.stringify({ organization_id: session.organizationId, kind, label, sort_order: sortOrder }),
+    });
+    res.status(201).json({ item: { id: inserted[0].id, label: inserted[0].label, sortOrder: inserted[0].sort_order } });
+  }));
+
+  // Изменить значение (владелец).
+  app.patch("/api/mvp/settings/lists/:id", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "Доступно только владельцу" });
+    const b = req.body || {};
+    if (!supabaseEnabled) {
+      const rec = mockSettings.find((s) => s.id === req.params.id);
+      if (rec) { if (b.label !== undefined) rec.label = String(b.label).trim(); if (b.sortOrder !== undefined) rec.sort_order = Number(b.sortOrder) || 0; if (b.isActive !== undefined) rec.is_active = !!b.isActive; }
+      return res.json({ ok: true });
+    }
+    const patch: Record<string, unknown> = {};
+    if (b.label !== undefined) patch.label = String(b.label).trim();
+    if (b.sortOrder !== undefined) patch.sort_order = Number(b.sortOrder) || 0;
+    if (b.isActive !== undefined) patch.is_active = !!b.isActive;
+    await supabaseFetch("settings_lists", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(patch) });
+    res.json({ ok: true });
+  }));
+
+  // Удалить значение (владелец).
+  app.delete("/api/mvp/settings/lists/:id", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "Доступно только владельцу" });
+    if (!supabaseEnabled) {
+      const i = mockSettings.findIndex((s) => s.id === req.params.id);
+      if (i >= 0) mockSettings.splice(i, 1);
+      return res.json({ ok: true });
+    }
+    await supabaseFetch("settings_lists", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+    res.json({ ok: true });
+  }));
+
   // ---------- ТОВАРЫ И СКЛАД ----------
   const prodOut = (pr: any) => ({
     id: pr.id, name: pr.name, category: pr.category ?? pr.category ?? null, sku: pr.sku ?? null,
     salePrice: Number(pr.salePrice ?? pr.sale_price) || 0, costPrice: Number(pr.costPrice ?? pr.cost_price) || 0,
     minStock: Number(pr.minStock ?? pr.min_stock) || 0, comment: pr.comment ?? null,
+    photoUrl: pr.photoUrl ?? pr.photo_url ?? null,
     branchId: pr.branchId ?? pr.branch_id ?? null,
   });
+  const mockWriteoffs: any[] = [];
   // Загрузить товары, продажи, поступления — из БД или mock — в едином виде.
   const loadProducts = async (session: MvpSession) => {
     if (!supabaseEnabled) {
@@ -3157,34 +3363,186 @@ export function registerMvpApi(app: express.Express) {
         products: filt(mockProducts).map(prodOut),
         sales: filt(mockSales).map((s) => ({ id: s.id, productId: s.productId, qty: s.qty, amount: Number(s.amount), method: s.method, soldBy: s.soldBy, date: s.saleDate, branchId: s.branchId })),
         receipts: filt(mockReceipts).map((r) => ({ id: r.id, productId: r.productId, qty: r.qty, costPrice: Number(r.costPrice) || 0, date: r.movementDate, comment: r.comment, branchId: r.branchId })),
+        writeoffs: filt(mockWriteoffs).map((w) => ({ id: w.id, productId: w.productId, qty: w.qty, reason: w.reason, date: w.writeoffDate, comment: w.comment, branchId: w.branchId })),
       };
     }
     const orgFilter = `organization_id=eq.${session.organizationId}`;
-    const [products, sales, receipts] = await Promise.all([
+    const [products, sales, receipts, writeoffs] = await Promise.all([
       supabaseFetch<any[]>("products", `select=*&${orgFilter}&order=name.asc`),
       supabaseFetch<any[]>("product_sales", `select=*&${orgFilter}&order=sale_date.desc`),
       supabaseFetch<any[]>("product_stock_movements", `select=*&${orgFilter}&order=movement_date.desc`),
+      supabaseFetch<any[]>("product_writeoffs", `select=*&${orgFilter}&order=writeoff_date.desc`).catch(() => [] as any[]),
     ]);
     return {
       products: products.map(prodOut),
       sales: sales.map((s) => ({ id: s.id, productId: s.product_id, qty: s.qty, amount: Number(s.amount), method: s.method, soldBy: s.sold_by, date: s.sale_date, branchId: s.branch_id })),
       receipts: receipts.map((r) => ({ id: r.id, productId: r.product_id, qty: r.qty, costPrice: Number(r.cost_price) || 0, date: r.movement_date, comment: r.comment, branchId: r.branch_id })),
+      writeoffs: writeoffs.map((w) => ({ id: w.id, productId: w.product_id, qty: w.qty, reason: w.reason, date: w.writeoff_date, comment: w.comment, branchId: w.branch_id })),
     };
   };
-  // Остаток по товару = Σ поступлений − Σ продаж.
-  const stockBalance = (productId: string, sales: any[], receipts: any[]) =>
+  // Остаток по товару = Σ поступлений − Σ продаж − Σ списаний.
+  const stockBalance = (productId: string, sales: any[], receipts: any[], writeoffs: any[] = []) =>
     receipts.filter((r) => r.productId === productId).reduce((s, r) => s + r.qty, 0)
-    - sales.filter((s) => s.productId === productId).reduce((acc, s) => acc + s.qty, 0);
+    - sales.filter((s) => s.productId === productId).reduce((acc, s) => acc + s.qty, 0)
+    - writeoffs.filter((w) => w.productId === productId).reduce((acc, w) => acc + w.qty, 0);
 
   // Справочник товаров (владелец, управляющий, администратор — для продажи)
   app.get("/api/mvp/products", ah(async (req, res) => {
     const session = getSession(req);
     if (session.role === "teacher") return res.status(403).json({ error: "Раздел недоступен" });
-    const { products, sales, receipts } = await loadProducts(session);
+    const { products, sales, receipts, writeoffs } = await loadProducts(session);
     res.json({ products: products.map((pr) => {
-      const balance = stockBalance(pr.id, sales, receipts);
+      const balance = stockBalance(pr.id, sales, receipts, writeoffs);
       return { ...pr, stock: balance, low: balance <= pr.minStock };
     }) });
+  }));
+
+  // Витрина магазина для родителя/ученика — товары с фото и ценой (вся сеть).
+  app.get("/api/mvp/shop", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) {
+      const items = mockProducts
+        .filter((p) => Number(p.salePrice) > 0)
+        .map((p) => ({ id: p.id, name: p.name, category: p.category || null, salePrice: Number(p.salePrice) || 0, photoUrl: p.photoUrl || null }));
+      return res.json({ products: items });
+    }
+    const rows = await supabaseFetch<any[]>("products", `select=*&organization_id=eq.${session.organizationId}&order=name.asc`);
+    const items = rows
+      .filter((r) => (r.is_active ?? true) && Number(r.sale_price) > 0)
+      .map((r) => ({ id: r.id, name: r.name, category: r.category || null, salePrice: Number(r.sale_price) || 0, photoUrl: r.photo_url || null }));
+    res.json({ products: items });
+  }));
+
+  // ===== Заказы из магазина =====
+  const ORDER_STATUSES = ["new", "confirmed", "ready", "done", "cancelled"];
+  const mockOrders: any[] = [];
+
+  // Оформить заказ (родитель/ученик/любая роль). Списание склада не происходит — это заявка.
+  app.post("/api/mvp/shop/orders", ah(async (req, res) => {
+    const session = getSession(req);
+    const b = req.body || {};
+    const rawItems: any[] = Array.isArray(b.items) ? b.items : [];
+    if (rawItems.length === 0) return res.status(400).json({ error: "Корзина пуста" });
+    // Текущие цены товаров.
+    let priceOf: (id: string) => { name: string; price: number; branchId?: string | null } | null;
+    if (!supabaseEnabled) {
+      priceOf = (id) => { const p = mockProducts.find((x) => x.id === id); return p ? { name: p.name, price: Number(p.salePrice) || 0, branchId: p.branchId } : null; };
+    } else {
+      const ids = rawItems.map((i) => i.productId).filter(Boolean);
+      const rows = ids.length ? await supabaseFetch<any[]>("products", `select=id,name,sale_price,branch_id&organization_id=eq.${session.organizationId}&id=in.(${ids.join(",")})`) : [];
+      priceOf = (id) => { const p = rows.find((x) => x.id === id); return p ? { name: p.name, price: Number(p.sale_price) || 0, branchId: p.branch_id } : null; };
+    }
+    const items = rawItems.map((i) => {
+      const meta = priceOf(i.productId);
+      const qty = Math.max(1, parseInt(i.qty, 10) || 1);
+      const price = meta?.price || 0;
+      return { productId: i.productId, productName: meta?.name || i.productName || "Товар", qty, price, amount: qty * price, branchId: meta?.branchId || null };
+    }).filter((i) => i.productName);
+    const total = items.reduce((s, i) => s + i.amount, 0);
+    const branchId = b.branchId || items[0]?.branchId || session.dbBranchId || null;
+
+    if (!supabaseEnabled) {
+      const order = { id: uid(), createdAt: new Date().toISOString(), status: "new", customerName: b.customerName || "", customerPhone: b.customerPhone || "", comment: b.comment || null, total, branchId, items };
+      mockOrders.unshift(order);
+      return res.status(201).json({ order });
+    }
+    const inserted = await supabaseFetch<any[]>("product_orders", "", {
+      method: "POST",
+      body: JSON.stringify({ organization_id: session.organizationId, branch_id: branchId, student_id: b.studentId || null, customer_name: b.customerName || null, customer_phone: b.customerPhone || null, status: "new", total, comment: b.comment || null }),
+    });
+    const orderId = inserted[0].id;
+    await supabaseFetch("product_order_items", "", {
+      method: "POST", headers: { Prefer: "return=minimal" },
+      body: JSON.stringify(items.map((i) => ({ order_id: orderId, product_id: i.productId || null, product_name: i.productName, qty: i.qty, price: i.price, amount: i.amount }))),
+    });
+    res.status(201).json({ order: { id: orderId, status: "new", total, items } });
+  }));
+
+  // Список заказов (владелец/управляющий/администратор).
+  app.get("/api/mvp/shop/orders", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!["owner", "branch_manager", "admin"].includes(session.role)) return res.status(403).json({ error: "Доступно владельцу, управляющему и администратору" });
+    if (!supabaseEnabled) {
+      const list = session.role === "owner" ? mockOrders : mockOrders.filter((o) => canSeeBranch(session, o.branchId));
+      return res.json({ orders: list });
+    }
+    const orders = await supabaseFetch<any[]>("product_orders", `select=*&organization_id=eq.${session.organizationId}&order=created_at.desc`);
+    const scoped = orders.filter((o) => canSeeBranch(session, o.branch_id));
+    const ids = scoped.map((o) => o.id);
+    const allItems = ids.length ? await supabaseFetch<any[]>("product_order_items", `select=*&order_id=in.(${ids.join(",")})`) : [];
+    res.json({ orders: scoped.map((o) => ({
+      id: o.id, createdAt: o.created_at, status: o.status, customerName: o.customer_name || "", customerPhone: o.customer_phone || "",
+      comment: o.comment || null, total: Number(o.total) || 0, branchId: o.branch_id,
+      items: allItems.filter((it) => it.order_id === o.id).map((it) => ({ productName: it.product_name, qty: it.qty, price: Number(it.price) || 0, amount: Number(it.amount) || 0 })),
+    })) });
+  }));
+
+  // Сменить статус заказа (владелец/управляющий/администратор).
+  app.patch("/api/mvp/shop/orders/:id", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!["owner", "branch_manager", "admin"].includes(session.role)) return res.status(403).json({ error: "Недостаточно прав" });
+    const status = String((req.body || {}).status || "");
+    if (!ORDER_STATUSES.includes(status)) return res.status(400).json({ error: "Неизвестный статус" });
+    if (!supabaseEnabled) {
+      const o = mockOrders.find((x) => x.id === req.params.id);
+      if (o) {
+        // При выдаче — раз создаём продажи по позициям (списываем склад, считаем выручку).
+        if (status === "done" && !o.fulfilledAt) {
+          o.fulfilledAt = new Date().toISOString();
+          for (const it of (o.items || [])) {
+            if (!it.productId) continue;
+            mockSales.unshift({ id: uid(), productId: it.productId, qty: it.qty, amount: it.amount, method: "transfer", soldBy: "Магазин (заказ)", saleDate: todayStr(), branchId: o.branchId || null });
+          }
+        }
+        o.status = status;
+      }
+      return res.json({ ok: true, status });
+    }
+    // Текущее состояние заказа (для одноразового списания при выдаче).
+    const cur = await supabaseFetch<any[]>("product_orders", `select=id,status,fulfilled_at,branch_id&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`);
+    if (!cur[0]) return res.status(404).json({ error: "Заказ не найден" });
+    const patch: Record<string, unknown> = { status, updated_at: new Date().toISOString() };
+    let fulfilled = false;
+    if (status === "done" && !cur[0].fulfilled_at) {
+      patch.fulfilled_at = new Date().toISOString();
+      const items = await supabaseFetch<any[]>("product_order_items", `select=*&order_id=eq.${req.params.id}`);
+      const sales = items.filter((it) => it.product_id).map((it) => ({
+        organization_id: session.organizationId, branch_id: cur[0].branch_id || null, product_id: it.product_id,
+        qty: it.qty, amount: Number(it.amount) || 0, method: "transfer", sold_by: "Магазин (заказ)", sale_date: todayStr(), comment: "Выдача заказа из магазина",
+      }));
+      if (sales.length) await supabaseFetch("product_sales", "", { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify(sales) });
+      fulfilled = true;
+    }
+    await supabaseFetch("product_orders", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(patch) });
+    res.json({ ok: true, status, fulfilled });
+  }));
+
+  // ===== Маркетинг: авторассылка приглашений (WhatsApp Cloud API) =====
+  // Работает, если заданы WHATSAPP_TOKEN и WHATSAPP_PHONE_ID. Иначе 503 — фронт
+  // переключается на ручное открытие диалогов wa.me.
+  app.post("/api/mvp/marketing/broadcast", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "Доступно владельцу" });
+    const token = process.env.WHATSAPP_TOKEN, phoneId = process.env.WHATSAPP_PHONE_ID;
+    if (!token || !phoneId) return res.status(503).json({ error: "Авторассылка не настроена (нет WHATSAPP_TOKEN / WHATSAPP_PHONE_ID)" });
+    const recipients: any[] = Array.isArray((req.body || {}).recipients) ? req.body.recipients : [];
+    const template = String((req.body || {}).template || "");
+    if (recipients.length === 0) return res.status(400).json({ error: "Нет получателей" });
+    const results: any[] = [];
+    for (const r of recipients) {
+      const phone = String(r.phone || "").replace(/\D/g, "");
+      if (!phone) { results.push({ phone: r.phone, ok: false, error: "нет телефона" }); continue; }
+      const text = template.replace(/\{имя\}/g, String(r.name || "").split(" ")[0] || "");
+      try {
+        const resp = await fetch(`https://graph.facebook.com/v20.0/${phoneId}/messages`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ messaging_product: "whatsapp", to: phone, type: "text", text: { body: text } }),
+        });
+        results.push({ phone, ok: resp.ok });
+      } catch (e: any) { results.push({ phone, ok: false, error: e?.message }); }
+    }
+    res.json({ sent: results.filter((x) => x.ok).length, total: recipients.length, results });
   }));
 
   // Продажи (владелец/управляющий — все; администратор — только сегодня = касса дня)
@@ -3206,12 +3564,31 @@ export function registerMvpApi(app: express.Express) {
   app.get("/api/mvp/products/stock", ah(async (req, res) => {
     const session = getSession(req);
     if (session.role !== "owner" && session.role !== "branch_manager") return res.status(403).json({ error: "Остатки доступны владельцу и управляющему" });
-    const { products, sales, receipts } = await loadProducts(session);
-    res.json({ stock: products.map((pr) => {
+    const { products, sales, receipts, writeoffs } = await loadProducts(session);
+    const rows = products.map((pr) => {
       const received = receipts.filter((r) => r.productId === pr.id).reduce((s, r) => s + r.qty, 0);
       const sold = sales.filter((s) => s.productId === pr.id).reduce((s, x) => s + x.qty, 0);
-      return { productId: pr.id, name: pr.name, sku: pr.sku, received, sold, balance: received - sold, minStock: pr.minStock, low: received - sold <= pr.minStock };
-    }) });
+      const written = writeoffs.filter((w) => w.productId === pr.id).reduce((s, x) => s + x.qty, 0);
+      const balance = received - sold - written;
+      return { productId: pr.id, name: pr.name, sku: pr.sku, received, sold, written, balance, costPrice: pr.costPrice, salePrice: pr.salePrice, stockValue: balance * pr.costPrice, retailValue: balance * pr.salePrice, minStock: pr.minStock, low: balance <= pr.minStock };
+    });
+    // Сводка по складу: на какую сумму закуплен товар, в каком количестве.
+    const summary = {
+      units: rows.reduce((s, r) => s + Math.max(0, r.balance), 0),
+      stockValue: rows.reduce((s, r) => s + Math.max(0, r.balance) * r.costPrice, 0),
+      retailValue: rows.reduce((s, r) => s + Math.max(0, r.balance) * r.salePrice, 0),
+      positions: rows.filter((r) => r.balance > 0).length,
+    };
+    res.json({ stock: rows, summary });
+  }));
+
+  // Списания (владелец/управляющий)
+  app.get("/api/mvp/products/writeoffs", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager") return res.status(403).json({ error: "Доступно владельцу и управляющему" });
+    const { products, writeoffs } = await loadProducts(session);
+    const nameOf = (id: string) => products.find((p) => p.id === id)?.name || "—";
+    res.json({ writeoffs: writeoffs.map((w) => ({ ...w, productName: nameOf(w.productId) })) });
   }));
 
   // Поступления товара (владелец/управляющий)
@@ -3229,7 +3606,7 @@ export function registerMvpApi(app: express.Express) {
     if (session.role !== "owner" && session.role !== "branch_manager") return res.status(403).json({ error: "Аналитика доступна владельцу и управляющему" });
     const q = req.query as Record<string, string>;
     const r = periodRanges(q.period, q.from, q.to);
-    const { products, sales, receipts } = await loadProducts(session);
+    const { products, sales, receipts, writeoffs } = await loadProducts(session);
     const costOf = (id: string) => products.find((p) => p.id === id)?.costPrice || 0;
     const sumRev = (range: { start: string; end: string }) => sales.filter((s) => inRange(s.date, range)).reduce((acc, s) => acc + s.amount, 0);
     const curRev = sumRev(r.cur), prevRev = sumRev(r.prev), yoyRev = sumRev(r.yoy);
@@ -3239,14 +3616,21 @@ export function registerMvpApi(app: express.Express) {
     const grossProfit = curSales.reduce((acc, s) => acc + (s.amount - s.qty * costOf(s.productId)), 0);
     const margin = curRev > 0 ? Math.round((grossProfit / curRev) * 100) : 0;
     const lowStock = products
-      .map((pr) => ({ id: pr.id, name: pr.name, stock: stockBalance(pr.id, sales, receipts), minStock: pr.minStock }))
+      .map((pr) => ({ id: pr.id, name: pr.name, stock: stockBalance(pr.id, sales, receipts, writeoffs), minStock: pr.minStock }))
       .filter((x) => x.stock <= x.minStock);
     const top = products
       .map((pr) => ({ id: pr.id, name: pr.name, revenue: sales.filter((s) => s.productId === pr.id && inRange(s.date, r.cur)).reduce((a, s) => a + s.amount, 0), qty: sales.filter((s) => s.productId === pr.id && inRange(s.date, r.cur)).reduce((a, s) => a + s.qty, 0) }))
       .filter((x) => x.revenue > 0).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
+    // Склад сейчас: сколько денег «лежит» на складе и в каком количестве (по закупке и по продаже).
+    let stockUnits = 0, stockValue = 0, retailValue = 0;
+    for (const pr of products) {
+      const bal = Math.max(0, stockBalance(pr.id, sales, receipts, writeoffs));
+      stockUnits += bal; stockValue += bal * pr.costPrice; retailValue += bal * pr.salePrice;
+    }
     res.json({
       revenue: { total: curRev, momPct: pctDelta(curRev, prevRev), yoyPct: pctDelta(curRev, yoyRev) },
       unitsSold, avgCheck, grossProfit, margin, lowStock, top,
+      stockUnits, stockValue, retailValue,
     });
   }));
 
@@ -3257,13 +3641,13 @@ export function registerMvpApi(app: express.Express) {
     const p = req.body || {};
     if (!String(p.name || "").trim()) return res.status(400).json({ error: "Укажите название товара" });
     if (!supabaseEnabled) {
-      const rec = { id: uid(), name: String(p.name).trim(), category: p.category || null, sku: p.sku || null, salePrice: Number(p.salePrice) || 0, costPrice: Number(p.costPrice) || 0, minStock: Number(p.minStock) || 0, comment: p.comment || null, branchId: p.branchId || session.dbBranchId || demoBranchAlmaty };
+      const rec = { id: uid(), name: String(p.name).trim(), category: p.category || null, sku: p.sku || null, salePrice: Number(p.salePrice) || 0, costPrice: Number(p.costPrice) || 0, minStock: Number(p.minStock) || 0, comment: p.comment || null, photoUrl: p.photoUrl || null, branchId: p.branchId || session.dbBranchId || demoBranchAlmaty };
       mockProducts.unshift(rec);
       return res.status(201).json({ product: { ...prodOut(rec), stock: 0, low: 0 <= rec.minStock } });
     }
     const inserted = await supabaseFetch<any[]>("products", "", {
       method: "POST",
-      body: JSON.stringify({ organization_id: session.organizationId, branch_id: p.branchId || session.dbBranchId || null, name: String(p.name).trim(), category: p.category || null, sku: p.sku || null, sale_price: Number(p.salePrice) || 0, cost_price: Number(p.costPrice) || 0, min_stock: Number(p.minStock) || 0, comment: p.comment || null }),
+      body: JSON.stringify({ organization_id: session.organizationId, branch_id: p.branchId || session.dbBranchId || null, name: String(p.name).trim(), category: p.category || null, sku: p.sku || null, sale_price: Number(p.salePrice) || 0, cost_price: Number(p.costPrice) || 0, min_stock: Number(p.minStock) || 0, comment: p.comment || null, photo_url: p.photoUrl || null }),
     });
     res.status(201).json({ product: { ...prodOut(inserted[0]), stock: 0, low: 0 <= (Number(p.minStock) || 0) } });
   }));
@@ -3276,7 +3660,7 @@ export function registerMvpApi(app: express.Express) {
     if (!supabaseEnabled) {
       const rec = mockProducts.find((x) => x.id === req.params.id);
       if (!rec) return res.status(404).json({ error: "Товар не найден" });
-      ["name", "category", "sku", "comment"].forEach((k) => { if (p[k] !== undefined) rec[k] = p[k]; });
+      ["name", "category", "sku", "comment", "photoUrl"].forEach((k) => { if (p[k] !== undefined) rec[k] = p[k]; });
       if (p.salePrice !== undefined) rec.salePrice = Number(p.salePrice) || 0;
       if (p.costPrice !== undefined) rec.costPrice = Number(p.costPrice) || 0;
       if (p.minStock !== undefined) rec.minStock = Number(p.minStock) || 0;
@@ -3286,6 +3670,7 @@ export function registerMvpApi(app: express.Express) {
     if (p.name !== undefined) patch.name = p.name;
     if (p.category !== undefined) patch.category = p.category || null;
     if (p.sku !== undefined) patch.sku = p.sku || null;
+    if (p.photoUrl !== undefined) patch.photo_url = p.photoUrl || null;
     if (p.salePrice !== undefined) patch.sale_price = Number(p.salePrice) || 0;
     if (p.costPrice !== undefined) patch.cost_price = Number(p.costPrice) || 0;
     if (p.minStock !== undefined) patch.min_stock = Number(p.minStock) || 0;
@@ -3337,6 +3722,39 @@ export function registerMvpApi(app: express.Express) {
       body: JSON.stringify({ organization_id: session.organizationId, branch_id: p.branchId || session.dbBranchId || null, product_id: p.productId, qty, cost_price: Number(p.costPrice) || null, movement_date: p.date || todayStr(), comment: p.comment || null }),
     });
     res.status(201).json({ receipt: { id: inserted[0].id, productId: p.productId, qty, costPrice: Number(inserted[0].cost_price) || 0, date: inserted[0].movement_date, comment: inserted[0].comment } });
+  }));
+
+  // Оформить списание товара (владелец/управляющий). Остаток уменьшается.
+  app.post("/api/mvp/products/writeoffs", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager") return res.status(403).json({ error: "Списания оформляет владелец или управляющий" });
+    const p = req.body || {};
+    const qty = Number(p.qty) || 0;
+    if (!p.productId) return res.status(400).json({ error: "Выберите товар" });
+    if (qty <= 0) return res.status(400).json({ error: "Количество должно быть больше нуля" });
+    if (!supabaseEnabled) {
+      const rec = { id: uid(), productId: p.productId, qty, reason: p.reason || null, writeoffDate: p.date || todayStr(), comment: p.comment || null, branchId: p.branchId || session.dbBranchId || demoBranchAlmaty };
+      mockWriteoffs.unshift(rec);
+      return res.status(201).json({ writeoff: { id: rec.id, productId: rec.productId, qty, reason: rec.reason, date: rec.writeoffDate, comment: rec.comment } });
+    }
+    const inserted = await supabaseFetch<any[]>("product_writeoffs", "", {
+      method: "POST",
+      body: JSON.stringify({ organization_id: session.organizationId, branch_id: p.branchId || session.dbBranchId || null, product_id: p.productId, qty, reason: p.reason || null, writeoff_date: p.date || todayStr(), comment: p.comment || null }),
+    });
+    res.status(201).json({ writeoff: { id: inserted[0].id, productId: p.productId, qty, reason: inserted[0].reason, date: inserted[0].writeoff_date, comment: inserted[0].comment } });
+  }));
+
+  // Удалить списание (владелец/управляющий)
+  app.delete("/api/mvp/products/writeoffs/:id", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager") return res.status(403).json({ error: "Недостаточно прав" });
+    if (!supabaseEnabled) {
+      const i = mockWriteoffs.findIndex((x) => x.id === req.params.id);
+      if (i >= 0) mockWriteoffs.splice(i, 1);
+      return res.json({ ok: true });
+    }
+    await supabaseFetch("product_writeoffs", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+    res.json({ ok: true });
   }));
 
   // ============================================================
@@ -3644,7 +4062,7 @@ export function registerMvpApi(app: express.Express) {
 
       const orgFilter = `organization_id=eq.${session.organizationId}`;
       const [students, subs, groups, users] = await Promise.all([
-        supabaseFetch<any[]>("students", `select=*&${orgFilter}&status=neq.archived`).catch(() => [] as any[]),
+        supabaseFetch<any[]>("students", `select=*&${orgFilter}&status=neq.archived&archived_at=is.null`).catch(() => [] as any[]),
         supabaseFetch<any[]>("student_subscriptions", "select=student_id,status,lessons_left,ends_on").catch(() => [] as any[]),
         supabaseFetch<any[]>("groups", `select=id,name,teacher_id,branch_id&${orgFilter}`).catch(() => [] as any[]),
         supabaseFetch<any[]>("users", `select=*&${orgFilter}`).catch(() => [] as any[]),

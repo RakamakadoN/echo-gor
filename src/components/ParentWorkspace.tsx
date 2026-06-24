@@ -22,7 +22,8 @@ import {
   Trophy,
   UserRound,
   Video,
-  Wand2
+  Wand2,
+  ShoppingBag
 } from "lucide-react";
 import { Announcement, Group, Student, Teacher } from "../types";
 
@@ -53,7 +54,7 @@ interface ParentWorkspaceProps {
   onUpdateQuestStatus?: (id: string, status: QuestStatusKey) => Promise<boolean>;
 }
 
-type ParentTab = "home" | "child" | "quests" | "feed" | "library" | "ai";
+type ParentTab = "home" | "child" | "quests" | "feed" | "library" | "shop" | "ai";
 
 const parentTabs: { id: ParentTab; label: string; short: string; icon: React.ElementType }[] = [
   { id: "home", label: "Главная", short: "Главная", icon: Heart },
@@ -61,6 +62,7 @@ const parentTabs: { id: ParentTab; label: string; short: string; icon: React.Ele
   { id: "quests", label: "Квесты", short: "Квесты", icon: CheckCircle },
   { id: "feed", label: "Лента", short: "Лента", icon: Star },
   { id: "library", label: "Библиотека", short: "Книги", icon: Library },
+  { id: "shop", label: "Магазин", short: "Магазин", icon: ShoppingBag },
   { id: "ai", label: "AI помощник", short: "AI", icon: Wand2 }
 ];
 
@@ -225,6 +227,7 @@ export function ParentWorkspace({
         {activeTab === "quests" && <FamilyQuestsView quests={activeQuests} onConfirm={confirmQuest} onMarkDone={markQuestDone} onAddQuest={addQuest} readOnlyPreview={readOnlyPreview} />}
         {activeTab === "feed" && <FamilyFeedView student={student} quests={activeQuests} nextPerformance={nextPerformance} />}
         {activeTab === "library" && <ParentLibraryView />}
+        {activeTab === "shop" && <ParentShopView />}
         {activeTab === "ai" && <ParentAiView student={student} />}
       </main>
 
@@ -460,6 +463,153 @@ function ParentLibraryView() {
           </article>
         ))}
       </div>
+    </div>
+  );
+}
+
+// Магазин студии для родителя/ученика: товары с фото (генерируются нейросетью),
+// корзина и оформление заказа (заявка обрабатывается администратором).
+function ParentShopView() {
+  const [products, setProducts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [cat, setCat] = useState<string>("");
+  const [cart, setCart] = useState<Record<string, number>>({});
+  const [checkout, setCheckout] = useState(false);
+  const [form, setForm] = useState({ customerName: "", customerPhone: "", comment: "" });
+  const [placing, setPlacing] = useState(false);
+  const [placed, setPlaced] = useState<{ total: number } | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const fmt = (n: number) => `${(n || 0).toLocaleString("ru-RU")} ₸`;
+
+  React.useEffect(() => {
+    let alive = true;
+    fetch("/api/mvp/shop", { headers: { "x-demo-role": "parent" } })
+      .then((r) => (r.ok ? r.json() : { products: [] }))
+      .then((d) => { if (alive) setProducts(d.products || []); })
+      .catch(() => {})
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, []);
+
+  const cats = Array.from(new Set(products.map((p) => p.category).filter(Boolean)));
+  const list = products.filter((p) => !cat || p.category === cat);
+  const setQty = (id: string, qty: number) => setCart((c) => { const n = { ...c }; if (qty <= 0) delete n[id]; else n[id] = qty; return n; });
+  const add = (id: string) => setQty(id, (cart[id] || 0) + 1);
+  const cartLines = Object.entries(cart).map(([id, qty]) => { const p = products.find((x) => x.id === id); return p ? { id, name: p.name, qty, price: p.salePrice, amount: qty * p.salePrice } : null; }).filter(Boolean) as any[];
+  const cartTotal = cartLines.reduce((s, l) => s + l.amount, 0);
+  const cartCount = cartLines.reduce((s, l) => s + l.qty, 0);
+
+  const placeOrder = async () => {
+    if (cartLines.length === 0) return;
+    if (!form.customerName.trim() || !form.customerPhone.trim()) { setErr("Укажите имя и телефон"); return; }
+    setPlacing(true); setErr(null);
+    try {
+      const res = await fetch("/api/mvp/shop/orders", {
+        method: "POST", headers: { "Content-Type": "application/json", "x-demo-role": "parent" },
+        body: JSON.stringify({ items: cartLines.map((l) => ({ productId: l.id, qty: l.qty })), customerName: form.customerName, customerPhone: form.customerPhone, comment: form.comment }),
+      });
+      if (!res.ok) { const t = await res.json().catch(() => ({})); throw new Error(t.error || "Не удалось оформить заказ"); }
+      setPlaced({ total: cartTotal }); setCart({}); setCheckout(false);
+    } catch (e: any) { setErr(e?.message || "Ошибка оформления"); }
+    finally { setPlacing(false); }
+  };
+
+  return (
+    <div className="space-y-5">
+      <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+        <p className="text-[10px] font-black uppercase tracking-[0.26em] text-[#C5A059]">Магазин студии</p>
+        <h2 className="mt-2 text-2xl font-black text-white">Форма, мерч и аксессуары «Эхо Гор»</h2>
+        <p className="mt-2 text-sm text-slate-400">Соберите корзину и оформите заказ — администратор вашего филиала свяжется для подтверждения и выдачи.</p>
+        {cats.length > 0 && (
+          <div className="mt-4 flex flex-wrap gap-1.5">
+            <button onClick={() => setCat("")} className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${cat === "" ? "bg-[#C5A059] text-black" : "border border-white/10 bg-white/[0.04] text-slate-300"}`}>Все</button>
+            {cats.map((c) => (
+              <button key={c} onClick={() => setCat(c)} className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${cat === c ? "bg-[#C5A059] text-black" : "border border-white/10 bg-white/[0.04] text-slate-300"}`}>{c}</button>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {placed && (
+        <section className="rounded-[2rem] border border-emerald-500/30 bg-emerald-500/10 p-5 text-center">
+          <CheckCircle className="mx-auto h-8 w-8 text-emerald-400" />
+          <p className="mt-2 font-black text-white">Заказ оформлен!</p>
+          <p className="mt-1 text-sm text-slate-300">Сумма {fmt(placed.total)}. Администратор свяжется с вами для подтверждения.</p>
+          <button onClick={() => setPlaced(null)} className="mt-3 rounded-xl border border-white/10 px-4 py-2 text-xs font-bold text-slate-200">Продолжить покупки</button>
+        </section>
+      )}
+
+      {loading ? (
+        <p className="px-1 text-sm text-slate-500">Загрузка магазина…</p>
+      ) : list.length === 0 ? (
+        <section className="rounded-[2rem] border border-white/10 bg-white/[0.03] p-8 text-center text-sm text-slate-500">Товары скоро появятся.</section>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {list.map((p) => (
+            <article key={p.id} className="overflow-hidden rounded-[1.75rem] border border-white/10 bg-white/[0.04]">
+              <div className="aspect-square w-full bg-white/5">
+                {p.photoUrl
+                  ? <img src={p.photoUrl} alt={p.name} className="h-full w-full object-cover" />
+                  : <div className="flex h-full w-full items-center justify-center text-slate-600"><ShoppingBag className="h-10 w-10" /></div>}
+              </div>
+              <div className="p-4">
+                {p.category && <p className="text-[10px] font-black uppercase tracking-wider text-[#C5A059]">{p.category}</p>}
+                <h3 className="mt-1 font-black text-white">{p.name}</h3>
+                <p className="mt-2 text-lg font-black text-[#C5A059]">{fmt(p.salePrice)}</p>
+                {cart[p.id] ? (
+                  <div className="mt-3 flex items-center gap-2">
+                    <button onClick={() => setQty(p.id, (cart[p.id] || 0) - 1)} className="h-8 w-8 rounded-lg border border-white/10 text-white">−</button>
+                    <span className="min-w-[2rem] text-center font-bold text-white">{cart[p.id]}</span>
+                    <button onClick={() => add(p.id)} className="h-8 w-8 rounded-lg border border-white/10 text-white">+</button>
+                  </div>
+                ) : (
+                  <button onClick={() => add(p.id)} className="mt-3 w-full rounded-xl bg-[#C5A059] py-2 text-xs font-black text-black">В корзину</button>
+                )}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+
+      {/* Плавающая корзина */}
+      {cartCount > 0 && !checkout && (
+        <button onClick={() => setCheckout(true)} className="fixed bottom-24 right-4 z-40 inline-flex items-center gap-2 rounded-2xl bg-[#C5A059] px-5 py-3 text-sm font-black text-black shadow-2xl md:bottom-6">
+          <ShoppingBag className="h-5 w-5" /> Корзина · {cartCount} · {fmt(cartTotal)}
+        </button>
+      )}
+
+      {/* Оформление заказа */}
+      {checkout && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-md" onClick={() => setCheckout(false)}>
+          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-[1.75rem] border border-white/10 bg-[#0f0f0f] p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-black text-white">Оформление заказа</h3>
+            <div className="mt-3 space-y-2">
+              {cartLines.map((l) => (
+                <div key={l.id} className="flex items-center justify-between gap-2 rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2 text-sm">
+                  <span className="text-slate-200">{l.name}</span>
+                  <span className="flex items-center gap-2">
+                    <button onClick={() => setQty(l.id, l.qty - 1)} className="h-6 w-6 rounded border border-white/10 text-white">−</button>
+                    <span className="text-white">{l.qty}</span>
+                    <button onClick={() => setQty(l.id, l.qty + 1)} className="h-6 w-6 rounded border border-white/10 text-white">+</button>
+                    <span className="ml-1 w-20 text-right font-bold text-[#C5A059]">{fmt(l.amount)}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 flex justify-between border-t border-white/10 pt-3 text-sm"><span className="text-slate-400">Итого</span><span className="font-black text-[#C5A059]">{fmt(cartTotal)}</span></div>
+            <div className="mt-4 space-y-2">
+              <input value={form.customerName} onChange={(e) => setForm({ ...form, customerName: e.target.value })} placeholder="Ваше имя *" className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#C5A059]/50" />
+              <input value={form.customerPhone} onChange={(e) => setForm({ ...form, customerPhone: e.target.value })} placeholder="Телефон *" className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#C5A059]/50" />
+              <textarea value={form.comment} onChange={(e) => setForm({ ...form, comment: e.target.value })} rows={2} placeholder="Комментарий (размер, филиал…)" className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#C5A059]/50" />
+            </div>
+            {err && <p className="mt-2 text-[11px] text-rose-400">{err}</p>}
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => setCheckout(false)} className="rounded-xl border border-white/10 px-4 py-2 text-xs font-bold text-slate-300">Назад</button>
+              <button onClick={placeOrder} disabled={placing} className="rounded-xl bg-[#C5A059] px-4 py-2 text-xs font-black text-black disabled:opacity-50">{placing ? "Оформляем…" : "Оформить заказ"}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

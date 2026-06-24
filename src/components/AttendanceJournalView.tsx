@@ -10,7 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Users, UserX, ShoppingCart, ClipboardCheck, Clock, CheckCircle2, XCircle,
   AlertCircle, RotateCcw, Flag, MessageCircle, IdCard, BadgePlus, CalendarClock,
-  ListChecks, BarChart3, Paperclip, X, ChevronLeft, ChevronRight,
+  ListChecks, BarChart3, Paperclip, X, ChevronLeft, ChevronRight, Maximize2, Minimize2,
 } from "lucide-react";
 import type {
   Student, Group, Branch, Teacher, JournalDashboard, Recalculation,
@@ -166,11 +166,17 @@ export default function AttendanceJournalView(props: Props) {
   const [showStats, setShowStats] = useState(false);
   const [showRecalc, setShowRecalc] = useState<Student | null>(null);
   const [detail, setDetail] = useState<null | "visited" | "unpaid" | "trialNotBought" | "trialBought">(null);
+  // «Развернуть журнал»: скрывает дашборд и боковые панели, оставляя группу + таблицу на всю ширину.
+  const [expanded, setExpanded] = useState(false);
 
   const mark = async (studentId: string, date: string, status: AttendanceStatus, opts?: { absenceReason?: AbsenceReason | null }) => {
     if (!onToggleAttendance) return;
+    // Педагог ставит только «был/не был». Пробный определяется автоматически по
+    // статусу ученика «Пробный урок» — система сама помечает посещение пробным.
+    const st = students.find((s) => s.id === studentId);
+    const isTrial = st?.status === "trial" ? true : undefined;
     setSaving(studentId + date);
-    try { await onToggleAttendance(studentId, date, status, opts); } finally { setSaving(null); refreshDash(); }
+    try { await onToggleAttendance(studentId, date, status, { ...(opts || {}), isTrial }); } finally { setSaving(null); refreshDash(); }
     setCellMenu(null);
   };
 
@@ -222,9 +228,13 @@ export default function AttendanceJournalView(props: Props) {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-xl font-black text-white">Журнал посещаемости</h2>
-          <p className="mt-1 text-xs text-slate-500">Учёт посещений, контроль педагогов и пробных уроков, перерасчёты.</p>
+          <p className="mt-1 text-xs text-slate-500">Отметка «был / не был». Пробные и статус «не оплатили, но ходят» система определяет сама.</p>
         </div>
         <div className="flex flex-wrap items-end gap-2">
+          <button onClick={() => setExpanded((v) => !v)} className="flex items-center gap-1.5 self-stretch rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white hover:bg-white/10">
+            {expanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            {expanded ? "Свернуть" : "Развернуть журнал"}
+          </button>
           {role === "owner" && (
             <label className="flex flex-col gap-1">
               <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Филиал</span>
@@ -246,7 +256,8 @@ export default function AttendanceJournalView(props: Props) {
         </div>
       </div>
 
-      {/* Дашборд-показатели (ТЗ §2) */}
+      {/* Дашборд-показатели (ТЗ §2) — скрываются в режиме «Развернуть журнал» */}
+      {!expanded && (
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
         <MetricCard icon={Users} tone="bg-sky-500/15 text-sky-300" value={dash?.visited.count ?? "—"} label="Посетили занятия" active={detail === "visited"} onClick={() => setDetail(detail === "visited" ? null : "visited")} />
         <MetricCard icon={UserX} tone="bg-amber-500/15 text-amber-300" value={dash?.unpaid.count ?? "—"} label="Посещают без оплаты" active={detail === "unpaid"} onClick={() => setDetail(detail === "unpaid" ? null : "unpaid")} />
@@ -254,9 +265,10 @@ export default function AttendanceJournalView(props: Props) {
         <MetricCard icon={ShoppingCart} tone="bg-emerald-500/15 text-emerald-300" value={dash?.trialBought.count ?? "—"} label="Купили после ПУ" active={detail === "trialBought"} onClick={() => setDetail(detail === "trialBought" ? null : "trialBought")} />
         <MetricCard icon={Clock} tone="bg-rose-500/15 text-rose-300" value={dash?.openJournals.length ?? "—"} label="Группы без отметок" active={false} onClick={() => { const el = document.getElementById("kpi-open-journals"); el?.scrollIntoView({ behavior: "smooth" }); }} />
       </div>
+      )}
 
       {/* Раскрытый список показателя */}
-      {detail && dash && (
+      {!expanded && detail && dash && (
         <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
           <div className="mb-2 flex items-center justify-between">
             <h4 className="text-sm font-bold text-white">{({ visited: "Посетили занятия", unpaid: "Посещают без оплаты", trialNotBought: "Были на ПУ и не купили", trialBought: "Купили после ПУ" } as any)[detail]} — {detailList().length}</h4>
@@ -271,6 +283,7 @@ export default function AttendanceJournalView(props: Props) {
       )}
 
       {/* KPI: педагоги не закрыли журнал (ТЗ §3) */}
+      {!expanded && (
       <div id="kpi-open-journals" className="rounded-2xl border border-rose-500/30 bg-rose-500/[0.06] p-4">
         <div className="mb-3 flex items-center gap-2">
           <Clock className="h-4 w-4 text-rose-300" />
@@ -300,31 +313,35 @@ export default function AttendanceJournalView(props: Props) {
           </div>
         )}
       </div>
+      )}
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[260px_minmax(0,1fr)_280px]">
-        {/* Левая колонка: группы */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between px-1">
-            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">Группы</h3>
-            <span className="text-[11px] text-slate-500">{visibleGroups.length}</span>
-          </div>
-          <div className="space-y-1.5">
+      {/* Выбор группы — сверху, на всю ширину (ТЗ заказчика). */}
+      <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3">
+        <div className="mb-2 flex items-center justify-between px-1">
+          <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">Группа</h3>
+          <span className="text-[11px] text-slate-500">{visibleGroups.length} групп</span>
+        </div>
+        {visibleGroups.length === 0 ? (
+          <p className="px-1 text-xs text-slate-500">Нет доступных групп.</p>
+        ) : (
+          <div className="flex gap-2 overflow-x-auto pb-1">
             {visibleGroups.map((g) => {
               const active = g.id === selectedGroupId;
               const cnt = students.filter((s) => studentInGroup(s, g.id)).length;
               return (
                 <button key={g.id} onClick={() => setSelectedGroupId(g.id)}
-                  className={`w-full rounded-xl border px-3 py-2.5 text-left transition-all ${active ? "border-[#C5A059] bg-[#C5A059]/10" : "border-white/10 bg-white/[0.03] hover:border-white/20"}`}>
+                  className={`shrink-0 rounded-xl border px-3 py-2 text-left transition-all ${active ? "border-[#C5A059] bg-[#C5A059]/10" : "border-white/10 bg-white/[0.03] hover:border-white/20"}`}>
                   <p className="truncate text-sm font-bold text-white">{g.name}</p>
                   <p className="mt-0.5 truncate text-[11px] text-slate-500">{g.time || g.scheduleText} · {teacherName(g.teacherId)} · {cnt} уч.</p>
                 </button>
               );
             })}
-            {visibleGroups.length === 0 && <p className="px-1 text-xs text-slate-500">Нет доступных групп.</p>}
           </div>
-        </div>
+        )}
+      </div>
 
-        {/* Центр: таблица журнала */}
+      <div className="grid grid-cols-1 gap-4">
+        {/* Таблица журнала — на всю ширину */}
         <div className="min-w-0 rounded-2xl border border-white/10 bg-white/[0.02] p-3">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div className="min-w-0">
@@ -367,19 +384,21 @@ export default function AttendanceJournalView(props: Props) {
 
           {/* Легенда */}
           <div className="mt-3 flex flex-wrap gap-3 text-[10px] font-semibold text-slate-500">
-            {(["present", "absent", "excused", "recalc", "trial", "unmarked"] as const).map((s) => (
+            {(["present", "absent", "trial", "unmarked"] as const).map((s) => (
               <span key={s} className="flex items-center gap-1"><span className={`inline-block h-3 w-3 rounded ${STATUS_META[s].dot}`} /> {STATUS_META[s].label}</span>
             ))}
           </div>
         </div>
 
-        {/* Правый рейл: ученики без оплаты + быстрые действия (ТЗ §8-§9) */}
-        <div className="space-y-3">
+        {/* Панели «без оплаты»/«ПУ» — под таблицей, скрываются в развёрнутом режиме */}
+        {!expanded && (
+        <div className="grid gap-3 md:grid-cols-2">
           <RailCard title="Посещают без оплаты" count={dash?.unpaid.count ?? 0} ids={dash?.unpaid.studentIds || []} students={students} nameOf={nameOf}
             onAction={(s) => ({ student: s })} journal={journal} onCreateTask={onCreateTask} onRefresh={refreshDash} setShowRecalc={setShowRecalc} canEdit={canEdit} />
           <RailCard title="Были на ПУ и не купили" count={dash?.trialNotBought.count ?? 0} ids={dash?.trialNotBought.studentIds || []} students={students} nameOf={nameOf}
             onAction={(s) => ({ student: s })} journal={journal} onCreateTask={onCreateTask} onRefresh={refreshDash} setShowRecalc={setShowRecalc} canEdit={canEdit} />
         </div>
+        )}
       </div>
 
       {/* Модалки */}
@@ -388,7 +407,7 @@ export default function AttendanceJournalView(props: Props) {
       {showRecalc && <RecalcModal student={showRecalc} journal={journal} onClose={() => setShowRecalc(null)} onDone={() => { setShowRecalc(null); refreshDash(); }} />}
       {cellMenu && (
         <CellMenu state={cellMenu} student={students.find((s) => s.id === cellMenu.studentId)}
-          onClose={() => setCellMenu(null)} onMark={mark} onRecalc={(s) => { setCellMenu(null); setShowRecalc(s); }} />
+          onClose={() => setCellMenu(null)} onMark={mark} />
       )}
     </div>
   );
@@ -402,10 +421,7 @@ function FragmentRows({ seg, lessonDates, saving, canEdit, onCell, cellMenu, onM
       {seg.list.map((s: Student) => (
         <tr key={s.id} className="group">
           <td className="sticky left-0 z-10 bg-[#0c0c0c] px-2 py-1.5">
-            <div className="flex items-center gap-2">
-              <img src={s.photoUrl} alt="" className="h-8 w-8 shrink-0 rounded-lg object-cover" />
-              <span className="max-w-[160px] truncate text-sm font-semibold tracking-tight text-white" title={s.name}>{s.name}</span>
-            </div>
+            <span className="block max-w-[220px] truncate text-sm font-semibold tracking-tight text-white" title={s.name}>{s.name}</span>
           </td>
           {lessonDates.map((d: string) => {
             const st = (s.attendance?.[d]?.status || "unmarked") as string;
@@ -427,37 +443,26 @@ function FragmentRows({ seg, lessonDates, saving, canEdit, onCell, cellMenu, onM
   );
 }
 
-// Попап выбора статуса/причины для ячейки.
-function CellMenu({ state, student, onClose, onMark, onRecalc }: any) {
-  const [reasonFor, setReasonFor] = useState<AttendanceStatus | null>(null);
+// Попап отметки ячейки: только «Был» / «Не был» (+снять). Пробный определяется
+// автоматически по статусу ученика, причины/перерасчёт убраны по ТЗ заказчика.
+function CellMenu({ state, student, onClose, onMark }: any) {
+  const isTrial = student?.status === "trial";
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div className="w-full max-w-xs rounded-2xl border border-white/10 bg-[#11121A] p-4" onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 flex items-center justify-between">
-          <div><p className="text-sm font-bold text-white">{student?.name}</p><p className="text-[11px] text-slate-500">{new Date(state.date).toLocaleDateString("ru-RU")}</p></div>
+          <div>
+            <p className="text-sm font-bold text-white">{student?.name}</p>
+            <p className="text-[11px] text-slate-500">{new Date(state.date).toLocaleDateString("ru-RU")}{isTrial ? " · пробный урок" : ""}</p>
+          </div>
           <button onClick={onClose} className="text-slate-500 hover:text-white"><X className="h-4 w-4" /></button>
         </div>
-        {!reasonFor ? (
-          <div className="grid grid-cols-2 gap-2">
-            <StatusBtn icon={CheckCircle2} label="Был" tone="bg-emerald-500/15 text-emerald-300" onClick={() => onMark(state.studentId, state.date, "present")} />
-            <StatusBtn icon={XCircle} label="Не был" tone="bg-red-500/15 text-red-300" onClick={() => setReasonFor("absent")} />
-            <StatusBtn icon={AlertCircle} label="Уваж. причина" tone="bg-sky-500/15 text-sky-300" onClick={() => setReasonFor("excused")} />
-            <StatusBtn icon={RotateCcw} label="Перерасчёт" tone="bg-amber-500/15 text-amber-300" onClick={() => onRecalc(student)} />
-            <StatusBtn icon={Flag} label="Пробный" tone="bg-violet-500/15 text-violet-300" onClick={() => onMark(state.studentId, state.date, "trial")} />
-            <StatusBtn icon={X} label="Снять" tone="bg-white/5 text-slate-400" onClick={() => onMark(state.studentId, state.date, "unmarked")} />
-          </div>
-        ) : (
-          <div>
-            <p className="mb-2 text-xs font-bold text-slate-400">Причина отсутствия</p>
-            <div className="space-y-1.5">
-              {REASONS.map((r) => (
-                <button key={r.id} onClick={() => onMark(state.studentId, state.date, reasonFor, { absenceReason: r.id })}
-                  className="block w-full rounded-lg bg-white/5 px-3 py-2 text-left text-xs font-semibold text-white hover:bg-white/10">{r.label}</button>
-              ))}
-            </div>
-            <button onClick={() => setReasonFor(null)} className="mt-2 text-[11px] text-slate-500 hover:text-white">← Назад</button>
-          </div>
-        )}
+        <div className="grid grid-cols-2 gap-2">
+          <StatusBtn icon={CheckCircle2} label="Был" tone="bg-emerald-500/15 text-emerald-300" onClick={() => onMark(state.studentId, state.date, "present")} />
+          <StatusBtn icon={XCircle} label="Не был" tone="bg-red-500/15 text-red-300" onClick={() => onMark(state.studentId, state.date, "absent")} />
+          <StatusBtn icon={X} label="Снять" tone="bg-white/5 text-slate-400" onClick={() => onMark(state.studentId, state.date, "unmarked")} />
+        </div>
+        {isTrial && <p className="mt-3 text-[11px] text-violet-300/80">Пробный урок: отметка «Был» = пришёл на пробный, «Не был» = не пришёл.</p>}
       </div>
     </div>
   );

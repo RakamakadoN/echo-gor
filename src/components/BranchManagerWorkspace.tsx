@@ -54,6 +54,7 @@ interface BranchManagerWorkspaceProps {
   onCreateStudent?: (data: any) => Promise<string | boolean | null>;
   onUpdateStudent?: (id: string, data: any) => Promise<boolean>;
   onDeleteStudent?: (id: string) => Promise<boolean>;
+  onArchiveStudent?: (id: string, reason: string, comment: string) => Promise<boolean | void> | void;
   leadSources?: LeadSource[];
   waitlist?: WaitlistEntry[];
   onAddToWaitlist?: (payload: { studentId: string; branchId?: string | null; groupId?: string | null; comment?: string | null }) => Promise<boolean>;
@@ -108,6 +109,7 @@ export function BranchManagerWorkspace({
   onCreateStudent,
   onUpdateStudent,
   onDeleteStudent,
+  onArchiveStudent,
   waitlist = [],
   onAddToWaitlist,
   onRemoveFromWaitlist,
@@ -121,6 +123,8 @@ export function BranchManagerWorkspace({
   onJournalTask,
 }: BranchManagerWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<BranchTab>("dashboard");
+  // Сворачивание бокового меню — раздел открывается на всю ширину.
+  const [navCollapsed, setNavCollapsed] = useState(false);
   const [studentSearch, setStudentSearch] = useState("");
 
   const branch = branches.find((item) => item.id === branchId);
@@ -182,7 +186,7 @@ export function BranchManagerWorkspace({
   return (
     <div className="min-h-full bg-[#0A0A0A] text-slate-200">
       <div className="mx-auto flex max-w-[1500px] gap-0 lg:gap-5">
-        <aside className="sticky top-0 hidden h-[calc(100vh-64px)] w-72 shrink-0 border-r border-white/5 bg-[#0F0F0F] p-4 lg:block">
+        <aside className={`sticky top-0 hidden h-[calc(100vh-64px)] w-72 shrink-0 border-r border-white/5 bg-[#0F0F0F] p-4 ${navCollapsed ? "lg:hidden" : "lg:block"}`}>
           <BranchIdentity branch={branch} />
           <nav className="mt-5 space-y-1">
             {branchTabs.map((tab) => (
@@ -197,6 +201,10 @@ export function BranchManagerWorkspace({
         </aside>
 
         <main className="min-w-0 flex-1 px-4 pb-24 pt-4 md:px-6 md:pt-6 lg:pb-8">
+          <button onClick={() => setNavCollapsed((v) => !v)}
+            className="mb-3 hidden rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-slate-200 hover:bg-white/10 lg:inline-flex">
+            {navCollapsed ? "Меню ›" : "‹ Скрыть меню"}
+          </button>
           <div className="sticky top-0 z-30 -mx-4 mb-4 border-b border-white/5 bg-[#0A0A0A]/90 px-4 py-3 backdrop-blur-xl md:-mx-6 md:px-6 lg:hidden">
             <BranchIdentity branch={branch} compact />
           </div>
@@ -227,6 +235,7 @@ export function BranchManagerWorkspace({
               onCreateStudent={onCreateStudent}
               onUpdateStudent={onUpdateStudent}
               onDeleteStudent={onDeleteStudent}
+              onArchiveStudent={onArchiveStudent}
               onOpenPayment={onOpenPayment}
               onSellSubscription={onSellSubscription}
               plans={subscriptionPlans}
@@ -358,7 +367,7 @@ function DashboardView({ branch, metrics, attendanceWeek, attendanceMonth, group
   );
 }
 
-function StudentsView({ students, groups, teachers = [], branches = [], branchId, onCreateStudent, onUpdateStudent, onDeleteStudent, onOpenPayment, onSellSubscription, plans = [], waitlist = [], onAddToWaitlist, onRemoveFromWaitlist }: {
+function StudentsView({ students, groups, teachers = [], branches = [], branchId, onCreateStudent, onUpdateStudent, onDeleteStudent, onArchiveStudent, onOpenPayment, onSellSubscription, plans = [], waitlist = [], onAddToWaitlist, onRemoveFromWaitlist }: {
   students: Student[];
   groups: Group[];
   teachers?: Teacher[];
@@ -367,6 +376,7 @@ function StudentsView({ students, groups, teachers = [], branches = [], branchId
   onCreateStudent?: (data: any) => Promise<string | boolean | null>;
   onUpdateStudent?: (id: string, data: any) => Promise<boolean>;
   onDeleteStudent?: (id: string) => Promise<boolean>;
+  onArchiveStudent?: (id: string, reason: string, comment: string) => Promise<boolean | void> | void;
   onOpenPayment?: (student: Student) => void;
   onSellSubscription?: (payload: SellSubscriptionInput) => Promise<boolean> | boolean;
   plans?: SubscriptionPlan[];
@@ -385,6 +395,7 @@ function StudentsView({ students, groups, teachers = [], branches = [], branchId
         onCreateStudent={onCreateStudent}
         onUpdateStudent={onUpdateStudent}
         onDeleteStudent={onDeleteStudent}
+        onArchiveStudent={onArchiveStudent}
         onOpenPayment={onOpenPayment}
         onSellSubscription={onSellSubscription}
         plans={plans}
