@@ -280,6 +280,28 @@ export interface Student {
   manualStatus?: string | null; // ручной статус (ТЗ §7): Каникулы, Лист ожидания, ...
   returned?: boolean; // признак вернувшегося ученика (фиолетовый, ТЗ §2)
   payLater?: boolean; // ручной статус «Оплатит позже» (Журнал §8, §9)
+  gender?: "male" | "female" | null; // пол (ТЗ «Ученики»: окно нового ученика)
+  birthday?: string | null; // дата рождения (YYYY-MM-DD) — для авто-расчёта возраста
+  phone?: string; // личный телефон ученика
+  sourceId?: string | null; // источник (lead_sources.id): откуда о нас узнали
+  comment?: string; // свободный комментарий
+  waitlistAddedAt?: string | null; // дата постановки в активный лист ожидания (если в нём состоит)
+}
+
+/**
+ * Пункт листа ожидания (ТЗ «Ученики» → «Лист ожидания»).
+ * Хранит желаемый филиал/группу и дату постановки в очередь; приоритет
+ * вычисляется из added_at. removedAt != null означает архивную (историческую) запись.
+ */
+export interface WaitlistEntry {
+  id: string;
+  studentId: string;
+  branchId?: string | null;
+  groupId?: string | null;
+  comment?: string | null;
+  addedAt: string; // ISO — дата постановки в лист ожидания
+  removedAt?: string | null;
+  removedReason?: string | null;
 }
 
 export type AnnouncementAudience = "all" | "branches" | "teachers" | "parents" | "students";

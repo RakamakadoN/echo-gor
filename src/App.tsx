@@ -108,6 +108,7 @@ import {
   AdminTask,
   SubscriptionPlan,
   LeadSource,
+  WaitlistEntry,
   Homework,
   StudentProgressNote,
   AttendanceStatus,
@@ -153,6 +154,7 @@ export default function App() {
   const [adminTasks, setAdminTasks] = useState<AdminTask[]>([]);
   const [subscriptionPlans, setSubscriptionPlans] = useState<SubscriptionPlan[]>([]);
   const [leadSources, setLeadSources] = useState<LeadSource[]>([]);
+  const [waitlist, setWaitlist] = useState<WaitlistEntry[]>([]);
 
   // Competition State Management
   const [competitions, setCompetitions] = useState<Competition[]>([]);
@@ -430,6 +432,7 @@ export default function App() {
       if (payload.tasks) setAdminTasks(payload.tasks);
       if (payload.subscriptionPlans) setSubscriptionPlans(payload.subscriptionPlans);
       if (payload.leadSources) setLeadSources(payload.leadSources);
+      if (payload.waitlist) setWaitlist(payload.waitlist);
       if (payload.metrics) {
         setMetricsSummary((prev) => ({
           ...prev,
@@ -629,8 +632,9 @@ export default function App() {
   };
 
   // --- Owner: student management ---
-  type StudentInput = { name?: string; branchId?: string; groupId?: string; teacherId?: string; parentName?: string; parentPhone?: string; status?: string; manualStatus?: string | null };
-  const handleCreateStudent = async (data: StudentInput) => {
+  type StudentInput = { name?: string; firstName?: string; lastName?: string; branchId?: string; groupId?: string; teacherId?: string; parentName?: string; parentPhone?: string; phone?: string; gender?: string | null; birthday?: string | null; sourceId?: string | null; comment?: string; status?: string; manualStatus?: string | null };
+  // Возвращает id созданного ученика (или null) — нужно, чтобы сразу открыть карточку (ТЗ).
+  const handleCreateStudent = async (data: StudentInput): Promise<string | null> => {
     try {
       const response = await fetch("/api/mvp/students", {
         method: "POST",
@@ -638,11 +642,44 @@ export default function App() {
         body: JSON.stringify(data)
       });
       if (!response.ok) throw new Error(await response.text());
+      const result = await response.json().catch(() => ({}));
       await loadMvpBootstrap(activeRole);
-      addAuditLog("Добавление ученика", `Добавлен ученик ${data.name}`);
-      return true;
+      addAuditLog("Добавление ученика", `Добавлен ученик ${data.name || [data.firstName, data.lastName].filter(Boolean).join(" ")}`);
+      return result?.student?.id || null;
     } catch (error: any) {
       setMvpDataError(error.message || "Не удалось добавить ученика");
+      return null;
+    }
+  };
+
+  // --- Лист ожидания (ТЗ «Ученики» → «Лист ожидания») ---
+  const handleAddToWaitlist = async (payload: { studentId: string; branchId?: string | null; groupId?: string | null; comment?: string | null }): Promise<boolean> => {
+    try {
+      const response = await fetch("/api/mvp/waitlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await loadMvpBootstrap(activeRole);
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось добавить в лист ожидания");
+      return false;
+    }
+  };
+  const handleRemoveFromWaitlist = async (id: string, reason = "manual"): Promise<boolean> => {
+    try {
+      const response = await fetch(`/api/mvp/waitlist/${id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+        body: JSON.stringify({ reason })
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await loadMvpBootstrap(activeRole);
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось убрать из листа ожидания");
       return false;
     }
   };
@@ -3226,6 +3263,9 @@ export default function App() {
               onCreateStudent={handleCreateStudent}
               onUpdateStudent={handleUpdateStudent}
               onDeleteStudent={handleDeleteStudent}
+              waitlist={waitlist}
+              onAddToWaitlist={handleAddToWaitlist}
+              onRemoveFromWaitlist={handleRemoveFromWaitlist}
               onCreateAnnouncement={handleCreateAnnouncement}
               onToggleAttendance={toggleAttendance}
               onBulkAttendance={bulkMarkAttendance}
@@ -3251,6 +3291,10 @@ export default function App() {
               onOpenPayment={openPaymentForStudent}
               onSellSubscription={handleSellSubscription}
               subscriptionPlans={subscriptionPlans}
+              leadSources={leadSources}
+              waitlist={waitlist}
+              onAddToWaitlist={handleAddToWaitlist}
+              onRemoveFromWaitlist={handleRemoveFromWaitlist}
               studentTrash={studentTrash}
               onRestoreStudent={handleRestoreStudent}
               onConfirmDeleteStudent={handleConfirmDeleteStudent}
@@ -3316,6 +3360,9 @@ export default function App() {
               tasks={adminTasks}
               subscriptionPlans={subscriptionPlans}
               leadSources={leadSources}
+              waitlist={waitlist}
+              onAddToWaitlist={handleAddToWaitlist}
+              onRemoveFromWaitlist={handleRemoveFromWaitlist}
               onCreateTask={handleCreateTask}
               onUpdateTask={handleUpdateTask}
               onDeleteTask={handleDeleteTask}

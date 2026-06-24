@@ -31,7 +31,7 @@ import {
   Users,
   WalletCards
 } from "lucide-react";
-import { Announcement, AnnouncementAudience, AuditLog, Branch, Group, Hall, Payment, Student, Teacher, AdminTask, AdminTaskStatus, AdminTaskPriority, SubscriptionPlan, LeadSource } from "../types";
+import { Announcement, AnnouncementAudience, AuditLog, Branch, Group, Hall, Payment, Student, Teacher, AdminTask, AdminTaskStatus, AdminTaskPriority, SubscriptionPlan, LeadSource, WaitlistEntry } from "../types";
 import StudentManagementCard, { SellSubscriptionInput } from "./StudentManagementCard";
 import StudentsRegistry from "./StudentsRegistry";
 import AttendanceJournalView from "./AttendanceJournalView";
@@ -104,9 +104,12 @@ interface AdminEduErpWorkspaceProps {
   onUpdateLesson?: (id: string, data: any) => Promise<boolean>;
   onDeleteLesson?: (id: string) => Promise<boolean>;
   onToggleAttendance?: (studentId: string, date: string, status: "present" | "absent" | "sick") => void;
-  onCreateStudent?: (data: any) => Promise<boolean>;
+  onCreateStudent?: (data: any) => Promise<string | boolean | null>;
   onUpdateStudent?: (id: string, data: any) => Promise<boolean>;
   onDeleteStudent?: (id: string) => Promise<boolean>;
+  waitlist?: WaitlistEntry[];
+  onAddToWaitlist?: (payload: { studentId: string; branchId?: string | null; groupId?: string | null; comment?: string | null }) => Promise<boolean>;
+  onRemoveFromWaitlist?: (id: string, reason?: string) => Promise<boolean>;
   onCreateAnnouncement?: (data: { title: string; content: string; audience: AnnouncementAudience; isImportant: boolean }) => void;
   onOpenPayment?: (student: Student) => void;
   onSellSubscription?: (payload: SellSubscriptionInput) => Promise<boolean> | boolean;
@@ -176,6 +179,9 @@ export function AdminEduErpWorkspace({
   onCreateStudent,
   onUpdateStudent,
   onDeleteStudent,
+  waitlist = [],
+  onAddToWaitlist,
+  onRemoveFromWaitlist,
   onCreateAnnouncement,
   onOpenPayment,
   onSellSubscription,
@@ -311,6 +317,10 @@ export function AdminEduErpWorkspace({
               onOpenPayment={onOpenPayment}
               onSellSubscription={onSellSubscription}
               plans={subscriptionPlans}
+              leadSources={leadSources}
+              waitlist={waitlist}
+              onAddToWaitlist={onAddToWaitlist}
+              onRemoveFromWaitlist={onRemoveFromWaitlist}
             />
           )}
           {activeTab === "journal" && (
@@ -427,7 +437,7 @@ function DashboardView({ branches, groups, students, teachers, todayRevenue, mon
 }
 
 // Раздел «Ученики» (ТЗ): полноценный реестр клиентской базы.
-function VisitorsView({ students, groups, branches, teachers, adminBranchId, onCreateStudent, onUpdateStudent, onDeleteStudent, onOpenPayment, onSellSubscription, plans }: any) {
+function VisitorsView({ students, groups, branches, teachers, adminBranchId, onCreateStudent, onUpdateStudent, onDeleteStudent, onOpenPayment, onSellSubscription, plans, leadSources, waitlist, onAddToWaitlist, onRemoveFromWaitlist }: any) {
   return (
     <StudentsRegistry
       students={students}
@@ -441,6 +451,10 @@ function VisitorsView({ students, groups, branches, teachers, adminBranchId, onC
       onOpenPayment={onOpenPayment}
       onSellSubscription={onSellSubscription}
       plans={plans}
+      leadSources={leadSources}
+      waitlist={waitlist}
+      onAddToWaitlist={onAddToWaitlist}
+      onRemoveFromWaitlist={onRemoveFromWaitlist}
     />
   );
 }

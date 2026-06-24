@@ -46,6 +46,36 @@ export const getEnrollmentMonths = (student: Student, now: Date = new Date()): n
   return 0;
 };
 
+/**
+ * Возраст из даты рождения (или готового числа). Корректное русское склонение:
+ * «1 год», «8 лет», «13 лет», «22 года», «23 года».
+ */
+export const ruAgeWord = (age: number): string => {
+  const n = Math.abs(age) % 100;
+  const n1 = n % 10;
+  if (n > 10 && n < 20) return "лет";
+  if (n1 === 1) return "год";
+  if (n1 >= 2 && n1 <= 4) return "года";
+  return "лет";
+};
+
+export const ageFromBirthday = (birthday?: string | null): number | null => {
+  const d = parseDate(birthday);
+  if (!d) return null;
+  const now = new Date();
+  let age = now.getFullYear() - d.getFullYear();
+  const m = now.getMonth() - d.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age -= 1;
+  return Math.max(0, age);
+};
+
+/** «13 лет», «8 лет», «23 года». Берёт birthday, иначе готовое age. */
+export const formatAge = (student: Student): string => {
+  const age = ageFromBirthday(student.birthday) ?? student.age ?? null;
+  if (age == null || age <= 0) return "—";
+  return `${age} ${ruAgeWord(age)}`;
+};
+
 /** «1 год 8 месяцев», «5 месяцев», «меньше месяца». */
 export const formatDuration = (months: number): string => {
   if (months <= 0) return "меньше месяца";
@@ -238,9 +268,13 @@ export const getStudentState = (student: Student, now: Date = new Date()): Stude
       statusLabel = "Не оплачен текущий месяц";
       tone = "red";
     }
+  } else if (student.status === "lead") {
+    statusKey = "lead";
+    statusLabel = "Новый лид";
+    tone = "blue";
   } else if (isTrial(student)) {
     statusKey = "trial";
-    statusLabel = "Новый ученик";
+    statusLabel = "Записан на пробный урок";
     tone = "blue";
   } else if (!getPrimarySubscription(student) || getPrimarySubscription(student)?.status === "expired") {
     statusKey = "not_renewed";
@@ -408,3 +442,39 @@ export const AUTO_STATUS_GROUPS: { title: string; items: string[] }[] = [
     ],
   },
 ];
+
+/* ============================ Лист ожидания ============================ */
+/* ТЗ «Лист ожидания»: приоритет определяется по дате постановки в очередь.
+   Чем дольше человек ждёт, тем выше приоритет.
+   Высокий — ожидание > 30 дней; Средний — 7–30 дней; Низкий — < 7 дней. */
+
+export type WaitPriority = "high" | "medium" | "low";
+
+export const getWaitDays = (addedAt: string, now: Date = new Date()): number => {
+  const d = parseDate(addedAt);
+  if (!d) return 0;
+  return Math.max(0, Math.floor((now.getTime() - d.getTime()) / MS_DAY));
+};
+
+export const getWaitPriority = (addedAt: string, now: Date = new Date()): WaitPriority => {
+  const days = getWaitDays(addedAt, now);
+  if (days > 30) return "high";
+  if (days >= 7) return "medium";
+  return "low";
+};
+
+export const WAIT_PRIORITY_META: Record<WaitPriority, { label: string; badge: string; dot: string }> = {
+  high: { label: "Высокий", badge: "bg-rose-100 text-rose-700", dot: "bg-rose-500" },
+  medium: { label: "Средний", badge: "bg-amber-100 text-amber-700", dot: "bg-amber-500" },
+  low: { label: "Низкий", badge: "bg-slate-100 text-slate-600", dot: "bg-slate-400" },
+};
+
+/** «3 дня», «1 день», «больше месяца» — человекочитаемое время ожидания. */
+export const formatWaitDuration = (addedAt: string, now: Date = new Date()): string => {
+  const days = getWaitDays(addedAt, now);
+  if (days === 0) return "сегодня";
+  const n1 = days % 10;
+  const n = days % 100;
+  const word = n > 10 && n < 20 ? "дней" : n1 === 1 ? "день" : n1 >= 2 && n1 <= 4 ? "дня" : "дней";
+  return `${days} ${word}`;
+};

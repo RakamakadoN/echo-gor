@@ -26,7 +26,7 @@ import {
   Users,
   WalletCards
 } from "lucide-react";
-import { Announcement, AnnouncementAudience, Attendance, Branch, Competition, Group, Hall, Payment, Student, SubscriptionPlan, Teacher } from "../types";
+import { Announcement, AnnouncementAudience, Attendance, Branch, Competition, Group, Hall, Payment, Student, SubscriptionPlan, Teacher, LeadSource, WaitlistEntry } from "../types";
 import StudentManagementCard, { SellSubscriptionInput } from "./StudentManagementCard";
 import StudentsRegistry from "./StudentsRegistry";
 import AttendanceJournalView from "./AttendanceJournalView";
@@ -51,9 +51,13 @@ interface BranchManagerWorkspaceProps {
   onCreateLesson?: (data: any) => Promise<boolean>;
   onUpdateLesson?: (id: string, data: any) => Promise<boolean>;
   onDeleteLesson?: (id: string) => Promise<boolean>;
-  onCreateStudent?: (data: any) => Promise<boolean>;
+  onCreateStudent?: (data: any) => Promise<string | boolean | null>;
   onUpdateStudent?: (id: string, data: any) => Promise<boolean>;
   onDeleteStudent?: (id: string) => Promise<boolean>;
+  leadSources?: LeadSource[];
+  waitlist?: WaitlistEntry[];
+  onAddToWaitlist?: (payload: { studentId: string; branchId?: string | null; groupId?: string | null; comment?: string | null }) => Promise<boolean>;
+  onRemoveFromWaitlist?: (id: string, reason?: string) => Promise<boolean>;
   onCreateAnnouncement?: (data: { title: string; content: string; audience: AnnouncementAudience; isImportant: boolean }) => void;
   onOpenPayment?: (student: Student) => void;
   onSellSubscription?: (payload: SellSubscriptionInput) => Promise<boolean> | boolean;
@@ -104,6 +108,9 @@ export function BranchManagerWorkspace({
   onCreateStudent,
   onUpdateStudent,
   onDeleteStudent,
+  waitlist = [],
+  onAddToWaitlist,
+  onRemoveFromWaitlist,
   onCreateAnnouncement,
   onOpenPayment,
   onSellSubscription,
@@ -223,6 +230,9 @@ export function BranchManagerWorkspace({
               onOpenPayment={onOpenPayment}
               onSellSubscription={onSellSubscription}
               plans={subscriptionPlans}
+              waitlist={waitlist}
+              onAddToWaitlist={onAddToWaitlist}
+              onRemoveFromWaitlist={onRemoveFromWaitlist}
             />
           )}
           {activeTab === "teachers" && <TeachersView teachers={branchTeachers} groups={branchGroups} students={branchStudents} />}
@@ -348,18 +358,21 @@ function DashboardView({ branch, metrics, attendanceWeek, attendanceMonth, group
   );
 }
 
-function StudentsView({ students, groups, teachers = [], branches = [], branchId, onCreateStudent, onUpdateStudent, onDeleteStudent, onOpenPayment, onSellSubscription, plans = [] }: {
+function StudentsView({ students, groups, teachers = [], branches = [], branchId, onCreateStudent, onUpdateStudent, onDeleteStudent, onOpenPayment, onSellSubscription, plans = [], waitlist = [], onAddToWaitlist, onRemoveFromWaitlist }: {
   students: Student[];
   groups: Group[];
   teachers?: Teacher[];
   branches?: Branch[];
   branchId: string;
-  onCreateStudent?: (data: any) => Promise<boolean>;
+  onCreateStudent?: (data: any) => Promise<string | boolean | null>;
   onUpdateStudent?: (id: string, data: any) => Promise<boolean>;
   onDeleteStudent?: (id: string) => Promise<boolean>;
   onOpenPayment?: (student: Student) => void;
   onSellSubscription?: (payload: SellSubscriptionInput) => Promise<boolean> | boolean;
   plans?: SubscriptionPlan[];
+  waitlist?: WaitlistEntry[];
+  onAddToWaitlist?: (payload: { studentId: string; branchId?: string | null; groupId?: string | null; comment?: string | null }) => Promise<boolean>;
+  onRemoveFromWaitlist?: (id: string, reason?: string) => Promise<boolean>;
 }) {
   return (
     <Screen title="Ученики филиала" subtitle="Продления, долги, LTV-сегменты, коммуникации и массовые действия по вашему филиалу.">
@@ -375,6 +388,9 @@ function StudentsView({ students, groups, teachers = [], branches = [], branchId
         onOpenPayment={onOpenPayment}
         onSellSubscription={onSellSubscription}
         plans={plans}
+        waitlist={waitlist}
+        onAddToWaitlist={onAddToWaitlist}
+        onRemoveFromWaitlist={onRemoveFromWaitlist}
       />
     </Screen>
   );

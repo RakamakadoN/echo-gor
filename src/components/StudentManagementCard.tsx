@@ -7,7 +7,7 @@
  * Руководитель филиала, Владелец, Преподаватель). Дизайн — светлая CRM-карточка:
  * шапка с аватаром и статусом, ряд действий, вкладки, блок «Текущий абонемент».
  */
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Calendar,
   MapPin,
@@ -18,6 +18,7 @@ import {
   ArrowLeftRight,
   Pencil,
   Phone,
+  Clock,
   X,
   Trash2,
   CreditCard,
@@ -67,6 +68,10 @@ export interface StudentManagementCardProps {
   onTrial?: (payload: { date: string; time: string; note: string }) => Promise<boolean> | boolean | void;
   /** Перевод ученика в другую группу/филиал/к другому педагогу */
   onTransfer?: (payload: { groupId?: string; branchId?: string; teacherId?: string }) => Promise<boolean> | boolean | void;
+  /** Добавить ученика в лист ожидания (ТЗ «Лист ожидания»). */
+  onAddToWaitlist?: (payload: { studentId: string; branchId?: string | null; groupId?: string | null; comment?: string | null }) => Promise<boolean> | boolean;
+  /** true — ученик уже состоит в активном листе ожидания (кнопка становится неактивной). */
+  inWaitlist?: boolean;
 }
 
 type TabId =
@@ -121,12 +126,36 @@ export default function StudentManagementCard({
   onSellSubscription,
   onTrial,
   onTransfer,
+  onAddToWaitlist,
+  inWaitlist = false,
 }: StudentManagementCardProps) {
   const [tab, setTab] = useState<TabId>("general");
   const [panel, setPanel] = useState<null | "trial" | "transfer" | "sell">(null);
   const [openSub, setOpenSub] = useState<Subscription | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);
+  const [waitlisted, setWaitlisted] = useState(inWaitlist);
+  // Сброс состояния кнопки при переключении на другого ученика в той же панели.
+  useEffect(() => { setWaitlisted(inWaitlist); }, [student.id, inWaitlist]);
+
+  const addToWaitlist = async () => {
+    if (!onAddToWaitlist || waitlisted) return;
+    setBusy(true);
+    try {
+      const ok = await onAddToWaitlist({
+        studentId: student.id,
+        branchId: student.branchId || null,
+        groupId: student.groupIds?.[0] || null,
+        comment: null,
+      });
+      if (ok !== false) {
+        setWaitlisted(true);
+        setDone("Ученик добавлен в лист ожидания");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const [trialForm, setTrialForm] = useState({ date: "", time: "", note: "" });
   const [transferForm, setTransferForm] = useState({
@@ -216,19 +245,8 @@ export default function StudentManagementCard({
       </div>
 
       <div className="p-5">
-        {/* Шапка ученика */}
+        {/* Шапка ученика (без аватара — ТЗ: карточка компактная и информативная) */}
         <div className="flex items-start gap-4">
-          {student.photoUrl ? (
-            <img
-              src={student.photoUrl}
-              alt=""
-              className="h-16 w-16 shrink-0 rounded-full object-cover ring-2 ring-amber-400/40"
-            />
-          ) : (
-            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-orange-600 text-xl font-black text-white">
-              {initials(student.name)}
-            </div>
-          )}
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-3">
               <h2 className="text-2xl font-black tracking-tight text-slate-900">
@@ -302,6 +320,19 @@ export default function StudentManagementCard({
           >
             <MessageCircle className="h-4 w-4" /> WhatsApp
           </a>
+          {onAddToWaitlist && (
+            <button
+              onClick={addToWaitlist}
+              disabled={busy || waitlisted}
+              className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-bold transition disabled:opacity-50 ${
+                waitlisted
+                  ? "border-violet-200 bg-violet-50 text-violet-600"
+                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              <Clock className="h-4 w-4 text-violet-500" /> {waitlisted ? "В листе ожидания" : "Добавить в лист ожидания"}
+            </button>
+          )}
           {onTransfer && (
             <button
               onClick={() => togglePanel("transfer")}
