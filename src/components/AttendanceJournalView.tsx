@@ -448,7 +448,7 @@ function FragmentRows({ seg, lessonDates, saving, canEdit, onCell, cellMenu, onM
 function CellMenu({ state, student, onClose, onMark }: any) {
   const isTrial = student?.status === "trial";
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
       <div className="w-full max-w-xs rounded-2xl border border-white/10 bg-[#11121A] p-4" onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 flex items-center justify-between">
           <div>
@@ -623,7 +623,7 @@ function RecalcModal({ student, journal, onClose, onDone }: { student: Student; 
 
 function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
       <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-white/10 bg-[#11121A] p-5" onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-base font-black text-white">{title}</h3>

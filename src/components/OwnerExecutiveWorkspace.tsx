@@ -3560,7 +3560,7 @@ function AcctAddOperation({ categories, accounts, busy, onClose, onSubmit }: {
   const field = "w-full rounded-xl border border-white/10 bg-[#0e0e0e] px-3 py-2 text-sm text-white outline-none focus:border-[#C5A059]/50";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
       <div className="w-full max-w-md rounded-3xl border border-white/10 bg-[#161616] p-5" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <h3 className="font-black text-white">Новая операция</h3>

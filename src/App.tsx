@@ -6476,7 +6476,7 @@ export default function App() {
 
       {/* FORM MODAL: REGISTER NEW STUDENT */}
       {showAddStudentModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-55 p-4">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-55 p-4">
           <div className="bg-[#121212] rounded-3xl border border-[#C5A059]/30 p-6 max-w-md w-full space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-white/5">
               <h3 className="text-base font-bold text-white uppercase tracking-wider">Регистрация ученика</h3>
@@ -6583,7 +6583,7 @@ export default function App() {
 
       {/* FORM MODAL: POST PAYMENT */}
       {showAddPaymentModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-55 p-4">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-55 p-4">
           <div className="bg-[#121212] rounded-3xl border border-[#C5A059]/30 p-6 max-w-sm w-full space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-white/5">
               <h3 className="text-base font-bold text-white uppercase tracking-wider">Прием оплаты</h3>
