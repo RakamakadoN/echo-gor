@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -56,6 +56,7 @@ import {
   ShoppingBag,
   Package,
   Boxes,
+  Upload,
   X
 } from "lucide-react";
 import { Announcement, AnnouncementAudience, Branch, Competition, ExecutiveSummary, Group, Payment, Student, SubscriptionPlan, Teacher, LeadSource, WaitlistEntry } from "../types";
@@ -3829,6 +3830,41 @@ function DocEditModal({ doc, categories, busy, onClose, onSave, onDelete }: { do
     amount: doc.amount || "", dateStart: doc.dateStart || "", dateEnd: doc.dateEnd || "", autoRenew: !!doc.autoRenew,
     status: doc.status || "active", scanUrl: doc.scanUrl || "", comment: doc.comment || "",
   });
+  const scanRef = useRef<HTMLInputElement>(null);
+  const [scanErr, setScanErr] = useState<string | null>(null);
+  // Загрузка скана: изображения уменьшаем до 1400px (читаемость документа), PDF берём как есть
+  const onPickScan = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const isImg = file.type.startsWith("image/");
+    const isPdf = file.type === "application/pdf";
+    if (!isImg && !isPdf) { setScanErr("Поддерживаются изображения и PDF"); return; }
+    if (isPdf && file.size > 8 * 1024 * 1024) { setScanErr("PDF больше 8 МБ — загрузите ссылку на файл"); return; }
+    setScanErr(null);
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (isPdf) { setF((s: any) => ({ ...s, scanUrl: String(reader.result) })); return; }
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 1400;
+        const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+        const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) { setF((s: any) => ({ ...s, scanUrl: String(reader.result) })); return; }
+        ctx.drawImage(img, 0, 0, w, h);
+        setF((s: any) => ({ ...s, scanUrl: canvas.toDataURL("image/jpeg", 0.85) }));
+      };
+      img.onerror = () => setScanErr("Не удалось прочитать изображение");
+      img.src = String(reader.result);
+    };
+    reader.onerror = () => setScanErr("Не удалось загрузить файл");
+    reader.readAsDataURL(file);
+  };
+  const isPdfScan = typeof f.scanUrl === "string" && f.scanUrl.startsWith("data:application/pdf");
+  const hasImgScan = typeof f.scanUrl === "string" && f.scanUrl && !isPdfScan;
   const submit = () => onSave(isNew ? null : doc.id, f);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" onClick={onClose}>
@@ -3858,7 +3894,18 @@ function DocEditModal({ doc, categories, busy, onClose, onSave, onDelete }: { do
             <label className="block text-xs text-slate-400">Дата окончания<input type="date" value={f.dateEnd} onChange={(e) => setF({ ...f, dateEnd: e.target.value })} className={docInputCls} /></label>
           </div>
           <label className="flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" checked={f.autoRenew} onChange={(e) => setF({ ...f, autoRenew: e.target.checked })} /> Автопролонгация</label>
-          <label className="block text-xs text-slate-400">Ссылка на PDF-скан подписанного договора<input value={f.scanUrl} onChange={(e) => setF({ ...f, scanUrl: e.target.value })} className={docInputCls} placeholder="https://… или путь в хранилище" /></label>
+          <div className="space-y-1.5">
+            <label className="block text-xs text-slate-400">Скан подписанного договора (изображение / PDF)
+              <div className="flex items-center gap-2">
+                <input value={isPdfScan ? "" : f.scanUrl} onChange={(e) => setF({ ...f, scanUrl: e.target.value })} className={docInputCls} placeholder="https://… или путь в хранилище" />
+                <input ref={scanRef} type="file" accept="image/*,application/pdf" onChange={onPickScan} className="hidden" />
+                <button type="button" onClick={() => scanRef.current?.click()} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border border-[#C5A059]/40 px-3 py-2 text-xs font-black text-[#C5A059] hover:bg-[#C5A059]/10"><Upload className="h-4 w-4" /> Загрузить</button>
+              </div>
+            </label>
+            {scanErr && <p className="text-[11px] text-rose-400">{scanErr}</p>}
+            {hasImgScan && <div className="flex items-start gap-2"><img src={f.scanUrl} alt="скан" className="h-32 w-auto max-w-[12rem] rounded-xl border border-white/10 object-contain" /><button type="button" onClick={() => setF({ ...f, scanUrl: "" })} className="rounded-lg border border-white/10 px-2 py-1 text-[11px] font-bold text-slate-400 hover:text-rose-400">Убрать</button></div>}
+            {isPdfScan && <div className="flex items-center gap-2 text-[11px] text-slate-300"><FileText className="h-4 w-4 text-[#C5A059]" /> PDF загружен<button type="button" onClick={() => setF({ ...f, scanUrl: "" })} className="rounded-lg border border-white/10 px-2 py-1 font-bold text-slate-400 hover:text-rose-400">Убрать</button></div>}
+          </div>
           <label className="block text-xs text-slate-400">Комментарий<textarea value={f.comment} onChange={(e) => setF({ ...f, comment: e.target.value })} className={docInputCls} rows={2} /></label>
         </div>
         <div className="flex items-center justify-between gap-2 border-t border-white/5 px-5 py-4">
@@ -4581,8 +4628,37 @@ function ProductAddModal({ busy, onClose, onSubmit, role = "owner" }: any) {
   const [f, setF] = useState<any>({ name: "", category: "", sku: "", salePrice: "", costPrice: "", minStock: "", comment: "", photoUrl: "" });
   const [genBusy, setGenBusy] = useState(false);
   const [genErr, setGenErr] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const set = (k: string, v: any) => setF((s: any) => ({ ...s, [k]: v }));
   useEffect(() => { if (!f.category && categories[0]) set("category", categories[0].label); /* eslint-disable-next-line */ }, [categories]);
+
+  // Загрузка фото с устройства: уменьшаем до 600px и сжимаем в JPEG, чтобы не раздувать базу
+  const onPickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // позволяем выбрать тот же файл повторно
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { setGenErr("Выберите файл изображения"); return; }
+    setGenErr(null);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 600;
+        const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+        const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) { set("photoUrl", String(reader.result)); return; }
+        ctx.drawImage(img, 0, 0, w, h);
+        set("photoUrl", canvas.toDataURL("image/jpeg", 0.85));
+      };
+      img.onerror = () => setGenErr("Не удалось прочитать изображение");
+      img.src = String(reader.result);
+    };
+    reader.onerror = () => setGenErr("Не удалось загрузить файл");
+    reader.readAsDataURL(file);
+  };
 
   const generatePhoto = async () => {
     if (!f.name.trim()) { setGenErr("Сначала укажите название товара"); return; }
@@ -4609,14 +4685,23 @@ function ProductAddModal({ busy, onClose, onSubmit, role = "owner" }: any) {
       <ModalInput label="Закупочная цена, ₸" type="number" value={f.costPrice} onChange={(v) => set("costPrice", v)} />
       <ModalInput label="Минимальный остаток" type="number" value={f.minStock} onChange={(v) => set("minStock", v)} />
       <div className="sm:col-span-2">
-        <div className="flex items-end gap-2">
-          <div className="flex-1"><ModalInput label="Фото товара (ссылка или сгенерировать)" value={f.photoUrl} onChange={(v) => set("photoUrl", v)} placeholder="https://…" full /></div>
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="min-w-[200px] flex-1"><ModalInput label="Фото товара (загрузить, ссылка или сгенерировать)" value={f.photoUrl} onChange={(v) => set("photoUrl", v)} placeholder="https://…" full /></div>
+          <input ref={fileInputRef} type="file" accept="image/*" onChange={onPickFile} className="hidden" />
+          <button type="button" onClick={() => fileInputRef.current?.click()} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border border-[#C5A059]/40 px-3 py-2 text-xs font-black text-[#C5A059] hover:bg-[#C5A059]/10">
+            <Upload className="h-4 w-4" /> Загрузить
+          </button>
           <button type="button" onClick={generatePhoto} disabled={genBusy} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border border-[#C5A059]/40 px-3 py-2 text-xs font-black text-[#C5A059] hover:bg-[#C5A059]/10 disabled:opacity-50">
             <Sparkles className="h-4 w-4" /> {genBusy ? "Генерация…" : "Сгенерировать"}
           </button>
         </div>
         {genErr && <p className="mt-1 text-[11px] text-rose-400">{genErr}</p>}
-        {f.photoUrl ? <img src={f.photoUrl} alt="" className="mt-2 h-32 w-32 rounded-xl object-cover" /> : null}
+        {f.photoUrl ? (
+          <div className="mt-2 flex items-start gap-2">
+            <img src={f.photoUrl} alt="" className="h-32 w-32 rounded-xl object-cover" />
+            <button type="button" onClick={() => set("photoUrl", "")} className="rounded-lg border border-white/10 px-2 py-1 text-[11px] font-bold text-slate-400 hover:text-rose-400">Убрать</button>
+          </div>
+        ) : null}
       </div>
       <ModalInput label="Комментарий" value={f.comment} onChange={(v) => set("comment", v)} full />
       <ModalActions busy={busy} onClose={onClose} onSubmit={submit} submitLabel="Создать" />

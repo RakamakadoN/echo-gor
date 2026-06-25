@@ -46,22 +46,20 @@
    with a soft border and shadow so it reads against the light page. Covers
    the full range of near-black hexes used across the app (KPI cards #141414,
    schedule + AI panels #111, charts/panels #121212, etc.). */
-:root.day-theme .day-theme-app [class*="bg-[#0c0c0c]"],
-:root.day-theme .day-theme-app [class*="bg-[#0C0C0C]"],
-:root.day-theme .day-theme-app [class*="bg-[#0e0e0e]"],
-:root.day-theme .day-theme-app [class*="bg-[#0F0F0F]"],
-:root.day-theme .day-theme-app [class*="bg-[#111]"],
-:root.day-theme .day-theme-app [class*="bg-[#121212]"],
-:root.day-theme .day-theme-app [class*="bg-[#141414]"],
-:root.day-theme .day-theme-app [class*="bg-[#161616]"],
-:root.day-theme .day-theme-app [class*="bg-[#171717]"],
-:root.day-theme .day-theme-app [class*="bg-[#181818]"],
-:root.day-theme .day-theme-app [class*="bg-[#1A1A1A]"],
-:root.day-theme .day-theme-app [class*="bg-[#1a1a1a]"],
-:root.day-theme .day-theme-app [class*="bg-[#1b1b1b]"],
-:root.day-theme .day-theme-app [class*="bg-[#11121A]"],
-:root.day-theme .day-theme-app [class*="bg-[#12141c]"],
-:root.day-theme .day-theme-app [class*="bg-[#140f10]"] {
+:root.day-theme .day-theme-app [class*="bg-[#0c0c0c]" i],
+:root.day-theme .day-theme-app [class*="bg-[#0e0e0e]" i],
+:root.day-theme .day-theme-app [class*="bg-[#0f0f0f]" i],
+:root.day-theme .day-theme-app [class*="bg-[#111]" i],
+:root.day-theme .day-theme-app [class*="bg-[#121212]" i],
+:root.day-theme .day-theme-app [class*="bg-[#141414]" i],
+:root.day-theme .day-theme-app [class*="bg-[#161616]" i],
+:root.day-theme .day-theme-app [class*="bg-[#171717]" i],
+:root.day-theme .day-theme-app [class*="bg-[#181818]" i],
+:root.day-theme .day-theme-app [class*="bg-[#1a1a1a]" i],
+:root.day-theme .day-theme-app [class*="bg-[#1b1b1b]" i],
+:root.day-theme .day-theme-app [class*="bg-[#11121a]" i],
+:root.day-theme .day-theme-app [class*="bg-[#12141c]" i],
+:root.day-theme .day-theme-app [class*="bg-[#140f10]" i] {
   background-color: #ffffff !important;
   border-color: rgba(15, 23, 42, 0.08) !important;
   box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06) !important;
@@ -73,6 +71,13 @@
 :root.day-theme .day-theme-app [class*="bg-white/"],
 :root.day-theme .day-theme-app [class*="bg-white\\["] {
   background-color: #eef2f7 !important;
+}
+
+/* Exception — full-screen modal backdrops (fixed inset-0 bg-black/NN) must stay
+   translucent so the blurred page behind shows through. The broad bg-black tint
+   above would otherwise make them opaque and kill the backdrop-blur effect. */
+:root.day-theme .day-theme-app [class*="fixed"][class*="inset-0"][class*="bg-black"] {
+  background-color: rgba(15, 23, 42, 0.4) !important;
 }
 
 :root.day-theme .day-theme-app [class*="from-[#"],
