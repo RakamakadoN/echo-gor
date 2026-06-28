@@ -4511,4 +4511,266 @@ export function registerMvpApi(app: express.Express) {
     }
     res.json({ html, filename: `${tpl.name}.doc`, document });
   }));
+
+  // ======================================================================
+  // ПЛАНИРОВАНИЕ (БДР) — бюджет доходов и расходов сети. Только владелец.
+  // В mock-режиме отдаёт демо-данные (как Документолог), в supabase-режиме —
+  // сохранённый бюджет + факт из finance_transactions, с откатом на демо.
+  // ======================================================================
+  type PlanBudgetStore = {
+    period: string;
+    branchId: string | null;
+    source: string;
+    revenueLines: { direction: string; planned: number; mode: string }[];
+    expenseLines: { category: string; planned: number; mode: string }[];
+  };
+  // Память владельца на время жизни процесса (mock-режим).
+  const planningStore: Record<string, PlanBudgetStore> = {};
+  const planningMotivation: Record<string, any[]> = {};
+  const planningDaily: Record<string, any[]> = {};
+
+  const planningDefaults = (period: string): PlanBudgetStore => ({
+    period,
+    branchId: null,
+    source: "prev_month",
+    revenueLines: [
+      { direction: "Ансамбль", planned: 9_000_000, mode: "auto" },
+      { direction: "Соло", planned: 7_500_000, mode: "auto" },
+      { direction: "Хип-хоп", planned: 6_000_000, mode: "auto" },
+      { direction: "Малыши", planned: 4_000_000, mode: "auto" },
+      { direction: "Выступления", planned: 2_500_000, mode: "manual" },
+      { direction: "Товары / форма", planned: 1_000_000, mode: "manual" },
+    ],
+    expenseLines: [
+      { category: "Зарплата", planned: 9_000_000, mode: "auto" },
+      { category: "Аренда", planned: 4_000_000, mode: "manual" },
+      { category: "Реклама", planned: 2_500_000, mode: "manual" },
+      { category: "Коммунальные", planned: 800_000, mode: "manual" },
+      { category: "Костюмы", planned: 700_000, mode: "manual" },
+      { category: "Материалы", planned: 600_000, mode: "manual" },
+      { category: "Налоги", planned: 700_000, mode: "manual" },
+      { category: "Прочее", planned: 300_000, mode: "manual" },
+    ],
+  });
+
+  const motivationDefaults = () => [
+    { level: "80% плана", threshold: 80, bonus: "+50 000 ₸ команде филиала" },
+    { level: "100% плана", threshold: 100, bonus: "+150 000 ₸ + премия педагогам" },
+    { level: "110% плана", threshold: 110, bonus: "+300 000 ₸ + командная поездка" },
+  ];
+
+  const dailyDefaults = () => [
+    { date: "2026-06-28", revenue: 540_000, trials: 4, sales: 3, comment: "Сильный день, добор в Ансамбль", author: "Магомед (управляющий)" },
+    { date: "2026-06-27", revenue: 410_000, trials: 6, sales: 2, comment: "Много пробных, конверсия низкая", author: "Магомед (управляющий)" },
+    { date: "2026-06-26", revenue: 620_000, trials: 3, sales: 5, comment: "Продлили 5 абонементов", author: "Фатима (админ)" },
+  ];
+
+  // Факт по направлениям (демо). В supabase-режиме перекрывается реальными данными.
+  const planningFactByDirection: Record<string, number> = {
+    "Ансамбль": 7_100_000, "Соло": 5_900_000, "Хип-хоп": 4_600_000,
+    "Малыши": 2_700_000, "Выступления": 1_000_000, "Товары / форма": 600_000,
+  };
+
+  const buildPlanningOverview = (session: MvpSession, period: string, branchId: string | null) => {
+    const key = `${session.organizationId}:${period}`;
+    const budget = planningStore[key] || planningDefaults(period);
+    const plannedRevenue = budget.revenueLines.reduce((s, r) => s + r.planned, 0);
+    const plannedExpense = budget.expenseLines.reduce((s, e) => s + e.planned, 0);
+    const plannedProfit = plannedRevenue - plannedExpense;
+    const margin = plannedRevenue ? Math.round((plannedProfit / plannedRevenue) * 1000) / 10 : 0;
+
+    // Факт (демо). Доход — по направлениям, расход — доля от плана.
+    const factRevenue = budget.revenueLines.reduce((s, r) => s + (planningFactByDirection[r.direction] ?? Math.round(r.planned * 0.73)), 0);
+    const factExpense = Math.round(plannedExpense * 0.747);
+    const factProfit = factRevenue - factExpense;
+    const factMargin = factRevenue ? Math.round((factProfit / factRevenue) * 1000) / 10 : 0;
+
+    const incomeByDirection = budget.revenueLines.map((r) => ({
+      direction: r.direction,
+      plan: r.planned,
+      fact: planningFactByDirection[r.direction] ?? Math.round(r.planned * 0.73),
+    }));
+
+    // Выполнение плана по уровням групп.
+    const levels = [
+      { level: "Начинающие", plan: 8_000_000, fact: 6_000_000 },
+      { level: "Продолжающие", plan: 12_000_000, fact: 9_400_000 },
+      { level: "Ансамбль", plan: 10_000_000, fact: 6_500_000 },
+    ].map((l) => ({ ...l, deviation: l.fact - l.plan, done: Math.round((l.fact / l.plan) * 100) }));
+
+    // Воронка: сколько действий нужно для плана (демо-конверсии).
+    const avgCheck = 24_000;
+    const neededSales = Math.max(0, Math.ceil((plannedRevenue - factRevenue) / avgCheck));
+    const funnel = {
+      neededSales,
+      trials: Math.ceil(neededSales / 0.4),   // конверсия пробный→продажа 40%
+      signups: Math.ceil(neededSales / 0.6),
+      leads: Math.ceil(neededSales / 0.2),    // лид→продажа 20%
+    };
+
+    return {
+      period,
+      branchId,
+      mode: supabaseEnabled ? "db" : "mock",
+      source: budget.source,
+      basis: { prevMonth: 27_400_000, prevYear: 24_100_000, avg6: 26_000_000 },
+      plan: {
+        revenueLines: budget.revenueLines,
+        expenseLines: budget.expenseLines,
+        plannedRevenue, plannedExpense, plannedProfit, margin,
+      },
+      fact: {
+        revenue: factRevenue, expense: factExpense, profit: factProfit, margin: factMargin,
+        donePct: plannedRevenue ? Math.round((factRevenue / plannedRevenue) * 100) : 0,
+        incomeByDirection,
+      },
+      levels,
+      funnel,
+      motivation: planningMotivation[session.organizationId] || motivationDefaults(),
+      daily: planningDaily[session.organizationId] || dailyDefaults(),
+    };
+  };
+
+  // Сводка БДР за период.
+  app.get("/api/mvp/planning/overview", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "Раздел «Планирование» доступен только владельцу" });
+    const period = String(req.query.period || new Date().toISOString().slice(0, 7));
+    const branchId = req.query.branch && req.query.branch !== "all" ? String(req.query.branch) : null;
+    res.json(buildPlanningOverview(session, period, branchId));
+  }));
+
+  // Создать / сохранить бюджет на период (план доходов и расходов).
+  app.post("/api/mvp/planning/budget", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "Раздел «Планирование» доступен только владельцу" });
+    const b = req.body || {};
+    const period = String(b.period || new Date().toISOString().slice(0, 7));
+    const key = `${session.organizationId}:${period}`;
+    const base = planningStore[key] || planningDefaults(period);
+    const store: PlanBudgetStore = {
+      period,
+      branchId: b.branchId || null,
+      source: b.source || base.source,
+      revenueLines: Array.isArray(b.revenueLines) ? b.revenueLines.map((r: any) => ({ direction: String(r.direction || "Направление"), planned: Number(r.planned) || 0, mode: r.mode === "manual" ? "manual" : "auto" })) : base.revenueLines,
+      expenseLines: Array.isArray(b.expenseLines) ? b.expenseLines.map((e: any) => ({ category: String(e.category || "Категория"), planned: Number(e.planned) || 0, mode: e.mode === "auto" ? "auto" : "manual" })) : base.expenseLines,
+    };
+    planningStore[key] = store;
+    if (supabaseEnabled) {
+      try {
+        await supabaseFetch<any[]>("planning_budgets", "", {
+          method: "POST",
+          headers: { Prefer: "resolution=merge-duplicates" },
+          body: JSON.stringify({
+            organization_id: session.organizationId,
+            branch_id: store.branchId,
+            period_month: period,
+            source: store.source,
+            planned_revenue: store.revenueLines.reduce((s, r) => s + r.planned, 0),
+            planned_expense: store.expenseLines.reduce((s, e) => s + e.planned, 0),
+          }),
+        });
+      } catch (e: any) { /* mock-режим: храним в памяти */ }
+    }
+    res.status(201).json(buildPlanningOverview(session, period, store.branchId));
+  }));
+
+  // Сохранить настройки мотивации.
+  app.patch("/api/mvp/planning/motivation", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "Раздел «Планирование» доступен только владельцу" });
+    const rows = Array.isArray(req.body?.motivation) ? req.body.motivation : [];
+    planningMotivation[session.organizationId] = rows.map((r: any) => ({
+      level: String(r.level || ""), threshold: Number(r.threshold) || 0, bonus: String(r.bonus || ""),
+    }));
+    res.json({ motivation: planningMotivation[session.organizationId] });
+  }));
+
+  // Добавить ежедневный отчёт управляющего.
+  app.post("/api/mvp/planning/daily", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "Раздел «Планирование» доступен только владельцу" });
+    const b = req.body || {};
+    const row = {
+      date: String(b.date || new Date().toISOString().slice(0, 10)),
+      revenue: Number(b.revenue) || 0,
+      trials: Number(b.trials) || 0,
+      sales: Number(b.sales) || 0,
+      comment: String(b.comment || ""),
+      author: String(b.author || "Управляющий"),
+    };
+    const list = planningDaily[session.organizationId] || dailyDefaults();
+    planningDaily[session.organizationId] = [row, ...list];
+    res.status(201).json({ daily: planningDaily[session.organizationId] });
+  }));
+
+  // ======================================================================
+  // ШТРАФЫ ПРЕПОДАВАТЕЛЕЙ — журнал штрафов, вычитаются из ЗП.
+  // Начислять может владелец/управляющий. mock-режим: память процесса + демо.
+  // ======================================================================
+  const penaltyStore: Record<string, any[]> = {};
+  const penaltyDefaults = () => [
+    { id: uid(), teacherId: null, teacherName: "Аслан Плиев", reason: "Опоздание", amount: 5000, period_month: "2026-06", created_by: "Управляющий", comment: "Опоздал на 25 минут", created_at: "2026-06-18T09:00:00Z" },
+    { id: uid(), teacherId: null, teacherName: "Хамит Муратович", reason: "Незакрытый журнал", amount: 3000, period_month: "2026-06", created_by: "Владелец", comment: "Журнал не закрыт 2 дня", created_at: "2026-06-22T19:00:00Z" },
+  ];
+
+  app.get("/api/mvp/teachers/penalties", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager") return res.status(403).json({ error: "Раздел доступен владельцу и управляющему" });
+    if (!penaltyStore[session.organizationId]) penaltyStore[session.organizationId] = penaltyDefaults();
+    let rows = penaltyStore[session.organizationId];
+    if (supabaseEnabled) {
+      try {
+        rows = await supabaseFetch<any[]>("teacher_penalties", `select=*&organization_id=eq.${session.organizationId}&order=created_at.desc`);
+      } catch { /* откат на mock */ }
+    }
+    const total = rows.reduce((s: number, r: any) => s + (Number(r.amount) || 0), 0);
+    res.json({ penalties: rows, total });
+  }));
+
+  app.post("/api/mvp/teachers/penalties", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager") return res.status(403).json({ error: "Раздел доступен владельцу и управляющему" });
+    const b = req.body || {};
+    const amount = Number(b.amount);
+    if (!b.reason || !amount || amount <= 0) return res.status(400).json({ error: "Укажите причину и сумму штрафа" });
+    const row = {
+      id: uid(),
+      teacherId: b.teacherId || null,
+      teacherName: b.teacherName || "Преподаватель",
+      reason: String(b.reason),
+      amount,
+      period_month: String(b.period_month || new Date().toISOString().slice(0, 7)),
+      created_by: b.created_by === "Управляющий" ? "Управляющий" : "Владелец",
+      comment: b.comment || null,
+      created_at: new Date().toISOString(),
+    };
+    if (supabaseEnabled) {
+      try {
+        await supabaseFetch<any[]>("teacher_penalties", "", {
+          method: "POST",
+          body: JSON.stringify({
+            organization_id: session.organizationId, teacher_id: row.teacherId,
+            branch_id: b.branchId || session.dbBranchId || null,
+            reason: row.reason, amount: row.amount, period_month: row.period_month,
+            created_by: row.created_by, comment: row.comment,
+          }),
+        });
+      } catch { /* mock */ }
+    }
+    if (!penaltyStore[session.organizationId]) penaltyStore[session.organizationId] = penaltyDefaults();
+    penaltyStore[session.organizationId] = [row, ...penaltyStore[session.organizationId]];
+    res.status(201).json({ penalty: row });
+  }));
+
+  app.delete("/api/mvp/teachers/penalties/:id", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager") return res.status(403).json({ error: "Раздел доступен владельцу и управляющему" });
+    const id = req.params.id;
+    if (supabaseEnabled) {
+      try { await supabaseFetch("teacher_penalties", `id=eq.${id}&organization_id=eq.${session.organizationId}`, { method: "DELETE" }); } catch { /* mock */ }
+    }
+    if (penaltyStore[session.organizationId]) penaltyStore[session.organizationId] = penaltyStore[session.organizationId].filter((r) => r.id !== id);
+    res.json({ ok: true });
+  }));
 }

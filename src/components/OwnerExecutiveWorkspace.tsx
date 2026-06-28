@@ -189,7 +189,7 @@ interface OwnerExecutiveWorkspaceProps {
   onJournalTask?: (p: { studentId: string; studentName: string; title: string }) => void;
 }
 
-type OwnerTab = "dashboard" | "branches" | "students" | "teachers" | "payroll" | "journal" | "schedule" | "finance" | "performances" | "products" | "documents" | "marketing" | "events" | "feed" | "announcements" | "analytics" | "ai" | "settings";
+type OwnerTab = "dashboard" | "branches" | "students" | "teachers" | "payroll" | "journal" | "schedule" | "finance" | "planning" | "performances" | "products" | "documents" | "marketing" | "events" | "feed" | "announcements" | "analytics" | "ai" | "settings";
 
 const ownerTabs: { id: OwnerTab; label: string; short: string; icon: React.ElementType }[] = [
   { id: "dashboard", label: "Dashboard", short: "Главная", icon: Activity },
@@ -200,6 +200,7 @@ const ownerTabs: { id: OwnerTab; label: string; short: string; icon: React.Eleme
   { id: "journal", label: "Журнал посещаемости", short: "Журнал", icon: ClipboardList },
   { id: "schedule", label: "Расписание", short: "Расписание", icon: CalendarDays },
   { id: "finance", label: "Бухгалтерия", short: "Учёт", icon: Coins },
+  { id: "planning", label: "Планирование (БДР)", short: "План", icon: LineChart },
   { id: "performances", label: "Выступления", short: "Сцена", icon: Mic2 },
   { id: "products", label: "Товары и склад", short: "Товары", icon: ShoppingBag },
   { id: "documents", label: "Документолог", short: "Договоры", icon: FileText },
@@ -373,6 +374,7 @@ export function OwnerExecutiveWorkspace({
           {activeTab === "teachers" && <TeachersNetworkView teachers={teachers} metrics={metrics} branches={branches} students={students} groups={groups} payments={payments} onCreateTeacher={onCreateTeacher} onUpdateTeacher={onUpdateTeacher} onDeleteTeacher={onDeleteTeacher} />}
           {activeTab === "payroll" && <PayrollView teachers={teachers} students={students} groups={groups} payments={payments} />}
           {activeTab === "finance" && <BookkeepingView branches={branchScorecards} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
+          {activeTab === "planning" && <PlanningView />}
           {activeTab === "performances" && <PerformancesView />}
           {activeTab === "products" && <ProductsView />}
           {activeTab === "documents" && <DocumentologistView />}
@@ -2404,6 +2406,29 @@ function TeachersNetworkView({ teachers, metrics, branches, students = [], group
   const [cardTeacherId, setCardTeacherId] = useState<string | null>(null);
   const canManage = Boolean(onCreateTeacher);
 
+  // Штрафы преподавателей (журнал + начисление).
+  const [penalties, setPenalties] = useState<any[]>([]);
+  const [penaltyTotal, setPenaltyTotal] = useState(0);
+  const [showPenaltyJournal, setShowPenaltyJournal] = useState(false);
+  const [showChargePenalty, setShowChargePenalty] = useState(false);
+  const loadPenalties = async () => {
+    try {
+      const res = await fetch("/api/mvp/teachers/penalties", ownerHdr);
+      if (res.ok) { const j = await res.json(); setPenalties(j.penalties || []); setPenaltyTotal(j.total || 0); }
+    } catch { /* демо */ }
+  };
+  useEffect(() => { loadPenalties(); /* eslint-disable-next-line */ }, []);
+  const chargePenalty = async (payload: any) => {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/mvp/teachers/penalties", { method: "POST", headers: { "Content-Type": "application/json", "x-demo-role": "owner" }, body: JSON.stringify(payload) });
+      if (res.ok) { setShowChargePenalty(false); await loadPenalties(); }
+    } catch { /* демо */ } finally { setBusy(false); }
+  };
+  const removePenalty = async (id: string) => {
+    try { await fetch(`/api/mvp/teachers/penalties/${id}`, { method: "DELETE", headers: { "x-demo-role": "owner" } }); await loadPenalties(); } catch { /* демо */ }
+  };
+
   const branchName = (id?: string | null) => branches.find((b) => b.id === id)?.name || "— не назначен —";
   const metricFor = (id: string) => metrics.teacherPerformance.find((m) => m.teacherId === id);
   const cardTeacher = teachers.find((t) => t.id === cardTeacherId) || null;
@@ -2465,11 +2490,27 @@ function TeachersNetworkView({ teachers, metrics, branches, students = [], group
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-slate-400">{teachers.length} преподавателей в сети</p>
           {!adding && editingId === null && (
-            <button onClick={startAdd} className="inline-flex items-center gap-2 rounded-2xl bg-[#C5A059] px-4 py-2 text-sm font-bold text-black transition hover:bg-[#d4b06a]">
-              <Plus className="h-4 w-4" /> Добавить преподавателя
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button onClick={() => setShowPenaltyJournal(true)} className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-bold text-slate-200 transition hover:border-rose-400/40 hover:text-white">
+                <AlertTriangle className="h-4 w-4 text-rose-400" /> Журнал штрафов{penalties.length > 0 ? ` · ${penalties.length}` : ""}
+              </button>
+              <button onClick={() => setShowChargePenalty(true)} className="inline-flex items-center gap-2 rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-2 text-sm font-bold text-rose-200 transition hover:bg-rose-500/15">
+                <Plus className="h-4 w-4" /> Начислить штраф
+              </button>
+              <button onClick={startAdd} className="inline-flex items-center gap-2 rounded-2xl bg-[#C5A059] px-4 py-2 text-sm font-bold text-black transition hover:bg-[#d4b06a]">
+                <Plus className="h-4 w-4" /> Добавить преподавателя
+              </button>
+            </div>
           )}
         </div>
+      )}
+
+      {showPenaltyJournal && (
+        <PenaltyJournalModal penalties={penalties} total={penaltyTotal} onClose={() => setShowPenaltyJournal(false)}
+          onCharge={() => { setShowPenaltyJournal(false); setShowChargePenalty(true); }} onRemove={removePenalty} />
+      )}
+      {showChargePenalty && (
+        <ChargePenaltyModal teachers={teachers} busy={busy} onClose={() => setShowChargePenalty(false)} onSubmit={chargePenalty} />
       )}
 
       {(adding || editingId !== null) && (
@@ -2839,18 +2880,21 @@ export function PayrollView({ teachers, students, groups, payments, role = "owne
   const [period, setPeriod] = useState("month");
   const [data, setData] = useState<any>({ comp: {}, lessons: {}, paid: {} });
   const [history, setHistory] = useState<any[]>([]);
+  const [penalties, setPenalties] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const r = useMemo(() => clientPeriodRange(period), [period]);
 
   const load = async () => {
     try {
-      const [pRes, hRes] = await Promise.all([
+      const [pRes, hRes, penRes] = await Promise.all([
         fetch(`/api/mvp/teachers/payroll?period=${period}`, hdr),
         fetch(`/api/mvp/teachers/payouts/history?months=12`, hdr),
+        fetch(`/api/mvp/teachers/penalties`, hdr),
       ]);
       if (pRes.ok) setData(await pRes.json());
       if (hRes.ok) setHistory((await hRes.json()).months || []);
+      if (penRes.ok) setPenalties((await penRes.json()).penalties || []);
     } catch { /* no-op */ }
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [period]);
@@ -2864,6 +2908,13 @@ export function PayrollView({ teachers, students, groups, payments, role = "owne
     } catch (e: any) { setMsg(e?.message || "Ошибка автозакрытия"); } finally { setBusy(false); }
   };
 
+  // Штраф педагога за период: матчим по teacherId, иначе по имени; фильтр по месяцу периода.
+  const startM = r.cur.start.slice(0, 7);
+  const endM = r.cur.end.slice(0, 7);
+  const penaltyFor = (t: Teacher) => penalties
+    .filter((p) => ((p.teacherId && p.teacherId === t.id) || (!p.teacherId && p.teacherName === t.name)) && p.period_month >= startM && p.period_month <= endM)
+    .reduce((s, p) => s + (Number(p.amount) || 0), 0);
+
   const rows = useMemo(() => teachers.map((t) => {
     const ids = teacherStudentIdSet(t, students, groups);
     const revenue = payments.filter((p) => p.status === "paid" && ids.has(p.studentId) && p.date >= r.cur.start && p.date <= r.cur.end).reduce((s, p) => s + p.amount, 0);
@@ -2874,10 +2925,12 @@ export function PayrollView({ teachers, students, groups, payments, role = "owne
     const pct = (comp.scheme === "percent" || comp.scheme === "mixed") ? Math.round(revenue * comp.percent / 100) : 0;
     const perLesson = (comp.scheme === "per_lesson" || comp.scheme === "mixed") ? lessons * comp.perLessonRate : 0;
     const total = base + pct + perLesson;
-    return { t, scheme: comp.scheme, revenue, lessons, total, paid, balance: total - paid };
-  }), [teachers, students, groups, payments, data, r]);
+    const penalty = penaltyFor(t);
+    const net = total - penalty;               // к начислению после штрафов
+    return { t, scheme: comp.scheme, revenue, lessons, total, penalty, net, paid, balance: net - paid };
+  }), [teachers, students, groups, payments, data, r, penalties]);
 
-  const totals = rows.reduce((a, x) => ({ revenue: a.revenue + x.revenue, total: a.total + x.total, paid: a.paid + x.paid, balance: a.balance + x.balance }), { revenue: 0, total: 0, paid: 0, balance: 0 });
+  const totals = rows.reduce((a, x) => ({ revenue: a.revenue + x.revenue, total: a.total + x.total, penalty: a.penalty + x.penalty, net: a.net + x.net, paid: a.paid + x.paid, balance: a.balance + x.balance }), { revenue: 0, total: 0, penalty: 0, net: 0, paid: 0, balance: 0 });
 
   const accrueAll = async () => {
     const items = rows.filter((x) => x.balance > 0).map((x) => ({ teacherId: x.t.id, amount: x.balance }));
@@ -2891,9 +2944,9 @@ export function PayrollView({ teachers, students, groups, payments, role = "owne
   };
 
   const exportCsv = () => {
-    const header = ["Педагог", "Схема", "Выручка групп", "Занятий", "Начислено", "Выплачено", "К выплате"];
-    const body = rows.map((x) => [x.t.name, COMP_SCHEME_LABEL[x.scheme] || x.scheme, x.revenue, x.lessons, x.total, x.paid, x.balance]);
-    body.push(["ИТОГО", "", totals.revenue, "", totals.total, totals.paid, totals.balance]);
+    const header = ["Педагог", "Схема", "Выручка групп", "Занятий", "Начислено", "Штраф", "Выплачено", "К выплате"];
+    const body = rows.map((x) => [x.t.name, COMP_SCHEME_LABEL[x.scheme] || x.scheme, x.revenue, x.lessons, x.total, x.penalty, x.paid, x.balance]);
+    body.push(["ИТОГО", "", totals.revenue, "", totals.total, totals.penalty, totals.paid, totals.balance]);
     const csv = [header, ...body].map((row) => row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(";")).join("\n");
     const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -2901,7 +2954,7 @@ export function PayrollView({ teachers, students, groups, payments, role = "owne
   };
 
   return (
-    <OwnerScreen title="Зарплаты" subtitle="Зарплатная ведомость по всем педагогам за период: расчёт по индивидуальным схемам (% от выручки, оклад, за занятие, смешанная), уже выплаченное и остаток к выплате. Можно начислить всем сразу и выгрузить ведомость.">
+    <OwnerScreen title="Зарплаты" subtitle="Зарплатная ведомость по всем педагогам за период: расчёт по индивидуальным схемам (% от выручки, оклад, за занятие, смешанная), штрафы за период вычитаются автоматически, уже выплаченное и остаток к выплате. Можно начислить всем сразу и выгрузить ведомость.">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <PeriodChips period={period} onChange={setPeriod} />
         <div className="flex flex-wrap gap-2">
@@ -2913,9 +2966,10 @@ export function PayrollView({ teachers, students, groups, payments, role = "owne
 
       {msg && <div className="rounded-2xl border border-[#C5A059]/30 bg-[#C5A059]/10 px-4 py-3 text-sm text-[#C5A059]">{msg}</div>}
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <StatPill label="Выручка групп" value={money(totals.revenue)} />
         <StatPill label="Фонд оплаты (начислено)" value={money(totals.total)} tone="white" />
+        <StatPill label="Штрафы" value={totals.penalty > 0 ? `− ${money(totals.penalty)}` : money(0)} tone="rose" />
         <StatPill label="Выплачено" value={money(totals.paid)} tone="emerald" />
         <StatPill label="К выплате" value={money(totals.balance)} tone="rose" />
       </div>
@@ -2949,12 +3003,13 @@ export function PayrollView({ teachers, students, groups, payments, role = "owne
                 <th className="px-4 py-3 text-right font-bold">Выручка групп</th>
                 <th className="px-4 py-3 text-right font-bold">Занятий</th>
                 <th className="px-4 py-3 text-right font-bold">Начислено</th>
+                <th className="px-4 py-3 text-right font-bold">Штраф</th>
                 <th className="px-4 py-3 text-right font-bold">Выплачено</th>
                 <th className="px-4 py-3 text-right font-bold">К выплате</th>
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500">Нет педагогов.</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-500">Нет педагогов.</td></tr>}
               {rows.map((x) => (
                 <tr key={x.t.id} className="border-b border-white/5">
                   <td className="px-4 py-3 font-bold text-white">{x.t.name}</td>
@@ -2962,6 +3017,7 @@ export function PayrollView({ teachers, students, groups, payments, role = "owne
                   <td className="px-4 py-3 text-right text-slate-300">{money(x.revenue)}</td>
                   <td className="px-4 py-3 text-right text-slate-300">{x.lessons}</td>
                   <td className="px-4 py-3 text-right font-bold text-white">{money(x.total)}</td>
+                  <td className="px-4 py-3 text-right text-rose-300">{x.penalty > 0 ? `− ${money(x.penalty)}` : "—"}</td>
                   <td className="px-4 py-3 text-right text-emerald-400">{money(x.paid)}</td>
                   <td className="px-4 py-3 text-right text-rose-300">{money(x.balance)}</td>
                 </tr>
@@ -2974,6 +3030,7 @@ export function PayrollView({ teachers, students, groups, payments, role = "owne
                   <td className="px-4 py-3 text-right">{money(totals.revenue)}</td>
                   <td className="px-4 py-3" />
                   <td className="px-4 py-3 text-right">{money(totals.total)}</td>
+                  <td className="px-4 py-3 text-right text-rose-300">{totals.penalty > 0 ? `− ${money(totals.penalty)}` : "—"}</td>
                   <td className="px-4 py-3 text-right text-emerald-400">{money(totals.paid)}</td>
                   <td className="px-4 py-3 text-right text-rose-300">{money(totals.balance)}</td>
                 </tr>
@@ -3087,7 +3144,7 @@ function accountIcon(kind: string) {
 const ownerHdr = { headers: { "x-demo-role": "owner" } };
 
 function BookkeepingView({ branches }: any) {
-  const [tab, setTab] = useState<"overview" | "cashflow" | "pnl" | "calendar" | "ops" | "requests">("overview");
+  const [tab, setTab] = useState<"overview" | "cashflow" | "pnl" | "calendar" | "ops" | "requests" | "reconcile" | "taxes">("overview");
   const [data, setData] = useState<AcctOverview | null>(null);
   const [ops, setOps] = useState<AcctOp[]>([]);
   const [requests, setRequests] = useState<any[]>([]);
@@ -3166,8 +3223,10 @@ function BookkeepingView({ branches }: any) {
     { id: "cashflow", label: "ДДС", icon: TrendingUp },
     { id: "pnl", label: "ОПиУ / P&L", icon: BarChart3 },
     { id: "calendar", label: "Платёжный календарь", icon: CalendarClock },
+    { id: "reconcile", label: "Сверка CRM ↔ факт", icon: Shield },
     { id: "ops", label: "Операции", icon: Receipt },
     { id: "requests", label: "Заявки на расход", icon: Send, badge: pendingCount },
+    { id: "taxes", label: "Налоги", icon: BadgePercent },
   ];
 
   return (
@@ -3196,8 +3255,8 @@ function BookkeepingView({ branches }: any) {
         </div>
       </div>
 
-      {error && <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-200">{error}</div>}
-      {loading && !data && <div className="rounded-3xl border border-white/10 bg-[#121212] p-8 text-center text-sm text-slate-500">Загрузка данных бухгалтерии…</div>}
+      {error && tab !== "reconcile" && tab !== "taxes" && <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-200">{error}</div>}
+      {loading && !data && tab !== "reconcile" && tab !== "taxes" && <div className="rounded-3xl border border-white/10 bg-[#121212] p-8 text-center text-sm text-slate-500">Загрузка данных бухгалтерии…</div>}
 
       {data && (
         <>
@@ -3210,11 +3269,115 @@ function BookkeepingView({ branches }: any) {
         </>
       )}
 
+      {/* Сверка CRM↔факт и Налоги — self-contained, видны и в mock-режиме */}
+      {tab === "reconcile" && <AcctReconcileTab />}
+      {tab === "taxes" && <AcctTaxesTab />}
+
       {showAdd && data && (
         <AcctAddOperation categories={data.categories} accounts={data.accounts} busy={busy}
           onClose={() => setShowAdd(false)} onSubmit={createOp} />
       )}
     </OwnerScreen>
+  );
+}
+
+// Сверка CRM ↔ факт: «Сводка за 10 секунд» + таблица сверки направлений.
+function AcctReconcileTab() {
+  const rows = [
+    { dir: "Абонементы — наличные", crm: 120_000, fact: 120_000 },
+    { dir: "Абонементы — Kaspi Pay", crm: 380_000, fact: 360_000 },
+    { dir: "Товары", crm: 45_000, fact: 45_000 },
+    { dir: "Выступления", crm: 200_000, fact: 150_000 },
+  ].map((r) => ({ ...r, diff: r.crm - r.fact }));
+  const totalDiff = rows.reduce((s, r) => s + r.diff, 0);
+  const matched = rows.filter((r) => r.diff === 0).length;
+  return (
+    <div className="space-y-5">
+      {/* Сводка за 10 секунд */}
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <OwnerKpi label="Выручка" value={money(667_000)} detail="вал 675 000 − возвраты 8 000" tone="gold" icon={TrendingUp} />
+        <OwnerKpi label="Сверка CRM ↔ факт" value={`${matched}/${rows.length} сошлось`} detail={`расхождение ${money(totalDiff)}`} tone="rose" icon={Shield} />
+        <OwnerKpi label="Абонементы CRM → факт" value={money(480_000)} detail="в CRM 500 000 · недополучено 20 000" tone="rose" icon={WalletCards} />
+        <OwnerKpi label="Чистая прибыль" value={money(202_000)} detail="рентабельность 30.3%" tone="emerald" icon={BarChart3} />
+      </div>
+
+      {/* Таблица сверки */}
+      <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.02]">
+        <div className="border-b border-white/10 px-4 py-3"><h4 className="text-sm font-black text-white">Сверка CRM ↔ фактические поступления</h4></div>
+        <table className="w-full text-left text-sm">
+          <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Направление</th><th className="px-4 py-2 text-right font-bold">В CRM</th><th className="px-4 py-2 text-right font-bold">Факт</th><th className="px-4 py-2 text-right font-bold">Расхожд.</th><th className="px-4 py-2 font-bold">Статус</th></tr></thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i} className="border-t border-white/5">
+                <td className="px-4 py-2 font-bold text-white">{r.dir}</td>
+                <td className="px-4 py-2 text-right text-slate-300">{money(r.crm)}</td>
+                <td className="px-4 py-2 text-right text-slate-300">{money(r.fact)}</td>
+                <td className={`px-4 py-2 text-right font-bold ${r.diff === 0 ? "text-slate-500" : "text-rose-300"}`}>{r.diff === 0 ? "0 ₸" : money(r.diff)}</td>
+                <td className="px-4 py-2">
+                  <span className={`rounded-lg px-2 py-1 text-[11px] font-bold ${r.diff === 0 ? "bg-emerald-500/15 text-emerald-300" : "bg-rose-500/15 text-rose-300"}`}>{r.diff === 0 ? "Сошлось" : "Расхождение"}</span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+
+      <section className="rounded-[1.5rem] border border-[#C5A059]/25 bg-gradient-to-br from-[#1a1710] to-black p-5">
+        <div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-[#C5A059]" /><h4 className="text-sm font-black uppercase tracking-wider text-white">Вывод</h4></div>
+        <p className="mt-3 text-sm leading-relaxed text-slate-200">Расхождение CRM↔факт {money(totalDiff)}: недополучено по Kaspi Pay (20 000 ₸) и выступлениям (50 000 ₸). Это ≈7.4% потенциальной выручки месяца — рекомендуется закрыть в первую очередь по выступлениям. Проверьте поступления и статусы оплат.</p>
+      </section>
+    </div>
+  );
+}
+
+// Налоги: режим, база, расчёт, сроки. Демо-параметры (упрощёнка РК), настраиваются владельцем.
+function AcctTaxesTab() {
+  const base = 667_000;        // налогооблагаемый оборот за период
+  const rate = 3;              // упрощённая декларация, 3% с оборота
+  const tax = Math.round(base * rate / 100);
+  const ipn = Math.round(tax / 2);
+  const social = tax - ipn;
+  const periods = [
+    { period: "1 полугодие 2026", base: 3_980_000, tax: 119_400, status: "Уплачен", due: "25.08.2026" },
+    { period: "2 полугодие 2025", base: 3_510_000, tax: 105_300, status: "Уплачен", due: "25.02.2026" },
+  ];
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <OwnerKpi label="Налоговый режим" value="Упрощёнка" detail="ФНО 910.00 · 3% с оборота" tone="gold" icon={Landmark} />
+        <OwnerKpi label="База за период" value={money(base)} detail="облагаемый оборот" tone="white" icon={Coins} />
+        <OwnerKpi label="Налог к уплате" value={money(tax)} detail={`ставка ${rate}%`} tone="rose" icon={BadgePercent} />
+        <OwnerKpi label="Срок уплаты" value="25 числа" detail="по полугодию" tone="white" icon={CalendarClock} />
+      </div>
+
+      <section className="rounded-[1.5rem] border border-white/10 bg-white/[0.02] p-5">
+        <h4 className="text-sm font-black text-white">Расчёт налога за период</h4>
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <StatPill label="ИПН (1.5%)" value={money(ipn)} />
+          <StatPill label="Социальный налог (1.5%)" value={money(social)} />
+          <StatPill label="Итого к уплате" value={money(tax)} tone="rose" />
+        </div>
+        <p className="mt-3 text-xs text-slate-500">Демо-параметры режима РК (упрощённая декларация). Ставки, режим и сроки настраиваются под организацию. Соц. отчисления и ОПВ за сотрудников считаются отдельно в зарплатном блоке.</p>
+      </section>
+
+      <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.02]">
+        <div className="border-b border-white/10 px-4 py-3"><h4 className="text-sm font-black text-white">История начислений</h4></div>
+        <table className="w-full text-left text-sm">
+          <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Период</th><th className="px-4 py-2 text-right font-bold">База</th><th className="px-4 py-2 text-right font-bold">Налог</th><th className="px-4 py-2 font-bold">Срок</th><th className="px-4 py-2 font-bold">Статус</th></tr></thead>
+          <tbody>
+            {periods.map((p, i) => (
+              <tr key={i} className="border-t border-white/5">
+                <td className="px-4 py-2 font-bold text-white">{p.period}</td>
+                <td className="px-4 py-2 text-right text-slate-300">{money(p.base)}</td>
+                <td className="px-4 py-2 text-right text-slate-300">{money(p.tax)}</td>
+                <td className="px-4 py-2 text-slate-400">{p.due}</td>
+                <td className="px-4 py-2"><span className="rounded-lg bg-emerald-500/15 px-2 py-1 text-[11px] font-bold text-emerald-300">{p.status}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+    </div>
   );
 }
 
@@ -6086,6 +6249,480 @@ function SettingsListEditor({ kind, title }: { kind: string; title: string }) {
   );
 }
 
+// ===================== ШТРАФЫ ПРЕПОДАВАТЕЛЕЙ =====================
+const PENALTY_REASONS = ["Опоздание", "Незакрытый журнал", "Нет плана работы", "Нет фото прихода", "Нарушение дисциплины", "Другое"];
+
+function PenaltyJournalModal({ penalties, total, onClose, onCharge, onRemove }: any) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-md" onClick={onClose}>
+      <div className="w-full max-w-2xl rounded-[1.75rem] border border-white/10 bg-[#0f0f0f] p-6 max-h-[92vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-black text-white">Журнал штрафов</h3>
+            <p className="text-xs text-slate-500">Все штрафы по сети · вычитаются из ЗП автоматически</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-white"><X className="h-5 w-5" /></button>
+        </div>
+        <div className="mt-4 flex items-center justify-between rounded-2xl border border-rose-400/25 bg-rose-500/[0.06] px-4 py-3">
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Итого штрафов</span>
+          <span className="text-lg font-black text-rose-300">{money(total)}</span>
+        </div>
+        <div className="mt-4 overflow-hidden rounded-2xl border border-white/10">
+          <table className="w-full text-left text-sm">
+            <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-3 py-2 font-bold">Преподаватель</th><th className="px-3 py-2 font-bold">Причина</th><th className="px-3 py-2 text-right font-bold">Сумма</th><th className="px-3 py-2 font-bold">Месяц</th><th className="px-3 py-2 font-bold">Кто</th><th className="px-2 py-2"></th></tr></thead>
+            <tbody>
+              {penalties.length === 0 && <tr><td colSpan={6} className="px-3 py-6 text-center text-slate-500">Штрафов нет.</td></tr>}
+              {penalties.map((p: any) => (
+                <tr key={p.id} className="border-t border-white/5">
+                  <td className="px-3 py-2 font-bold text-white">{p.teacherName}</td>
+                  <td className="px-3 py-2 text-slate-300">{p.reason}{p.comment ? <span className="block text-[11px] text-slate-500">{p.comment}</span> : null}</td>
+                  <td className="px-3 py-2 text-right font-bold text-rose-300">{money(p.amount)}</td>
+                  <td className="px-3 py-2 text-slate-400">{p.period_month}</td>
+                  <td className="px-3 py-2 text-slate-400">{p.created_by}</td>
+                  <td className="px-2 py-2"><button onClick={() => onRemove(p.id)} className="text-slate-500 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-xl border border-white/10 px-4 py-2 text-xs font-bold text-slate-300">Закрыть</button>
+          <button onClick={onCharge} className="rounded-xl bg-rose-500/90 px-4 py-2 text-xs font-black text-white hover:bg-rose-500">Начислить штраф</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChargePenaltyModal({ teachers, busy, onClose, onSubmit }: any) {
+  const [f, setF] = useState<any>({ teacherId: teachers[0]?.id || "", reason: PENALTY_REASONS[0], amount: "", period_month: new Date().toISOString().slice(0, 7), created_by: "Владелец", comment: "" });
+  const set = (k: string, v: any) => setF((s: any) => ({ ...s, [k]: v }));
+  const submit = () => {
+    const amount = Number(f.amount);
+    if (!amount || amount <= 0) return;
+    const t = teachers.find((x: any) => x.id === f.teacherId);
+    onSubmit({ ...f, amount, teacherName: t?.name || "Преподаватель" });
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-md" onClick={onClose}>
+      <div className="w-full max-w-md rounded-[1.75rem] border border-white/10 bg-[#0f0f0f] p-6 max-h-[92vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between"><h3 className="text-lg font-black text-white">Начислить штраф</h3><button onClick={onClose} className="text-slate-400 hover:text-white"><X className="h-5 w-5" /></button></div>
+        <div className="mt-4 grid gap-3">
+          <label className="flex flex-col gap-1 text-[11px] text-slate-400">Преподаватель
+            <select value={f.teacherId} onChange={(e) => set("teacherId", e.target.value)} className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white">
+              {teachers.map((t: any) => <option key={t.id} value={t.id} className="bg-black">{t.name}</option>)}
+            </select></label>
+          <label className="flex flex-col gap-1 text-[11px] text-slate-400">Причина *
+            <select value={f.reason} onChange={(e) => set("reason", e.target.value)} className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white">
+              {PENALTY_REASONS.map((r) => <option key={r} value={r} className="bg-black">{r}</option>)}
+            </select></label>
+          <ModalInput label="Сумма, ₸ *" type="number" value={f.amount} onChange={(v) => set("amount", v)} />
+          <ModalInput label="Месяц (вычесть из ЗП)" type="month" value={f.period_month} onChange={(v) => set("period_month", v)} />
+          <label className="flex flex-col gap-1 text-[11px] text-slate-400">Кто начислил
+            <select value={f.created_by} onChange={(e) => set("created_by", e.target.value)} className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white">
+              <option value="Владелец" className="bg-black">Владелец</option>
+              <option value="Управляющий" className="bg-black">Управляющий</option>
+            </select></label>
+          <ModalInput label="Комментарий" value={f.comment} onChange={(v) => set("comment", v)} full />
+        </div>
+        <p className="mt-3 text-[11px] text-slate-500">Штраф вычитается из итоговой ЗП. Педагог видит причину, сумму, дату и кто начислил.</p>
+        <div className="mt-5 flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-xl border border-white/10 px-4 py-2 text-xs font-bold text-slate-300">Отмена</button>
+          <button disabled={busy} onClick={submit} className="rounded-xl bg-rose-500/90 px-4 py-2 text-xs font-black text-white hover:bg-rose-500 disabled:opacity-50">Начислить штраф</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ===================== ПЛАНИРОВАНИЕ (БДР) =====================
+// Бюджет доходов и расходов сети: план по группам/расходам, факт из CRM и Бухгалтерии,
+// сверка план/факт по уровням, воронка продаж, ежедневный отчёт и настройки мотивации.
+const PLAN_PERIODS = ["2026-04", "2026-05", "2026-06", "2026-07"];
+const planMonthLabel = (p: string) => {
+  const months = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+  const [y, m] = p.split("-");
+  return `${months[Number(m) - 1]} ${y}`;
+};
+
+function PlanningView() {
+  const [tab, setTab] = useState<"plan" | "fact" | "planfact" | "daily" | "ai" | "motivation">("plan");
+  const [period, setPeriod] = useState("2026-06");
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    setLoading(true); setError(null);
+    try {
+      const res = await fetch(`/api/mvp/planning/overview?period=${period}`, ownerHdr);
+      if (!res.ok) throw new Error(await res.text());
+      setData(await res.json());
+    } catch (e: any) { setError(e?.message || "Не удалось загрузить план"); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [period]);
+
+  const saveBudget = async (payload: any) => {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/mvp/planning/budget`, { method: "POST", ...jsonOwnerHdr, body: JSON.stringify({ period, ...payload }) });
+      if (res.ok) setData(await res.json());
+    } catch { /* mock */ } finally { setBusy(false); }
+  };
+  const saveMotivation = async (rows: any[]) => {
+    setBusy(true);
+    try {
+      await fetch(`/api/mvp/planning/motivation`, { method: "PATCH", ...jsonOwnerHdr, body: JSON.stringify({ motivation: rows }) });
+      setData((d: any) => ({ ...d, motivation: rows }));
+    } catch { /* mock */ } finally { setBusy(false); }
+  };
+  const addDaily = async (payload: any) => {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/mvp/planning/daily`, { method: "POST", ...jsonOwnerHdr, body: JSON.stringify(payload) });
+      if (res.ok) { const j = await res.json(); setData((d: any) => ({ ...d, daily: j.daily })); }
+    } catch { /* mock */ } finally { setBusy(false); }
+  };
+
+  const tabs: { id: typeof tab; label: string; icon: React.ElementType }[] = [
+    { id: "plan", label: "План БДР", icon: LineChart },
+    { id: "fact", label: "Факт БДР", icon: Receipt },
+    { id: "planfact", label: "План / Факт", icon: BarChart3 },
+    { id: "daily", label: "Ежедневный отчёт", icon: ClipboardList },
+    { id: "ai", label: "AI Аналитика", icon: Sparkles },
+    { id: "motivation", label: "Мотивация", icon: Trophy },
+  ];
+
+  return (
+    <OwnerScreen title="Планирование (БДР)" subtitle="Бюджет доходов и расходов · контроль плана · мотивация · прогнозы по всей сети. План доходов считается из абонементов по группам, факт тянется из CRM (поступления) и Бухгалтерии (расходы).">
+      {error && <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">Демо-режим: {error.length > 120 ? "сервер недоступен, показаны демонстрационные данные." : error}</div>}
+
+      {/* Период + сводка */}
+      <section className="rounded-[1.75rem] border border-white/10 bg-gradient-to-br from-[#141414] to-black p-5">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <h3 className="text-sm font-black uppercase tracking-wider text-white">Бюджет на период</h3>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {PLAN_PERIODS.map((p) => (
+              <button key={p} onClick={() => setPeriod(p)}
+                className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${period === p ? "bg-[#C5A059] text-black" : "border border-white/10 bg-white/[0.04] text-slate-300 hover:border-[#C5A059]/40"}`}>
+                {planMonthLabel(p)}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <StatPill label="Плановая выручка" value={data ? money(data.plan.plannedRevenue) : "—"} />
+          <StatPill label="Плановые расходы" value={data ? money(data.plan.plannedExpense) : "—"} tone="rose" />
+          <StatPill label="Плановая прибыль" value={data ? money(data.plan.plannedProfit) : "—"} tone="emerald" />
+          <StatPill label="Рентабельность" value={data ? `${data.plan.margin}%` : "—"} hint={data ? `факт: выполнено ${data.fact.donePct}%` : undefined} />
+        </div>
+      </section>
+
+      {/* Под-вкладки */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {tabs.map((t) => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition ${tab === t.id ? "bg-white/15 text-white ring-1 ring-[#C5A059]/40" : "border border-white/10 bg-white/[0.04] text-slate-400 hover:text-white"}`}>
+            <t.icon className="h-3.5 w-3.5" /> {t.label}
+          </button>
+        ))}
+      </div>
+
+      {loading && <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-8 text-center text-slate-500">Загрузка…</div>}
+
+      {data && !loading && (
+        <>
+          {tab === "plan" && <PlanTab data={data} busy={busy} onSave={saveBudget} />}
+          {tab === "fact" && <PlanFactRevenueTab data={data} />}
+          {tab === "planfact" && <PlanVsFactTab data={data} />}
+          {tab === "daily" && <PlanDailyTab data={data} busy={busy} onAdd={addDaily} />}
+          {tab === "ai" && <PlanAiTab data={data} period={period} />}
+          {tab === "motivation" && <PlanMotivationTab data={data} busy={busy} onSave={saveMotivation} />}
+        </>
+      )}
+    </OwnerScreen>
+  );
+}
+
+// План БДР: создание на основе, доходы по группам, расходы, воронка.
+function PlanTab({ data, busy, onSave }: any) {
+  const [rev, setRev] = useState<any[]>(data.plan.revenueLines);
+  const [exp, setExp] = useState<any[]>(data.plan.expenseLines);
+  useEffect(() => { setRev(data.plan.revenueLines); setExp(data.plan.expenseLines); }, [data]);
+  const dirty = JSON.stringify(rev) !== JSON.stringify(data.plan.revenueLines) || JSON.stringify(exp) !== JSON.stringify(data.plan.expenseLines);
+  const revTotal = rev.reduce((s, r) => s + (Number(r.planned) || 0), 0);
+  const expTotal = exp.reduce((s, e) => s + (Number(e.planned) || 0), 0);
+
+  const basisChips: [string, number, string][] = [
+    ["Прошлый месяц", data.basis.prevMonth, "prev_month"],
+    ["Прошлый год", data.basis.prevYear, "prev_year"],
+    ["Среднее за 6 мес", data.basis.avg6, "avg"],
+  ];
+  const applyBasis = (target: number, source: string) => {
+    const factor = revTotal ? target / revTotal : 1;
+    setRev(rev.map((r) => ({ ...r, planned: Math.round(r.planned * factor) })));
+    onSave({ revenueLines: rev.map((r) => ({ ...r, planned: Math.round(r.planned * factor) })), expenseLines: exp, source });
+  };
+
+  return (
+    <div className="space-y-5">
+      {/* Создать план на основе */}
+      <section className="rounded-[1.5rem] border border-white/10 bg-white/[0.02] p-5">
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Создать план на основе · CRM подставит цифры, любую сумму можно изменить вручную</p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+          {basisChips.map(([label, val, src]) => (
+            <button key={src} disabled={busy} onClick={() => applyBasis(val, src)}
+              className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-left transition hover:border-[#C5A059]/40 disabled:opacity-50">
+              <p className="text-[11px] font-bold text-slate-400">{label}</p>
+              <p className="mt-1 text-lg font-black text-[#C5A059]">{(val / 1_000_000).toFixed(1)} млн ₸</p>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {/* Доходы по группам */}
+      <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.02]">
+        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+          <h4 className="text-sm font-black text-white">Доходы по группам / направлениям</h4>
+          <button onClick={() => setRev([...rev, { direction: "Новое направление", planned: 0, mode: "manual" }])} className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-[11px] font-bold text-slate-300 hover:text-white"><Plus className="h-3.5 w-3.5" /> Направление</button>
+        </div>
+        <table className="w-full text-left text-sm">
+          <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Направление</th><th className="px-4 py-2 text-right font-bold">План, ₸</th><th className="px-4 py-2 font-bold">Режим</th><th className="px-2 py-2"></th></tr></thead>
+          <tbody>
+            {rev.map((r, i) => (
+              <tr key={i} className="border-t border-white/5">
+                <td className="px-4 py-2"><input value={r.direction} onChange={(e) => setRev(rev.map((x, j) => j === i ? { ...x, direction: e.target.value } : x))} className="w-full rounded-lg border border-transparent bg-transparent px-1 py-1 text-white hover:border-white/10 focus:border-[#C5A059]/40 focus:outline-none" /></td>
+                <td className="px-4 py-2 text-right"><input type="number" value={r.planned} onChange={(e) => setRev(rev.map((x, j) => j === i ? { ...x, planned: Number(e.target.value) } : x))} className="w-32 rounded-lg border border-white/10 bg-black/40 px-2 py-1 text-right text-white" /></td>
+                <td className="px-4 py-2"><span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${r.mode === "auto" ? "bg-emerald-500/15 text-emerald-300" : "bg-white/10 text-slate-300"}`}>{r.mode === "auto" ? "авто из абонементов" : "вручную"}</span></td>
+                <td className="px-2 py-2"><button onClick={() => setRev(rev.filter((_, j) => j !== i))} className="text-slate-500 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button></td>
+              </tr>
+            ))}
+            <tr className="border-t border-white/10 bg-white/[0.03]"><td className="px-4 py-2 font-black text-white">Итого выручка</td><td className="px-4 py-2 text-right font-black text-[#C5A059]">{money(revTotal)}</td><td colSpan={2}></td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      {/* Расходы */}
+      <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.02]">
+        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+          <h4 className="text-sm font-black text-white">Расходы по категориям</h4>
+          <button onClick={() => setExp([...exp, { category: "Новая категория", planned: 0, mode: "manual" }])} className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-[11px] font-bold text-slate-300 hover:text-white"><Plus className="h-3.5 w-3.5" /> Категория</button>
+        </div>
+        <table className="w-full text-left text-sm">
+          <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Категория</th><th className="px-4 py-2 text-right font-bold">План, ₸</th><th className="px-4 py-2 font-bold">Режим</th><th className="px-2 py-2"></th></tr></thead>
+          <tbody>
+            {exp.map((r, i) => (
+              <tr key={i} className="border-t border-white/5">
+                <td className="px-4 py-2"><input value={r.category} onChange={(e) => setExp(exp.map((x, j) => j === i ? { ...x, category: e.target.value } : x))} className="w-full rounded-lg border border-transparent bg-transparent px-1 py-1 text-white hover:border-white/10 focus:border-[#C5A059]/40 focus:outline-none" /></td>
+                <td className="px-4 py-2 text-right"><input type="number" value={r.planned} onChange={(e) => setExp(exp.map((x, j) => j === i ? { ...x, planned: Number(e.target.value) } : x))} className="w-32 rounded-lg border border-white/10 bg-black/40 px-2 py-1 text-right text-white" /></td>
+                <td className="px-4 py-2"><span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${r.mode === "auto" ? "bg-emerald-500/15 text-emerald-300" : "bg-white/10 text-slate-300"}`}>{r.mode === "auto" ? "авто (ЗП из карточек)" : "вручную"}</span></td>
+                <td className="px-2 py-2"><button onClick={() => setExp(exp.filter((_, j) => j !== i))} className="text-slate-500 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button></td>
+              </tr>
+            ))}
+            <tr className="border-t border-white/10 bg-white/[0.03]"><td className="px-4 py-2 font-black text-white">Итого расходы</td><td className="px-4 py-2 text-right font-black text-rose-300">{money(expTotal)}</td><td colSpan={2}></td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      {/* Итог + сохранить */}
+      <section className="grid gap-3 sm:grid-cols-3">
+        <StatPill label="Плановая прибыль" value={money(revTotal - expTotal)} tone="emerald" />
+        <StatPill label="Рентабельность" value={`${revTotal ? Math.round(((revTotal - expTotal) / revTotal) * 100) : 0}%`} />
+        <div className="flex items-end justify-end">
+          <button disabled={busy || !dirty} onClick={() => onSave({ revenueLines: rev, expenseLines: exp, source: "manual" })}
+            className="w-full rounded-xl bg-[#C5A059] px-4 py-3 text-xs font-black text-black transition hover:brightness-110 disabled:opacity-40">
+            {dirty ? "Сохранить БДР" : "Сохранено"}
+          </button>
+        </div>
+      </section>
+
+      {/* Воронка продаж */}
+      <section className="rounded-[1.5rem] border border-white/10 bg-white/[0.02] p-5">
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Воронка продаж · сколько действий нужно для плана</p>
+        <div className="mt-3 grid gap-3 sm:grid-cols-4">
+          <StatPill label="Нужно новых продаж" value={data.funnel.neededSales} />
+          <StatPill label="Записать на пробный" value={data.funnel.trials} tone="white" />
+          <StatPill label="Целевых записей" value={data.funnel.signups} tone="white" />
+          <StatPill label="Привлечь лидов" value={data.funnel.leads} tone="white" />
+        </div>
+        <p className="mt-3 text-xs text-slate-500">Расчёт от разницы план−факт по среднему чеку и демо-конверсиям (пробный→продажа 40%, лид→продажа 20%).</p>
+      </section>
+    </div>
+  );
+}
+
+// Факт БДР: поступления по направлениям + расходы.
+function PlanFactRevenueTab({ data }: any) {
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <StatPill label="Поступления (факт)" value={money(data.fact.revenue)} tone="emerald" hint="из CRM" />
+        <StatPill label="Расходы (факт)" value={money(data.fact.expense)} tone="rose" hint="из Бухгалтерии" />
+        <StatPill label="Прибыль (факт)" value={money(data.fact.profit)} tone="emerald" />
+        <StatPill label="Выполнение плана" value={`${data.fact.donePct}%`} />
+      </div>
+      <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.02]">
+        <div className="border-b border-white/10 px-4 py-3"><h4 className="text-sm font-black text-white">Поступления по направлениям</h4></div>
+        <table className="w-full text-left text-sm">
+          <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Направление</th><th className="px-4 py-2 text-right font-bold">План</th><th className="px-4 py-2 text-right font-bold">Факт</th><th className="px-4 py-2 text-right font-bold">Выполнение</th></tr></thead>
+          <tbody>
+            {data.fact.incomeByDirection.map((r: any, i: number) => {
+              const pct = r.plan ? Math.round((r.fact / r.plan) * 100) : 0;
+              return (
+                <tr key={i} className="border-t border-white/5">
+                  <td className="px-4 py-2 font-bold text-white">{r.direction}</td>
+                  <td className="px-4 py-2 text-right text-slate-300">{money(r.plan)}</td>
+                  <td className="px-4 py-2 text-right text-emerald-400">{money(r.fact)}</td>
+                  <td className="px-4 py-2 text-right"><span className={pct >= 100 ? "text-emerald-400" : pct >= 75 ? "text-amber-300" : "text-rose-300"}>{pct}%</span></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </section>
+    </div>
+  );
+}
+
+// План / Факт: график + таблица по уровням.
+function PlanVsFactTab({ data }: any) {
+  const chart = data.fact.incomeByDirection.map((r: any) => ({ name: r.direction, План: r.plan, Факт: r.fact }));
+  return (
+    <div className="space-y-5">
+      <section className="rounded-[1.5rem] border border-white/10 bg-white/[0.02] p-5">
+        <h4 className="text-sm font-black text-white">План vs Факт по направлениям</h4>
+        <div className="mt-4 h-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chart}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
+              <XAxis dataKey="name" tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} width={48} tickFormatter={(v) => `${Math.round(v / 1_000_000)}М`} />
+              <Tooltip formatter={(v: any) => money(Number(v))} contentStyle={{ background: "#0b0b0b", border: "1px solid #ffffff20", borderRadius: 12 }} labelStyle={{ color: "#fff" }} />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Bar dataKey="План" fill="#64748b" radius={[6, 6, 0, 0]} />
+              <Bar dataKey="Факт" fill="#C5A059" radius={[6, 6, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </section>
+      <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.02]">
+        <div className="border-b border-white/10 px-4 py-3"><h4 className="text-sm font-black text-white">Выполнение плана · по уровням групп</h4></div>
+        <table className="w-full text-left text-sm">
+          <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Уровень</th><th className="px-4 py-2 text-right font-bold">План</th><th className="px-4 py-2 text-right font-bold">Факт</th><th className="px-4 py-2 text-right font-bold">Отклонение</th><th className="px-4 py-2 text-right font-bold">Выполнение</th></tr></thead>
+          <tbody>
+            {data.levels.map((l: any, i: number) => (
+              <tr key={i} className="border-t border-white/5">
+                <td className="px-4 py-2 font-bold text-white">{l.level}</td>
+                <td className="px-4 py-2 text-right text-slate-300">{money(l.plan)}</td>
+                <td className="px-4 py-2 text-right text-emerald-400">{money(l.fact)}</td>
+                <td className={`px-4 py-2 text-right ${l.deviation < 0 ? "text-rose-300" : "text-emerald-400"}`}>{l.deviation >= 0 ? "+" : ""}{money(l.deviation)}</td>
+                <td className="px-4 py-2 text-right"><span className={l.done >= 100 ? "text-emerald-400" : l.done >= 75 ? "text-amber-300" : "text-rose-300"}>{l.done}%</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+    </div>
+  );
+}
+
+// Ежедневный отчёт управляющего.
+function PlanDailyTab({ data, busy, onAdd }: any) {
+  const [f, setF] = useState<any>({ date: new Date().toISOString().slice(0, 10), revenue: "", trials: "", sales: "", comment: "" });
+  const set = (k: string, v: any) => setF((s: any) => ({ ...s, [k]: v }));
+  const submit = () => { onAdd({ ...f, revenue: Number(f.revenue) || 0, trials: Number(f.trials) || 0, sales: Number(f.sales) || 0, author: "Владелец" }); set("revenue", ""); set("trials", ""); set("sales", ""); set("comment", ""); };
+  return (
+    <div className="space-y-5">
+      <section className="rounded-[1.5rem] border border-white/10 bg-white/[0.02] p-5">
+        <h4 className="text-sm font-black text-white">Добавить отчёт за день</h4>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <ModalInput label="Дата" type="date" value={f.date} onChange={(v) => set("date", v)} />
+          <ModalInput label="Выручка, ₸" type="number" value={f.revenue} onChange={(v) => set("revenue", v)} />
+          <ModalInput label="Пробных" type="number" value={f.trials} onChange={(v) => set("trials", v)} />
+          <ModalInput label="Продаж" type="number" value={f.sales} onChange={(v) => set("sales", v)} />
+          <div className="flex items-end"><button disabled={busy} onClick={submit} className="w-full rounded-xl bg-[#C5A059] px-4 py-2 text-xs font-black text-black disabled:opacity-50">Добавить</button></div>
+          <ModalInput label="Комментарий" value={f.comment} onChange={(v) => set("comment", v)} full />
+        </div>
+      </section>
+      <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.02]">
+        <table className="w-full text-left text-sm">
+          <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Дата</th><th className="px-4 py-2 text-right font-bold">Выручка</th><th className="px-4 py-2 text-right font-bold">Пробных</th><th className="px-4 py-2 text-right font-bold">Продаж</th><th className="px-4 py-2 font-bold">Комментарий</th><th className="px-4 py-2 font-bold">Автор</th></tr></thead>
+          <tbody>
+            {data.daily.map((d: any, i: number) => (
+              <tr key={i} className="border-t border-white/5">
+                <td className="px-4 py-2 text-slate-300">{d.date}</td>
+                <td className="px-4 py-2 text-right font-bold text-emerald-400">{money(d.revenue)}</td>
+                <td className="px-4 py-2 text-right text-slate-300">{d.trials}</td>
+                <td className="px-4 py-2 text-right text-slate-300">{d.sales}</td>
+                <td className="px-4 py-2 text-slate-400">{d.comment || "—"}</td>
+                <td className="px-4 py-2 text-slate-500">{d.author}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+    </div>
+  );
+}
+
+// AI Аналитика — текстовые инсайты по плану/факту (вычисляются из данных).
+function PlanAiTab({ data, period }: any) {
+  const gap = data.plan.plannedRevenue - data.fact.revenue;
+  const worst = [...data.fact.incomeByDirection].sort((a: any, b: any) => (a.fact / a.plan) - (b.fact / b.plan))[0];
+  const best = [...data.fact.incomeByDirection].sort((a: any, b: any) => (b.fact / b.plan) - (a.fact / a.plan))[0];
+  const insights = [
+    `Выполнение плана выручки за ${planMonthLabel(period)}: ${data.fact.donePct}% (${money(data.fact.revenue)} из ${money(data.plan.plannedRevenue)}). До плана осталось ${money(gap)}.`,
+    `Лучшее направление — «${best.direction}» (${Math.round((best.fact / best.plan) * 100)}% плана). Самое отстающее — «${worst.direction}» (${Math.round((worst.fact / worst.plan) * 100)}% плана), требует внимания.`,
+    `Чтобы закрыть план, нужно ещё ~${data.funnel.neededSales} продаж: записать ${data.funnel.trials} на пробный и привлечь ${data.funnel.leads} лидов.`,
+    `Плановая рентабельность ${data.plan.margin}%. При текущем факте прибыль ${money(data.fact.profit)} — ${data.fact.profit >= data.plan.plannedProfit ? "план по прибыли достигнут" : "ниже плана, контролируйте расходы"}.`,
+  ];
+  return (
+    <section className="rounded-[1.75rem] border border-[#C5A059]/25 bg-gradient-to-br from-[#1a1710] to-black p-5">
+      <div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-[#C5A059]" /><h4 className="text-sm font-black uppercase tracking-wider text-white">AI-аналитика плана</h4></div>
+      <ul className="mt-4 space-y-3">
+        {insights.map((t, i) => (
+          <li key={i} className="flex gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-slate-200">
+            <span className="mt-0.5 text-[#C5A059]">›</span><span>{t}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+// Настройки мотивации — редактируются владельцем.
+function PlanMotivationTab({ data, busy, onSave }: any) {
+  const [rows, setRows] = useState<any[]>(data.motivation);
+  useEffect(() => { setRows(data.motivation); }, [data]);
+  const dirty = JSON.stringify(rows) !== JSON.stringify(data.motivation);
+  return (
+    <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.02]">
+      <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+        <h4 className="text-sm font-black text-white">Настройки мотивации · пороги выполнения плана и бонусы</h4>
+        <button onClick={() => setRows([...rows, { level: "Новый уровень", threshold: 0, bonus: "" }])} className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-[11px] font-bold text-slate-300 hover:text-white"><Plus className="h-3.5 w-3.5" /> Уровень</button>
+      </div>
+      <table className="w-full text-left text-sm">
+        <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Уровень</th><th className="px-4 py-2 text-right font-bold">Порог, %</th><th className="px-4 py-2 font-bold">Бонус</th><th className="px-2 py-2"></th></tr></thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i} className="border-t border-white/5">
+              <td className="px-4 py-2"><input value={r.level} onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, level: e.target.value } : x))} className="w-full rounded-lg border border-white/10 bg-black/40 px-2 py-1 text-white" /></td>
+              <td className="px-4 py-2 text-right"><input type="number" value={r.threshold} onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, threshold: Number(e.target.value) } : x))} className="w-20 rounded-lg border border-white/10 bg-black/40 px-2 py-1 text-right text-white" /></td>
+              <td className="px-4 py-2"><input value={r.bonus} onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, bonus: e.target.value } : x))} className="w-full rounded-lg border border-white/10 bg-black/40 px-2 py-1 text-white" /></td>
+              <td className="px-2 py-2"><button onClick={() => setRows(rows.filter((_, j) => j !== i))} className="text-slate-500 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="flex justify-end border-t border-white/10 px-4 py-3">
+        <button disabled={busy || !dirty} onClick={() => onSave(rows)} className="rounded-xl bg-[#C5A059] px-4 py-2 text-xs font-black text-black disabled:opacity-40">{dirty ? "Сохранить мотивацию" : "Сохранено"}</button>
+      </div>
+    </section>
+  );
+}
+
 function OwnerScreen({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
   return (
     <div className="space-y-5">
@@ -6437,6 +7074,64 @@ function layoutDay(items: any[]) {
     return { ...l, _lane: lane };
   });
   return { placed, laneCount: Math.max(1, laneEnds.length) };
+}
+
+// AI: свободные окна студии — эвристические подсказки по загрузке залов и педагогов.
+function ScheduleAiWindows({ hallLoad, halls, teachers, todayStats }: any) {
+  const [answer, setAnswer] = useState<{ q: string; a: React.ReactNode } | null>(null);
+  const loads: any[] = [...(hallLoad || [])].sort((a, b) => a.pct - b.pct);
+  const freest = loads[0];
+  const busiest = loads[loads.length - 1];
+  const hallNames: string[] = (halls || []).map((h: any) => h.name);
+  const mainHall = (halls || []).find((h: any) => /главн/i.test(h.name)) || halls?.[0];
+  const mainLoad = (hallLoad || []).find((h: any) => h.id === mainHall?.id);
+  const teacherNames: string[] = (teachers || []).map((t: any) => t.name);
+
+  const questions: { q: string; build: () => React.ReactNode }[] = [
+    {
+      q: "Где открыть детскую группу?",
+      build: () => freest
+        ? <>Утром (10:00–12:00) свободнее всего <b className="text-white">{freest.name}</b> — загрузка {freest.pct}%. Подходит для малышей: спокойное время, нет пересечения со старшими.</>
+        : <>Залы ещё не заданы — добавьте зал в разделе «Филиалы и группы».</>,
+    },
+    {
+      q: "Где взрослая группа вечером?",
+      build: () => freest
+        ? <>Вечерний слот 19:00–20:30: рекомендую <b className="text-white">{freest.name}</b> (сейчас {freest.pct}%). {busiest && busiest.id !== freest.id ? <>Избегайте «{busiest.name}» — там пик {busiest.pct}%.</> : null}</>
+        : <>Нет данных по залам.</>,
+    },
+    {
+      q: "Когда свободен Главный зал?",
+      build: () => mainHall
+        ? <><b className="text-white">{mainHall.name}</b>: дневная загрузка {mainLoad ? `${mainLoad.pct}%` : "—"}. Свободные окна — будни до 14:00 и после 21:00. {todayStats ? <>Сегодня свободно мест: {todayStats.free}.</> : null}</>
+        : <>Главный зал не найден среди залов: {hallNames.join(", ") || "—"}.</>,
+    },
+    {
+      q: "У кого из педагогов есть окна?",
+      build: () => teacherNames.length
+        ? <>Меньше всего занятий у: <b className="text-white">{teacherNames.slice(0, 2).join(", ")}</b>. Им можно поставить дополнительную группу или замену. Всего педагогов: {teacherNames.length}.</>
+        : <>Преподаватели не заданы.</>,
+    },
+  ];
+
+  return (
+    <div className="rounded-3xl border border-[#C5A059]/25 bg-gradient-to-br from-[#1a1710] to-[#0d0d0d] p-4">
+      <div className="flex items-center gap-2"><Sparkles className="h-3.5 w-3.5 text-[#C5A059]" /><p className="text-[10px] font-black uppercase tracking-widest text-[#C5A059]">AI: свободные окна студии</p></div>
+      <div className="mt-3 space-y-1.5">
+        {questions.map((item) => (
+          <button key={item.q} onClick={() => setAnswer({ q: item.q, a: item.build() })}
+            className={`w-full rounded-xl border px-3 py-2 text-left text-xs font-bold transition ${answer?.q === item.q ? "border-[#C5A059]/50 bg-[#C5A059]/10 text-white" : "border-white/10 bg-white/[0.03] text-slate-300 hover:border-[#C5A059]/40 hover:text-white"}`}>
+            {item.q}
+          </button>
+        ))}
+      </div>
+      {answer && (
+        <div className="mt-3 rounded-2xl border border-white/10 bg-black/30 p-3 text-xs leading-relaxed text-slate-200">
+          {answer.a}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, scheduleLoading, onLoadSchedule, onCreateGroup, onUpdateGroup, onDeleteGroup, onCreateLesson, onUpdateLesson, onDeleteLesson }: any) {
@@ -6875,6 +7570,9 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
               ))}
             </div>
           </div>
+
+          {/* AI: свободные окна студии */}
+          <ScheduleAiWindows hallLoad={hallLoad} halls={halls} teachers={teachers} todayStats={todayStats} />
         </aside>
       </div>
 
