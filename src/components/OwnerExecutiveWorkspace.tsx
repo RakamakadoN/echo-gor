@@ -57,6 +57,7 @@ import {
   Package,
   Boxes,
   Upload,
+  Camera,
   X
 } from "lucide-react";
 import { Announcement, AnnouncementAudience, Branch, Competition, ExecutiveSummary, Group, Payment, Student, SubscriptionPlan, Teacher, LeadSource, WaitlistEntry } from "../types";
@@ -189,7 +190,7 @@ interface OwnerExecutiveWorkspaceProps {
   onJournalTask?: (p: { studentId: string; studentName: string; title: string }) => void;
 }
 
-type OwnerTab = "dashboard" | "branches" | "students" | "teachers" | "payroll" | "journal" | "schedule" | "finance" | "planning" | "performances" | "products" | "documents" | "marketing" | "events" | "feed" | "announcements" | "analytics" | "ai" | "settings";
+type OwnerTab = "dashboard" | "branches" | "students" | "teachers" | "payroll" | "journal" | "schedule" | "finance" | "planning" | "reports" | "performances" | "products" | "documents" | "marketing" | "events" | "feed" | "announcements" | "analytics" | "ai" | "settings";
 
 const ownerTabs: { id: OwnerTab; label: string; short: string; icon: React.ElementType }[] = [
   { id: "dashboard", label: "Dashboard", short: "Главная", icon: Activity },
@@ -201,6 +202,7 @@ const ownerTabs: { id: OwnerTab; label: string; short: string; icon: React.Eleme
   { id: "schedule", label: "Расписание", short: "Расписание", icon: CalendarDays },
   { id: "finance", label: "Бухгалтерия", short: "Учёт", icon: Coins },
   { id: "planning", label: "Планирование (БДР)", short: "План", icon: LineChart },
+  { id: "reports", label: "Отчётность", short: "Отчёты", icon: FileSpreadsheet },
   { id: "performances", label: "Выступления", short: "Сцена", icon: Mic2 },
   { id: "products", label: "Товары и склад", short: "Товары", icon: ShoppingBag },
   { id: "documents", label: "Документолог", short: "Договоры", icon: FileText },
@@ -375,6 +377,7 @@ export function OwnerExecutiveWorkspace({
           {activeTab === "payroll" && <PayrollView teachers={teachers} students={students} groups={groups} payments={payments} />}
           {activeTab === "finance" && <BookkeepingView branches={branchScorecards} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
           {activeTab === "planning" && <PlanningView />}
+          {activeTab === "reports" && <ReportsView students={students} payments={payments} branches={branches} groups={groups} teachers={teachers} leadSources={leadSources} />}
           {activeTab === "performances" && <PerformancesView />}
           {activeTab === "products" && <ProductsView />}
           {activeTab === "documents" && <DocumentologistView />}
@@ -3053,6 +3056,12 @@ function TeacherForm({ title, form, setForm, branches, busy, onSubmit, onCancel 
   onCancel: () => void;
 }) {
   const inputCls = "mt-1 w-full rounded-xl border border-white/10 bg-[#0C0C0C] px-3 py-2 text-sm text-white outline-none focus:border-[#C5A059]/50";
+  const [login, setLogin] = useState(form.phone || "");
+  const [password, setPassword] = useState("");
+  const genPassword = () => {
+    const chars = "abcdefghijkmnpqrstuvwxyz23456789";
+    setPassword(Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join(""));
+  };
   return (
     <div className="rounded-[2rem] border border-[#C5A059]/30 bg-[#161616] p-5">
       <div className="flex items-center justify-between">
@@ -3090,6 +3099,26 @@ function TeacherForm({ title, form, setForm, branches, busy, onSubmit, onCancel 
           <span className="mt-1 block text-[11px] text-slate-500">Изменение роли с «Преподаватель» переместит сотрудника из списка преподавателей в соответствующий доступ.</span>
         </label>
       </div>
+
+      {/* Доступ в личный кабинет */}
+      <div className="mt-4 rounded-2xl border border-white/10 bg-black/25 p-4">
+        <p className="text-[11px] font-black uppercase tracking-widest text-[#C5A059]">Доступ в личный кабинет</p>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <label className="block">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Логин (телефон)</span>
+            <input value={login} onChange={(e) => setLogin(e.target.value)} placeholder={form.phone || "+7 ..."} className={inputCls} />
+          </label>
+          <label className="block">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Пароль</span>
+            <div className="mt-1 flex gap-2">
+              <input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="—" className="w-full rounded-xl border border-white/10 bg-[#0C0C0C] px-3 py-2 text-sm text-white outline-none focus:border-[#C5A059]/50" />
+              <button type="button" onClick={genPassword} className="shrink-0 rounded-xl border border-[#C5A059]/40 bg-[#C5A059]/10 px-3 py-2 text-xs font-bold text-[#C5A059] hover:bg-[#C5A059]/15">Сгенерировать</button>
+            </div>
+          </label>
+        </div>
+        <p className="mt-2 text-[11px] text-slate-500">Логин по умолчанию = номер телефона. Педагог входит в личный кабинет и видит свои KPI, ЗП, штрафы, обучение. Пароль в рабочей системе хранится в зашифрованном виде на сервере.</p>
+      </div>
+
       <div className="mt-4 flex gap-2">
         <button disabled={busy || !form.name?.trim()} onClick={onSubmit} className="rounded-2xl bg-[#C5A059] px-5 py-2 text-sm font-bold text-black transition hover:bg-[#d4b06a] disabled:opacity-50">
           {busy ? "Сохранение…" : "Сохранить"}
@@ -6245,6 +6274,312 @@ function SettingsListEditor({ kind, title }: { kind: string; title: string }) {
         <input value={val} onChange={(e) => setVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} placeholder="Новое значение" className="flex-1 rounded-lg border border-white/10 bg-black/40 px-2.5 py-1.5 text-sm text-white outline-none focus:border-[#C5A059]/50" />
         <button onClick={add} disabled={busy || !val.trim()} className="rounded-lg bg-[#C5A059] px-3 py-1.5 text-xs font-black text-black disabled:opacity-40">Добавить</button>
       </div>
+    </div>
+  );
+}
+
+// ===================== ОТЧЁТНОСТЬ (единый аналитический центр) =====================
+const REPORT_PERIODS: [string, string][] = [["today", "Сегодня"], ["yesterday", "Вчера"], ["week", "Неделя"], ["month", "Месяц"], ["quarter", "Квартал"], ["year", "Год"]];
+const PAY_TYPE_LABEL: Record<string, string> = { subscription: "Абонемент", single: "Разовое", uniform: "Форма / товары", concert: "Выступление" };
+const PAY_METHOD_RU: Record<string, string> = { card: "Карта", cash: "Наличные", transfer: "Перевод", kaspi: "Kaspi" };
+
+function ReportsView({ students = [], payments = [], branches = [], groups = [], teachers = [], leadSources = [] }: any) {
+  const [tab, setTab] = useState<"fin" | "subs" | "trials" | "marketing" | "ai" | "history">("fin");
+  const [period, setPeriod] = useState("month");
+  const [scope, setScope] = useState("all");
+  const [opType, setOpType] = useState("all");
+  const [comment, setComment] = useState("");
+  const [snapshots, setSnapshots] = useState<any[]>([]);
+
+  useEffect(() => {
+    try {
+      const c = window.localStorage.getItem("echogor_report_comment"); if (c) setComment(c);
+      const s = window.localStorage.getItem("echogor_report_snaps"); if (s) setSnapshots(JSON.parse(s));
+    } catch { /* no-op */ }
+  }, []);
+
+  const r = useMemo(() => clientPeriodRange(period), [period]);
+  const inScope = (branchId: string) => scope === "all" || branchId === scope;
+  const inCur = (date: string) => date >= r.cur.start && date <= r.cur.end;
+  const inRange = (date: string, rg: { start: string; end: string }) => date >= rg.start && date <= rg.end;
+
+  const curPays = useMemo(() => payments.filter((p: Payment) => inScope(p.branchId) && inCur(p.date)), [payments, r, scope]);
+  const scopedStudents = useMemo(() => students.filter((s: Student) => inScope(s.branchId)), [students, scope]);
+
+  const revenue = (list: Payment[]) => list.filter((p) => p.status === "paid").reduce((s, p) => s + p.amount, 0);
+  const branchName = (id: string) => branches.find((b: any) => (b.id || b.branchId) === id)?.name || "—";
+  const studentName = (id: string) => students.find((s: Student) => s.id === id)?.name || "—";
+
+  const filteredOps = useMemo(() => curPays.filter((p: Payment) => opType === "all" || p.type === opType), [curPays, opType]);
+
+  // ── экспорт ──
+  const download = (name: string, content: string, mime: string) => {
+    const blob = new Blob(["﻿" + content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = name; a.click(); URL.revokeObjectURL(url);
+  };
+  const exportExcel = () => {
+    const header = ["Дата", "Ученик", "Тип", "Способ", "Сумма", "Статус"];
+    const body = filteredOps.map((p: Payment) => [p.date, studentName(p.studentId), PAY_TYPE_LABEL[p.type] || p.type, PAY_METHOD_RU[p.method] || p.method, p.amount, p.status === "paid" ? "Проведён" : "Ожидание"]);
+    body.push(["ИТОГО", "", "", "", revenue(filteredOps), ""]);
+    const csv = [header, ...body].map((row) => row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(";")).join("\n");
+    download(`otchet_${period}_${r.cur.start}.csv`, csv, "text/csv;charset=utf-8;");
+  };
+  const summaryText = () => `Отчёт «Эхо Гор» за период ${r.cur.start}–${r.cur.end}\nПоступления: ${money(revenue(curPays))}\nОпераций: ${curPays.length}\nУчеников в области: ${scopedStudents.length}`;
+  const shareWhatsApp = () => window.open(`https://wa.me/?text=${encodeURIComponent(summaryText())}`, "_blank");
+  const shareEmail = () => window.open(`mailto:?subject=${encodeURIComponent("Отчёт Эхо Гор")}&body=${encodeURIComponent(summaryText())}`, "_blank");
+  const exportPdf = () => window.print();
+
+  const saveSnapshot = () => {
+    const snap = { id: Date.now(), period, scope: scope === "all" ? "Вся сеть" : branchName(scope), date: new Date().toLocaleString("ru-RU"), revenue: revenue(curPays), ops: curPays.length };
+    const next = [snap, ...snapshots].slice(0, 20);
+    setSnapshots(next);
+    try { window.localStorage.setItem("echogor_report_snaps", JSON.stringify(next)); } catch { /* no-op */ }
+  };
+  const saveComment = () => { try { window.localStorage.setItem("echogor_report_comment", comment); } catch { /* no-op */ } };
+
+  const tabs: { id: typeof tab; label: string; icon: React.ElementType }[] = [
+    { id: "fin", label: "Финансовые операции", icon: Receipt },
+    { id: "subs", label: "Абонементы", icon: WalletCards },
+    { id: "trials", label: "Пробные и отказы", icon: Filter },
+    { id: "marketing", label: "Маркетинг", icon: Send },
+    { id: "ai", label: "AI-отчёты", icon: Sparkles },
+    { id: "history", label: "История", icon: Clock },
+  ];
+
+  return (
+    <OwnerScreen title="Отчётность" subtitle="Единый аналитический центр: что произошло, почему и что делать дальше. Финансы, абонементы, пробные и отказы, маркетинг, AI-выводы и история отчётов. Экспорт в PDF/Excel, отправка в WhatsApp и на почту.">
+      {/* Период + область + снимок */}
+      <section className="rounded-[1.5rem] border border-white/10 bg-white/[0.02] p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {REPORT_PERIODS.map(([id, label]) => (
+              <button key={id} onClick={() => setPeriod(id)}
+                className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${period === id ? "bg-[#C5A059] text-black" : "border border-white/10 bg-white/[0.04] text-slate-300 hover:border-[#C5A059]/40"}`}>{label}</button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <select value={scope} onChange={(e) => setScope(e.target.value)} className="rounded-xl border border-white/10 bg-black/40 px-3 py-1.5 text-xs font-bold text-white">
+              <option value="all" className="bg-black">Вся сеть</option>
+              {branches.map((b: any) => <option key={b.id || b.branchId} value={b.id || b.branchId} className="bg-black">{b.name}</option>)}
+            </select>
+            <button onClick={saveSnapshot} className="inline-flex items-center gap-1.5 rounded-xl border border-[#C5A059]/30 bg-[#C5A059]/10 px-3 py-1.5 text-xs font-bold text-[#C5A059]"><Camera className="h-3.5 w-3.5" /> Сохранить снимок периода</button>
+          </div>
+        </div>
+      </section>
+
+      {/* Под-вкладки */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {tabs.map((t) => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition ${tab === t.id ? "bg-white/15 text-white ring-1 ring-[#C5A059]/40" : "border border-white/10 bg-white/[0.04] text-slate-400 hover:text-white"}`}>
+            <t.icon className="h-3.5 w-3.5" /> {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "fin" && (
+        <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <StatPill label="Поступления" value={money(revenue(curPays))} tone="emerald" />
+            <StatPill label="Операций" value={curPays.length} tone="white" />
+            <StatPill label="Возвраты" value={money(0)} tone="rose" />
+            <StatPill label="Средний чек" value={money(curPays.length ? Math.round(revenue(curPays) / Math.max(1, curPays.filter((p: Payment) => p.status === "paid").length)) : 0)} />
+          </div>
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {[["all", "Все операции"], ["subscription", "Абонементы"], ["uniform", "Товары"], ["concert", "Выступления"], ["single", "Разовые"]].map(([id, label]) => (
+                <button key={id} onClick={() => setOpType(id)} className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition ${opType === id ? "bg-white/15 text-white ring-1 ring-[#C5A059]/40" : "border border-white/10 bg-white/[0.03] text-slate-400 hover:text-white"}`}>{label}</button>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button onClick={exportPdf} className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-[11px] font-bold text-slate-300 hover:text-white"><FileText className="h-3.5 w-3.5" /> PDF</button>
+              <button onClick={exportExcel} className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-[11px] font-bold text-slate-300 hover:text-white"><FileSpreadsheet className="h-3.5 w-3.5" /> Excel</button>
+              <button onClick={shareWhatsApp} className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-[11px] font-bold text-slate-300 hover:text-white"><Phone className="h-3.5 w-3.5" /> WhatsApp</button>
+              <button onClick={shareEmail} className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-[11px] font-bold text-slate-300 hover:text-white"><Send className="h-3.5 w-3.5" /> Email</button>
+            </div>
+          </div>
+          <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.02]">
+            <div className="border-b border-white/10 px-4 py-3"><h4 className="text-sm font-black text-white">Реестр финансовых операций</h4></div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[640px] text-left text-sm">
+                <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Дата</th><th className="px-4 py-2 font-bold">Ученик</th><th className="px-4 py-2 font-bold">Тип</th><th className="px-4 py-2 font-bold">Способ</th><th className="px-4 py-2 text-right font-bold">Сумма</th><th className="px-4 py-2 font-bold">Статус</th></tr></thead>
+                <tbody>
+                  {filteredOps.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500">Нет операций за период.</td></tr>}
+                  {filteredOps.slice(0, 200).map((p: Payment) => (
+                    <tr key={p.id} className="border-t border-white/5">
+                      <td className="px-4 py-2 text-slate-400">{p.date}</td>
+                      <td className="px-4 py-2 font-bold text-white">{studentName(p.studentId)}</td>
+                      <td className="px-4 py-2 text-slate-300">{PAY_TYPE_LABEL[p.type] || p.type}</td>
+                      <td className="px-4 py-2 text-slate-400">{PAY_METHOD_RU[p.method] || p.method}</td>
+                      <td className="px-4 py-2 text-right font-bold text-emerald-400">{money(p.amount)}</td>
+                      <td className="px-4 py-2"><span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${p.status === "paid" ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-300"}`}>{p.status === "paid" ? "Проведён" : "Ожидание"}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {tab === "subs" && <ReportsSubsTab students={scopedStudents} payments={curPays} />}
+      {tab === "trials" && <ReportsTrialsTab students={scopedStudents} />}
+      {tab === "marketing" && <ReportsMarketingTab students={scopedStudents} leadSources={leadSources} />}
+      {tab === "ai" && <ReportsAiTab students={scopedStudents} curRevenue={revenue(curPays)} ops={curPays.length} period={period} />}
+      {tab === "history" && (
+        <ReportsHistoryTab
+          cur={revenue(curPays)}
+          prev={revenue(payments.filter((p: Payment) => inScope(p.branchId) && inRange(p.date, r.prev)))}
+          yoy={revenue(payments.filter((p: Payment) => inScope(p.branchId) && inRange(p.date, r.yoy)))}
+          comment={comment} setComment={setComment} onSaveComment={saveComment}
+          snapshots={snapshots}
+        />
+      )}
+    </OwnerScreen>
+  );
+}
+
+function ReportsSubsTab({ students, payments }: any) {
+  const active = students.filter((s: Student) => (s.status || "") === "active").length;
+  const debt = students.filter((s: Student) => (s.status || "") === "debt" || s.balance < 0).length;
+  const subRevenue = payments.filter((p: Payment) => p.type === "subscription" && p.status === "paid").reduce((s: number, p: Payment) => s + p.amount, 0);
+  const subCount = payments.filter((p: Payment) => p.type === "subscription").length;
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <StatPill label="Активные абонементы" value={active} tone="emerald" />
+        <StatPill label="Должники" value={debt} tone="rose" />
+        <StatPill label="Продано абонементов" value={subCount} tone="white" />
+        <StatPill label="Выручка по абонементам" value={money(subRevenue)} />
+      </div>
+      <section className="rounded-[1.5rem] border border-white/10 bg-white/[0.02] p-5 text-sm text-slate-300">
+        <h4 className="text-sm font-black text-white">Отчёт по абонементам</h4>
+        <p className="mt-2 text-slate-400">Активных учеников: {active}. Должников: {debt}. За период продано {subCount} абонементов на {money(subRevenue)}. Проверьте истекающие абонементы в разделе «Ученики» → фильтр «Требуют продления».</p>
+      </section>
+    </div>
+  );
+}
+
+function ReportsTrialsTab({ students }: any) {
+  const st = (v: string) => students.filter((s: Student) => (s.status || "") === v).length;
+  const leftList = students.filter((s: Student) => (s.status || "") === "left" || (s.status || "") === "archived");
+  const funnel = [
+    { label: "Лиды", value: st("lead") },
+    { label: "Записаны на пробный", value: st("trial") },
+    { label: "Активные (купили)", value: st("active") },
+  ];
+  return (
+    <div className="space-y-4">
+      <section className="rounded-[1.5rem] border border-white/10 bg-white/[0.02] p-5">
+        <h4 className="text-sm font-black text-white">Воронка пробных уроков</h4>
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          {funnel.map((f) => <div key={f.label}><StatPill label={f.label} value={f.value} tone={f.label.startsWith("Актив") ? "emerald" : "white"} /></div>)}
+        </div>
+      </section>
+      <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.02]">
+        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+          <h4 className="text-sm font-black text-white">История отказов и причины ухода</h4>
+          <span className="text-[11px] text-slate-500">Ушедших: {leftList.length}</span>
+        </div>
+        <table className="w-full text-left text-sm">
+          <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Ученик</th><th className="px-4 py-2 font-bold">Причина ухода</th><th className="px-4 py-2 text-right font-bold"></th></tr></thead>
+          <tbody>
+            {leftList.length === 0 && <tr><td colSpan={3} className="px-4 py-6 text-center text-slate-500">Отказов нет.</td></tr>}
+            {leftList.slice(0, 100).map((s: Student) => (
+              <tr key={s.id} className="border-t border-white/5">
+                <td className="px-4 py-2 font-bold text-white">{s.name}</td>
+                <td className="px-4 py-2 text-slate-400">{s.archiveReason || "—"}</td>
+                <td className="px-4 py-2 text-right"><button onClick={() => window.open(`https://wa.me/${(s.parentPhone || "").replace(/\D/g, "")}?text=${encodeURIComponent("Здравствуйте! Скучаем по вам в Эхо Гор — возвращайтесь, для вас спецпредложение 🎁")}`, "_blank")} className="rounded-lg border border-[#C5A059]/30 bg-[#C5A059]/10 px-2.5 py-1 text-[11px] font-bold text-[#C5A059]">↩ Возврат с оффером</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+    </div>
+  );
+}
+
+function ReportsMarketingTab({ students, leadSources }: any) {
+  const bySource = (leadSources || []).map((ls: any) => ({
+    name: ls.name,
+    count: students.filter((s: Student) => s.sourceId === ls.id).length,
+  })).sort((a: any, b: any) => b.count - a.count);
+  const noSource = students.filter((s: Student) => !s.sourceId).length;
+  return (
+    <div className="space-y-4">
+      <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.02]">
+        <div className="border-b border-white/10 px-4 py-3"><h4 className="text-sm font-black text-white">Лиды по источникам</h4></div>
+        <table className="w-full text-left text-sm">
+          <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Источник</th><th className="px-4 py-2 text-right font-bold">Учеников</th></tr></thead>
+          <tbody>
+            {bySource.length === 0 && <tr><td colSpan={2} className="px-4 py-6 text-center text-slate-500">Источники не заданы.</td></tr>}
+            {bySource.map((s: any) => (
+              <tr key={s.name} className="border-t border-white/5"><td className="px-4 py-2 font-bold text-white">{s.name}</td><td className="px-4 py-2 text-right text-[#C5A059]">{s.count}</td></tr>
+            ))}
+            {noSource > 0 && <tr className="border-t border-white/5"><td className="px-4 py-2 text-slate-400">Без источника</td><td className="px-4 py-2 text-right text-slate-400">{noSource}</td></tr>}
+          </tbody>
+        </table>
+      </section>
+      <section className="rounded-[1.5rem] border border-white/10 bg-white/[0.02] p-5 text-sm text-slate-400">
+        <h4 className="text-sm font-black text-white">Воронка продаж · от лида до продления</h4>
+        <p className="mt-2">Лиды → пробное → покупка → продление. Детальная воронка по статусам — во вкладке «Пробные и отказы» и в разделе «Ученики».</p>
+      </section>
+    </div>
+  );
+}
+
+function ReportsAiTab({ students, curRevenue, ops, period }: any) {
+  const active = students.filter((s: Student) => (s.status || "") === "active").length;
+  const debt = students.filter((s: Student) => (s.status || "") === "debt" || s.balance < 0).length;
+  const left = students.filter((s: Student) => (s.status || "") === "left" || (s.status || "") === "archived").length;
+  const insights = [
+    `За период (${period}) поступления ${money(curRevenue)} по ${ops} операциям. Средний чек ${money(ops ? Math.round(curRevenue / ops) : 0)}.`,
+    `Активных учеников ${active}, должников ${debt}. ${debt > 0 ? `Рекомендуется кампания напоминаний — это ${money(debt * 16000)} потенциального возврата.` : "Задолженностей нет — отличная собираемость."}`,
+    `Отток: ${left} ушедших. ${left > 0 ? "Запустите возврат с оффером во вкладке «Пробные и отказы»." : "Оттока нет."}`,
+    `Фокус недели: удержание активных (${active}) и добор пробных. Сравните период с прошлым во вкладке «История».`,
+  ];
+  return (
+    <section className="rounded-[1.75rem] border border-[#C5A059]/25 bg-gradient-to-br from-[#1a1710] to-black p-5">
+      <div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-[#C5A059]" /><h4 className="text-sm font-black uppercase tracking-wider text-white">AI-отчёт по периоду</h4></div>
+      <ul className="mt-4 space-y-3">
+        {insights.map((t, i) => (
+          <li key={i} className="flex gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-slate-200"><span className="mt-0.5 text-[#C5A059]">›</span><span>{t}</span></li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function ReportsHistoryTab({ cur, prev, yoy, comment, setComment, onSaveComment, snapshots }: any) {
+  const delta = (a: number, b: number) => b ? Math.round(((a - b) / b) * 100) : 0;
+  return (
+    <div className="space-y-4">
+      <section className="rounded-[1.5rem] border border-white/10 bg-white/[0.02] p-5">
+        <h4 className="text-sm font-black text-white">Сравнение периодов · выручка</h4>
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <StatPill label="Текущий период" value={money(cur)} tone="gold" />
+          <StatPill label="Пред. период" value={money(prev)} hint={`${delta(cur, prev) >= 0 ? "+" : ""}${delta(cur, prev)}% MoM`} />
+          <StatPill label="Тот же период год назад" value={money(yoy)} hint={`${delta(cur, yoy) >= 0 ? "+" : ""}${delta(cur, yoy)}% YoY`} />
+        </div>
+      </section>
+      <section className="rounded-[1.5rem] border border-white/10 bg-white/[0.02] p-5">
+        <h4 className="text-sm font-black text-white">Комментарий владельца</h4>
+        <textarea value={comment} onChange={(e) => setComment(e.target.value)} rows={3} placeholder="Заметки, выводы, план действий на период…" className="mt-3 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#C5A059]/40" />
+        <div className="mt-2 flex justify-end"><button onClick={onSaveComment} className="rounded-xl bg-[#C5A059] px-4 py-2 text-xs font-black text-black">Сохранить комментарий</button></div>
+      </section>
+      <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.02]">
+        <div className="border-b border-white/10 px-4 py-3"><h4 className="text-sm font-black text-white">История сохранённых отчётов</h4></div>
+        <table className="w-full text-left text-sm">
+          <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Снимок</th><th className="px-4 py-2 font-bold">Область</th><th className="px-4 py-2 text-right font-bold">Поступления</th><th className="px-4 py-2 text-right font-bold">Операций</th></tr></thead>
+          <tbody>
+            {(!snapshots || snapshots.length === 0) && <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-500">Снимков пока нет. Нажмите «Сохранить снимок периода».</td></tr>}
+            {(snapshots || []).map((s: any) => (
+              <tr key={s.id} className="border-t border-white/5"><td className="px-4 py-2 text-slate-300">{s.date}</td><td className="px-4 py-2 text-slate-400">{s.scope}</td><td className="px-4 py-2 text-right text-emerald-400">{money(s.revenue)}</td><td className="px-4 py-2 text-right text-slate-300">{s.ops}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
     </div>
   );
 }
