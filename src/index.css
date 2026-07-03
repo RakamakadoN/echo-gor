@@ -76,6 +76,8 @@
 :root.day-theme .day-theme-app [class*="bg-[#1b1b1b]" i],
 :root.day-theme .day-theme-app [class*="bg-[#11121a]" i],
 :root.day-theme .day-theme-app [class*="bg-[#12141c]" i],
+:root.day-theme .day-theme-app [class*="bg-[#0c0e14]" i],
+:root.day-theme .day-theme-app [class*="bg-[#1a140a]" i],
 :root.day-theme .day-theme-app [class*="bg-[#140f10]" i] {
   background-color: #FFFFFF !important;
   border-color: #DCE2E8 !important;

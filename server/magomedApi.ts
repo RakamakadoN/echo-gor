@@ -41,9 +41,14 @@ type Role = "owner" | "branch_manager" | "admin" | "teacher";
 type MagomedSession = {
   role: Role;
   organizationId: string;
-  // dbBranchId === null → видит всю сеть (владелец); иначе скоуп по филиалу.
+  // dbBranchId === null → видит всю сеть; иначе скоуп по своему филиалу.
   dbBranchId: string | null;
 };
+
+// Роли с полным доступом ко всей базе (вся сеть, архив, документы, карточки
+// педагогов). Магомед — главный ассистент: владелец и руководитель филиала
+// видят через него абсолютно всё. Админ и педагог остаются в скоупе филиала.
+const FULL_ACCESS_ROLES: Role[] = ["owner", "branch_manager"];
 
 function getSession(req: express.Request): MagomedSession {
   const raw = String(req.headers["x-demo-role"] || "owner");
@@ -52,8 +57,13 @@ function getSession(req: express.Request): MagomedSession {
   return {
     role,
     organizationId: ORG_ID,
-    dbBranchId: role === "owner" ? null : DEMO_BRANCH_ALMATY,
+    dbBranchId: FULL_ACCESS_ROLES.includes(role) ? null : DEMO_BRANCH_ALMATY,
   };
+}
+
+// Полный доступ = скоуп не ограничен филиалом (владелец / руководитель).
+function isFullAccess(session: MagomedSession): boolean {
+  return session.dbBranchId === null;
 }
 
 async function supabaseFetch<T>(
@@ -131,9 +141,15 @@ async function toolSearchCrm(args: any, session: MagomedSession) {
     const or = q
       ? `&or=(first_name.ilike.${enc},last_name.ilike.${enc},middle_name.ilike.${enc},phone.ilike.${enc},parent_name.ilike.${enc},parent_phone.ilike.${enc})`
       : "";
+    // Полный доступ (владелец/руководитель) видит АБСОЛЮТНО всех, включая архив
+    // и помеченных на удаление. Филиальные роли — только активную базу филиала.
+    const archiveFilter = isFullAccess(session)
+      ? ""
+      : "&status=neq.archived&deletion_requested_at=is.null";
+    const limit = isFullAccess(session) ? 50 : 15;
     const rows = await supabaseFetch<any[]>(
       "students",
-      `select=id,first_name,last_name,middle_name,phone,parent_name,parent_phone,status,group_id&${org}&status=neq.archived&deletion_requested_at=is.null${branch}${or}&limit=15`
+      `select=id,first_name,last_name,middle_name,phone,parent_name,parent_phone,status,group_id&${org}${archiveFilter}${branch}${or}&limit=${limit}`
     );
     return {
       count: rows.length,
@@ -147,15 +163,50 @@ async function toolSearchCrm(args: any, session: MagomedSession) {
     };
   }
 
+  if (entity === "documents") {
+    // Документы (Документолог) — только полный доступ (владелец/руководитель).
+    if (!isFullAccess(session)) {
+      return { error: "Документы доступны только владельцу и руководителю." };
+    }
+    const or = q
+      ? `&or=(contractor.ilike.${enc},subject.ilike.${enc},category.ilike.${enc})`
+      : "";
+    const rows = await supabaseFetch<any[]>(
+      "documents",
+      `select=id,category,contractor,subject,amount,currency,status,date_start,date_end&${org}${or}&order=updated_at.desc&limit=30`
+    );
+    return {
+      count: rows.length,
+      documents: rows.map((r) => ({
+        id: r.id,
+        category: r.category || null,
+        contractor: r.contractor || null,
+        subject: r.subject || null,
+        amount: r.amount,
+        currency: r.currency,
+        status: r.status,
+        from: r.date_start || null,
+        until: r.date_end || null,
+      })),
+    };
+  }
+
   if (entity === "teachers") {
     const or = q ? `&or=(full_name.ilike.${enc},phone.ilike.${enc})` : "";
     const rows = await supabaseFetch<any[]>(
       "users",
-      `select=id,full_name,phone,role,branch_id&${org}&role=eq.teacher${branch}${or}&limit=15`
+      `select=id,full_name,phone,role,branch_id,specialization&${org}&role=eq.teacher${branch}${or}&limit=${
+        isFullAccess(session) ? 50 : 15
+      }`
     );
     return {
       count: rows.length,
-      teachers: rows.map((r) => ({ id: r.id, name: r.full_name, phone: r.phone || null })),
+      teachers: rows.map((r) => ({
+        id: r.id,
+        name: r.full_name,
+        phone: r.phone || null,
+        specialization: r.specialization || null,
+      })),
     };
   }
 
@@ -228,6 +279,59 @@ async function toolGetRecordDetails(args: any, session: MagomedSession) {
     };
   }
 
+  if (entity === "teachers") {
+    const rows = await supabaseFetch<any[]>(
+      "users",
+      `select=*&id=eq.${id}&organization_id=eq.${session.organizationId}&role=eq.teacher${branch}&limit=1`
+    );
+    const r = rows[0];
+    if (!r) return { found: false };
+    // Схема зарплаты и группы — только полный доступ (владелец/руководитель).
+    const comp = isFullAccess(session)
+      ? await supabaseFetch<any[]>(
+          "teacher_compensation",
+          `select=scheme,base_salary,percent,per_lesson_rate,comment&teacher_id=eq.${id}&limit=1`
+        ).catch(() => [])
+      : [];
+    const groups = await supabaseFetch<any[]>(
+      "groups",
+      `select=id,name&teacher_id=eq.${id}${branch}&limit=50`
+    ).catch(() => []);
+    const c = comp[0];
+    return {
+      found: true,
+      teacher: {
+        id: r.id,
+        name: r.full_name,
+        phone: r.phone || null,
+        email: r.email || null,
+        specialization: r.specialization || null,
+        status: r.status || null,
+        compensation: c
+          ? {
+              scheme: c.scheme,
+              baseSalary: c.base_salary,
+              percent: c.percent,
+              perLessonRate: c.per_lesson_rate,
+              comment: c.comment || null,
+            }
+          : null,
+        groups: groups.map((g) => ({ id: g.id, name: g.name })),
+      },
+    };
+  }
+
+  if (entity === "documents") {
+    if (!isFullAccess(session)) {
+      return { error: "Документы доступны только владельцу и руководителю." };
+    }
+    const rows = await supabaseFetch<any[]>(
+      "documents",
+      `select=*&id=eq.${id}&organization_id=eq.${session.organizationId}&limit=1`
+    );
+    return rows[0] ? { found: true, document: rows[0] } : { found: false };
+  }
+
   if (entity === "tasks") {
     const rows = await supabaseFetch<any[]>("tasks", `select=*&id=eq.${id}${branch}&limit=1`);
     return rows[0] ? { found: true, task: rows[0] } : { found: false };
@@ -285,9 +389,13 @@ async function toolGetSalesSummary(args: any, session: MagomedSession) {
 async function toolGetStudentsSummary(_args: any, session: MagomedSession) {
   const org = `organization_id=eq.${session.organizationId}`;
   const branch = branchClause(session);
+  // Полный доступ — считаем всех, включая архив; филиальные роли — активную базу.
+  const archiveFilter = isFullAccess(session)
+    ? ""
+    : "&status=neq.archived&deletion_requested_at=is.null";
   const rows = await supabaseFetch<any[]>(
     "students",
-    `select=status&${org}&status=neq.archived&deletion_requested_at=is.null${branch}&limit=5000`
+    `select=status&${org}${archiveFilter}${branch}&limit=5000`
   );
   const byStatus: Record<string, number> = {};
   for (const r of rows) {
@@ -553,19 +661,21 @@ const tools = [
   {
     name: "search_crm",
     description:
-      "Поиск записей в CRM по имени, телефону или названию. Возвращает краткий список с id. " +
-      "Используй, когда пользователь ищет ученика, преподавателя, группу или задачу.",
+      "Поиск записей в CRM по имени, телефону, названию или контрагенту. Возвращает краткий " +
+      "список с id. Используй, когда пользователь ищет ученика, преподавателя, группу, задачу " +
+      "или документ/договор. У владельца и руководителя поиск учеников охватывает всю сеть, " +
+      "включая архив; документы доступны только им.",
     input_schema: {
       type: "object",
       properties: {
         entity: {
           type: "string",
-          enum: ["students", "teachers", "groups", "tasks"],
-          description: "Тип записи",
+          enum: ["students", "teachers", "groups", "tasks", "documents"],
+          description: "Тип записи. documents — договоры/документы (только владелец и руководитель).",
         },
         query: {
           type: "string",
-          description: "Поисковая строка: имя, фамилия, телефон или название. Может быть пустой для списка.",
+          description: "Поисковая строка: имя, фамилия, телефон, название или контрагент. Может быть пустой для списка.",
         },
       },
       required: ["entity"],
@@ -575,11 +685,12 @@ const tools = [
     name: "get_record_details",
     description:
       "Полная карточка одной записи по её id (получи id через search_crm). " +
-      "Для ученика возвращает абонементы и последние оплаты.",
+      "Ученик — абонементы и последние оплаты. Преподаватель — контакты, схема зарплаты и группы. " +
+      "Документ — все поля договора (только владелец и руководитель).",
     input_schema: {
       type: "object",
       properties: {
-        entity: { type: "string", enum: ["students", "tasks", "groups"] },
+        entity: { type: "string", enum: ["students", "teachers", "groups", "tasks", "documents"] },
         id: { type: "string", description: "UUID записи" },
       },
       required: ["entity", "id"],
@@ -660,6 +771,10 @@ const SYSTEM_PROMPT = `Ты — Магомед, умный, надёжный и 
 - Профессионально, вежливо, с лёгким оттенком традиционного гостеприимства и уважения в духе названия «Эхо гор». Обращайся к сотруднику уважительно.
 - Максимально кратко и чётко — ты работаешь в узком виджете. Никакой воды. Ключевые данные выделяй **жирным**, используй короткие списки.
 - Проактивность: предлагай логичный следующий шаг (открыть карточку, посмотреть оплаты, создать задачу).
+
+ДОСТУП К ДАННЫМ:
+- Владелец и руководитель филиала видят через тебя АБСОЛЮТНО ВСЮ базу сети: всех учеников (включая архив и помеченных на удаление), всех преподавателей с их карточками и схемами зарплаты, все документы и договоры. Ты — главный ассистент, для них ограничений по филиалам нет.
+- Администратор и педагог работают только в рамках своего филиала; документы им недоступны — вежливо объясни это, если попросят.
 
 ГЛАВНЫЕ ПРАВИЛА:
 1. НИКАКИХ ГАЛЛЮЦИНАЦИЙ. Отвечай ИСКЛЮЧИТЕЛЬНО по данным, полученным из инструментов. Не выдумывай имена, цифры, даты, статусы. Если инструмент вернул пусто — скажи прямо: «В базе данных нет информации по этому запросу».

@@ -3432,14 +3432,30 @@ function AcctTaxesTab() {
 function AcctOverviewTab({ data, branches }: { data: AcctOverview; branches: any[] }) {
   const { totals, cashflow } = data;
   const maxNet = Math.max(1, ...cashflow.netByMonth.map((v) => Math.abs(v)));
+  const margin = totals.income > 0 ? (totals.profit / totals.income) * 100 : 0;
   return (
     <div className="space-y-5">
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
         <OwnerKpi label="Остаток на счетах" value={money(totals.balanceTotal)} detail="все кассы и банки" tone="gold" icon={Wallet} />
-        <OwnerKpi label="Доходы (факт)" value={money(totals.income)} detail="за весь период" tone="emerald" icon={ArrowUpRight} />
-        <OwnerKpi label="Расходы (факт)" value={money(totals.expense)} detail="за весь период" tone="rose" icon={ArrowDownRight} />
-        <OwnerKpi label="Прибыль" value={money(totals.profit)} detail={`план: +${money(totals.plannedIn)} / −${money(totals.plannedOut)}`} tone={totals.profit >= 0 ? "emerald" : "rose"} icon={TrendingUp} />
+        <OwnerKpi label="Выручка (факт)" value={money(totals.income)} detail="за вычетом возвратов" tone="emerald" icon={ArrowUpRight} />
+        <OwnerKpi label="Расходы (факт)" value={money(totals.expense)} detail="проведённые, по периоду" tone="rose" icon={ArrowDownRight} />
+        <OwnerKpi label="Чистая прибыль" value={money(totals.profit)} detail="выручка − расходы" tone={totals.profit >= 0 ? "emerald" : "rose"} icon={TrendingUp} />
+        <OwnerKpi label="Рентабельность" value={`${margin.toFixed(1)}%`} detail="прибыль / выручка" tone={margin >= 0 ? "gold" : "rose"} icon={BarChart3} />
       </div>
+
+      {/* AI-сводка «за 10 секунд» — как в прототипе бухгалтерии */}
+      <section className="rounded-[2rem] border border-[#C5A059]/25 bg-[#C5A059]/[0.06] p-5">
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-[#C5A059]" />
+          <h3 className="text-sm font-black uppercase tracking-wider text-[#C5A059]">Сводка за 10 секунд</h3>
+        </div>
+        <p className="mt-3 text-sm leading-relaxed text-slate-200">
+          За период выручка составила <b className="text-white">{money(totals.income)}</b>, расходы — <b className="text-white">{money(totals.expense)}</b>.
+          Чистая прибыль <b className={totals.profit >= 0 ? "text-emerald-400" : "text-rose-400"}>{money(totals.profit)}</b> при рентабельности <b className="text-white">{margin.toFixed(1)}%</b>.
+          {" "}{totals.profit >= 0 ? "Период прибыльный — деньги работают в плюс." : "Период убыточный: расходы превышают выручку, стоит пересмотреть крупные статьи."}
+          {" "}Остаток на счетах: <b className="text-white">{money(totals.balanceTotal)}</b>.
+        </p>
+      </section>
 
       <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
         <h3 className="font-black text-white">Счета и кассы</h3>

@@ -630,7 +630,7 @@ export function AiHubView({ roleHeader = "owner" }: Props) {
                     </p>
                   </div>
                   <div className="text-[13px] leading-relaxed text-slate-100">
-                    {renderText(councilResult.synthesis, "#E8C887")}
+                    {renderText(councilResult.synthesis, "#C5A059")}
                   </div>
                 </div>
               ) : (
@@ -902,7 +902,7 @@ export function AiHubView({ roleHeader = "owner" }: Props) {
 
       {/* Всплывающее уведомление о действии */}
       {toast && (
-        <div className="fixed bottom-6 left-1/2 z-[950] -translate-x-1/2 rounded-xl border border-[#C5A059]/40 bg-[#1A140A] px-4 py-2.5 text-sm font-semibold text-[#E8C887] shadow-lg">
+        <div className="fixed bottom-6 left-1/2 z-[950] -translate-x-1/2 rounded-xl border border-[#C5A059]/40 bg-[#1A140A] px-4 py-2.5 text-sm font-semibold text-[#C5A059] shadow-lg">
           <span className="flex items-center gap-2">
             <Check size={15} /> {toast}
           </span>
