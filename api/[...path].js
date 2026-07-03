@@ -1,3 +1,9 @@
+// server/loadEnv.ts
+import dotenv from "dotenv";
+if (process.env.NODE_ENV !== "production") {
+  dotenv.config();
+}
+
 // api/__entry.ts
 import express from "express";
 
@@ -39,13 +45,13 @@ var initialBranches = [
   }
 ];
 var initialHalls = [
-  { id: "hall-almaty-1", branchId: "branch-almaty", name: "\u0417\u0430\u043B \u0410\u043B\u0430\u0442\u0430\u0443 (\u0411\u043E\u043B\u044C\u0448\u043E\u0439)", capacity: 40 },
-  { id: "hall-almaty-2", branchId: "branch-almaty", name: "\u0417\u0430\u043B \u041A\u043E\u043A-\u0422\u043E\u0431\u0435 (\u0421\u0440\u0435\u0434\u043D\u0438\u0439)", capacity: 25 },
-  { id: "hall-almaty-3", branchId: "branch-almaty", name: "\u0417\u0430\u043B \u041C\u0435\u0434\u0435\u043E (\u041C\u0430\u043B\u044B\u0439)", capacity: 15 },
-  { id: "hall-ast-1", branchId: "branch-astana", name: "\u0417\u0430\u043B \u0411\u0430\u0439\u0442\u0435\u0440\u0435\u043A", capacity: 30 },
-  { id: "hall-ast-2", branchId: "branch-astana", name: "\u0417\u0430\u043B \u0425\u0430\u043D \u0428\u0430\u0442\u044B\u0440", capacity: 20 },
-  { id: "hall-shym-1", branchId: "branch-shymkent", name: "\u0417\u0430\u043B \u041E\u0440\u0434\u0430 (\u0413\u043B\u0430\u0432\u043D\u044B\u0439)", capacity: 35 },
-  { id: "hall-shym-2", branchId: "branch-shymkent", name: "\u0417\u0430\u043B \u0410\u0440\u044B\u0441 (\u041C\u0430\u043B\u044B\u0439)", capacity: 15 }
+  { id: "hall-almaty-1", branchId: "branch-almaty", name: "\u0417\u0430\u043B \u0410\u043B\u0430\u0442\u0430\u0443 (\u0411\u043E\u043B\u044C\u0448\u043E\u0439)", capacity: 40, description: "\u0411\u043E\u043B\u044C\u0448\u043E\u0439 \u0437\u0430\u043B \u0441 \u0437\u0435\u0440\u043A\u0430\u043B\u0430\u043C\u0438 \u0438 \u0441\u0446\u0435\u043D\u043E\u0439", status: "active" },
+  { id: "hall-almaty-2", branchId: "branch-almaty", name: "\u0417\u0430\u043B \u041A\u043E\u043A-\u0422\u043E\u0431\u0435 (\u0421\u0440\u0435\u0434\u043D\u0438\u0439)", capacity: 25, description: "\u0421\u0440\u0435\u0434\u043D\u0438\u0439 \u0437\u0430\u043B \u0434\u043B\u044F \u0433\u0440\u0443\u043F\u043F\u043E\u0432\u044B\u0445 \u0437\u0430\u043D\u044F\u0442\u0438\u0439", status: "active" },
+  { id: "hall-almaty-3", branchId: "branch-almaty", name: "\u0417\u0430\u043B \u041C\u0435\u0434\u0435\u043E (\u041C\u0430\u043B\u044B\u0439)", capacity: 15, description: "\u041C\u0430\u043B\u044B\u0439 \u0437\u0430\u043B \u0434\u043B\u044F \u0438\u043D\u0434\u0438\u0432\u0438\u0434\u0443\u0430\u043B\u044C\u043D\u044B\u0445 \u0437\u0430\u043D\u044F\u0442\u0438\u0439", status: "active" },
+  { id: "hall-ast-1", branchId: "branch-astana", name: "\u0417\u0430\u043B \u0411\u0430\u0439\u0442\u0435\u0440\u0435\u043A", capacity: 30, description: "\u041F\u0440\u043E\u0441\u0442\u043E\u0440\u043D\u044B\u0439 \u0437\u0430\u043B", status: "active" },
+  { id: "hall-ast-2", branchId: "branch-astana", name: "\u0417\u0430\u043B \u0425\u0430\u043D \u0428\u0430\u0442\u044B\u0440", capacity: 20, description: "\u041C\u0430\u043B\u044B\u0439 \u0437\u0430\u043B", status: "active" },
+  { id: "hall-shym-1", branchId: "branch-shymkent", name: "\u0417\u0430\u043B \u041E\u0440\u0434\u0430 (\u0413\u043B\u0430\u0432\u043D\u044B\u0439)", capacity: 35, description: "\u0413\u043B\u0430\u0432\u043D\u044B\u0439 \u0437\u0430\u043B \u0444\u0438\u043B\u0438\u0430\u043B\u0430", status: "active" },
+  { id: "hall-shym-2", branchId: "branch-shymkent", name: "\u0417\u0430\u043B \u0410\u0440\u044B\u0441 (\u041C\u0430\u043B\u044B\u0439)", capacity: 15, description: "\u041C\u0430\u043B\u044B\u0439 \u0437\u0430\u043B", status: "active" }
 ];
 var initialTeachers = [
   {
@@ -92,6 +98,7 @@ var initialGroups = [
     time: "19:30",
     ageGroup: "16+ \u043B\u0435\u0442",
     level: "\u0410\u043D\u0441\u0430\u043C\u0431\u043B\u044C",
+    capacity: 20,
     studentCount: 4
   },
   {
@@ -106,6 +113,7 @@ var initialGroups = [
     time: "16:00",
     ageGroup: "6-8 \u043B\u0435\u0442",
     level: "\u041D\u0430\u0447\u0438\u043D\u0430\u044E\u0449\u0438\u0435",
+    capacity: 16,
     studentCount: 3
   },
   {
@@ -120,6 +128,7 @@ var initialGroups = [
     time: "16:30",
     ageGroup: "9-13 \u043B\u0435\u0442",
     level: "\u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0430\u044E\u0449\u0438\u0435",
+    capacity: 18,
     studentCount: 3
   }
 ];
@@ -903,9 +912,20 @@ function extractHrefs(html, pattern) {
   for (const m of html.matchAll(pattern)) out.add(m[1]);
   return [...out];
 }
+var PER_REQUEST_TIMEOUT_MS = 12e3;
 async function safeFetchText(ctx, url, stat) {
+  let timeout = PER_REQUEST_TIMEOUT_MS;
+  if (ctx.deadlineMs) timeout = Math.min(timeout, ctx.deadlineMs - Date.now());
+  if (timeout <= 0) {
+    ctx.log(`  ${url} \u2192 \u043F\u0440\u043E\u043F\u0443\u0441\u043A: \u0434\u0435\u0434\u043B\u0430\u0439\u043D \u0438\u0441\u0442\u0451\u043A`);
+    if (stat) stat.fetchErrors++;
+    return null;
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
   try {
     const res = await ctx.fetchFn(url, {
+      signal: controller.signal,
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -919,9 +939,12 @@ async function safeFetchText(ctx, url, stat) {
     }
     return await res.text();
   } catch (e) {
-    ctx.log(`  ${url} \u2192 \u043E\u0448\u0438\u0431\u043A\u0430: ${e?.message || e}`);
+    const msg = e?.name === "AbortError" ? `\u0442\u0430\u0439\u043C\u0430\u0443\u0442 ${timeout}ms` : e?.message || e;
+    ctx.log(`  ${url} \u2192 \u043E\u0448\u0438\u0431\u043A\u0430: ${msg}`);
     if (stat) stat.fetchErrors++;
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 var slugOf = (url) => url.split("?")[0].split("/").filter(Boolean).pop() || "";
@@ -1197,7 +1220,13 @@ var demoUsers = [
 ];
 var supabaseUrl = process.env.SUPABASE_URL?.replace(/\/$/, "");
 var supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-var supabaseEnabled = Boolean(supabaseUrl && supabaseKey);
+var isPlaceholder = (value) => {
+  if (!value) return true;
+  const v = value.trim();
+  if (v.length < 20) return true;
+  return /^(paste|your|changeme|placeholder|<|xxx)/i.test(v);
+};
+var supabaseEnabled = Boolean(supabaseUrl && supabaseKey && !isPlaceholder(supabaseKey));
 function getSession(req) {
   const roleHeader = String(req.headers["x-demo-role"] || "owner");
   const userHeader = String(req.headers["x-demo-user-id"] || "");
@@ -1227,9 +1256,31 @@ async function supabaseFetch(table, query = "select=*", init = {}) {
   if (!response.ok) {
     throw new Error(await response.text());
   }
-  return response.json();
+  if (response.status === 204) return void 0;
+  const text = await response.text();
+  if (!text) return void 0;
+  return JSON.parse(text);
 }
 var toDate = (value) => value ? value.slice(0, 10) : (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+async function logStatusEvent(session, studentId, toStatus, fromStatus, branchId) {
+  if (!supabaseEnabled || !toStatus || toStatus === fromStatus) return;
+  try {
+    await supabaseFetch("student_status_events", "", {
+      method: "POST",
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({
+        organization_id: session.organizationId,
+        branch_id: branchId || null,
+        student_id: studentId,
+        from_status: fromStatus || null,
+        to_status: toStatus,
+        source: "api",
+        created_by: session.fullName || session.role
+      })
+    });
+  } catch {
+  }
+}
 function fallbackPayload(session) {
   const branchFiltered = session.role === "owner" ? initialBranches : initialBranches.filter((branch) => branch.id === session.branchId);
   const branchIds = new Set(branchFiltered.map((branch) => branch.id));
@@ -1253,13 +1304,58 @@ function fallbackPayload(session) {
     branches: branchFiltered,
     halls: initialHalls.filter((hall) => session.role === "owner" || branchIds.has(hall.branchId)),
     teachers: initialTeachers,
+    tasks: [],
+    subscriptionPlans: [],
+    leadSources: [],
     groups,
     students,
+    waitlist: [],
     announcements: initialAnnouncements,
     payments,
     financeTransactions: initialFinanceTransactions,
     auditLogs: initialAuditLogs,
     metrics: getExecutiveSummary(branchFiltered, groups, students, payments, initialTeachers)
+  };
+}
+function mapDbTask(row, studentNameById) {
+  return {
+    id: row.id,
+    branchId: row.branch_id || null,
+    studentId: row.student_id || null,
+    studentName: row.student_id ? studentNameById?.get(row.student_id) || null : null,
+    assignedTo: row.assigned_to || null,
+    title: row.title,
+    description: row.description || null,
+    status: row.status || "new",
+    priority: row.priority || "normal",
+    dueAt: row.due_at ? toDate(row.due_at) : null,
+    completedAt: row.completed_at || null,
+    createdAt: row.created_at || null
+  };
+}
+function mapDbPlan(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    lessonsCount: row.lessons_count ?? 0,
+    durationDays: row.duration_days ?? 0,
+    price: Number(row.price || 0),
+    status: row.status || "active"
+  };
+}
+function mapDbLeadSource(row) {
+  return { id: row.id, name: row.name, status: row.status || "active" };
+}
+function mapDbWaitlist(row) {
+  return {
+    id: row.id,
+    studentId: row.student_id,
+    branchId: row.branch_id || null,
+    groupId: row.group_id || null,
+    comment: row.comment || null,
+    addedAt: row.added_at,
+    removedAt: row.removed_at || null,
+    removedReason: row.removed_reason || null
   };
 }
 function mapDbUserToTeacher(user) {
@@ -1287,6 +1383,22 @@ function mapDbStudent(row, attendanceByStudent, subsByStudent) {
     branchId: row.branch_id,
     groupIds: row.group_id ? [row.group_id] : [],
     teacherId: row.teacher_id || "",
+    createdAt: row.created_at || void 0,
+    status: row.status || void 0,
+    manualStatus: row.manual_status || null,
+    returned: Boolean(row.returned_at),
+    payLater: Boolean(row.pay_later),
+    payPromiseDate: row.pay_promise_date || null,
+    archivedAt: row.archived_at || null,
+    archiveReason: row.archive_reason || null,
+    archiveComment: row.archive_comment || null,
+    archivedBy: row.archived_by || null,
+    gender: row.gender || null,
+    birthday: row.birthday || null,
+    phone: row.phone || "",
+    sourceId: row.source_id || null,
+    comment: row.comment || "",
+    waitlistAddedAt: row.__waitlist_added_at || null,
     parentName: row.parent_name || "\u0420\u043E\u0434\u0438\u0442\u0435\u043B\u044C",
     parentPhone: row.parent_phone || "",
     balance: row.status === "debt" ? -1 : 0,
@@ -1305,7 +1417,10 @@ function mapDbStudent(row, attendanceByStudent, subsByStudent) {
       lessonsLeft: sub.lessons_left || 0,
       validUntil: sub.ends_on,
       isAutoRenew: false,
-      status: sub.status === "active" ? "active" : "expired"
+      status: sub.status === "active" ? "active" : "expired",
+      startsOn: sub.starts_on,
+      discountAmount: Number(sub.discount_amount || 0),
+      groupId: sub.group_id || null
     }))
   };
 }
@@ -1323,23 +1438,48 @@ function mapDbPayment(row) {
     status: row.status === "paid" ? "paid" : "pending"
   };
 }
+function mapDbSubscription(row, planName) {
+  return {
+    id: row.id,
+    studentId: row.student_id,
+    name: planName || row.plan_name || "\u0410\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442",
+    price: Number(row.price || 0),
+    lessonsTotal: row.lessons_total || 0,
+    lessonsLeft: row.lessons_left || 0,
+    validUntil: row.ends_on,
+    isAutoRenew: false,
+    status: row.status === "active" ? "active" : "expired",
+    startsOn: row.starts_on,
+    discountAmount: Number(row.discount_amount || 0),
+    groupId: row.group_id || null
+  };
+}
 async function dbBootstrap(session) {
   const orgFilter = `organization_id=eq.${session.organizationId}`;
-  const [branches, halls, users, groups, studentsRaw, paymentsRaw, lessons, attendanceRaw, subscriptionsRaw, plans, financeTransactions] = await Promise.all([
+  const [branches, halls, users, groups, studentsRaw, paymentsRaw, lessons, attendanceRaw, subscriptionsRaw, plans, financeTransactions, tasksRaw, leadSourcesRaw, waitlistRaw] = await Promise.all([
     supabaseFetch("branches", `select=*&${orgFilter}&status=neq.archived`),
     supabaseFetch("halls", `select=*`),
     // Halls are filtered by branch in mapping
     supabaseFetch("users", `select=*&${orgFilter}`),
     supabaseFetch("groups", `select=*&${orgFilter}`),
-    supabaseFetch("students", `select=*&${orgFilter}&status=neq.archived`),
+    supabaseFetch("students", `select=*&${orgFilter}&status=neq.archived&deletion_requested_at=is.null&archived_at=is.null`),
     supabaseFetch("payments", `select=*&${orgFilter}&order=paid_at.desc`),
     supabaseFetch("schedule_lessons", `select=*&order=starts_at.desc`),
     // Cross-org lessons are unlikely but we keep mapping safe
     supabaseFetch("attendance", "select=*"),
     supabaseFetch("student_subscriptions", `select=*`),
     supabaseFetch("subscription_plans", `select=*&${orgFilter}`),
-    supabaseFetch("finance_transactions", `select=*&${orgFilter}&order=created_at.desc`)
+    supabaseFetch("finance_transactions", `select=*&${orgFilter}&order=created_at.desc`),
+    // tasks/lead_sources не имеют organization_id — фильтруем по филиалу в коде
+    supabaseFetch("tasks", `select=*&order=created_at.desc`).catch(() => []),
+    supabaseFetch("lead_sources", `select=*&order=name.asc`).catch(() => []),
+    // активный лист ожидания (миграция 021); .catch — если миграция ещё не применена
+    supabaseFetch("student_waitlist", `select=*&${orgFilter}&removed_at=is.null&order=added_at.asc`).catch(() => [])
   ]);
+  const waitlistAddedByStudent = /* @__PURE__ */ new Map();
+  waitlistRaw.forEach((w) => {
+    if (!waitlistAddedByStudent.has(w.student_id)) waitlistAddedByStudent.set(w.student_id, w.added_at);
+  });
   const groupById = new Map(groups.map((group) => [group.id, group]));
   const lessonById = new Map(lessons.map((lesson) => [lesson.id, lesson]));
   const planById = new Map(plans.map((plan) => [plan.id, plan]));
@@ -1354,7 +1494,10 @@ async function dbBootstrap(session) {
       date,
       status: row.status === "unknown" ? "unmarked" : row.status,
       markedBy: row.marked_by || void 0,
-      note: row.comment || void 0
+      note: row.comment || void 0,
+      absenceReason: row.absence_reason || null,
+      isTrial: Boolean(row.is_trial) || void 0,
+      trialOutcome: row.trial_outcome || null
     };
     attendanceByStudent.set(row.student_id, current);
   });
@@ -1377,6 +1520,9 @@ async function dbBootstrap(session) {
     days: [],
     time: "",
     ageGroup: group.age_from && group.age_to ? `${group.age_from}-${group.age_to} \u043B\u0435\u0442` : "\u0412\u0441\u0435 \u0432\u043E\u0437\u0440\u0430\u0441\u0442\u044B",
+    ageFrom: group.age_from ?? null,
+    ageTo: group.age_to ?? null,
+    capacity: group.capacity ?? 0,
     level: "MVP",
     studentCount: studentsRaw.filter((student) => student.group_id === group.id).length
   }));
@@ -1391,9 +1537,10 @@ async function dbBootstrap(session) {
     return student.branch_id === session.dbBranchId;
   }).map((student) => {
     const group = groupById.get(student.group_id);
-    return mapDbStudent({ ...student, teacher_id: student.teacher_id || group?.teacher_id }, attendanceByStudent, subsByStudent);
+    return mapDbStudent({ ...student, teacher_id: student.teacher_id || group?.teacher_id, __waitlist_added_at: waitlistAddedByStudent.get(student.id) || null }, attendanceByStudent, subsByStudent);
   });
   const visibleStudentIds = new Set(students.map((student) => student.id));
+  const waitlist = waitlistRaw.filter((w) => visibleStudentIds.has(w.student_id)).map(mapDbWaitlist);
   const payments = paymentsRaw.filter((payment) => visibleStudentIds.has(payment.student_id)).map(mapDbPayment);
   const branchesVisible = branches.filter((branch) => branchAllowed(branch.id)).map((branch) => ({
     id: branch.id,
@@ -1401,16 +1548,24 @@ async function dbBootstrap(session) {
     name: branch.name,
     city: branch.city,
     address: branch.address,
-    managerName: users.find((user) => user.id === branch.manager_id)?.full_name || "\u0420\u0443\u043A\u043E\u0432\u043E\u0434\u0438\u0442\u0435\u043B\u044C",
+    managerName: branch.manager_name || users.find((user) => user.id === branch.manager_id)?.full_name || "\u0420\u0443\u043A\u043E\u0432\u043E\u0434\u0438\u0442\u0435\u043B\u044C",
     phone: branch.phone || "",
+    comment: branch.comment || "",
+    status: branch.status || "active",
     hallsCount: halls.filter((hall) => hall.branch_id === branch.id).length
   }));
-  const hallsVisible = halls.filter((hall) => branchAllowed(hall.branch_id)).map((hall) => ({ id: hall.id, branchId: hall.branch_id, name: hall.name, capacity: hall.capacity || 0 }));
+  const hallsVisible = halls.filter((hall) => branchAllowed(hall.branch_id)).map((hall) => ({ id: hall.id, branchId: hall.branch_id, name: hall.name, capacity: hall.capacity || 0, description: hall.description || "", status: hall.status || "active" }));
   const groupsVisible = groupsMapped.filter((group) => {
     if (isOwner) return true;
     if (session.role === "teacher") return group.teacherId === session.userId;
     return group.branchId === session.dbBranchId;
   });
+  const studentNameById = new Map(
+    studentsRaw.map((s) => [s.id, [s.first_name, s.last_name].filter(Boolean).join(" ") || s.full_name || "\u0423\u0447\u0435\u043D\u0438\u043A"])
+  );
+  const tasks = tasksRaw.filter((task) => isOwner || !task.branch_id || task.branch_id === session.dbBranchId).map((task) => mapDbTask(task, studentNameById));
+  const subscriptionPlans = plans.map(mapDbPlan);
+  const leadSources = leadSourcesRaw.map(mapDbLeadSource);
   return {
     mode: "supabase",
     session,
@@ -1418,8 +1573,12 @@ async function dbBootstrap(session) {
     branches: branchesVisible,
     halls: hallsVisible,
     teachers,
+    tasks,
+    subscriptionPlans,
+    leadSources,
     groups: groupsVisible,
     students,
+    waitlist,
     announcements: initialAnnouncements,
     payments,
     financeTransactions,
@@ -1427,7 +1586,67 @@ async function dbBootstrap(session) {
     metrics: getExecutiveSummary(branchesVisible, groupsVisible, students, payments, teachers)
   };
 }
+async function upsertAttendanceRows(rows) {
+  if (rows.length === 0) return [];
+  const opts = (body) => ({
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+    body: JSON.stringify(body)
+  });
+  try {
+    return await supabaseFetch("attendance", "on_conflict=lesson_id,student_id", opts(rows));
+  } catch (error) {
+    const base = rows.map(({ absence_reason, is_trial, trial_outcome, ...rest }) => rest);
+    return await supabaseFetch("attendance", "on_conflict=lesson_id,student_id", opts(base));
+  }
+}
+function hasActiveSubscription(subs, todayStr) {
+  return subs.some(
+    (s) => s.status === "active" && ((Number(s.lessons_left) || 0) > 0 || s.ends_on && String(s.ends_on) >= todayStr)
+  );
+}
+function emptyJournalDashboard(from, to) {
+  return {
+    rangeFrom: from,
+    rangeTo: to,
+    visited: { count: 0, studentIds: [] },
+    unpaid: { count: 0, studentIds: [] },
+    trialNotBought: { count: 0, studentIds: [] },
+    trialBought: { count: 0, studentIds: [] },
+    openJournals: []
+  };
+}
+function mapDbRecalc(row, studentName) {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    branchId: row.branch_id || null,
+    studentId: row.student_id,
+    studentName: studentName || row.student_name || void 0,
+    subscriptionId: row.subscription_id || null,
+    periodFrom: row.period_from || null,
+    periodTo: row.period_to || null,
+    lessonsCount: Number(row.lessons_count || 0),
+    reason: row.reason || null,
+    amount: Number(row.amount || 0),
+    comment: row.comment || null,
+    attachmentUrl: row.attachment_url || null,
+    attachmentName: row.attachment_name || null,
+    status: row.status || "pending",
+    createdByName: row.created_by_name || null,
+    createdAt: row.created_at || null,
+    appliedAt: row.applied_at || null
+  };
+}
 function registerMvpApi(app2) {
+  const ah = (fn) => (req, res) => {
+    Promise.resolve(fn(req, res)).catch((error) => {
+      console.error("[mvpApi] \u041E\u0448\u0438\u0431\u043A\u0430 \u043E\u0431\u0440\u0430\u0431\u043E\u0442\u0447\u0438\u043A\u0430:", error?.message || error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: error?.message || "\u0412\u043D\u0443\u0442\u0440\u0435\u043D\u043D\u044F\u044F \u043E\u0448\u0438\u0431\u043A\u0430 \u0441\u0435\u0440\u0432\u0435\u0440\u0430" });
+      }
+    });
+  };
   app2.get("/api/mvp/session/demo-users", (_req, res) => {
     res.json({ users: demoUsers });
   });
@@ -1453,6 +1672,126 @@ function registerMvpApi(app2) {
     } catch (error) {
       const payload = fallbackPayload(session);
       res.status(503).json({ mode: payload.mode, metrics: payload.metrics, error: error.message });
+    }
+  });
+  app2.get("/api/mvp/owner/extras", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0422\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u0435\u0446" });
+    if (!supabaseEnabled) return res.json({ snapshots: [], funnelToday: null, funnelYesterday: null });
+    try {
+      const orgFilter = `organization_id=eq.${session.organizationId}`;
+      const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+      const yesterday = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+      const dayStart = (d) => `${d}T00:00:00`;
+      const dayEnd = (d) => `${d}T23:59:59`;
+      const [snapsRaw, evToday, evYest, invoicesRaw, futureSubs, studentsLite] = await Promise.all([
+        supabaseFetch("metrics_snapshots", `select=*&${orgFilter}&order=period_month.asc`),
+        supabaseFetch("student_status_events", `select=to_status&${orgFilter}&occurred_at=gte.${dayStart(today)}&occurred_at=lte.${dayEnd(today)}`),
+        supabaseFetch("student_status_events", `select=to_status&${orgFilter}&occurred_at=gte.${dayStart(yesterday)}&occurred_at=lte.${dayEnd(yesterday)}`),
+        supabaseFetch("invoices", `select=due_on,status&${orgFilter}&due_on=lt.${today}&status=in.(sent,overdue)`),
+        supabaseFetch("student_subscriptions", `select=student_id,branch_id,starts_on&starts_on=gt.${today}`),
+        supabaseFetch("students", `select=id,branch_id,birthday&${orgFilter}&status=neq.archived&archived_at=is.null`)
+      ]);
+      const snapshots = snapsRaw.map((s) => ({
+        periodMonth: toDate(s.period_month),
+        branchId: s.branch_id,
+        revenue: Number(s.revenue || 0),
+        activeSubscriptions: s.active_subscriptions || 0,
+        avgCheck: Number(s.avg_check || 0),
+        retentionRate: Number(s.retention_rate || 0),
+        attendanceRate: Number(s.attendance_rate || 0),
+        newStudents: s.new_students || 0
+      }));
+      const funnel = (rows) => ({
+        leads: rows.filter((r) => r.to_status === "lead").length,
+        trialBooked: rows.filter((r) => r.to_status === "trial").length,
+        trialCame: rows.filter((r) => r.to_status === "trial").length,
+        bought: rows.filter((r) => r.to_status === "active").length
+      });
+      const ageDays = (d) => Math.floor((Date.now() - new Date(d).getTime()) / 864e5);
+      let debtorAging = null;
+      if (invoicesRaw.length) {
+        debtorAging = { d1_7: 0, d8_14: 0, d14plus: 0 };
+        invoicesRaw.forEach((inv) => {
+          if (!inv.due_on) return;
+          const a = ageDays(inv.due_on);
+          if (a >= 1 && a <= 7) debtorAging.d1_7 += 1;
+          else if (a >= 8 && a <= 14) debtorAging.d8_14 += 1;
+          else if (a > 14) debtorAging.d14plus += 1;
+        });
+      }
+      let futureEnrollments = null;
+      if (futureSubs.length) {
+        const stById = new Map(studentsLite.map((s) => [s.id, s]));
+        const ageOf = (bd) => bd ? Math.max(0, (/* @__PURE__ */ new Date()).getFullYear() - new Date(bd).getFullYear()) : null;
+        const bucket = (a) => a === null ? "\u2014" : a <= 6 ? "\u0434\u043E 6" : a <= 9 ? "7\u20139" : a <= 12 ? "10\u201312" : a <= 15 ? "13\u201315" : "16+";
+        const byBranch = {};
+        const byAge = {};
+        futureSubs.forEach((sub) => {
+          const st = stById.get(sub.student_id);
+          const br = sub.branch_id || st?.branch_id;
+          if (br) byBranch[br] = (byBranch[br] || 0) + 1;
+          const b = bucket(ageOf(st?.birthday));
+          byAge[b] = (byAge[b] || 0) + 1;
+        });
+        futureEnrollments = { total: futureSubs.length, byBranch, byAge };
+      }
+      res.json({ snapshots, funnelToday: funnel(evToday), funnelYesterday: funnel(evYest), debtorAging, futureEnrollments });
+    } catch (error) {
+      res.status(503).json({ snapshots: [], funnelToday: null, funnelYesterday: null, error: error.message });
+    }
+  });
+  app2.post("/api/mvp/owner/snapshot", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0422\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u0435\u0446" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      const orgFilter = `organization_id=eq.${session.organizationId}`;
+      const now = /* @__PURE__ */ new Date();
+      const monthPrefix = now.toISOString().slice(0, 7);
+      const periodMonth = `${monthPrefix}-01`;
+      const [branches, students, payments, subs] = await Promise.all([
+        supabaseFetch("branches", `select=id&${orgFilter}&status=neq.archived`),
+        supabaseFetch("students", `select=id,branch_id,status,created_at&${orgFilter}&status=neq.archived&archived_at=is.null`),
+        supabaseFetch("payments", `select=amount,branch_id,paid_at,status&${orgFilter}`),
+        supabaseFetch("student_subscriptions", `select=branch_id,status`)
+      ]);
+      const paidThisMonth = payments.filter((p) => p.status === "paid" && String(p.paid_at || "").slice(0, 7) === monthPrefix);
+      const build = (branchId) => {
+        const bs = branchId ? students.filter((s) => s.branch_id === branchId) : students;
+        const bp = branchId ? paidThisMonth.filter((p) => p.branch_id === branchId) : paidThisMonth;
+        const bsub = branchId ? subs.filter((s) => s.branch_id === branchId) : subs;
+        const revenue = bp.reduce((s, p) => s + Number(p.amount || 0), 0);
+        const activeSubs = bsub.filter((s) => s.status === "active").length;
+        const activeStud = bs.filter((s) => s.status === "active").length;
+        return {
+          organization_id: session.organizationId,
+          branch_id: branchId,
+          period_month: periodMonth,
+          revenue,
+          active_students: activeStud,
+          active_subscriptions: activeSubs,
+          avg_check: bp.length ? Math.round(revenue / bp.length) : 0,
+          retention_rate: bs.length ? Math.round(activeStud / bs.length * 100) : 0,
+          attendance_rate: 0,
+          new_students: bs.filter((s) => String(s.created_at || "").slice(0, 7) === monthPrefix).length,
+          payments_count: bp.length,
+          computed_at: now.toISOString()
+        };
+      };
+      const rows = [build(null), ...branches.map((b) => build(b.id))];
+      await supabaseFetch("metrics_snapshots", `organization_id=eq.${session.organizationId}&period_month=eq.${periodMonth}`, {
+        method: "DELETE",
+        headers: { Prefer: "return=minimal" }
+      });
+      await supabaseFetch("metrics_snapshots", "", {
+        method: "POST",
+        headers: { Prefer: "return=minimal" },
+        body: JSON.stringify(rows)
+      });
+      res.json({ ok: true, written: rows.length, periodMonth });
+    } catch (error) {
+      res.status(503).json({ error: error.message });
     }
   });
   app2.get("/api/mvp/video/templates", (_req, res) => {
@@ -1489,7 +1828,7 @@ function registerMvpApi(app2) {
       res.status(400).json({ error: error.message || "Unable to create video render job" });
     }
   });
-  app2.post("/api/mvp/students", async (req, res) => {
+  app2.post("/api/mvp/students", ah(async (req, res) => {
     const session = getSession(req);
     const payload = req.body || {};
     if (!payload.name || !payload.branchId) {
@@ -1501,24 +1840,32 @@ function registerMvpApi(app2) {
     if (!supabaseEnabled) {
       return res.status(503).json({ error: "Supabase is not configured" });
     }
-    const [firstName, ...rest] = String(payload.name).trim().split(/\s+/);
+    const [splitFirst, ...splitRest] = String(payload.name).trim().split(/\s+/);
+    const firstName = payload.firstName || splitFirst || payload.name;
+    const lastName = payload.lastName || splitRest.join(" ") || "-";
     const inserted = await supabaseFetch("students", "", {
       method: "POST",
       body: JSON.stringify({
         organization_id: session.organizationId,
         branch_id: payload.branchId,
         group_id: payload.groupId || null,
-        first_name: firstName || payload.name,
-        last_name: rest.join(" ") || "-",
+        source_id: payload.sourceId || null,
+        first_name: firstName,
+        last_name: lastName,
+        gender: payload.gender || null,
+        birthday: payload.birthday || null,
+        phone: payload.phone || null,
         teacher_id: payload.teacherId || null,
         parent_name: payload.parentName || null,
         parent_phone: payload.parentPhone || null,
-        status: "active",
+        status: payload.status || "lead",
+        manual_status: payload.manualStatus || null,
         comment: payload.comment || null
       })
     });
+    await logStatusEvent(session, inserted[0]?.id, inserted[0]?.status, null, payload.branchId);
     res.status(201).json({ student: inserted[0] });
-  });
+  }));
   app2.patch("/api/mvp/students/:id", async (req, res) => {
     const session = getSession(req);
     const payload = req.body || {};
@@ -1529,26 +1876,43 @@ function registerMvpApi(app2) {
       return res.status(403).json({ error: "Branch access denied" });
     }
     const updates = {};
-    if (payload.name !== void 0) {
+    if (payload.firstName !== void 0 || payload.lastName !== void 0) {
+      if (payload.firstName !== void 0) updates.first_name = payload.firstName || "-";
+      if (payload.lastName !== void 0) updates.last_name = payload.lastName || "-";
+    } else if (payload.name !== void 0) {
       const [firstName, ...rest] = String(payload.name).trim().split(/\s+/);
       updates.first_name = firstName || payload.name;
       updates.last_name = rest.join(" ") || "-";
     }
     if (payload.branchId !== void 0) updates.branch_id = payload.branchId;
     if (payload.groupId !== void 0) updates.group_id = payload.groupId || null;
+    if (payload.sourceId !== void 0) updates.source_id = payload.sourceId || null;
     if (payload.teacherId !== void 0) updates.teacher_id = payload.teacherId || null;
+    if (payload.gender !== void 0) updates.gender = payload.gender || null;
+    if (payload.birthday !== void 0) updates.birthday = payload.birthday || null;
+    if (payload.phone !== void 0) updates.phone = payload.phone || null;
     if (payload.parentName !== void 0) updates.parent_name = payload.parentName || null;
     if (payload.parentPhone !== void 0) updates.parent_phone = payload.parentPhone || null;
+    if (payload.comment !== void 0) updates.comment = payload.comment || null;
+    if (payload.status !== void 0) updates.status = payload.status;
+    if (payload.manualStatus !== void 0) updates.manual_status = payload.manualStatus || null;
+    if (payload.payPromiseDate !== void 0) updates.pay_promise_date = payload.payPromiseDate || null;
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({ error: "\u041D\u0435\u0442 \u043F\u043E\u043B\u0435\u0439 \u0434\u043B\u044F \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F" });
     }
     try {
+      let prevStatus;
+      if (payload.status !== void 0) {
+        const before = await supabaseFetch("students", `select=status,branch_id&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`);
+        prevStatus = before[0]?.status;
+      }
       const rows = await supabaseFetch(
         "students",
         `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
         { method: "PATCH", body: JSON.stringify(updates) }
       );
       if (!rows[0]) return res.status(404).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+      if (payload.status !== void 0) await logStatusEvent(session, rows[0].id, rows[0].status, prevStatus, rows[0].branch_id);
       res.json({ student: rows[0] });
     } catch (error) {
       res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0443\u0447\u0435\u043D\u0438\u043A\u0430" });
@@ -1560,10 +1924,140 @@ function registerMvpApi(app2) {
       return res.status(503).json({ error: "Supabase is not configured" });
     }
     try {
+      const existing = await supabaseFetch(
+        "students",
+        `select=id,branch_id&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`
+      );
+      if (!existing[0]) return res.status(404).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+      if (!canSeeBranch(session, existing[0].branch_id)) {
+        return res.status(403).json({ error: "Branch access denied" });
+      }
+      const requestedBy = { owner: "\u0412\u043B\u0430\u0434\u0435\u043B\u0435\u0446", branch_manager: "\u0420\u0443\u043A\u043E\u0432\u043E\u0434\u0438\u0442\u0435\u043B\u044C \u0444\u0438\u043B\u0438\u0430\u043B\u0430", admin: "\u0410\u0434\u043C\u0438\u043D\u0438\u0441\u0442\u0440\u0430\u0442\u043E\u0440", teacher: "\u041F\u0440\u0435\u043F\u043E\u0434\u0430\u0432\u0430\u0442\u0435\u043B\u044C" }[session.role] || session.role;
       const rows = await supabaseFetch(
         "students",
         `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
-        { method: "PATCH", body: JSON.stringify({ status: "archived" }) }
+        { method: "PATCH", body: JSON.stringify({
+          deletion_requested_at: (/* @__PURE__ */ new Date()).toISOString(),
+          deletion_requested_by: requestedBy,
+          deletion_reason: req.body && req.body.reason || null
+        }) }
+      );
+      res.json({ student: rows[0], trashed: true });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u0435\u0440\u0435\u043C\u0435\u0441\u0442\u0438\u0442\u044C \u0443\u0447\u0435\u043D\u0438\u043A\u0430 \u0432 \u043A\u043E\u0440\u0437\u0438\u043D\u0443" });
+    }
+  });
+  app2.post("/api/mvp/waitlist", async (req, res) => {
+    const session = getSession(req);
+    const payload = req.body || {};
+    if (!payload.studentId) return res.status(400).json({ error: "studentId is required" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    if (payload.branchId && !canSeeBranch(session, payload.branchId)) {
+      return res.status(403).json({ error: "Branch access denied" });
+    }
+    try {
+      const existing = await supabaseFetch(
+        "student_waitlist",
+        `select=id&${`organization_id=eq.${session.organizationId}`}&student_id=eq.${payload.studentId}&removed_at=is.null`
+      );
+      const body = {
+        organization_id: session.organizationId,
+        student_id: payload.studentId,
+        branch_id: payload.branchId || null,
+        group_id: payload.groupId || null,
+        comment: payload.comment || null
+      };
+      let rows;
+      if (existing[0]) {
+        rows = await supabaseFetch(
+          "student_waitlist",
+          `id=eq.${existing[0].id}`,
+          { method: "PATCH", body: JSON.stringify({ branch_id: body.branch_id, group_id: body.group_id, comment: body.comment }) }
+        );
+      } else {
+        rows = await supabaseFetch("student_waitlist", "", { method: "POST", body: JSON.stringify(body) });
+      }
+      res.status(201).json({ entry: mapDbWaitlist(rows[0]) });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0434\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u0432 \u043B\u0438\u0441\u0442 \u043E\u0436\u0438\u0434\u0430\u043D\u0438\u044F" });
+    }
+  });
+  app2.delete("/api/mvp/waitlist/:id", async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      const reason = req.body && req.body.reason || "manual";
+      const rows = await supabaseFetch(
+        "student_waitlist",
+        `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}&removed_at=is.null`,
+        { method: "PATCH", body: JSON.stringify({ removed_at: (/* @__PURE__ */ new Date()).toISOString(), removed_reason: reason }) }
+      );
+      res.json({ entry: rows[0] ? mapDbWaitlist(rows[0]) : null, removed: true });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0431\u0440\u0430\u0442\u044C \u0438\u0437 \u043B\u0438\u0441\u0442\u0430 \u043E\u0436\u0438\u0434\u0430\u043D\u0438\u044F" });
+    }
+  });
+  app2.get("/api/mvp/students/trash", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") {
+      return res.status(403).json({ error: "\u0422\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u0435\u0446 \u0432\u0438\u0434\u0438\u0442 \u043A\u043E\u0440\u0437\u0438\u043D\u0443 \u0443\u0447\u0435\u043D\u0438\u043A\u043E\u0432" });
+    }
+    if (!supabaseEnabled) {
+      return res.status(503).json({ error: "Supabase is not configured" });
+    }
+    try {
+      const rows = await supabaseFetch(
+        "students",
+        `select=*&organization_id=eq.${session.organizationId}&status=neq.archived&deletion_requested_at=not.is.null&order=deletion_requested_at.desc`
+      );
+      const students = rows.map((row) => ({
+        id: row.id,
+        name: [row.first_name, row.last_name].filter(Boolean).join(" ") || row.full_name || "\u0423\u0447\u0435\u043D\u0438\u043A",
+        branchId: row.branch_id,
+        parentName: row.parent_name || "",
+        parentPhone: row.parent_phone || "",
+        requestedBy: row.deletion_requested_by || "\u2014",
+        requestedAt: row.deletion_requested_at,
+        reason: row.deletion_reason || ""
+      }));
+      res.json({ students });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u043A\u043E\u0440\u0437\u0438\u043D\u0443" });
+    }
+  });
+  app2.post("/api/mvp/students/:id/restore", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") {
+      return res.status(403).json({ error: "\u0422\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u0435\u0446 \u043C\u043E\u0436\u0435\u0442 \u0432\u043E\u0441\u0441\u0442\u0430\u043D\u0430\u0432\u043B\u0438\u0432\u0430\u0442\u044C \u0443\u0447\u0435\u043D\u0438\u043A\u043E\u0432" });
+    }
+    if (!supabaseEnabled) {
+      return res.status(503).json({ error: "Supabase is not configured" });
+    }
+    try {
+      const rows = await supabaseFetch(
+        "students",
+        `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
+        { method: "PATCH", body: JSON.stringify({ deletion_requested_at: null, deletion_requested_by: null, deletion_reason: null }) }
+      );
+      if (!rows[0]) return res.status(404).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+      res.json({ student: rows[0], restored: true });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0432\u043E\u0441\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0442\u044C \u0443\u0447\u0435\u043D\u0438\u043A\u0430" });
+    }
+  });
+  app2.post("/api/mvp/students/:id/confirm-delete", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") {
+      return res.status(403).json({ error: "\u0422\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u0435\u0446 \u043C\u043E\u0436\u0435\u0442 \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u0442\u044C \u0443\u0434\u0430\u043B\u0435\u043D\u0438\u0435" });
+    }
+    if (!supabaseEnabled) {
+      return res.status(503).json({ error: "Supabase is not configured" });
+    }
+    try {
+      const rows = await supabaseFetch(
+        "students",
+        `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
+        { method: "PATCH", body: JSON.stringify({ status: "archived", deletion_requested_at: null }) }
       );
       if (!rows[0]) return res.status(404).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
       res.json({ student: rows[0], archived: true });
@@ -1571,6 +2065,83 @@ function registerMvpApi(app2) {
       res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u0443\u0447\u0435\u043D\u0438\u043A\u0430" });
     }
   });
+  app2.post("/api/mvp/students/:id/archive", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const reason = req.body && String(req.body.reason || "").trim() || "";
+    const comment = req.body && String(req.body.comment || "").trim() || "";
+    if (!reason) return res.status(400).json({ error: "\u0423\u043A\u0430\u0436\u0438\u0442\u0435 \u043F\u0440\u0438\u0447\u0438\u043D\u0443 \u0443\u0445\u043E\u0434\u0430 \u0443\u0447\u0435\u043D\u0438\u043A\u0430" });
+    if (!comment) return res.status(400).json({ error: "\u0423\u043A\u0430\u0436\u0438\u0442\u0435 \u043A\u043E\u043C\u043C\u0435\u043D\u0442\u0430\u0440\u0438\u0439" });
+    const existing = await supabaseFetch(
+      "students",
+      `select=id,branch_id&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`
+    );
+    if (!existing[0]) return res.status(404).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+    if (!canSeeBranch(session, existing[0].branch_id)) {
+      return res.status(403).json({ error: "Branch access denied" });
+    }
+    const archivedBy = { owner: "\u0412\u043B\u0430\u0434\u0435\u043B\u0435\u0446", branch_manager: "\u0420\u0443\u043A\u043E\u0432\u043E\u0434\u0438\u0442\u0435\u043B\u044C \u0444\u0438\u043B\u0438\u0430\u043B\u0430", admin: "\u0410\u0434\u043C\u0438\u043D\u0438\u0441\u0442\u0440\u0430\u0442\u043E\u0440", teacher: "\u041F\u0440\u0435\u043F\u043E\u0434\u0430\u0432\u0430\u0442\u0435\u043B\u044C" }[session.role] || session.role;
+    const rows = await supabaseFetch(
+      "students",
+      `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
+      { method: "PATCH", body: JSON.stringify({
+        archived_at: (/* @__PURE__ */ new Date()).toISOString(),
+        archive_reason: reason,
+        archive_comment: comment,
+        archived_by: archivedBy,
+        // если ученик был в корзине — заявка закрывается переводом в архив
+        deletion_requested_at: null,
+        deletion_requested_by: null,
+        deletion_reason: null
+      }) }
+    );
+    res.json({ student: rows[0], archived: true });
+  }));
+  app2.post("/api/mvp/students/:id/unarchive", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const existing = await supabaseFetch(
+      "students",
+      `select=id,branch_id&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`
+    );
+    if (!existing[0]) return res.status(404).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+    if (!canSeeBranch(session, existing[0].branch_id)) {
+      return res.status(403).json({ error: "Branch access denied" });
+    }
+    const rows = await supabaseFetch(
+      "students",
+      `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
+      { method: "PATCH", body: JSON.stringify({
+        archived_at: null,
+        archive_reason: null,
+        archive_comment: null,
+        archived_by: null
+      }) }
+    );
+    if (!rows[0]) return res.status(404).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+    res.json({ student: rows[0], restored: true });
+  }));
+  app2.get("/api/mvp/students/archive", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const rows = await supabaseFetch(
+      "students",
+      `select=*&organization_id=eq.${session.organizationId}&archived_at=not.is.null&order=archived_at.desc`
+    );
+    const students = rows.filter((row) => canSeeBranch(session, row.branch_id)).map((row) => ({
+      id: row.id,
+      name: [row.first_name, row.last_name].filter(Boolean).join(" ") || row.full_name || "\u0423\u0447\u0435\u043D\u0438\u043A",
+      branchId: row.branch_id,
+      phone: row.phone || row.parent_phone || "",
+      parentName: row.parent_name || "",
+      parentPhone: row.parent_phone || "",
+      archivedAt: row.archived_at,
+      archivedBy: row.archived_by || "\u2014",
+      archiveReason: row.archive_reason || "",
+      archiveComment: row.archive_comment || ""
+    }));
+    res.json({ students });
+  }));
   app2.post("/api/mvp/payments", async (req, res) => {
     const session = getSession(req);
     const payload = req.body || {};
@@ -1611,6 +2182,105 @@ function registerMvpApi(app2) {
     });
     res.status(201).json({ payment: mapDbPayment(insertedPayment[0]) });
   });
+  app2.post("/api/mvp/student-subscriptions", async (req, res) => {
+    const session = getSession(req);
+    const payload = req.body || {};
+    const studentId = payload.studentId;
+    const branchId = payload.branchId;
+    const planId = payload.planId;
+    if (!studentId || !branchId || !planId) {
+      return res.status(400).json({ error: "studentId, branchId and planId are required" });
+    }
+    if (!canSeeBranch(session, branchId)) {
+      return res.status(403).json({ error: "Branch access denied" });
+    }
+    if (!supabaseEnabled) {
+      return res.status(503).json({ error: "Supabase is not configured" });
+    }
+    try {
+      const plans = await supabaseFetch(
+        "subscription_plans",
+        `select=*&id=eq.${planId}&organization_id=eq.${session.organizationId}`
+      );
+      const plan = plans[0];
+      if (!plan) return res.status(404).json({ error: "\u041F\u043B\u0430\u043D \u0430\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442\u0430 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+      const lessonsTotal = Number(payload.lessonsTotal) > 0 ? Math.round(Number(payload.lessonsTotal)) : Number(plan.lessons_count) || 0;
+      const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+      const startsOn = payload.startsOn || today;
+      let endsOn = payload.endsOn || startsOn;
+      if (endsOn < startsOn) endsOn = startsOn;
+      const basePrice = Number(plan.price) || 0;
+      const discountAmount = Math.max(0, Number(payload.discountAmount) || 0);
+      const recalc = Math.max(0, Number(payload.recalc) || 0);
+      const finalPrice = payload.price !== void 0 ? Math.max(0, Number(payload.price) || 0) : Math.max(0, basePrice - discountAmount - recalc);
+      const paid = payload.paid !== false;
+      const insertedSub = await supabaseFetch("student_subscriptions", "", {
+        method: "POST",
+        body: JSON.stringify({
+          student_id: studentId,
+          plan_id: planId,
+          branch_id: branchId,
+          group_id: payload.groupId || null,
+          starts_on: startsOn,
+          ends_on: endsOn,
+          lessons_total: lessonsTotal,
+          lessons_left: lessonsTotal,
+          price: finalPrice,
+          discount_amount: discountAmount + recalc,
+          status: paid ? "active" : "inactive"
+        })
+      });
+      let payment = null;
+      if (paid && finalPrice > 0) {
+        const insertedPayment = await supabaseFetch("payments", "", {
+          method: "POST",
+          body: JSON.stringify({
+            organization_id: session.organizationId,
+            branch_id: branchId,
+            student_id: studentId,
+            amount: finalPrice,
+            method: payload.method || "kaspi",
+            status: "paid",
+            comment: payload.description || `\u0410\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442: ${plan.name}`,
+            created_by: session.userId.startsWith("demo-") ? null : session.userId
+          })
+        });
+        payment = mapDbPayment(insertedPayment[0]);
+        await supabaseFetch("finance_transactions", "", {
+          method: "POST",
+          body: JSON.stringify({
+            organization_id: session.organizationId,
+            branch_id: branchId,
+            student_id: studentId,
+            payment_id: insertedPayment[0].id,
+            amount: finalPrice,
+            type: "income",
+            category: "tuition",
+            description: payload.description || `\u0410\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442: ${plan.name}`
+          })
+        });
+      }
+      let waitlistClosed = false;
+      if (paid) {
+        try {
+          const closed = await supabaseFetch(
+            "student_waitlist",
+            `student_id=eq.${studentId}&organization_id=eq.${session.organizationId}&removed_at=is.null`,
+            { method: "PATCH", body: JSON.stringify({ removed_at: (/* @__PURE__ */ new Date()).toISOString(), removed_reason: "enrolled" }) }
+          );
+          waitlistClosed = closed.length > 0;
+        } catch {
+        }
+      }
+      res.status(201).json({
+        subscription: mapDbSubscription(insertedSub[0], plan.name),
+        payment,
+        waitlistClosed
+      });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u0440\u043E\u0434\u0430\u0442\u044C \u0430\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442" });
+    }
+  });
   app2.post("/api/mvp/attendance", async (req, res) => {
     const session = getSession(req);
     const payload = req.body || {};
@@ -1639,18 +2309,17 @@ function registerMvpApi(app2) {
       if (!lessons[0]) return res.status(404).json({ error: "Lesson not found for student group and date" });
       lessonId = lessons[0].id;
     }
-    const rows = await supabaseFetch("attendance", "on_conflict=lesson_id,student_id", {
-      method: "POST",
-      headers: { Prefer: "resolution=merge-duplicates,return=representation" },
-      body: JSON.stringify({
-        lesson_id: lessonId,
-        student_id: payload.studentId,
-        status: payload.status === "unmarked" ? "unknown" : payload.status,
-        marked_by: session.userId.startsWith("demo-") ? null : session.userId,
-        marked_at: (/* @__PURE__ */ new Date()).toISOString(),
-        comment: payload.comment || null
-      })
-    });
+    const rows = await upsertAttendanceRows([{
+      lesson_id: lessonId,
+      student_id: payload.studentId,
+      status: payload.status === "unmarked" ? "unknown" : payload.status,
+      marked_by: session.userId.startsWith("demo-") ? null : session.userId,
+      marked_at: (/* @__PURE__ */ new Date()).toISOString(),
+      comment: payload.comment || null,
+      absence_reason: payload.absenceReason || null,
+      is_trial: Boolean(payload.isTrial) || void 0,
+      trial_outcome: payload.trialOutcome || void 0
+    }]);
     if (payload.status === "present") {
       await supabaseFetch("finance_transactions", "", {
         method: "POST",
@@ -1719,7 +2388,9 @@ function registerMvpApi(app2) {
           city: payload.city,
           address: payload.address || "",
           phone: payload.phone || null,
-          status: "active"
+          manager_name: payload.managerName || null,
+          comment: payload.comment || null,
+          status: payload.status === "archived" ? "archived" : "active"
         })
       });
       res.status(201).json({ branch: inserted[0] });
@@ -1735,6 +2406,9 @@ function registerMvpApi(app2) {
     ["name", "city", "address", "phone"].forEach((key) => {
       if (payload[key] !== void 0) updates[key] = payload[key];
     });
+    if (payload.managerName !== void 0) updates.manager_name = payload.managerName || null;
+    if (payload.comment !== void 0) updates.comment = payload.comment || null;
+    if (payload.status !== void 0) updates.status = payload.status === "archived" ? "archived" : "active";
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({ error: "\u041D\u0435\u0442 \u043F\u043E\u043B\u0435\u0439 \u0434\u043B\u044F \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F" });
     }
@@ -1763,6 +2437,84 @@ function registerMvpApi(app2) {
       res.json({ branch: rows[0], archived: true });
     } catch (error) {
       res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u0444\u0438\u043B\u0438\u0430\u043B" });
+    }
+  });
+  const hallAccess = (session, res) => {
+    if (!["owner", "admin", "branch_manager"].includes(session.role)) {
+      res.status(403).json({ error: "\u041D\u0435\u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E \u043F\u0440\u0430\u0432 \u0434\u043B\u044F \u0443\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u0438\u044F \u0437\u0430\u043B\u0430\u043C\u0438" });
+      return false;
+    }
+    if (!supabaseEnabled) {
+      res.status(503).json({ error: "Supabase is not configured" });
+      return false;
+    }
+    return true;
+  };
+  app2.post("/api/mvp/halls", async (req, res) => {
+    const session = getSession(req);
+    if (!hallAccess(session, res)) return;
+    const payload = req.body || {};
+    if (!payload.name || !payload.branchId) {
+      return res.status(400).json({ error: "name \u0438 branchId \u043E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u044B" });
+    }
+    if (!canSeeBranch(session, payload.branchId)) {
+      return res.status(403).json({ error: "Branch access denied" });
+    }
+    try {
+      const inserted = await supabaseFetch("halls", "", {
+        method: "POST",
+        body: JSON.stringify({
+          branch_id: payload.branchId,
+          name: String(payload.name).trim(),
+          capacity: payload.capacity ?? 0,
+          description: payload.description || null,
+          status: payload.status === "archived" ? "archived" : "active"
+        })
+      });
+      const h = inserted[0];
+      res.status(201).json({ hall: { id: h.id, branchId: h.branch_id, name: h.name, capacity: h.capacity || 0, description: h.description || "", status: h.status || "active" } });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0437\u0434\u0430\u0442\u044C \u0437\u0430\u043B" });
+    }
+  });
+  app2.patch("/api/mvp/halls/:id", async (req, res) => {
+    const session = getSession(req);
+    if (!hallAccess(session, res)) return;
+    const payload = req.body || {};
+    const updates = {};
+    if (payload.name !== void 0) updates.name = String(payload.name).trim();
+    if (payload.branchId !== void 0) {
+      if (!canSeeBranch(session, payload.branchId)) return res.status(403).json({ error: "Branch access denied" });
+      updates.branch_id = payload.branchId;
+    }
+    if (payload.capacity !== void 0) updates.capacity = payload.capacity ?? 0;
+    if (payload.description !== void 0) updates.description = payload.description || null;
+    if (payload.status !== void 0) updates.status = payload.status === "archived" ? "archived" : "active";
+    if (Object.keys(updates).length === 0) return res.status(400).json({ error: "\u041D\u0435\u0442 \u043F\u043E\u043B\u0435\u0439 \u0434\u043B\u044F \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F" });
+    try {
+      const rows = await supabaseFetch("halls", `id=eq.${req.params.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(updates)
+      });
+      if (!rows[0]) return res.status(404).json({ error: "\u0417\u0430\u043B \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+      const h = rows[0];
+      res.json({ hall: { id: h.id, branchId: h.branch_id, name: h.name, capacity: h.capacity || 0, description: h.description || "", status: h.status || "active" } });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0437\u0430\u043B" });
+    }
+  });
+  app2.delete("/api/mvp/halls/:id", async (req, res) => {
+    const session = getSession(req);
+    if (!hallAccess(session, res)) return;
+    try {
+      const rows = await supabaseFetch("halls", `id=eq.${req.params.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "archived" })
+      });
+      if (!rows[0]) return res.status(404).json({ error: "\u0417\u0430\u043B \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+      res.json({ hall: { id: rows[0].id }, archived: true });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u0437\u0430\u043B" });
     }
   });
   const allowedRoles = ["teacher", "admin", "branch_manager", "owner"];
@@ -2009,12 +2761,33 @@ function registerMvpApi(app2) {
     if (payload.scheduleTime !== void 0) updates.schedule_time = payload.scheduleTime || null;
     if (Object.keys(updates).length === 0) return res.status(400).json({ error: "\u041D\u0435\u0442 \u043F\u043E\u043B\u0435\u0439 \u0434\u043B\u044F \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F" });
     try {
+      let prevTeacherId = null;
+      if (payload.teacherId !== void 0) {
+        const current = await supabaseFetch("groups", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}&select=teacher_id`);
+        prevTeacherId = current[0]?.teacher_id || null;
+      }
       const rows = await supabaseFetch(
         "groups",
         `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
         { method: "PATCH", body: JSON.stringify(updates) }
       );
       if (!rows[0]) return res.status(404).json({ error: "\u0413\u0440\u0443\u043F\u043F\u0430 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430" });
+      const newTeacherId = updates.teacher_id;
+      if (payload.teacherId !== void 0 && (newTeacherId || null) !== prevTeacherId) {
+        try {
+          await supabaseFetch("group_teacher_history", "", {
+            method: "POST",
+            body: JSON.stringify({
+              organization_id: session.organizationId,
+              group_id: req.params.id,
+              old_teacher_id: prevTeacherId,
+              new_teacher_id: newTeacherId || null,
+              changed_by: session.userId || null
+            })
+          });
+        } catch {
+        }
+      }
       res.json({ group: mapDbGroup(rows[0]) });
     } catch (error) {
       res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0433\u0440\u0443\u043F\u043F\u0443" });
@@ -2159,54 +2932,161 @@ function registerMvpApi(app2) {
       res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043C\u0435\u043D\u0438\u0442\u044C \u0443\u0440\u043E\u043A" });
     }
   });
-  app2.get("/api/mvp/parent/child", async (req, res) => {
+  app2.post("/api/mvp/tasks", async (req, res) => {
+    const session = getSession(req);
+    const payload = req.body || {};
+    if (!payload.title || !String(payload.title).trim()) {
+      return res.status(400).json({ error: "title is required" });
+    }
     if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
-    const { studentId } = req.query;
-    if (!studentId) return res.status(400).json({ error: "studentId \u043E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u0435\u043D" });
+    const branchId = payload.branchId ?? session.dbBranchId ?? null;
+    if (branchId && !canSeeBranch(session, branchId)) {
+      return res.status(403).json({ error: "Branch access denied" });
+    }
     try {
-      const [studentsRaw, subscriptionsRaw, paymentsRaw, lessons, attendanceRaw, plans] = await Promise.all([
-        supabaseFetch("students", `select=*&id=eq.${studentId}&status=neq.archived`),
-        supabaseFetch("student_subscriptions", `select=*&student_id=eq.${studentId}&order=starts_on.desc`),
-        supabaseFetch("payments", `select=*&student_id=eq.${studentId}&order=paid_at.desc&limit=20`),
-        supabaseFetch("schedule_lessons", `select=*&order=starts_at.desc&limit=60`),
-        supabaseFetch("attendance", `select=*&student_id=eq.${studentId}`),
-        supabaseFetch("subscription_plans", `select=*`)
-      ]);
-      const student = studentsRaw[0];
-      if (!student) return res.status(404).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
-      const planById = new Map(plans.map((p) => [p.id, p]));
-      const lessonById = new Map(lessons.map((l) => [l.id, l]));
-      const attendanceMap = {};
-      attendanceRaw.forEach((row) => {
-        const lesson = lessonById.get(row.lesson_id);
-        if (!lesson) return;
-        const date = toDate(lesson.starts_at);
-        attendanceMap[date] = {
-          date,
-          status: row.status === "unknown" ? "unmarked" : row.status,
-          markedBy: row.marked_by || void 0,
-          note: row.comment || void 0
-        };
+      const inserted = await supabaseFetch("tasks", "", {
+        method: "POST",
+        body: JSON.stringify({
+          branch_id: branchId,
+          student_id: payload.studentId || null,
+          assigned_to: payload.assignedTo || null,
+          created_by: session.userId,
+          title: String(payload.title).trim(),
+          description: payload.description || null,
+          status: payload.status || "new",
+          priority: payload.priority || "normal",
+          due_at: payload.dueAt || null
+        })
       });
-      const subsMapped = subscriptionsRaw.map((sub) => {
-        const plan = planById.get(sub.plan_id);
-        return {
-          id: sub.id,
-          studentId: sub.student_id,
-          name: plan?.name || "\u0410\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442",
-          price: Number(sub.price || 0),
-          lessonsTotal: sub.lessons_total || 0,
-          lessonsLeft: sub.lessons_left || 0,
-          validUntil: sub.ends_on,
-          isAutoRenew: false,
-          status: sub.status === "active" ? "active" : "expired"
-        };
-      });
-      const paymentsMapped = paymentsRaw.map(mapDbPayment);
-      const mapped = mapDbStudent(student, /* @__PURE__ */ new Map([[studentId, attendanceMap]]), /* @__PURE__ */ new Map([[studentId, subscriptionsRaw]]));
-      res.json({ student: { ...mapped, subscriptions: subsMapped }, payments: paymentsMapped });
+      res.status(201).json({ task: mapDbTask(inserted[0]) });
     } catch (error) {
-      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0434\u0430\u043D\u043D\u044B\u0435 \u0440\u0435\u0431\u0451\u043D\u043A\u0430" });
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0437\u0434\u0430\u0442\u044C \u0437\u0430\u0434\u0430\u0447\u0443" });
+    }
+  });
+  app2.patch("/api/mvp/tasks/:id", async (req, res) => {
+    const session = getSession(req);
+    const payload = req.body || {};
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    if (payload.branchId && !canSeeBranch(session, payload.branchId)) {
+      return res.status(403).json({ error: "Branch access denied" });
+    }
+    const updates = {};
+    if (payload.title !== void 0) updates.title = String(payload.title).trim();
+    if (payload.description !== void 0) updates.description = payload.description || null;
+    if (payload.status !== void 0) {
+      updates.status = payload.status;
+      updates.completed_at = payload.status === "done" ? (/* @__PURE__ */ new Date()).toISOString() : null;
+    }
+    if (payload.priority !== void 0) updates.priority = payload.priority;
+    if (payload.dueAt !== void 0) updates.due_at = payload.dueAt || null;
+    if (payload.studentId !== void 0) updates.student_id = payload.studentId || null;
+    if (payload.assignedTo !== void 0) updates.assigned_to = payload.assignedTo || null;
+    if (Object.keys(updates).length === 0) return res.status(400).json({ error: "\u041D\u0435\u0442 \u043F\u043E\u043B\u0435\u0439 \u0434\u043B\u044F \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F" });
+    try {
+      const rows = await supabaseFetch("tasks", `id=eq.${req.params.id}`, { method: "PATCH", body: JSON.stringify(updates) });
+      if (!rows[0]) return res.status(404).json({ error: "\u0417\u0430\u0434\u0430\u0447\u0430 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430" });
+      res.json({ task: mapDbTask(rows[0]) });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0437\u0430\u0434\u0430\u0447\u0443" });
+    }
+  });
+  app2.delete("/api/mvp/tasks/:id", async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      await supabaseFetch("tasks", `id=eq.${req.params.id}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      res.json({ ok: true });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u0437\u0430\u0434\u0430\u0447\u0443" });
+    }
+  });
+  app2.post("/api/mvp/subscription-plans", async (req, res) => {
+    const session = getSession(req);
+    const payload = req.body || {};
+    if (!payload.name || !String(payload.name).trim()) return res.status(400).json({ error: "name is required" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      const inserted = await supabaseFetch("subscription_plans", "", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: session.organizationId,
+          name: String(payload.name).trim(),
+          lessons_count: Number(payload.lessonsCount) || 0,
+          duration_days: Number(payload.durationDays) || 30,
+          price: Number(payload.price) || 0,
+          status: payload.status || "active"
+        })
+      });
+      res.status(201).json({ plan: mapDbPlan(inserted[0]) });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0437\u0434\u0430\u0442\u044C \u0430\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442" });
+    }
+  });
+  app2.patch("/api/mvp/subscription-plans/:id", async (req, res) => {
+    const session = getSession(req);
+    const payload = req.body || {};
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const updates = {};
+    if (payload.name !== void 0) updates.name = String(payload.name).trim();
+    if (payload.lessonsCount !== void 0) updates.lessons_count = Number(payload.lessonsCount) || 0;
+    if (payload.durationDays !== void 0) updates.duration_days = Number(payload.durationDays) || 0;
+    if (payload.price !== void 0) updates.price = Number(payload.price) || 0;
+    if (payload.status !== void 0) updates.status = payload.status;
+    if (Object.keys(updates).length === 0) return res.status(400).json({ error: "\u041D\u0435\u0442 \u043F\u043E\u043B\u0435\u0439 \u0434\u043B\u044F \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F" });
+    try {
+      const rows = await supabaseFetch("subscription_plans", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", body: JSON.stringify(updates) });
+      if (!rows[0]) return res.status(404).json({ error: "\u0410\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+      res.json({ plan: mapDbPlan(rows[0]) });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0430\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442" });
+    }
+  });
+  app2.delete("/api/mvp/subscription-plans/:id", async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      await supabaseFetch("subscription_plans", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      res.json({ ok: true });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u0430\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442" });
+    }
+  });
+  app2.post("/api/mvp/lead-sources", async (req, res) => {
+    const payload = req.body || {};
+    if (!payload.name || !String(payload.name).trim()) return res.status(400).json({ error: "name is required" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      const inserted = await supabaseFetch("lead_sources", "", {
+        method: "POST",
+        body: JSON.stringify({ name: String(payload.name).trim(), status: payload.status || "active" })
+      });
+      res.status(201).json({ source: mapDbLeadSource(inserted[0]) });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0437\u0434\u0430\u0442\u044C \u0438\u0441\u0442\u043E\u0447\u043D\u0438\u043A" });
+    }
+  });
+  app2.patch("/api/mvp/lead-sources/:id", async (req, res) => {
+    const payload = req.body || {};
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const updates = {};
+    if (payload.name !== void 0) updates.name = String(payload.name).trim();
+    if (payload.status !== void 0) updates.status = payload.status;
+    if (Object.keys(updates).length === 0) return res.status(400).json({ error: "\u041D\u0435\u0442 \u043F\u043E\u043B\u0435\u0439 \u0434\u043B\u044F \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F" });
+    try {
+      const rows = await supabaseFetch("lead_sources", `id=eq.${req.params.id}`, { method: "PATCH", body: JSON.stringify(updates) });
+      if (!rows[0]) return res.status(404).json({ error: "\u0418\u0441\u0442\u043E\u0447\u043D\u0438\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+      res.json({ source: mapDbLeadSource(rows[0]) });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0438\u0441\u0442\u043E\u0447\u043D\u0438\u043A" });
+    }
+  });
+  app2.delete("/api/mvp/lead-sources/:id", async (req, res) => {
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      await supabaseFetch("lead_sources", `id=eq.${req.params.id}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      res.json({ ok: true });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u0438\u0441\u0442\u043E\u0447\u043D\u0438\u043A" });
     }
   });
   app2.get("/api/cron/parse-dance-events", async (req, res) => {
@@ -2222,12 +3102,2699 @@ function registerMvpApi(app2) {
       res.status(500).json({ error: error.message || "\u041F\u0430\u0440\u0441\u0438\u043D\u0433 \u043D\u0435 \u0432\u044B\u043F\u043E\u043B\u043D\u0435\u043D" });
     }
   });
+  const authorId = (session) => session.userId.startsWith("demo-") ? null : session.userId;
+  app2.get("/api/mvp/notes", async (req, res) => {
+    getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const studentId = String(req.query.studentId || "");
+    try {
+      const query = studentId ? `select=*&student_id=eq.${studentId}&order=created_at.desc` : `select=*&order=created_at.desc&limit=200`;
+      const rows = await supabaseFetch("teacher_notes", query);
+      res.json({ notes: rows });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0437\u0430\u043C\u0435\u0442\u043A\u0438" });
+    }
+  });
+  app2.post("/api/mvp/notes", async (req, res) => {
+    const session = getSession(req);
+    const payload = req.body || {};
+    if (!payload.studentId || !String(payload.content || "").trim()) {
+      return res.status(400).json({ error: "studentId and content are required" });
+    }
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const kind = ["note", "praise", "concern"].includes(payload.kind) ? payload.kind : "note";
+    try {
+      const inserted = await supabaseFetch("teacher_notes", "", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: session.organizationId,
+          branch_id: payload.branchId || session.dbBranchId,
+          student_id: payload.studentId,
+          author_id: authorId(session),
+          kind,
+          content: String(payload.content).trim(),
+          is_private: Boolean(payload.isPrivate)
+        })
+      });
+      res.status(201).json({ note: inserted[0] });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0434\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u0437\u0430\u043C\u0435\u0442\u043A\u0443" });
+    }
+  });
+  app2.patch("/api/mvp/notes/:id", async (req, res) => {
+    getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const payload = req.body || {};
+    const patch = {};
+    if (payload.content !== void 0) patch.content = String(payload.content).trim();
+    if (payload.kind !== void 0 && ["note", "praise", "concern"].includes(payload.kind)) patch.kind = payload.kind;
+    if (payload.isPrivate !== void 0) patch.is_private = Boolean(payload.isPrivate);
+    if (Object.keys(patch).length === 0) return res.status(400).json({ error: "\u041D\u0435\u0442 \u043F\u043E\u043B\u0435\u0439 \u0434\u043B\u044F \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F" });
+    try {
+      const rows = await supabaseFetch("teacher_notes", `id=eq.${req.params.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch)
+      });
+      res.json({ note: rows[0] });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0437\u0430\u043C\u0435\u0442\u043A\u0443" });
+    }
+  });
+  app2.delete("/api/mvp/notes/:id", async (req, res) => {
+    getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      await supabaseFetch("teacher_notes", `id=eq.${req.params.id}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      res.json({ ok: true });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u0437\u0430\u043C\u0435\u0442\u043A\u0443" });
+    }
+  });
+  app2.get("/api/mvp/homework", async (req, res) => {
+    getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const { studentId, groupId, status } = req.query;
+    const filters = ["select=*", "order=created_at.desc"];
+    if (studentId) filters.push(`student_id=eq.${studentId}`);
+    if (groupId) filters.push(`group_id=eq.${groupId}`);
+    if (status) filters.push(`status=eq.${status}`);
+    try {
+      const rows = await supabaseFetch("homework", filters.join("&"));
+      res.json({ homework: rows });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0437\u0430\u0434\u0430\u043D\u0438\u044F" });
+    }
+  });
+  app2.post("/api/mvp/homework", async (req, res) => {
+    const session = getSession(req);
+    const payload = req.body || {};
+    if (!String(payload.title || "").trim()) return res.status(400).json({ error: "title is required" });
+    if (!payload.studentId && !payload.groupId) return res.status(400).json({ error: "studentId or groupId is required" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      const inserted = await supabaseFetch("homework", "", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: session.organizationId,
+          branch_id: payload.branchId || session.dbBranchId,
+          student_id: payload.studentId || null,
+          group_id: payload.groupId || null,
+          author_id: authorId(session),
+          title: String(payload.title).trim(),
+          description: payload.description || null,
+          video_url: payload.videoUrl || null,
+          due_at: payload.dueAt || null,
+          status: "assigned"
+        })
+      });
+      res.status(201).json({ homework: inserted[0] });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0432\u044B\u0434\u0430\u0442\u044C \u0437\u0430\u0434\u0430\u043D\u0438\u0435" });
+    }
+  });
+  app2.patch("/api/mvp/homework/:id", async (req, res) => {
+    getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const payload = req.body || {};
+    const patch = {};
+    if (payload.title !== void 0) patch.title = String(payload.title).trim();
+    if (payload.description !== void 0) patch.description = payload.description;
+    if (payload.dueAt !== void 0) patch.due_at = payload.dueAt;
+    if (payload.videoUrl !== void 0) patch.video_url = payload.videoUrl;
+    if (payload.submissionNote !== void 0) patch.submission_note = payload.submissionNote;
+    if (payload.submissionVideoUrl !== void 0) patch.submission_video_url = payload.submissionVideoUrl;
+    if (payload.gradeComment !== void 0) patch.grade_comment = payload.gradeComment;
+    if (payload.status !== void 0 && ["assigned", "submitted", "done", "archived"].includes(payload.status)) {
+      patch.status = payload.status;
+      if (payload.status === "submitted") patch.submitted_at = (/* @__PURE__ */ new Date()).toISOString();
+      if (payload.status === "done") patch.graded_at = (/* @__PURE__ */ new Date()).toISOString();
+    }
+    if (Object.keys(patch).length === 0) return res.status(400).json({ error: "\u041D\u0435\u0442 \u043F\u043E\u043B\u0435\u0439 \u0434\u043B\u044F \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F" });
+    try {
+      const rows = await supabaseFetch("homework", `id=eq.${req.params.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch)
+      });
+      res.json({ homework: rows[0] });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0437\u0430\u0434\u0430\u043D\u0438\u0435" });
+    }
+  });
+  app2.delete("/api/mvp/homework/:id", async (req, res) => {
+    getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      await supabaseFetch("homework", `id=eq.${req.params.id}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      res.json({ ok: true });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u0437\u0430\u0434\u0430\u043D\u0438\u0435" });
+    }
+  });
+  app2.post("/api/mvp/attendance/bulk", async (req, res) => {
+    const session = getSession(req);
+    const payload = req.body || {};
+    const status = payload.status || "present";
+    if (!payload.groupId || !payload.date) {
+      return res.status(400).json({ error: "groupId and date are required" });
+    }
+    if (!["present", "absent", "sick", "excused", "recalc", "trial", "unmarked"].includes(status)) {
+      return res.status(400).json({ error: "invalid status" });
+    }
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      const start = (/* @__PURE__ */ new Date(`${payload.date}T00:00:00.000Z`)).toISOString();
+      const endDate = /* @__PURE__ */ new Date(`${payload.date}T00:00:00.000Z`);
+      endDate.setUTCDate(endDate.getUTCDate() + 1);
+      const end = endDate.toISOString();
+      let lessons = await supabaseFetch(
+        "schedule_lessons",
+        `select=*&group_id=eq.${payload.groupId}&starts_at=gte.${encodeURIComponent(start)}&starts_at=lt.${encodeURIComponent(end)}&limit=1`
+      );
+      let lessonId = lessons[0]?.id;
+      if (!lessonId) {
+        const groups = await supabaseFetch("groups", `select=*&id=eq.${payload.groupId}&limit=1`);
+        const group = groups[0];
+        if (!group) return res.status(404).json({ error: "Group not found" });
+        if (!canSeeBranch(session, group.branch_id)) return res.status(403).json({ error: "Branch access denied" });
+        const created = await supabaseFetch("schedule_lessons", "", {
+          method: "POST",
+          body: JSON.stringify({
+            branch_id: group.branch_id,
+            group_id: group.id,
+            teacher_id: group.teacher_id || authorId(session),
+            starts_at: `${payload.date}T16:00:00.000Z`,
+            ends_at: `${payload.date}T17:30:00.000Z`,
+            status: "scheduled",
+            created_by: authorId(session)
+          })
+        });
+        lessonId = created[0]?.id;
+      }
+      if (!lessonId) return res.status(500).json({ error: "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0438\u0442\u044C \u0437\u0430\u043D\u044F\u0442\u0438\u0435" });
+      let studentIds = Array.isArray(payload.studentIds) ? payload.studentIds : [];
+      if (studentIds.length === 0) {
+        const studs = await supabaseFetch("students", `select=id&group_id=eq.${payload.groupId}`);
+        studentIds = studs.map((s) => s.id);
+      }
+      if (studentIds.length === 0) return res.json({ marked: 0, lessonId });
+      const rows = studentIds.map((sid) => ({
+        lesson_id: lessonId,
+        student_id: sid,
+        status: status === "unmarked" ? "unknown" : status,
+        marked_by: authorId(session),
+        marked_at: (/* @__PURE__ */ new Date()).toISOString(),
+        absence_reason: payload.absenceReason || null
+      }));
+      const upserted = await upsertAttendanceRows(rows);
+      res.json({ marked: upserted.length, lessonId });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043C\u0435\u0442\u0438\u0442\u044C \u0433\u0440\u0443\u043F\u043F\u0443" });
+    }
+  });
+  const SAFE_REACTION_KEYS = [
+    "thanks_teacher",
+    "liked_lesson",
+    "was_interesting",
+    "understood_move",
+    "got_better",
+    "want_more",
+    "hard_but_tried"
+  ];
+  app2.post("/api/mvp/reactions", async (req, res) => {
+    const session = getSession(req);
+    const payload = req.body || {};
+    if (!payload.reactionKey || !SAFE_REACTION_KEYS.includes(payload.reactionKey)) {
+      return res.status(400).json({ error: "valid reactionKey is required" });
+    }
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      const inserted = await supabaseFetch("lesson_reactions", "", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: session.organizationId,
+          branch_id: payload.branchId || session.dbBranchId,
+          group_id: payload.groupId || null,
+          student_id: payload.studentId || null,
+          lesson_id: payload.lessonId || null,
+          teacher_id: payload.teacherId || authorId(session),
+          reaction_key: payload.reactionKey
+        })
+      });
+      res.status(201).json({ reaction: inserted[0] });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C \u0440\u0435\u0430\u043A\u0446\u0438\u044E" });
+    }
+  });
+  app2.get("/api/mvp/reactions/summary", async (req, res) => {
+    getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const { from, to, groupId } = req.query;
+    const filters = ["select=reaction_key,group_id,created_at"];
+    if (from) filters.push(`created_at=gte.${encodeURIComponent(from)}`);
+    if (to) filters.push(`created_at=lte.${encodeURIComponent(to)}`);
+    if (groupId) filters.push(`group_id=eq.${groupId}`);
+    filters.push("limit=5000");
+    try {
+      const rows = await supabaseFetch("lesson_reactions", filters.join("&"));
+      const byKey = {};
+      const byGroup = {};
+      for (const r of rows) {
+        byKey[r.reaction_key] = (byKey[r.reaction_key] || 0) + 1;
+        if (r.group_id) byGroup[r.group_id] = (byGroup[r.group_id] || 0) + 1;
+      }
+      res.json({
+        total: rows.length,
+        byKey,
+        byGroup: Object.entries(byGroup).map(([id, count]) => ({ groupId: id, count }))
+      });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0441\u0432\u043E\u0434\u043A\u0443 \u0440\u0435\u0430\u043A\u0446\u0438\u0439" });
+    }
+  });
+  const ACCOUNTING_TYPES = ["income", "expense", "transfer"];
+  const monthKey = (d) => String(d).slice(0, 7);
+  app2.get("/api/mvp/accounting/overview", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const orgFilter = `organization_id=eq.${session.organizationId}`;
+    try {
+      const [accounts, categories, txns] = await Promise.all([
+        supabaseFetch("finance_accounts", `select=*&${orgFilter}&order=sort.asc`),
+        supabaseFetch("finance_categories", `select=*&${orgFilter}&order=kind.asc,sort.asc`),
+        supabaseFetch("finance_transactions", `select=*&${orgFilter}&type=in.(income,expense)&order=operation_date.asc`)
+      ]);
+      const actual = txns.filter((t) => (t.status || "actual") === "actual");
+      const planned = txns.filter((t) => t.status === "planned");
+      const catName = (id) => categories.find((c) => c.id === id)?.name || "\u0411\u0435\u0437 \u0441\u0442\u0430\u0442\u044C\u0438";
+      const accName = (id) => accounts.find((a) => a.id === id)?.name || "\u2014";
+      const accountsOut = accounts.map((a) => {
+        const inc = actual.filter((t) => t.account_id === a.id && t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
+        const exp = actual.filter((t) => t.account_id === a.id && t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
+        return {
+          id: a.id,
+          name: a.name,
+          kind: a.kind,
+          currency: a.currency,
+          openingBalance: Number(a.opening_balance),
+          balance: Number(a.opening_balance) + inc - exp
+        };
+      });
+      const months = Array.from(new Set(actual.map((t) => monthKey(t.operation_date)))).sort();
+      const buildRows = (kind) => {
+        const cats = Array.from(new Set(actual.filter((t) => t.type === kind).map((t) => t.category_id)));
+        return cats.map((cid) => {
+          const byMonth = months.map((m) => actual.filter((t) => t.type === kind && t.category_id === cid && monthKey(t.operation_date) === m).reduce((s, t) => s + Number(t.amount), 0));
+          return { category: catName(cid), byMonth, total: byMonth.reduce((s, v) => s + v, 0) };
+        }).sort((a, b) => b.total - a.total);
+      };
+      const incomeRows = buildRows("income");
+      const expenseRows = buildRows("expense");
+      const incomeByMonth = months.map((m) => actual.filter((t) => t.type === "income" && monthKey(t.operation_date) === m).reduce((s, t) => s + Number(t.amount), 0));
+      const expenseByMonth = months.map((m) => actual.filter((t) => t.type === "expense" && monthKey(t.operation_date) === m).reduce((s, t) => s + Number(t.amount), 0));
+      const netByMonth = months.map((_, i) => incomeByMonth[i] - expenseByMonth[i]);
+      const pnl = months.map((m, i) => ({
+        month: m,
+        revenue: incomeByMonth[i],
+        expense: expenseByMonth[i],
+        profit: netByMonth[i],
+        margin: incomeByMonth[i] > 0 ? Math.round(netByMonth[i] / incomeByMonth[i] * 100) : 0
+      }));
+      const calendar = planned.map((t) => ({
+        id: t.id,
+        date: t.operation_date,
+        type: t.type,
+        amount: Number(t.amount),
+        category: catName(t.category_id),
+        account: accName(t.account_id),
+        counterparty: t.counterparty || null,
+        description: t.description || null
+      })).sort((a, b) => a.date.localeCompare(b.date));
+      const incomeTotal = incomeByMonth.reduce((s, v) => s + v, 0);
+      const expenseTotal = expenseByMonth.reduce((s, v) => s + v, 0);
+      const plannedIn = planned.filter((t) => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
+      const plannedOut = planned.filter((t) => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
+      res.json({
+        accounts: accountsOut,
+        categories: categories.map((c) => ({ id: c.id, name: c.name, kind: c.kind })),
+        cashflow: { months, incomeRows, expenseRows, incomeByMonth, expenseByMonth, netByMonth },
+        pnl,
+        calendar,
+        totals: {
+          income: incomeTotal,
+          expense: expenseTotal,
+          profit: incomeTotal - expenseTotal,
+          plannedIn,
+          plannedOut,
+          balanceTotal: accountsOut.reduce((s, a) => s + a.balance, 0)
+        }
+      });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0431\u0443\u0445\u0433\u0430\u043B\u0442\u0435\u0440\u0438\u044E" });
+    }
+  });
+  app2.get("/api/mvp/accounting/operations", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const orgFilter = `organization_id=eq.${session.organizationId}`;
+    const { status, from, to } = req.query;
+    const filters = [`select=*`, orgFilter, "type=in.(income,expense)", "order=operation_date.desc"];
+    if (status === "actual" || status === "planned") filters.push(`status=eq.${status}`);
+    if (from) filters.push(`operation_date=gte.${from}`);
+    if (to) filters.push(`operation_date=lte.${to}`);
+    filters.push("limit=1000");
+    try {
+      const rows = await supabaseFetch("finance_transactions", filters.join("&"));
+      res.json({ operations: rows.map((t) => ({
+        id: t.id,
+        type: t.type,
+        status: t.status || "actual",
+        amount: Number(t.amount),
+        date: t.operation_date,
+        categoryId: t.category_id,
+        accountId: t.account_id,
+        counterparty: t.counterparty || null,
+        description: t.description || null
+      })) });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u043E\u043F\u0435\u0440\u0430\u0446\u0438\u0438" });
+    }
+  });
+  app2.post("/api/mvp/accounting/operations", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const p = req.body || {};
+    const type = ACCOUNTING_TYPES.includes(p.type) ? p.type : "expense";
+    const status = p.status === "planned" ? "planned" : "actual";
+    const amount = Number(p.amount);
+    if (!amount || amount <= 0) return res.status(400).json({ error: "\u0423\u043A\u0430\u0436\u0438\u0442\u0435 \u0441\u0443\u043C\u043C\u0443 \u0431\u043E\u043B\u044C\u0448\u0435 \u043D\u0443\u043B\u044F" });
+    try {
+      const inserted = await supabaseFetch("finance_transactions", "", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: session.organizationId,
+          branch_id: p.branchId || session.dbBranchId || null,
+          account_id: p.accountId || null,
+          category_id: p.categoryId || null,
+          amount,
+          type,
+          status,
+          operation_date: p.date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10),
+          counterparty: p.counterparty || null,
+          description: p.description || null
+        })
+      });
+      res.status(201).json({ operation: inserted[0] });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0437\u0434\u0430\u0442\u044C \u043E\u043F\u0435\u0440\u0430\u0446\u0438\u044E" });
+    }
+  });
+  app2.patch("/api/mvp/accounting/operations/:id", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const p = req.body || {};
+    const patch = { updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+    if (p.amount !== void 0) patch.amount = Number(p.amount);
+    if (p.type !== void 0 && ACCOUNTING_TYPES.includes(p.type)) patch.type = p.type;
+    if (p.status !== void 0) patch.status = p.status === "planned" ? "planned" : "actual";
+    if (p.date !== void 0) patch.operation_date = p.date;
+    if (p.categoryId !== void 0) patch.category_id = p.categoryId || null;
+    if (p.accountId !== void 0) patch.account_id = p.accountId || null;
+    if (p.counterparty !== void 0) patch.counterparty = p.counterparty || null;
+    if (p.description !== void 0) patch.description = p.description || null;
+    try {
+      const rows = await supabaseFetch("finance_transactions", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch)
+      });
+      res.json({ operation: rows[0] });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u043E\u043F\u0435\u0440\u0430\u0446\u0438\u044E" });
+    }
+  });
+  app2.delete("/api/mvp/accounting/operations/:id", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      await supabaseFetch("finance_transactions", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      res.json({ ok: true });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u043E\u043F\u0435\u0440\u0430\u0446\u0438\u044E" });
+    }
+  });
+  app2.post("/api/mvp/accounting/accounts", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const p = req.body || {};
+    if (!String(p.name || "").trim()) return res.status(400).json({ error: "\u0423\u043A\u0430\u0436\u0438\u0442\u0435 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u0441\u0447\u0451\u0442\u0430" });
+    try {
+      const inserted = await supabaseFetch("finance_accounts", "", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: session.organizationId,
+          branch_id: p.branchId || null,
+          name: String(p.name).trim(),
+          kind: ["cash", "bank", "card"].includes(p.kind) ? p.kind : "cash",
+          currency: p.currency || "KZT",
+          opening_balance: Number(p.openingBalance) || 0,
+          sort: Number(p.sort) || 99
+        })
+      });
+      res.status(201).json({ account: inserted[0] });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0437\u0434\u0430\u0442\u044C \u0441\u0447\u0451\u0442" });
+    }
+  });
+  const mapExpenseReq = (r) => ({
+    id: r.id,
+    branchId: r.branch_id,
+    requestedByName: r.requested_by_name,
+    amount: Number(r.amount),
+    categoryId: r.category_id,
+    description: r.description,
+    status: r.status,
+    decidedBy: r.decided_by,
+    decidedAt: r.decided_at,
+    decisionComment: r.decision_comment,
+    operationId: r.operation_id,
+    createdAt: r.created_at
+  });
+  app2.post("/api/mvp/accounting/expense-requests", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "branch_manager" && session.role !== "owner") {
+      return res.status(403).json({ error: "\u041D\u0435\u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E \u043F\u0440\u0430\u0432" });
+    }
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const p = req.body || {};
+    const amount = Number(p.amount);
+    if (!amount || amount <= 0) return res.status(400).json({ error: "\u0423\u043A\u0430\u0436\u0438\u0442\u0435 \u0441\u0443\u043C\u043C\u0443 \u0431\u043E\u043B\u044C\u0448\u0435 \u043D\u0443\u043B\u044F" });
+    try {
+      const inserted = await supabaseFetch("finance_expense_requests", "", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: session.organizationId,
+          branch_id: p.branchId || session.dbBranchId || null,
+          requested_by: authorId(session),
+          requested_by_name: session.fullName || session.role,
+          amount,
+          category_id: p.categoryId || null,
+          description: p.description || null,
+          status: "pending"
+        })
+      });
+      res.status(201).json({ request: mapExpenseReq(inserted[0]) });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0437\u0434\u0430\u0442\u044C \u0437\u0430\u044F\u0432\u043A\u0443" });
+    }
+  });
+  app2.get("/api/mvp/accounting/expense-requests", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "branch_manager" && session.role !== "owner") {
+      return res.status(403).json({ error: "\u041D\u0435\u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E \u043F\u0440\u0430\u0432" });
+    }
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const filters = [`select=*`, `organization_id=eq.${session.organizationId}`, "order=created_at.desc", "limit=500"];
+    if (session.role === "branch_manager") filters.push(`branch_id=eq.${session.dbBranchId}`);
+    if (req.query.status) filters.push(`status=eq.${req.query.status}`);
+    try {
+      const rows = await supabaseFetch("finance_expense_requests", filters.join("&"));
+      res.json({ requests: rows.map(mapExpenseReq) });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0437\u0430\u044F\u0432\u043A\u0438" });
+    }
+  });
+  app2.post("/api/mvp/accounting/expense-requests/:id/approve", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u041F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0430\u0442\u044C \u043C\u043E\u0436\u0435\u0442 \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u0435\u0446" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const p = req.body || {};
+    try {
+      const found = await supabaseFetch("finance_expense_requests", `select=*&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`);
+      const reqRow = found[0];
+      if (!reqRow) return res.status(404).json({ error: "\u0417\u0430\u044F\u0432\u043A\u0430 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430" });
+      if (reqRow.status !== "pending") return res.status(400).json({ error: "\u0417\u0430\u044F\u0432\u043A\u0430 \u0443\u0436\u0435 \u043E\u0431\u0440\u0430\u0431\u043E\u0442\u0430\u043D\u0430" });
+      const categoryId = p.categoryId || reqRow.category_id || null;
+      const op = await supabaseFetch("finance_transactions", "", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: session.organizationId,
+          branch_id: reqRow.branch_id,
+          account_id: p.accountId || null,
+          category_id: categoryId,
+          amount: reqRow.amount,
+          type: "expense",
+          status: "actual",
+          operation_date: p.date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10),
+          description: reqRow.description ? `\u0417\u0430\u044F\u0432\u043A\u0430: ${reqRow.description}` : "\u041E\u0434\u043E\u0431\u0440\u0435\u043D\u043D\u0430\u044F \u0437\u0430\u044F\u0432\u043A\u0430 \u043D\u0430 \u0440\u0430\u0441\u0445\u043E\u0434"
+        })
+      });
+      const rows = await supabaseFetch("finance_expense_requests", `id=eq.${req.params.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: "approved",
+          decided_by: session.fullName || "owner",
+          decided_at: (/* @__PURE__ */ new Date()).toISOString(),
+          decision_comment: p.comment || null,
+          category_id: categoryId,
+          operation_id: op[0]?.id || null
+        })
+      });
+      res.json({ request: mapExpenseReq(rows[0]) });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0434\u043E\u0431\u0440\u0438\u0442\u044C \u0437\u0430\u044F\u0432\u043A\u0443" });
+    }
+  });
+  app2.post("/api/mvp/accounting/expense-requests/:id/reject", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u041E\u0442\u043A\u043B\u043E\u043D\u044F\u0442\u044C \u043C\u043E\u0436\u0435\u0442 \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u0435\u0446" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const p = req.body || {};
+    try {
+      const rows = await supabaseFetch("finance_expense_requests", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}&status=eq.pending`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: "rejected",
+          decided_by: session.fullName || "owner",
+          decided_at: (/* @__PURE__ */ new Date()).toISOString(),
+          decision_comment: p.comment || null
+        })
+      });
+      if (!rows[0]) return res.status(400).json({ error: "\u0417\u0430\u044F\u0432\u043A\u0430 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430 \u0438\u043B\u0438 \u0443\u0436\u0435 \u043E\u0431\u0440\u0430\u0431\u043E\u0442\u0430\u043D\u0430" });
+      res.json({ request: mapExpenseReq(rows[0]) });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043A\u043B\u043E\u043D\u0438\u0442\u044C \u0437\u0430\u044F\u0432\u043A\u0443" });
+    }
+  });
+  const isoDay = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+  const periodRanges = (period, cs, ce) => {
+    const base = /* @__PURE__ */ new Date();
+    base.setHours(0, 0, 0, 0);
+    const mk = (s, e) => ({ start: isoDay(s), end: isoDay(e) });
+    const Y = base.getFullYear(), M = base.getMonth();
+    switch (period) {
+      case "today": {
+        const p = new Date(base);
+        p.setDate(p.getDate() - 1);
+        const y = new Date(base);
+        y.setFullYear(y.getFullYear() - 1);
+        return { cur: mk(base, base), prev: mk(p, p), yoy: mk(y, y) };
+      }
+      case "yesterday": {
+        const c = new Date(base);
+        c.setDate(c.getDate() - 1);
+        const p = new Date(c);
+        p.setDate(p.getDate() - 1);
+        const y = new Date(c);
+        y.setFullYear(y.getFullYear() - 1);
+        return { cur: mk(c, c), prev: mk(p, p), yoy: mk(y, y) };
+      }
+      case "week": {
+        const e = new Date(base);
+        const s = new Date(base);
+        s.setDate(s.getDate() - 6);
+        const pe = new Date(s);
+        pe.setDate(pe.getDate() - 1);
+        const ps = new Date(pe);
+        ps.setDate(ps.getDate() - 6);
+        const ys = new Date(s);
+        ys.setFullYear(ys.getFullYear() - 1);
+        const ye = new Date(e);
+        ye.setFullYear(ye.getFullYear() - 1);
+        return { cur: mk(s, e), prev: mk(ps, pe), yoy: mk(ys, ye) };
+      }
+      case "quarter": {
+        const q = Math.floor(M / 3);
+        return {
+          cur: mk(new Date(Y, q * 3, 1), new Date(Y, q * 3 + 3, 0)),
+          prev: mk(new Date(Y, q * 3 - 3, 1), new Date(Y, q * 3, 0)),
+          yoy: mk(new Date(Y - 1, q * 3, 1), new Date(Y - 1, q * 3 + 3, 0))
+        };
+      }
+      case "year":
+        return {
+          cur: mk(new Date(Y, 0, 1), new Date(Y, 11, 31)),
+          prev: mk(new Date(Y - 1, 0, 1), new Date(Y - 1, 11, 31)),
+          yoy: mk(new Date(Y - 1, 0, 1), new Date(Y - 1, 11, 31))
+        };
+      case "custom": {
+        if (cs && ce) {
+          const s = new Date(cs);
+          const e = new Date(ce);
+          const len = Math.max(1, Math.round((e.getTime() - s.getTime()) / 864e5) + 1);
+          const pe = new Date(s);
+          pe.setDate(pe.getDate() - 1);
+          const ps = new Date(pe);
+          ps.setDate(ps.getDate() - len + 1);
+          const ys = new Date(s);
+          ys.setFullYear(ys.getFullYear() - 1);
+          const ye = new Date(e);
+          ye.setFullYear(ye.getFullYear() - 1);
+          return { cur: mk(s, e), prev: mk(ps, pe), yoy: mk(ys, ye) };
+        }
+      }
+      default:
+        return {
+          cur: mk(new Date(Y, M, 1), new Date(Y, M + 1, 0)),
+          prev: mk(new Date(Y, M - 1, 1), new Date(Y, M, 0)),
+          yoy: mk(new Date(Y - 1, M, 1), new Date(Y - 1, M + 1, 0))
+        };
+    }
+  };
+  const inRange = (d, r) => d >= r.start && d <= r.end;
+  const pctDelta = (cur, base) => base > 0 ? Math.round((cur - base) / base * 1e3) / 10 : null;
+  const todayStr = () => isoDay(/* @__PURE__ */ new Date());
+  const uid = () => globalThis.crypto?.randomUUID?.() || `id-${Math.random().toString(36).slice(2)}`;
+  const mockPerformances = [
+    {
+      id: uid(),
+      clientName: "\u0421\u0432\u0430\u0434\u044C\u0431\u0430 \u0410\u0439\u0441\u0443\u043B\u0443 \u0438 \u041C\u0430\u043A\u0441\u0430\u0442",
+      clientPhone: "+7 701 555 0001",
+      address: "\u0420\u0435\u0441\u0442\u043E\u0440\u0430\u043D \xAB\u0417\u0435\u0440\u0434\u044D\xBB, \u0433. \u0410\u0441\u0442\u0430\u043D\u0430",
+      eventDate: "2026-06-01",
+      eventTime: "18:00",
+      type: "interactive",
+      price: 35e4,
+      status: "planned",
+      comment: "3 \u043D\u043E\u043C\u0435\u0440\u0430 + \u0438\u043D\u0442\u0435\u0440\u0430\u043A\u0442\u0438\u0432 \u0441 \u0433\u043E\u0441\u0442\u044F\u043C\u0438",
+      branchId: demoBranchAlmaty,
+      payments: [{ id: uid(), amount: 1e5, paidDate: "2026-05-28", method: "cash", comment: "\u0410\u0432\u0430\u043D\u0441" }, { id: uid(), amount: 15e4, paidDate: "2026-06-01", method: "transfer", comment: "\u0414\u043E\u043F\u043B\u0430\u0442\u0430" }]
+    },
+    {
+      id: uid(),
+      clientName: "\u041A\u043E\u0440\u043F\u043E\u0440\u0430\u0442\u0438\u0432 BI Group",
+      clientPhone: "+7 701 555 0002",
+      address: "\u041E\u0442\u0435\u043B\u044C Rixos",
+      eventDate: "2026-06-05",
+      eventTime: "20:00",
+      type: "basic",
+      price: 3e5,
+      status: "planned",
+      comment: "\u0411\u0430\u0437\u043E\u0432\u044B\u0439 \u0442\u0430\u043D\u0435\u0446",
+      branchId: demoBranchAlmaty,
+      payments: [{ id: uid(), amount: 3e5, paidDate: "2026-06-05", method: "transfer", comment: "\u041F\u043E\u043B\u043D\u0430\u044F \u043E\u043F\u043B\u0430\u0442\u0430" }]
+    },
+    { id: uid(), clientName: "\u0411\u0430\u043D\u043A\u0435\u0442 \u041D\u0443\u0440\u043B\u0430\u043D", clientPhone: "+7 701 555 0003", address: "\u0411\u0430\u043D\u043A\u0435\u0442\u043D\u044B\u0439 \u0437\u0430\u043B \xAB\u0410\u0441\u0442\u0430\u043D\u0430\xBB", eventDate: "2026-06-10", eventTime: "19:00", type: "interactive", price: 2e5, status: "planned", comment: "\u0422\u0430\u043D\u0435\u0446 \u0441 \u0438\u043D\u0442\u0435\u0440\u0430\u043A\u0442\u0438\u0432\u043E\u043C", branchId: demoBranchAlmaty, payments: [] }
+  ];
+  const mockProducts = [
+    { id: uid(), name: "\u0424\u0443\u0442\u0431\u043E\u043B\u043A\u0430 ECHO GOR", category: "\u041C\u0435\u0440\u0447", sku: "TSH-001", salePrice: 15e3, costPrice: 8e3, minStock: 10, branchId: demoBranchAlmaty, echoPrice: 500, isActive: true, description: "\u0424\u0438\u0440\u043C\u0435\u043D\u043D\u0430\u044F \u0444\u0443\u0442\u0431\u043E\u043B\u043A\u0430 \u0430\u043D\u0441\u0430\u043C\u0431\u043B\u044F. \u041C\u044F\u0433\u043A\u0438\u0439 \u0445\u043B\u043E\u043F\u043E\u043A, \u043B\u043E\u0433\u043E\u0442\u0438\u043F \u043D\u0430 \u0433\u0440\u0443\u0434\u0438." },
+    { id: uid(), name: "\u0425\u0443\u0434\u0438 ECHO GOR", category: "\u041C\u0435\u0440\u0447", sku: "HOD-002", salePrice: 28e3, costPrice: 16e3, minStock: 5, branchId: demoBranchAlmaty, echoPrice: 1200, isActive: true, description: "\u0422\u0451\u043F\u043B\u043E\u0435 \u0445\u0443\u0434\u0438 \u0441 \u0432\u044B\u0448\u0438\u0432\u043A\u043E\u0439 \u0430\u043D\u0441\u0430\u043C\u0431\u043B\u044F \u2014 \u043D\u0430\u0433\u0440\u0430\u0434\u0430 \u0437\u0430 \u0443\u043F\u043E\u0440\u0441\u0442\u0432\u043E." },
+    { id: uid(), name: "\u0428\u0442\u0430\u043D\u044B \u0442\u0440\u0435\u043D\u0438\u0440\u043E\u0432\u043E\u0447\u043D\u044B\u0435", category: "\u0424\u043E\u0440\u043C\u0430", sku: "PNT-003", salePrice: 2e4, costPrice: 12e3, minStock: 5, branchId: demoBranchAlmaty, echoPrice: 0, isActive: true, description: "\u0422\u0440\u0435\u043D\u0438\u0440\u043E\u0432\u043E\u0447\u043D\u044B\u0435 \u0448\u0442\u0430\u043D\u044B \u0434\u043B\u044F \u0437\u0430\u043D\u044F\u0442\u0438\u0439." },
+    { id: uid(), name: "\u0428\u0430\u043F\u043A\u0430 ECHO GOR", category: "\u041C\u0435\u0440\u0447", sku: "CAP-004", salePrice: 7e3, costPrice: 3500, minStock: 5, branchId: demoBranchAlmaty, echoPrice: 300, isActive: true, description: "\u0421\u0442\u0438\u043B\u044C\u043D\u0430\u044F \u0448\u0430\u043F\u043A\u0430 \u0441 \u043B\u043E\u0433\u043E\u0442\u0438\u043F\u043E\u043C \u2014 \u043F\u0440\u0438\u044F\u0442\u043D\u044B\u0439 \u0431\u043E\u043D\u0443\u0441 \u0437\u0430 \u0431\u0430\u043B\u043B\u044B." }
+  ];
+  const mockReceipts = [
+    { id: uid(), productId: mockProducts[0].id, qty: 30, costPrice: 8e3, movementDate: "2026-05-01", comment: "\u0417\u0430\u043A\u0443\u043F \u043F\u0430\u0440\u0442\u0438\u0438", branchId: demoBranchAlmaty },
+    { id: uid(), productId: mockProducts[1].id, qty: 20, costPrice: 16e3, movementDate: "2026-05-01", comment: "\u0417\u0430\u043A\u0443\u043F \u043F\u0430\u0440\u0442\u0438\u0438", branchId: demoBranchAlmaty },
+    { id: uid(), productId: mockProducts[2].id, qty: 12, costPrice: 12e3, movementDate: "2026-05-01", comment: "\u0417\u0430\u043A\u0443\u043F \u043F\u0430\u0440\u0442\u0438\u0438", branchId: demoBranchAlmaty },
+    { id: uid(), productId: mockProducts[3].id, qty: 8, costPrice: 3500, movementDate: "2026-05-01", comment: "\u0417\u0430\u043A\u0443\u043F \u043F\u0430\u0440\u0442\u0438\u0438", branchId: demoBranchAlmaty }
+  ];
+  const mockSales = [
+    { id: uid(), productId: mockProducts[0].id, qty: 7, amount: 105e3, method: "card", soldBy: "\u0424\u0430\u0442\u0438\u043C\u0430 \u0426\u0430\u0440\u0438\u043A\u0430\u0435\u0432\u0430", saleDate: "2026-06-03", branchId: demoBranchAlmaty },
+    { id: uid(), productId: mockProducts[1].id, qty: 8, amount: 224e3, method: "kaspi", soldBy: "\u0424\u0430\u0442\u0438\u043C\u0430 \u0426\u0430\u0440\u0438\u043A\u0430\u0435\u0432\u0430", saleDate: "2026-06-08", branchId: demoBranchAlmaty },
+    { id: uid(), productId: mockProducts[2].id, qty: 4, amount: 8e4, method: "cash", soldBy: "\u0424\u0430\u0442\u0438\u043C\u0430 \u0426\u0430\u0440\u0438\u043A\u0430\u0435\u0432\u0430", saleDate: "2026-06-12", branchId: demoBranchAlmaty },
+    { id: uid(), productId: mockProducts[3].id, qty: 6, amount: 42e3, method: "cash", soldBy: "\u0424\u0430\u0442\u0438\u043C\u0430 \u0426\u0430\u0440\u0438\u043A\u0430\u0435\u0432\u0430", saleDate: "2026-06-15", branchId: demoBranchAlmaty }
+  ];
+  const PERF_TYPES = ["basic", "interactive", "multi", "individual", "other"];
+  const perfOut = (perf, payments) => {
+    const paid = payments.reduce((s, p) => s + Number(p.amount), 0);
+    const price = Number(perf.price) || 0;
+    const expense = Number(perf.expense ?? 0) || 0;
+    const cancelled = (perf.status || perf.status) === "cancelled";
+    const status = cancelled ? "cancelled" : paid <= 0 ? "planned" : paid >= price && price > 0 ? "paid" : "partial";
+    return {
+      id: perf.id,
+      clientName: perf.clientName ?? perf.client_name,
+      clientPhone: perf.clientPhone ?? perf.client_phone ?? null,
+      address: perf.address ?? null,
+      eventDate: perf.eventDate ?? perf.event_date,
+      eventTime: perf.eventTime ?? perf.event_time ?? null,
+      type: perf.type || "basic",
+      typeLabel: perf.typeLabel ?? perf.type_label ?? null,
+      performersCount: perf.performersCount ?? perf.performers_count ?? null,
+      paymentMethod: perf.paymentMethod ?? perf.payment_method ?? null,
+      price,
+      paid,
+      outstanding: Math.max(0, price - paid),
+      expense,
+      netProfit: price - expense,
+      // чистая прибыль (на счёт поступает только она)
+      status,
+      comment: perf.comment ?? null,
+      branchId: perf.branchId ?? perf.branch_id ?? null,
+      payments: payments.map((p) => ({ id: p.id, amount: Number(p.amount), date: p.paidDate ?? p.paid_date, method: p.method || "cash", comment: p.comment ?? null })).sort((a, b) => String(a.date).localeCompare(String(b.date)))
+    };
+  };
+  const loadPerformances = async (session) => {
+    if (!supabaseEnabled) {
+      const list = session.role === "owner" ? mockPerformances : mockPerformances.filter((p) => canSeeBranch(session, p.branchId));
+      return list.map((p) => perfOut(p, p.payments || []));
+    }
+    const orgFilter = `organization_id=eq.${session.organizationId}`;
+    const [perfs, pays] = await Promise.all([
+      supabaseFetch("performances", `select=*&${orgFilter}&order=event_date.desc`),
+      supabaseFetch("performance_payments", `select=*&${orgFilter}&order=paid_date.asc`)
+    ]);
+    return perfs.map((perf) => perfOut(perf, pays.filter((pp) => pp.performance_id === perf.id)));
+  };
+  app2.get("/api/mvp/performances", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager") {
+      return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443 \u0438 \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0435\u043C\u0443" });
+    }
+    let list = await loadPerformances(session);
+    const { status } = req.query;
+    if (status && status !== "all") list = list.filter((p) => p.status === status);
+    if (session.role === "branch_manager") {
+      list = list.map((p) => ({ ...p, paid: null, outstanding: null, payments: [] }));
+    }
+    res.json({ performances: list });
+  }));
+  app2.get("/api/mvp/performances/overview", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0410\u043D\u0430\u043B\u0438\u0442\u0438\u043A\u0430 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0430 \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    const q = req.query;
+    const r = periodRanges(q.period, q.from, q.to);
+    const list = (await loadPerformances(session)).filter((p) => p.status !== "cancelled");
+    const allPays = list.flatMap((p) => p.payments.map((pay) => ({ ...pay })));
+    const sumIn = (range) => allPays.filter((pp) => inRange(pp.date, range)).reduce((s, pp) => s + pp.amount, 0);
+    const curRev = sumIn(r.cur), prevRev = sumIn(r.prev), yoyRev = sumIn(r.yoy);
+    const inCur = list.filter((p) => inRange(p.eventDate, r.cur));
+    const count = inCur.length;
+    const grossCur = inCur.reduce((s, p) => s + p.price, 0);
+    const expenseCur = inCur.reduce((s, p) => s + (p.expense || 0), 0);
+    const netCur = grossCur - expenseCur;
+    const performersCur = inCur.reduce((s, p) => s + (p.performersCount || 0), 0);
+    const avgCheck = count > 0 ? Math.round(grossCur / count) : 0;
+    const unpaid = list.filter((p) => p.outstanding > 0);
+    const outstanding = unpaid.reduce((s, p) => s + p.outstanding, 0);
+    const months = [];
+    const md = /* @__PURE__ */ new Date();
+    md.setDate(1);
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(md.getFullYear(), md.getMonth() - i, 1);
+      months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+    }
+    const byMonth = months.map((mo) => ({ month: mo, amount: allPays.filter((pp) => String(pp.date).slice(0, 7) === mo).reduce((s, pp) => s + pp.amount, 0) }));
+    res.json({
+      revenue: { total: curRev, momPct: pctDelta(curRev, prevRev), yoyPct: pctDelta(curRev, yoyRev) },
+      count,
+      avgCheck,
+      unpaidCount: unpaid.length,
+      outstanding,
+      byMonth,
+      gross: grossCur,
+      expense: expenseCur,
+      netProfit: netCur,
+      performers: performersCur
+    });
+  }));
+  app2.get("/api/mvp/performances/:id", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0424\u0438\u043D\u0430\u043D\u0441\u043E\u0432\u0430\u044F \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0430 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0430 \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    const list = await loadPerformances(session);
+    const found = list.find((p) => p.id === req.params.id);
+    if (!found) return res.status(404).json({ error: "\u0412\u044B\u0441\u0442\u0443\u043F\u043B\u0435\u043D\u0438\u0435 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E" });
+    res.json({ performance: found });
+  }));
+  app2.post("/api/mvp/performances", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0421\u043E\u0437\u0434\u0430\u0432\u0430\u0442\u044C \u043C\u043E\u0436\u0435\u0442 \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u0435\u0446" });
+    const p = req.body || {};
+    if (!String(p.clientName || "").trim()) return res.status(400).json({ error: "\u0423\u043A\u0430\u0436\u0438\u0442\u0435 \u043A\u043B\u0438\u0435\u043D\u0442\u0430" });
+    const type = p.type ? String(p.type) : "basic";
+    const price = Number(p.price) || 0;
+    const expense = Number(p.expense) || 0;
+    const performersCount = p.performersCount != null && p.performersCount !== "" ? Math.max(0, parseInt(p.performersCount, 10)) || 0 : null;
+    const paymentMethod = p.paymentMethod || null;
+    const markPaid = p.status === "paid";
+    if (!supabaseEnabled) {
+      const payments = markPaid && price > 0 ? [{ id: uid(), amount: price, paidDate: p.eventDate || todayStr(), method: paymentMethod || "cash", comment: null }] : [];
+      const rec = {
+        id: uid(),
+        clientName: String(p.clientName).trim(),
+        clientPhone: p.clientPhone || null,
+        address: p.address || null,
+        eventDate: p.eventDate || todayStr(),
+        eventTime: p.eventTime || null,
+        type,
+        typeLabel: p.typeLabel || null,
+        price,
+        expense,
+        performersCount,
+        paymentMethod,
+        status: "planned",
+        comment: p.comment || null,
+        branchId: p.branchId || session.dbBranchId || demoBranchAlmaty,
+        payments
+      };
+      mockPerformances.unshift(rec);
+      return res.status(201).json({ performance: perfOut(rec, payments) });
+    }
+    const inserted = await supabaseFetch("performances", "", {
+      method: "POST",
+      body: JSON.stringify({
+        organization_id: session.organizationId,
+        branch_id: p.branchId || session.dbBranchId || null,
+        client_name: String(p.clientName).trim(),
+        client_phone: p.clientPhone || null,
+        address: p.address || null,
+        event_date: p.eventDate || todayStr(),
+        event_time: p.eventTime || null,
+        type,
+        type_label: p.typeLabel || null,
+        price,
+        expense,
+        performers_count: performersCount,
+        payment_method: paymentMethod,
+        status: "planned",
+        comment: p.comment || null
+      })
+    });
+    let pays = [];
+    if (markPaid && price > 0 && inserted[0]) {
+      await supabaseFetch("performance_payments", "", {
+        method: "POST",
+        body: JSON.stringify({ organization_id: session.organizationId, performance_id: inserted[0].id, amount: price, paid_date: p.eventDate || todayStr(), method: paymentMethod || "cash", comment: "\u041E\u043F\u043B\u0430\u0442\u0430 \u043F\u0440\u0438 \u0441\u043E\u0437\u0434\u0430\u043D\u0438\u0438" })
+      });
+      pays = await supabaseFetch("performance_payments", `select=*&performance_id=eq.${inserted[0].id}`);
+    }
+    res.status(201).json({ performance: perfOut(inserted[0], pays) });
+  }));
+  app2.patch("/api/mvp/performances/:id", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0418\u0437\u043C\u0435\u043D\u044F\u0442\u044C \u043C\u043E\u0436\u0435\u0442 \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u0435\u0446" });
+    const p = req.body || {};
+    if (!supabaseEnabled) {
+      const rec = mockPerformances.find((x) => x.id === req.params.id);
+      if (!rec) return res.status(404).json({ error: "\u0412\u044B\u0441\u0442\u0443\u043F\u043B\u0435\u043D\u0438\u0435 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E" });
+      if (p.clientName !== void 0) rec.clientName = p.clientName;
+      if (p.clientPhone !== void 0) rec.clientPhone = p.clientPhone;
+      if (p.address !== void 0) rec.address = p.address;
+      if (p.eventDate !== void 0) rec.eventDate = p.eventDate;
+      if (p.eventTime !== void 0) rec.eventTime = p.eventTime;
+      if (p.type !== void 0) rec.type = p.type;
+      if (p.typeLabel !== void 0) rec.typeLabel = p.typeLabel || null;
+      if (p.price !== void 0) rec.price = Number(p.price) || 0;
+      if (p.expense !== void 0) rec.expense = Number(p.expense) || 0;
+      if (p.performersCount !== void 0) rec.performersCount = p.performersCount === "" || p.performersCount == null ? null : Math.max(0, parseInt(p.performersCount, 10)) || 0;
+      if (p.paymentMethod !== void 0) rec.paymentMethod = p.paymentMethod || null;
+      if (p.status !== void 0) rec.status = p.status === "cancelled" ? "cancelled" : "planned";
+      if (p.comment !== void 0) rec.comment = p.comment;
+      return res.json({ performance: perfOut(rec, rec.payments || []) });
+    }
+    const patch = { updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+    if (p.clientName !== void 0) patch.client_name = p.clientName;
+    if (p.clientPhone !== void 0) patch.client_phone = p.clientPhone || null;
+    if (p.address !== void 0) patch.address = p.address || null;
+    if (p.eventDate !== void 0) patch.event_date = p.eventDate;
+    if (p.eventTime !== void 0) patch.event_time = p.eventTime || null;
+    if (p.type !== void 0) patch.type = p.type;
+    if (p.typeLabel !== void 0) patch.type_label = p.typeLabel || null;
+    if (p.price !== void 0) patch.price = Number(p.price) || 0;
+    if (p.expense !== void 0) patch.expense = Number(p.expense) || 0;
+    if (p.performersCount !== void 0) patch.performers_count = p.performersCount === "" || p.performersCount == null ? null : Math.max(0, parseInt(p.performersCount, 10)) || 0;
+    if (p.paymentMethod !== void 0) patch.payment_method = p.paymentMethod || null;
+    if (p.status !== void 0) patch.status = p.status === "cancelled" ? "cancelled" : "planned";
+    if (p.comment !== void 0) patch.comment = p.comment || null;
+    const rows = await supabaseFetch("performances", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", body: JSON.stringify(patch) });
+    const pays = await supabaseFetch("performance_payments", `select=*&performance_id=eq.${req.params.id}`);
+    res.json({ performance: rows[0] ? perfOut(rows[0], pays) : null });
+  }));
+  app2.delete("/api/mvp/performances/:id", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0423\u0434\u0430\u043B\u044F\u0442\u044C \u043C\u043E\u0436\u0435\u0442 \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u0435\u0446" });
+    if (!supabaseEnabled) {
+      const i = mockPerformances.findIndex((x) => x.id === req.params.id);
+      if (i >= 0) mockPerformances.splice(i, 1);
+      return res.json({ ok: true });
+    }
+    await supabaseFetch("performances", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+    res.json({ ok: true });
+  }));
+  app2.post("/api/mvp/performances/:id/payments", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0414\u043E\u0431\u0430\u0432\u043B\u044F\u0442\u044C \u043E\u043F\u043B\u0430\u0442\u0443 \u043C\u043E\u0436\u0435\u0442 \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u0435\u0446" });
+    const p = req.body || {};
+    const amount = Number(p.amount);
+    if (!amount || amount <= 0) return res.status(400).json({ error: "\u0423\u043A\u0430\u0436\u0438\u0442\u0435 \u0441\u0443\u043C\u043C\u0443 \u0431\u043E\u043B\u044C\u0448\u0435 \u043D\u0443\u043B\u044F" });
+    if (!supabaseEnabled) {
+      const rec = mockPerformances.find((x) => x.id === req.params.id);
+      if (!rec) return res.status(404).json({ error: "\u0412\u044B\u0441\u0442\u0443\u043F\u043B\u0435\u043D\u0438\u0435 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E" });
+      rec.payments = rec.payments || [];
+      rec.payments.push({ id: uid(), amount, paidDate: p.date || todayStr(), method: p.method || "cash", comment: p.comment || null });
+      return res.status(201).json({ performance: perfOut(rec, rec.payments) });
+    }
+    await supabaseFetch("performance_payments", "", {
+      method: "POST",
+      body: JSON.stringify({ organization_id: session.organizationId, performance_id: req.params.id, amount, paid_date: p.date || todayStr(), method: p.method || "cash", comment: p.comment || null })
+    });
+    const [rows, pays] = await Promise.all([
+      supabaseFetch("performances", `select=*&id=eq.${req.params.id}`),
+      supabaseFetch("performance_payments", `select=*&performance_id=eq.${req.params.id}`)
+    ]);
+    res.status(201).json({ performance: rows[0] ? perfOut(rows[0], pays) : null });
+  }));
+  app2.delete("/api/mvp/performances/:id/payments/:pid", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) {
+      const rec = mockPerformances.find((x) => x.id === req.params.id);
+      if (rec) rec.payments = (rec.payments || []).filter((pp) => pp.id !== req.params.pid);
+      return res.json({ performance: rec ? perfOut(rec, rec.payments || []) : null });
+    }
+    await supabaseFetch("performance_payments", `id=eq.${req.params.pid}&organization_id=eq.${session.organizationId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+    const [rows, pays] = await Promise.all([
+      supabaseFetch("performances", `select=*&id=eq.${req.params.id}`),
+      supabaseFetch("performance_payments", `select=*&performance_id=eq.${req.params.id}`)
+    ]);
+    res.json({ performance: rows[0] ? perfOut(rows[0], pays) : null });
+  }));
+  const SETTINGS_KINDS = ["performance_type", "product_category", "group_level", "document_category"];
+  const SETTINGS_DEFAULTS = {
+    performance_type: ["\u0411\u0430\u0437\u043E\u0432\u044B\u0439 \u0442\u0430\u043D\u0435\u0446", "\u0422\u0430\u043D\u0435\u0446 \u0441 \u0438\u043D\u0442\u0435\u0440\u0430\u043A\u0442\u0438\u0432\u043E\u043C", "\u041D\u0435\u0441\u043A\u043E\u043B\u044C\u043A\u043E \u043D\u043E\u043C\u0435\u0440\u043E\u0432", "\u0418\u043D\u0434\u0438\u0432\u0438\u0434\u0443\u0430\u043B\u044C\u043D\u043E\u0435 \u0432\u044B\u0441\u0442\u0443\u043F\u043B\u0435\u043D\u0438\u0435", "\u0414\u0440\u0443\u0433\u043E\u0435"],
+    product_category: ["\u041C\u0435\u0440\u0447", "\u0424\u043E\u0440\u043C\u0430", "\u0410\u043A\u0441\u0435\u0441\u0441\u0443\u0430\u0440\u044B", "\u0421\u0443\u0432\u0435\u043D\u0438\u0440\u044B"],
+    group_level: ["\u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0430\u044E\u0449\u0430\u044F \u0433\u0440\u0443\u043F\u043F\u0430", "\u0410\u043D\u0441\u0430\u043C\u0431\u043B\u044C", "\u0418\u043D\u0434\u0438\u0432\u0438\u0434\u0443\u0430\u043B\u044C\u043D\u044B\u0435", "\u041C\u0438\u043D\u0438-\u0433\u0440\u0443\u043F\u043F\u0430", "\u0414\u0440\u0443\u0433\u043E\u0435"],
+    document_category: ["\u0410\u0440\u0435\u043D\u0434\u0430", "\u0423\u0441\u043B\u0443\u0433\u0438 \u2014 \u0443\u0431\u043E\u0440\u043A\u0430", "\u0423\u0441\u043B\u0443\u0433\u0438 \u2014 \u0432\u044B\u0432\u043E\u0437 \u043C\u0443\u0441\u043E\u0440\u0430", "\u041F\u043E\u0434\u0440\u044F\u0434\u0447\u0438\u043A\u0438 / \u043F\u043E\u0441\u0442\u0430\u0432\u0449\u0438\u043A\u0438", "\u041F\u0440\u043E\u0447\u0435\u0435"]
+  };
+  const mockSettings = [];
+  app2.get("/api/mvp/settings/lists", ah(async (req, res) => {
+    const session = getSession(req);
+    const kind = String(req.query.kind || "");
+    if (!SETTINGS_KINDS.includes(kind)) return res.status(400).json({ error: "\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0439 \u0441\u043F\u0440\u0430\u0432\u043E\u0447\u043D\u0438\u043A" });
+    let rows;
+    if (!supabaseEnabled) {
+      rows = mockSettings.filter((s) => s.kind === kind && s.organizationId === session.organizationId);
+    } else {
+      rows = await supabaseFetch("settings_lists", `select=*&organization_id=eq.${session.organizationId}&kind=eq.${kind}&is_active=eq.true&order=sort_order.asc,created_at.asc`);
+    }
+    const items = rows.map((r) => ({ id: r.id, label: r.label, sortOrder: r.sort_order ?? r.sortOrder ?? 0 }));
+    const isDefault = items.length === 0;
+    const out = isDefault ? SETTINGS_DEFAULTS[kind].map((label, i) => ({ id: `def:${kind}:${i}`, label, sortOrder: i })) : items;
+    res.json({ kind, items: out, isDefault });
+  }));
+  app2.post("/api/mvp/settings/lists", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0418\u0437\u043C\u0435\u043D\u044F\u0442\u044C \u0441\u043F\u0440\u0430\u0432\u043E\u0447\u043D\u0438\u043A\u0438 \u043C\u043E\u0436\u0435\u0442 \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u0435\u0446" });
+    const kind = String((req.body || {}).kind || "");
+    const label = String((req.body || {}).label || "").trim();
+    if (!SETTINGS_KINDS.includes(kind)) return res.status(400).json({ error: "\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0439 \u0441\u043F\u0440\u0430\u0432\u043E\u0447\u043D\u0438\u043A" });
+    if (!label) return res.status(400).json({ error: "\u0423\u043A\u0430\u0436\u0438\u0442\u0435 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435" });
+    const sortOrder = Number((req.body || {}).sortOrder) || 0;
+    if (!supabaseEnabled) {
+      const rec = { id: uid(), organizationId: session.organizationId, kind, label, sort_order: sortOrder, is_active: true };
+      mockSettings.push(rec);
+      return res.status(201).json({ item: { id: rec.id, label, sortOrder } });
+    }
+    const inserted = await supabaseFetch("settings_lists", "", {
+      method: "POST",
+      body: JSON.stringify({ organization_id: session.organizationId, kind, label, sort_order: sortOrder })
+    });
+    res.status(201).json({ item: { id: inserted[0].id, label: inserted[0].label, sortOrder: inserted[0].sort_order } });
+  }));
+  app2.patch("/api/mvp/settings/lists/:id", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    const b = req.body || {};
+    if (!supabaseEnabled) {
+      const rec = mockSettings.find((s) => s.id === req.params.id);
+      if (rec) {
+        if (b.label !== void 0) rec.label = String(b.label).trim();
+        if (b.sortOrder !== void 0) rec.sort_order = Number(b.sortOrder) || 0;
+        if (b.isActive !== void 0) rec.is_active = !!b.isActive;
+      }
+      return res.json({ ok: true });
+    }
+    const patch = {};
+    if (b.label !== void 0) patch.label = String(b.label).trim();
+    if (b.sortOrder !== void 0) patch.sort_order = Number(b.sortOrder) || 0;
+    if (b.isActive !== void 0) patch.is_active = !!b.isActive;
+    await supabaseFetch("settings_lists", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(patch) });
+    res.json({ ok: true });
+  }));
+  app2.delete("/api/mvp/settings/lists/:id", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) {
+      const i = mockSettings.findIndex((s) => s.id === req.params.id);
+      if (i >= 0) mockSettings.splice(i, 1);
+      return res.json({ ok: true });
+    }
+    await supabaseFetch("settings_lists", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+    res.json({ ok: true });
+  }));
+  const prodOut = (pr) => ({
+    id: pr.id,
+    name: pr.name,
+    category: pr.category ?? pr.category ?? null,
+    sku: pr.sku ?? null,
+    salePrice: Number(pr.salePrice ?? pr.sale_price) || 0,
+    costPrice: Number(pr.costPrice ?? pr.cost_price) || 0,
+    minStock: Number(pr.minStock ?? pr.min_stock) || 0,
+    comment: pr.comment ?? null,
+    description: pr.description ?? null,
+    echoPrice: Number(pr.echoPrice ?? pr.echo_price) || 0,
+    isActive: (pr.isActive ?? pr.is_active) !== false,
+    photoUrl: pr.photoUrl ?? pr.photo_url ?? null,
+    branchId: pr.branchId ?? pr.branch_id ?? null
+  });
+  const mockWriteoffs = [];
+  const loadProducts = async (session) => {
+    if (!supabaseEnabled) {
+      const filt = (arr) => session.role === "owner" ? arr : arr.filter((x) => canSeeBranch(session, x.branchId));
+      return {
+        products: filt(mockProducts).map(prodOut),
+        sales: filt(mockSales).map((s) => ({ id: s.id, productId: s.productId, qty: s.qty, amount: Number(s.amount), method: s.method, soldBy: s.soldBy, date: s.saleDate, branchId: s.branchId })),
+        receipts: filt(mockReceipts).map((r) => ({ id: r.id, productId: r.productId, qty: r.qty, costPrice: Number(r.costPrice) || 0, date: r.movementDate, comment: r.comment, branchId: r.branchId })),
+        writeoffs: filt(mockWriteoffs).map((w) => ({ id: w.id, productId: w.productId, qty: w.qty, reason: w.reason, date: w.writeoffDate, comment: w.comment, branchId: w.branchId }))
+      };
+    }
+    const orgFilter = `organization_id=eq.${session.organizationId}`;
+    const [products, sales, receipts, writeoffs] = await Promise.all([
+      supabaseFetch("products", `select=*&${orgFilter}&order=name.asc`),
+      supabaseFetch("product_sales", `select=*&${orgFilter}&order=sale_date.desc`),
+      supabaseFetch("product_stock_movements", `select=*&${orgFilter}&order=movement_date.desc`),
+      supabaseFetch("product_writeoffs", `select=*&${orgFilter}&order=writeoff_date.desc`).catch(() => [])
+    ]);
+    return {
+      products: products.map(prodOut),
+      sales: sales.map((s) => ({ id: s.id, productId: s.product_id, qty: s.qty, amount: Number(s.amount), method: s.method, soldBy: s.sold_by, date: s.sale_date, branchId: s.branch_id })),
+      receipts: receipts.map((r) => ({ id: r.id, productId: r.product_id, qty: r.qty, costPrice: Number(r.cost_price) || 0, date: r.movement_date, comment: r.comment, branchId: r.branch_id })),
+      writeoffs: writeoffs.map((w) => ({ id: w.id, productId: w.product_id, qty: w.qty, reason: w.reason, date: w.writeoff_date, comment: w.comment, branchId: w.branch_id }))
+    };
+  };
+  const stockBalance = (productId, sales, receipts, writeoffs = []) => receipts.filter((r) => r.productId === productId).reduce((s, r) => s + r.qty, 0) - sales.filter((s) => s.productId === productId).reduce((acc, s) => acc + s.qty, 0) - writeoffs.filter((w) => w.productId === productId).reduce((acc, w) => acc + w.qty, 0);
+  app2.get("/api/mvp/products", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role === "teacher") return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D" });
+    const { products, sales, receipts, writeoffs } = await loadProducts(session);
+    res.json({ products: products.map((pr) => {
+      const balance = stockBalance(pr.id, sales, receipts, writeoffs);
+      return { ...pr, stock: balance, low: balance <= pr.minStock };
+    }) });
+  }));
+  app2.get("/api/mvp/shop", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) {
+      const items2 = mockProducts.filter((p) => Number(p.salePrice) > 0).map((p) => ({ id: p.id, name: p.name, category: p.category || null, salePrice: Number(p.salePrice) || 0, photoUrl: p.photoUrl || null }));
+      return res.json({ products: items2 });
+    }
+    const rows = await supabaseFetch("products", `select=*&organization_id=eq.${session.organizationId}&order=name.asc`);
+    const items = rows.filter((r) => (r.is_active ?? true) && Number(r.sale_price) > 0).map((r) => ({ id: r.id, name: r.name, category: r.category || null, salePrice: Number(r.sale_price) || 0, photoUrl: r.photo_url || null }));
+    res.json({ products: items });
+  }));
+  const ORDER_STATUSES = ["new", "confirmed", "ready", "done", "cancelled"];
+  const mockOrders = [];
+  app2.post("/api/mvp/shop/orders", ah(async (req, res) => {
+    const session = getSession(req);
+    const b = req.body || {};
+    const rawItems = Array.isArray(b.items) ? b.items : [];
+    if (rawItems.length === 0) return res.status(400).json({ error: "\u041A\u043E\u0440\u0437\u0438\u043D\u0430 \u043F\u0443\u0441\u0442\u0430" });
+    let priceOf;
+    if (!supabaseEnabled) {
+      priceOf = (id) => {
+        const p = mockProducts.find((x) => x.id === id);
+        return p ? { name: p.name, price: Number(p.salePrice) || 0, branchId: p.branchId } : null;
+      };
+    } else {
+      const ids = rawItems.map((i) => i.productId).filter(Boolean);
+      const rows = ids.length ? await supabaseFetch("products", `select=id,name,sale_price,branch_id&organization_id=eq.${session.organizationId}&id=in.(${ids.join(",")})`) : [];
+      priceOf = (id) => {
+        const p = rows.find((x) => x.id === id);
+        return p ? { name: p.name, price: Number(p.sale_price) || 0, branchId: p.branch_id } : null;
+      };
+    }
+    const items = rawItems.map((i) => {
+      const meta = priceOf(i.productId);
+      const qty = Math.max(1, parseInt(i.qty, 10) || 1);
+      const price = meta?.price || 0;
+      return { productId: i.productId, productName: meta?.name || i.productName || "\u0422\u043E\u0432\u0430\u0440", qty, price, amount: qty * price, branchId: meta?.branchId || null };
+    }).filter((i) => i.productName);
+    const total = items.reduce((s, i) => s + i.amount, 0);
+    const branchId = b.branchId || items[0]?.branchId || session.dbBranchId || null;
+    if (!supabaseEnabled) {
+      const order = { id: uid(), createdAt: (/* @__PURE__ */ new Date()).toISOString(), status: "new", customerName: b.customerName || "", customerPhone: b.customerPhone || "", comment: b.comment || null, total, branchId, items };
+      mockOrders.unshift(order);
+      return res.status(201).json({ order });
+    }
+    const inserted = await supabaseFetch("product_orders", "", {
+      method: "POST",
+      body: JSON.stringify({ organization_id: session.organizationId, branch_id: branchId, student_id: b.studentId || null, customer_name: b.customerName || null, customer_phone: b.customerPhone || null, status: "new", total, comment: b.comment || null })
+    });
+    const orderId = inserted[0].id;
+    await supabaseFetch("product_order_items", "", {
+      method: "POST",
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify(items.map((i) => ({ order_id: orderId, product_id: i.productId || null, product_name: i.productName, qty: i.qty, price: i.price, amount: i.amount })))
+    });
+    res.status(201).json({ order: { id: orderId, status: "new", total, items } });
+  }));
+  app2.get("/api/mvp/shop/orders", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!["owner", "branch_manager", "admin"].includes(session.role)) return res.status(403).json({ error: "\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443, \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0435\u043C\u0443 \u0438 \u0430\u0434\u043C\u0438\u043D\u0438\u0441\u0442\u0440\u0430\u0442\u043E\u0440\u0443" });
+    if (!supabaseEnabled) {
+      const list = session.role === "owner" ? mockOrders : mockOrders.filter((o) => canSeeBranch(session, o.branchId));
+      return res.json({ orders: list });
+    }
+    const orders = await supabaseFetch("product_orders", `select=*&organization_id=eq.${session.organizationId}&order=created_at.desc`);
+    const scoped = orders.filter((o) => canSeeBranch(session, o.branch_id));
+    const ids = scoped.map((o) => o.id);
+    const allItems = ids.length ? await supabaseFetch("product_order_items", `select=*&order_id=in.(${ids.join(",")})`) : [];
+    res.json({ orders: scoped.map((o) => ({
+      id: o.id,
+      createdAt: o.created_at,
+      status: o.status,
+      customerName: o.customer_name || "",
+      customerPhone: o.customer_phone || "",
+      comment: o.comment || null,
+      total: Number(o.total) || 0,
+      branchId: o.branch_id,
+      items: allItems.filter((it) => it.order_id === o.id).map((it) => ({ productName: it.product_name, qty: it.qty, price: Number(it.price) || 0, amount: Number(it.amount) || 0 }))
+    })) });
+  }));
+  app2.patch("/api/mvp/shop/orders/:id", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!["owner", "branch_manager", "admin"].includes(session.role)) return res.status(403).json({ error: "\u041D\u0435\u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E \u043F\u0440\u0430\u0432" });
+    const status = String((req.body || {}).status || "");
+    if (!ORDER_STATUSES.includes(status)) return res.status(400).json({ error: "\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0439 \u0441\u0442\u0430\u0442\u0443\u0441" });
+    if (!supabaseEnabled) {
+      const o = mockOrders.find((x) => x.id === req.params.id);
+      if (o) {
+        if (status === "done" && !o.fulfilledAt) {
+          o.fulfilledAt = (/* @__PURE__ */ new Date()).toISOString();
+          for (const it of o.items || []) {
+            if (!it.productId) continue;
+            mockSales.unshift({ id: uid(), productId: it.productId, qty: it.qty, amount: it.amount, method: "transfer", soldBy: "\u041C\u0430\u0433\u0430\u0437\u0438\u043D (\u0437\u0430\u043A\u0430\u0437)", saleDate: todayStr(), branchId: o.branchId || null });
+          }
+        }
+        o.status = status;
+      }
+      return res.json({ ok: true, status });
+    }
+    const cur = await supabaseFetch("product_orders", `select=id,status,fulfilled_at,branch_id&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`);
+    if (!cur[0]) return res.status(404).json({ error: "\u0417\u0430\u043A\u0430\u0437 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+    const patch = { status, updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+    let fulfilled = false;
+    if (status === "done" && !cur[0].fulfilled_at) {
+      patch.fulfilled_at = (/* @__PURE__ */ new Date()).toISOString();
+      const items = await supabaseFetch("product_order_items", `select=*&order_id=eq.${req.params.id}`);
+      const sales = items.filter((it) => it.product_id).map((it) => ({
+        organization_id: session.organizationId,
+        branch_id: cur[0].branch_id || null,
+        product_id: it.product_id,
+        qty: it.qty,
+        amount: Number(it.amount) || 0,
+        method: "transfer",
+        sold_by: "\u041C\u0430\u0433\u0430\u0437\u0438\u043D (\u0437\u0430\u043A\u0430\u0437)",
+        sale_date: todayStr(),
+        comment: "\u0412\u044B\u0434\u0430\u0447\u0430 \u0437\u0430\u043A\u0430\u0437\u0430 \u0438\u0437 \u043C\u0430\u0433\u0430\u0437\u0438\u043D\u0430"
+      }));
+      if (sales.length) await supabaseFetch("product_sales", "", { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify(sales) });
+      fulfilled = true;
+    }
+    await supabaseFetch("product_orders", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(patch) });
+    res.json({ ok: true, status, fulfilled });
+  }));
+  const echoStaff = ["owner", "branch_manager", "admin", "teacher"];
+  const mockEchoBalances = {};
+  const mockEchoTx = [];
+  const echoTxOut = (t) => ({
+    id: t.id,
+    studentId: t.studentId ?? t.student_id,
+    amount: Number(t.amount) || 0,
+    kind: t.kind || "grant",
+    reason: t.reason ?? null,
+    productId: t.productId ?? t.product_id ?? null,
+    balanceAfter: Number(t.balanceAfter ?? t.balance_after) || 0,
+    createdBy: t.createdBy ?? t.created_by ?? null,
+    createdAt: t.createdAt ?? t.created_at
+  });
+  const applyEcho = async (session, studentId, amount, kind, reason, productId) => {
+    if (!supabaseEnabled) {
+      const cur2 = mockEchoBalances[studentId] ?? 0;
+      const next2 = cur2 + amount;
+      if (next2 < 0) throw new Error("INSUFFICIENT");
+      mockEchoBalances[studentId] = next2;
+      const tx = { id: uid(), studentId, amount, kind, reason, productId, balanceAfter: next2, createdBy: session.fullName || null, createdAt: (/* @__PURE__ */ new Date()).toISOString() };
+      mockEchoTx.unshift(tx);
+      return { balance: next2, tx: echoTxOut(tx) };
+    }
+    const st = await supabaseFetch("students", `select=id,echo_balance&id=eq.${studentId}&organization_id=eq.${session.organizationId}&limit=1`);
+    if (!st[0]) throw new Error("NOT_FOUND");
+    const cur = Number(st[0].echo_balance) || 0;
+    const next = cur + amount;
+    if (next < 0) throw new Error("INSUFFICIENT");
+    await supabaseFetch("students", `id=eq.${studentId}&organization_id=eq.${session.organizationId}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ echo_balance: next }) });
+    const ins = await supabaseFetch("echo_transactions", "", { method: "POST", body: JSON.stringify({ organization_id: session.organizationId, student_id: studentId, amount, kind, reason, product_id: productId, balance_after: next, created_by: session.fullName || null }) });
+    return { balance: next, tx: ins[0] ? echoTxOut(ins[0]) : null };
+  };
+  app2.get("/api/mvp/shop/echo/catalog", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) {
+      const items2 = mockProducts.filter((p) => p.isActive !== false && Number(p.echoPrice) > 0).map((p) => ({ id: p.id, name: p.name, category: p.category || null, echoPrice: Number(p.echoPrice) || 0, description: p.description || null, photoUrl: p.photoUrl || null })).sort((a, b) => a.echoPrice - b.echoPrice);
+      return res.json({ products: items2 });
+    }
+    const rows = await supabaseFetch("products", `select=*&organization_id=eq.${session.organizationId}`);
+    const items = rows.filter((r) => (r.is_active ?? true) && Number(r.echo_price) > 0).map((r) => ({ id: r.id, name: r.name, category: r.category || null, echoPrice: Number(r.echo_price) || 0, description: r.description || null, photoUrl: r.photo_url || null })).sort((a, b) => a.echoPrice - b.echoPrice);
+    res.json({ products: items });
+  }));
+  app2.get("/api/mvp/shop/echo/wallet", ah(async (req, res) => {
+    const session = getSession(req);
+    const studentId = String(req.query.studentId || "");
+    if (!studentId) return res.status(400).json({ error: "\u041D\u0435 \u0443\u043A\u0430\u0437\u0430\u043D \u0443\u0447\u0435\u043D\u0438\u043A" });
+    if (!supabaseEnabled) {
+      return res.json({ balance: mockEchoBalances[studentId] ?? 0, transactions: mockEchoTx.filter((t) => t.studentId === studentId).slice(0, 50).map(echoTxOut) });
+    }
+    const st = await supabaseFetch("students", `select=id,echo_balance&id=eq.${studentId}&organization_id=eq.${session.organizationId}&limit=1`);
+    const balance = st[0] ? Number(st[0].echo_balance) || 0 : 0;
+    const tx = await supabaseFetch("echo_transactions", `select=*&student_id=eq.${studentId}&order=created_at.desc&limit=50`).catch(() => []);
+    res.json({ balance, transactions: tx.map(echoTxOut) });
+  }));
+  app2.get("/api/mvp/shop/echo/students", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!echoStaff.includes(session.role)) return res.status(403).json({ error: "\u041D\u0435\u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E \u043F\u0440\u0430\u0432" });
+    if (!supabaseEnabled) {
+      const list = initialStudents.filter((s) => session.role === "owner" || canSeeBranch(session, s.branchId)).map((s) => ({ id: s.id, name: s.name, balance: mockEchoBalances[s.id] ?? 0 }));
+      return res.json({ students: list });
+    }
+    const rows = await supabaseFetch("students", `select=id,first_name,last_name,full_name,echo_balance,branch_id&organization_id=eq.${session.organizationId}&status=neq.archived&order=first_name.asc`);
+    const scoped = rows.filter((r) => canSeeBranch(session, r.branch_id));
+    res.json({ students: scoped.map((r) => ({ id: r.id, name: [r.first_name, r.last_name].filter(Boolean).join(" ") || r.full_name || "\u0423\u0447\u0435\u043D\u0438\u043A", balance: Number(r.echo_balance) || 0 })) });
+  }));
+  app2.post("/api/mvp/shop/echo/grant", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!echoStaff.includes(session.role)) return res.status(403).json({ error: "\u041D\u0435\u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E \u043F\u0440\u0430\u0432" });
+    const b = req.body || {};
+    const studentId = String(b.studentId || "");
+    const amount = Math.trunc(Number(b.amount) || 0);
+    if (!studentId) return res.status(400).json({ error: "\u041D\u0435 \u0443\u043A\u0430\u0437\u0430\u043D \u0443\u0447\u0435\u043D\u0438\u043A" });
+    if (!amount) return res.status(400).json({ error: "\u0423\u043A\u0430\u0436\u0438\u0442\u0435 \u043A\u043E\u043B\u0438\u0447\u0435\u0441\u0442\u0432\u043E \u042D\u0445\u043E\u0411\u0430\u043A\u0441\u043E\u0432 (\u0441\u043E \u0437\u043D\u0430\u043A\u043E\u043C \u043C\u0438\u043D\u0443\u0441 \u2014 \u0441\u043F\u0438\u0441\u0430\u043D\u0438\u0435)" });
+    try {
+      const { balance, tx } = await applyEcho(session, studentId, amount, "grant", (b.reason || "").toString().trim() || null, null);
+      res.json({ balance, transaction: tx });
+    } catch (e) {
+      if (e?.message === "INSUFFICIENT") return res.status(400).json({ error: "\u041D\u0435\u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E \u0431\u0430\u043B\u0430\u043D\u0441\u0430 \u0434\u043B\u044F \u0441\u043F\u0438\u0441\u0430\u043D\u0438\u044F" });
+      if (e?.message === "NOT_FOUND") return res.status(404).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+      throw e;
+    }
+  }));
+  app2.post("/api/mvp/shop/echo/purchase", ah(async (req, res) => {
+    const session = getSession(req);
+    const b = req.body || {};
+    const studentId = String(b.studentId || "");
+    const productId = String(b.productId || "");
+    if (!studentId || !productId) return res.status(400).json({ error: "\u041D\u0435 \u0443\u043A\u0430\u0437\u0430\u043D \u0443\u0447\u0435\u043D\u0438\u043A \u0438\u043B\u0438 \u0442\u043E\u0432\u0430\u0440" });
+    let prod = null;
+    if (!supabaseEnabled) {
+      const p = mockProducts.find((x) => x.id === productId);
+      if (p) prod = { name: p.name, echoPrice: Number(p.echoPrice) || 0, active: p.isActive !== false };
+    } else {
+      const rows = await supabaseFetch("products", `select=name,echo_price,is_active&id=eq.${productId}&organization_id=eq.${session.organizationId}&limit=1`);
+      if (rows[0]) prod = { name: rows[0].name, echoPrice: Number(rows[0].echo_price) || 0, active: rows[0].is_active ?? true };
+    }
+    if (!prod) return res.status(404).json({ error: "\u0422\u043E\u0432\u0430\u0440 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+    if (!prod.active || prod.echoPrice <= 0) return res.status(400).json({ error: "\u0422\u043E\u0432\u0430\u0440 \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0434\u043B\u044F \u043F\u043E\u043A\u0443\u043F\u043A\u0438 \u0437\u0430 \u042D\u0445\u043E\u0411\u0430\u043A\u0441\u044B" });
+    try {
+      const { balance, tx } = await applyEcho(session, studentId, -prod.echoPrice, "purchase", `\u041F\u043E\u043A\u0443\u043F\u043A\u0430: ${prod.name}`, productId);
+      res.json({ balance, transaction: tx, productName: prod.name });
+    } catch (e) {
+      if (e?.message === "INSUFFICIENT") return res.status(400).json({ error: "\u041D\u0435\u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E \u042D\u0445\u043E\u0411\u0430\u043A\u0441\u043E\u0432 \u0434\u043B\u044F \u043F\u043E\u043A\u0443\u043F\u043A\u0438" });
+      if (e?.message === "NOT_FOUND") return res.status(404).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+      throw e;
+    }
+  }));
+  app2.post("/api/mvp/marketing/broadcast", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    const token = process.env.WHATSAPP_TOKEN, phoneId = process.env.WHATSAPP_PHONE_ID;
+    if (!token || !phoneId) return res.status(503).json({ error: "\u0410\u0432\u0442\u043E\u0440\u0430\u0441\u0441\u044B\u043B\u043A\u0430 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D\u0430 (\u043D\u0435\u0442 WHATSAPP_TOKEN / WHATSAPP_PHONE_ID)" });
+    const recipients = Array.isArray((req.body || {}).recipients) ? req.body.recipients : [];
+    const template = String((req.body || {}).template || "");
+    if (recipients.length === 0) return res.status(400).json({ error: "\u041D\u0435\u0442 \u043F\u043E\u043B\u0443\u0447\u0430\u0442\u0435\u043B\u0435\u0439" });
+    const results = [];
+    for (const r of recipients) {
+      const phone = String(r.phone || "").replace(/\D/g, "");
+      if (!phone) {
+        results.push({ phone: r.phone, ok: false, error: "\u043D\u0435\u0442 \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u0430" });
+        continue;
+      }
+      const text = template.replace(/\{имя\}/g, String(r.name || "").split(" ")[0] || "");
+      try {
+        const resp = await fetch(`https://graph.facebook.com/v20.0/${phoneId}/messages`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ messaging_product: "whatsapp", to: phone, type: "text", text: { body: text } })
+        });
+        results.push({ phone, ok: resp.ok });
+      } catch (e) {
+        results.push({ phone, ok: false, error: e?.message });
+      }
+    }
+    res.json({ sent: results.filter((x) => x.ok).length, total: recipients.length, results });
+  }));
+  app2.get("/api/mvp/products/sales", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role === "teacher") return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D" });
+    const { products, sales } = await loadProducts(session);
+    const nameOf = (id) => products.find((p) => p.id === id)?.name || "\u2014";
+    const q = req.query;
+    let from = q.from, to = q.to;
+    if (session.role === "admin") {
+      from = todayStr();
+      to = todayStr();
+    }
+    let list = sales;
+    if (from) list = list.filter((s) => s.date >= from);
+    if (to) list = list.filter((s) => s.date <= to);
+    res.json({ sales: list.map((s) => ({ ...s, productName: nameOf(s.productId) })) });
+  }));
+  app2.get("/api/mvp/products/stock", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager") return res.status(403).json({ error: "\u041E\u0441\u0442\u0430\u0442\u043A\u0438 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u044B \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443 \u0438 \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0435\u043C\u0443" });
+    const { products, sales, receipts, writeoffs } = await loadProducts(session);
+    const rows = products.map((pr) => {
+      const received = receipts.filter((r) => r.productId === pr.id).reduce((s, r) => s + r.qty, 0);
+      const sold = sales.filter((s) => s.productId === pr.id).reduce((s, x) => s + x.qty, 0);
+      const written = writeoffs.filter((w) => w.productId === pr.id).reduce((s, x) => s + x.qty, 0);
+      const balance = received - sold - written;
+      return { productId: pr.id, name: pr.name, sku: pr.sku, received, sold, written, balance, costPrice: pr.costPrice, salePrice: pr.salePrice, stockValue: balance * pr.costPrice, retailValue: balance * pr.salePrice, minStock: pr.minStock, low: balance <= pr.minStock };
+    });
+    const summary = {
+      units: rows.reduce((s, r) => s + Math.max(0, r.balance), 0),
+      stockValue: rows.reduce((s, r) => s + Math.max(0, r.balance) * r.costPrice, 0),
+      retailValue: rows.reduce((s, r) => s + Math.max(0, r.balance) * r.salePrice, 0),
+      positions: rows.filter((r) => r.balance > 0).length
+    };
+    res.json({ stock: rows, summary });
+  }));
+  app2.get("/api/mvp/products/writeoffs", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager") return res.status(403).json({ error: "\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443 \u0438 \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0435\u043C\u0443" });
+    const { products, writeoffs } = await loadProducts(session);
+    const nameOf = (id) => products.find((p) => p.id === id)?.name || "\u2014";
+    res.json({ writeoffs: writeoffs.map((w) => ({ ...w, productName: nameOf(w.productId) })) });
+  }));
+  app2.get("/api/mvp/products/receipts", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager") return res.status(403).json({ error: "\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443 \u0438 \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0435\u043C\u0443" });
+    const { products, receipts } = await loadProducts(session);
+    const nameOf = (id) => products.find((p) => p.id === id)?.name || "\u2014";
+    res.json({ receipts: receipts.map((r) => ({ ...r, productName: nameOf(r.productId) })) });
+  }));
+  app2.get("/api/mvp/products/overview", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager") return res.status(403).json({ error: "\u0410\u043D\u0430\u043B\u0438\u0442\u0438\u043A\u0430 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0430 \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443 \u0438 \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0435\u043C\u0443" });
+    const q = req.query;
+    const r = periodRanges(q.period, q.from, q.to);
+    const { products, sales, receipts, writeoffs } = await loadProducts(session);
+    const costOf = (id) => products.find((p) => p.id === id)?.costPrice || 0;
+    const sumRev = (range) => sales.filter((s) => inRange(s.date, range)).reduce((acc, s) => acc + s.amount, 0);
+    const curRev = sumRev(r.cur), prevRev = sumRev(r.prev), yoyRev = sumRev(r.yoy);
+    const curSales = sales.filter((s) => inRange(s.date, r.cur));
+    const unitsSold = curSales.reduce((s, x) => s + x.qty, 0);
+    const avgCheck = curSales.length > 0 ? Math.round(curRev / curSales.length) : 0;
+    const grossProfit = curSales.reduce((acc, s) => acc + (s.amount - s.qty * costOf(s.productId)), 0);
+    const margin = curRev > 0 ? Math.round(grossProfit / curRev * 100) : 0;
+    const lowStock = products.map((pr) => ({ id: pr.id, name: pr.name, stock: stockBalance(pr.id, sales, receipts, writeoffs), minStock: pr.minStock })).filter((x) => x.stock <= x.minStock);
+    const top = products.map((pr) => ({ id: pr.id, name: pr.name, revenue: sales.filter((s) => s.productId === pr.id && inRange(s.date, r.cur)).reduce((a, s) => a + s.amount, 0), qty: sales.filter((s) => s.productId === pr.id && inRange(s.date, r.cur)).reduce((a, s) => a + s.qty, 0) })).filter((x) => x.revenue > 0).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
+    let stockUnits = 0, stockValue = 0, retailValue = 0;
+    for (const pr of products) {
+      const bal = Math.max(0, stockBalance(pr.id, sales, receipts, writeoffs));
+      stockUnits += bal;
+      stockValue += bal * pr.costPrice;
+      retailValue += bal * pr.salePrice;
+    }
+    res.json({
+      revenue: { total: curRev, momPct: pctDelta(curRev, prevRev), yoyPct: pctDelta(curRev, yoyRev) },
+      unitsSold,
+      avgCheck,
+      grossProfit,
+      margin,
+      lowStock,
+      top,
+      stockUnits,
+      stockValue,
+      retailValue
+    });
+  }));
+  app2.post("/api/mvp/products", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager") return res.status(403).json({ error: "\u0421\u043E\u0437\u0434\u0430\u0432\u0430\u0442\u044C \u0442\u043E\u0432\u0430\u0440\u044B \u043C\u043E\u0436\u0435\u0442 \u0432\u043B\u0430\u0434\u0435\u043B\u0435\u0446 \u0438\u043B\u0438 \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0438\u0439" });
+    const p = req.body || {};
+    if (!String(p.name || "").trim()) return res.status(400).json({ error: "\u0423\u043A\u0430\u0436\u0438\u0442\u0435 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u0442\u043E\u0432\u0430\u0440\u0430" });
+    if (!supabaseEnabled) {
+      const rec = { id: uid(), name: String(p.name).trim(), category: p.category || null, sku: p.sku || null, salePrice: Number(p.salePrice) || 0, costPrice: Number(p.costPrice) || 0, minStock: Number(p.minStock) || 0, comment: p.comment || null, description: p.description || null, echoPrice: Number(p.echoPrice) || 0, isActive: p.isActive !== false, photoUrl: p.photoUrl || null, branchId: p.branchId || session.dbBranchId || demoBranchAlmaty };
+      mockProducts.unshift(rec);
+      return res.status(201).json({ product: { ...prodOut(rec), stock: 0, low: 0 <= rec.minStock } });
+    }
+    const inserted = await supabaseFetch("products", "", {
+      method: "POST",
+      body: JSON.stringify({ organization_id: session.organizationId, branch_id: p.branchId || session.dbBranchId || null, name: String(p.name).trim(), category: p.category || null, sku: p.sku || null, sale_price: Number(p.salePrice) || 0, cost_price: Number(p.costPrice) || 0, min_stock: Number(p.minStock) || 0, comment: p.comment || null, description: p.description || null, echo_price: Number(p.echoPrice) || 0, is_active: p.isActive !== false, photo_url: p.photoUrl || null })
+    });
+    res.status(201).json({ product: { ...prodOut(inserted[0]), stock: 0, low: 0 <= (Number(p.minStock) || 0) } });
+  }));
+  app2.patch("/api/mvp/products/:id", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager") return res.status(403).json({ error: "\u041D\u0435\u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E \u043F\u0440\u0430\u0432" });
+    const p = req.body || {};
+    if (!supabaseEnabled) {
+      const rec = mockProducts.find((x) => x.id === req.params.id);
+      if (!rec) return res.status(404).json({ error: "\u0422\u043E\u0432\u0430\u0440 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+      ["name", "category", "sku", "comment", "description", "photoUrl"].forEach((k) => {
+        if (p[k] !== void 0) rec[k] = p[k];
+      });
+      if (p.salePrice !== void 0) rec.salePrice = Number(p.salePrice) || 0;
+      if (p.costPrice !== void 0) rec.costPrice = Number(p.costPrice) || 0;
+      if (p.minStock !== void 0) rec.minStock = Number(p.minStock) || 0;
+      if (p.echoPrice !== void 0) rec.echoPrice = Number(p.echoPrice) || 0;
+      if (p.isActive !== void 0) rec.isActive = !!p.isActive;
+      return res.json({ product: prodOut(rec) });
+    }
+    const patch = { updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+    if (p.name !== void 0) patch.name = p.name;
+    if (p.category !== void 0) patch.category = p.category || null;
+    if (p.sku !== void 0) patch.sku = p.sku || null;
+    if (p.photoUrl !== void 0) patch.photo_url = p.photoUrl || null;
+    if (p.salePrice !== void 0) patch.sale_price = Number(p.salePrice) || 0;
+    if (p.costPrice !== void 0) patch.cost_price = Number(p.costPrice) || 0;
+    if (p.minStock !== void 0) patch.min_stock = Number(p.minStock) || 0;
+    if (p.comment !== void 0) patch.comment = p.comment || null;
+    if (p.description !== void 0) patch.description = p.description || null;
+    if (p.echoPrice !== void 0) patch.echo_price = Number(p.echoPrice) || 0;
+    if (p.isActive !== void 0) patch.is_active = !!p.isActive;
+    const rows = await supabaseFetch("products", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", body: JSON.stringify(patch) });
+    res.json({ product: rows[0] ? prodOut(rows[0]) : null });
+  }));
+  app2.post("/api/mvp/products/sales", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role === "teacher") return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D" });
+    const p = req.body || {};
+    const qty = Number(p.qty) || 1;
+    if (!p.productId) return res.status(400).json({ error: "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0442\u043E\u0432\u0430\u0440" });
+    if (qty <= 0) return res.status(400).json({ error: "\u041A\u043E\u043B\u0438\u0447\u0435\u0441\u0442\u0432\u043E \u0434\u043E\u043B\u0436\u043D\u043E \u0431\u044B\u0442\u044C \u0431\u043E\u043B\u044C\u0448\u0435 \u043D\u0443\u043B\u044F" });
+    if (!supabaseEnabled) {
+      const prod2 = mockProducts.find((x) => x.id === p.productId);
+      const amount2 = Number(p.amount) || qty * (prod2?.salePrice || 0);
+      const rec = { id: uid(), productId: p.productId, qty, amount: amount2, method: p.method || "cash", soldBy: p.soldBy || session.fullName, saleDate: p.date || todayStr(), branchId: p.branchId || session.dbBranchId || demoBranchAlmaty, comment: p.comment || null };
+      mockSales.unshift(rec);
+      return res.status(201).json({ sale: { id: rec.id, productId: rec.productId, productName: prod2?.name || "\u2014", qty, amount: amount2, method: rec.method, soldBy: rec.soldBy, date: rec.saleDate } });
+    }
+    const prodRows = await supabaseFetch("products", `select=*&id=eq.${p.productId}&organization_id=eq.${session.organizationId}`);
+    const prod = prodRows[0];
+    const amount = Number(p.amount) || qty * (Number(prod?.sale_price) || 0);
+    const inserted = await supabaseFetch("product_sales", "", {
+      method: "POST",
+      body: JSON.stringify({ organization_id: session.organizationId, branch_id: p.branchId || session.dbBranchId || null, product_id: p.productId, qty, amount, method: p.method || "cash", sold_by: p.soldBy || session.fullName, sale_date: p.date || todayStr(), comment: p.comment || null })
+    });
+    res.status(201).json({ sale: { id: inserted[0].id, productId: p.productId, productName: prod?.name || "\u2014", qty, amount, method: inserted[0].method, soldBy: inserted[0].sold_by, date: inserted[0].sale_date } });
+  }));
+  app2.post("/api/mvp/products/receipts", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager") return res.status(403).json({ error: "\u041F\u043E\u0441\u0442\u0443\u043F\u043B\u0435\u043D\u0438\u044F \u043E\u0444\u043E\u0440\u043C\u043B\u044F\u0435\u0442 \u0432\u043B\u0430\u0434\u0435\u043B\u0435\u0446 \u0438\u043B\u0438 \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0438\u0439" });
+    const p = req.body || {};
+    const qty = Number(p.qty) || 0;
+    if (!p.productId) return res.status(400).json({ error: "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0442\u043E\u0432\u0430\u0440" });
+    if (qty <= 0) return res.status(400).json({ error: "\u041A\u043E\u043B\u0438\u0447\u0435\u0441\u0442\u0432\u043E \u0434\u043E\u043B\u0436\u043D\u043E \u0431\u044B\u0442\u044C \u0431\u043E\u043B\u044C\u0448\u0435 \u043D\u0443\u043B\u044F" });
+    if (!supabaseEnabled) {
+      const rec = { id: uid(), productId: p.productId, qty, costPrice: Number(p.costPrice) || 0, movementDate: p.date || todayStr(), comment: p.comment || null, branchId: p.branchId || session.dbBranchId || demoBranchAlmaty };
+      mockReceipts.unshift(rec);
+      return res.status(201).json({ receipt: { id: rec.id, productId: rec.productId, qty, costPrice: rec.costPrice, date: rec.movementDate, comment: rec.comment } });
+    }
+    const inserted = await supabaseFetch("product_stock_movements", "", {
+      method: "POST",
+      body: JSON.stringify({ organization_id: session.organizationId, branch_id: p.branchId || session.dbBranchId || null, product_id: p.productId, qty, cost_price: Number(p.costPrice) || null, movement_date: p.date || todayStr(), comment: p.comment || null })
+    });
+    res.status(201).json({ receipt: { id: inserted[0].id, productId: p.productId, qty, costPrice: Number(inserted[0].cost_price) || 0, date: inserted[0].movement_date, comment: inserted[0].comment } });
+  }));
+  app2.post("/api/mvp/products/writeoffs", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager") return res.status(403).json({ error: "\u0421\u043F\u0438\u0441\u0430\u043D\u0438\u044F \u043E\u0444\u043E\u0440\u043C\u043B\u044F\u0435\u0442 \u0432\u043B\u0430\u0434\u0435\u043B\u0435\u0446 \u0438\u043B\u0438 \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0438\u0439" });
+    const p = req.body || {};
+    const qty = Number(p.qty) || 0;
+    if (!p.productId) return res.status(400).json({ error: "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0442\u043E\u0432\u0430\u0440" });
+    if (qty <= 0) return res.status(400).json({ error: "\u041A\u043E\u043B\u0438\u0447\u0435\u0441\u0442\u0432\u043E \u0434\u043E\u043B\u0436\u043D\u043E \u0431\u044B\u0442\u044C \u0431\u043E\u043B\u044C\u0448\u0435 \u043D\u0443\u043B\u044F" });
+    if (!supabaseEnabled) {
+      const rec = { id: uid(), productId: p.productId, qty, reason: p.reason || null, writeoffDate: p.date || todayStr(), comment: p.comment || null, branchId: p.branchId || session.dbBranchId || demoBranchAlmaty };
+      mockWriteoffs.unshift(rec);
+      return res.status(201).json({ writeoff: { id: rec.id, productId: rec.productId, qty, reason: rec.reason, date: rec.writeoffDate, comment: rec.comment } });
+    }
+    const inserted = await supabaseFetch("product_writeoffs", "", {
+      method: "POST",
+      body: JSON.stringify({ organization_id: session.organizationId, branch_id: p.branchId || session.dbBranchId || null, product_id: p.productId, qty, reason: p.reason || null, writeoff_date: p.date || todayStr(), comment: p.comment || null })
+    });
+    res.status(201).json({ writeoff: { id: inserted[0].id, productId: p.productId, qty, reason: inserted[0].reason, date: inserted[0].writeoff_date, comment: inserted[0].comment } });
+  }));
+  app2.delete("/api/mvp/products/writeoffs/:id", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager") return res.status(403).json({ error: "\u041D\u0435\u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E \u043F\u0440\u0430\u0432" });
+    if (!supabaseEnabled) {
+      const i = mockWriteoffs.findIndex((x) => x.id === req.params.id);
+      if (i >= 0) mockWriteoffs.splice(i, 1);
+      return res.json({ ok: true });
+    }
+    await supabaseFetch("product_writeoffs", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+    res.json({ ok: true });
+  }));
+  const COMP_SCHEMES = ["percent", "per_lesson", "fixed", "mixed"];
+  const DEFAULT_ONBOARDING = [
+    { key: "doc_signed", title: "\u041F\u043E\u0434\u043F\u0438\u0441\u0430\u043D \u0434\u043E\u0433\u043E\u0432\u043E\u0440" },
+    { key: "intro_training", title: "\u041F\u0440\u043E\u0439\u0434\u0435\u043D\u043E \u0432\u0432\u043E\u0434\u043D\u043E\u0435 \u043E\u0431\u0443\u0447\u0435\u043D\u0438\u0435" },
+    { key: "first_lesson", title: "\u041F\u0440\u043E\u0432\u0435\u0434\u0435\u043D\u043E \u043F\u0435\u0440\u0432\u043E\u0435 \u0437\u0430\u043D\u044F\u0442\u0438\u0435" },
+    { key: "mentor_review", title: "\u041E\u0446\u0435\u043D\u043A\u0430 \u043D\u0430\u0441\u0442\u0430\u0432\u043D\u0438\u043A\u0430" },
+    { key: "probation_passed", title: "\u0418\u0441\u043F\u044B\u0442\u0430\u0442\u0435\u043B\u044C\u043D\u044B\u0439 \u0441\u0440\u043E\u043A \u043F\u0440\u043E\u0439\u0434\u0435\u043D" }
+  ];
+  const defaultComp = () => ({ scheme: "percent", baseSalary: 0, percent: 0, perLessonRate: 0, comment: null });
+  const compOut = (r) => ({ scheme: r.scheme || "percent", baseSalary: Number(r.base_salary) || 0, percent: Number(r.percent) || 0, perLessonRate: Number(r.per_lesson_rate) || 0, comment: r.comment ?? null });
+  const onbOut = (r) => ({ id: r.id, stepKey: r.step_key ?? r.stepKey, title: r.title, done: !!r.done, doneAt: r.done_at ?? r.doneAt ?? null, sort: r.sort ?? 0 });
+  const payoutOut = (r) => ({ id: r.id, periodStart: r.period_start ?? r.periodStart, periodEnd: r.period_end ?? r.periodEnd, amount: Number(r.amount) || 0, status: r.status || "planned", comment: r.comment ?? null, createdAt: r.created_at ?? r.createdAt });
+  const mockTeacherComp = {};
+  const mockTeacherPayouts = [];
+  const mockTeacherOnboarding = {};
+  const seedMockOnboarding = (tid) => {
+    if (!mockTeacherOnboarding[tid]) {
+      mockTeacherOnboarding[tid] = DEFAULT_ONBOARDING.map((s, i) => ({ id: uid(), stepKey: s.key, title: s.title, done: i < 3, doneAt: i < 3 ? (/* @__PURE__ */ new Date()).toISOString() : null, sort: i + 1 }));
+    }
+    return mockTeacherOnboarding[tid];
+  };
+  app2.get("/api/mvp/teachers/:id/card", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u041A\u0430\u0440\u0442\u043E\u0447\u043A\u0430 \u043F\u0435\u0434\u0430\u0433\u043E\u0433\u0430 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0430 \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    const tid = req.params.id;
+    const q = req.query;
+    const r = periodRanges(q.period, q.from, q.to);
+    if (!supabaseEnabled) {
+      return res.json({
+        compensation: mockTeacherComp[tid] || defaultComp(),
+        onboarding: seedMockOnboarding(tid),
+        payouts: mockTeacherPayouts.filter((p) => p.teacherId === tid),
+        lessonsCompleted: 0,
+        period: r.cur
+      });
+    }
+    const orgF = `organization_id=eq.${session.organizationId}`;
+    const [compRows, onbRows, payoutRows, lessons] = await Promise.all([
+      supabaseFetch("teacher_compensation", `select=*&${orgF}&teacher_id=eq.${tid}&limit=1`),
+      supabaseFetch("teacher_onboarding", `select=*&${orgF}&teacher_id=eq.${tid}&order=sort.asc`),
+      supabaseFetch("teacher_payouts", `select=*&${orgF}&teacher_id=eq.${tid}&order=created_at.desc&limit=200`),
+      // «Проведённые» = прошедшие непроведённые уроки (ends_at в прошлом, не отменены) —
+      // авто-учёт без ручного закрытия. Физическое закрытие — POST /lessons/autoclose.
+      supabaseFetch("schedule_lessons", `select=id&teacher_id=eq.${tid}&status=neq.cancelled&ends_at=lt.${(/* @__PURE__ */ new Date()).toISOString()}&starts_at=gte.${r.cur.start}T00:00:00&starts_at=lte.${r.cur.end}T23:59:59`)
+    ]);
+    let onboarding = onbRows;
+    if (onboarding.length === 0) {
+      const rows = DEFAULT_ONBOARDING.map((s, i) => ({ organization_id: session.organizationId, teacher_id: tid, step_key: s.key, title: s.title, done: false, sort: i + 1 }));
+      try {
+        onboarding = await supabaseFetch("teacher_onboarding", "", { method: "POST", body: JSON.stringify(rows) });
+      } catch {
+        onboarding = [];
+      }
+      onboarding = (onboarding || []).sort((a, b) => (a.sort || 0) - (b.sort || 0));
+    }
+    res.json({
+      compensation: compRows[0] ? compOut(compRows[0]) : defaultComp(),
+      onboarding: onboarding.map(onbOut),
+      payouts: payoutRows.map(payoutOut),
+      lessonsCompleted: lessons.length,
+      period: r.cur
+    });
+  }));
+  app2.patch("/api/mvp/teachers/:id/compensation", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0418\u0437\u043C\u0435\u043D\u044F\u0442\u044C \u043C\u043E\u0436\u0435\u0442 \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u0435\u0446" });
+    const tid = req.params.id;
+    const p = req.body || {};
+    const payload = {
+      scheme: COMP_SCHEMES.includes(p.scheme) ? p.scheme : "percent",
+      base_salary: Number(p.baseSalary) || 0,
+      percent: Number(p.percent) || 0,
+      per_lesson_rate: Number(p.perLessonRate) || 0,
+      comment: p.comment || null
+    };
+    if (!supabaseEnabled) {
+      mockTeacherComp[tid] = { scheme: payload.scheme, baseSalary: payload.base_salary, percent: payload.percent, perLessonRate: payload.per_lesson_rate, comment: payload.comment };
+      return res.json({ compensation: mockTeacherComp[tid] });
+    }
+    const orgF = `organization_id=eq.${session.organizationId}`;
+    const existing = await supabaseFetch("teacher_compensation", `select=id&${orgF}&teacher_id=eq.${tid}&limit=1`);
+    let rows;
+    if (existing[0]) {
+      rows = await supabaseFetch("teacher_compensation", `id=eq.${existing[0].id}`, { method: "PATCH", body: JSON.stringify({ ...payload, updated_at: (/* @__PURE__ */ new Date()).toISOString() }) });
+    } else {
+      rows = await supabaseFetch("teacher_compensation", "", { method: "POST", body: JSON.stringify({ organization_id: session.organizationId, teacher_id: tid, ...payload }) });
+    }
+    res.json({ compensation: rows[0] ? compOut(rows[0]) : defaultComp() });
+  }));
+  app2.post("/api/mvp/teachers/:id/payouts", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    const tid = req.params.id;
+    const p = req.body || {};
+    const amount = Number(p.amount) || 0;
+    const common = { periodStart: p.periodStart || todayStr(), periodEnd: p.periodEnd || todayStr(), status: p.status === "paid" ? "paid" : "planned", comment: p.comment || null };
+    if (!supabaseEnabled) {
+      const rec = { id: uid(), teacherId: tid, amount, ...common, createdAt: (/* @__PURE__ */ new Date()).toISOString() };
+      mockTeacherPayouts.unshift(rec);
+      return res.status(201).json({ payout: rec });
+    }
+    const inserted = await supabaseFetch("teacher_payouts", "", { method: "POST", body: JSON.stringify({ organization_id: session.organizationId, teacher_id: tid, period_start: common.periodStart, period_end: common.periodEnd, amount, status: common.status, comment: common.comment }) });
+    res.status(201).json({ payout: payoutOut(inserted[0]) });
+  }));
+  app2.delete("/api/mvp/teachers/:id/payouts/:pid", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) {
+      const i = mockTeacherPayouts.findIndex((x) => x.id === req.params.pid);
+      if (i >= 0) mockTeacherPayouts.splice(i, 1);
+      return res.json({ ok: true });
+    }
+    await supabaseFetch("teacher_payouts", `id=eq.${req.params.pid}&organization_id=eq.${session.organizationId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+    res.json({ ok: true });
+  }));
+  app2.patch("/api/mvp/teachers/:id/onboarding/:stepId", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    const done = req.body?.done !== false;
+    if (!supabaseEnabled) {
+      const steps = seedMockOnboarding(req.params.id);
+      const st = steps.find((s) => s.id === req.params.stepId);
+      if (st) {
+        st.done = done;
+        st.doneAt = done ? (/* @__PURE__ */ new Date()).toISOString() : null;
+      }
+      return res.json({ onboarding: steps });
+    }
+    const rows = await supabaseFetch("teacher_onboarding", `id=eq.${req.params.stepId}&organization_id=eq.${session.organizationId}`, { method: "PATCH", body: JSON.stringify({ done, done_at: done ? (/* @__PURE__ */ new Date()).toISOString() : null }) });
+    res.json({ step: rows[0] ? onbOut(rows[0]) : null });
+  }));
+  app2.get("/api/mvp/teachers/payroll", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager") return res.status(403).json({ error: "\u0412\u0435\u0434\u043E\u043C\u043E\u0441\u0442\u044C \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0430 \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443 \u0438 \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0435\u043C\u0443" });
+    const q = req.query;
+    const r = periodRanges(q.period, q.from, q.to);
+    if (!supabaseEnabled) {
+      const comp2 = {};
+      const lessons2 = {};
+      const paid2 = {};
+      initialTeachers.filter((t) => session.role === "owner" || canSeeBranch(session, t.branchId)).forEach((t) => {
+        comp2[t.id] = mockTeacherComp[t.id] || defaultComp();
+        lessons2[t.id] = 0;
+        paid2[t.id] = mockTeacherPayouts.filter((p) => p.teacherId === t.id && p.status === "paid" && p.periodStart >= r.cur.start && p.periodStart <= r.cur.end).reduce((s, p) => s + p.amount, 0);
+      });
+      return res.json({ comp: comp2, lessons: lessons2, paid: paid2, period: r.cur });
+    }
+    const orgF = `organization_id=eq.${session.organizationId}`;
+    const branchFilter = session.role === "branch_manager" ? `&branch_id=eq.${session.dbBranchId}` : "";
+    const [users, compRows, lessonRows, payoutRows] = await Promise.all([
+      supabaseFetch("users", `select=id,branch_id,role&${orgF}&role=eq.teacher`),
+      supabaseFetch("teacher_compensation", `select=*&${orgF}`),
+      supabaseFetch("schedule_lessons", `select=teacher_id&status=neq.cancelled&ends_at=lt.${(/* @__PURE__ */ new Date()).toISOString()}&starts_at=gte.${r.cur.start}T00:00:00&starts_at=lte.${r.cur.end}T23:59:59${branchFilter}`),
+      supabaseFetch("teacher_payouts", `select=teacher_id,amount,status,period_start&${orgF}&status=eq.paid`)
+    ]);
+    const visible = new Set(users.filter((u) => session.role === "owner" || u.branch_id === session.dbBranchId).map((u) => u.id));
+    const comp = {};
+    const lessons = {};
+    const paid = {};
+    compRows.forEach((c) => {
+      if (visible.has(c.teacher_id)) comp[c.teacher_id] = compOut(c);
+    });
+    lessonRows.forEach((l) => {
+      if (l.teacher_id && visible.has(l.teacher_id)) lessons[l.teacher_id] = (lessons[l.teacher_id] || 0) + 1;
+    });
+    payoutRows.forEach((p) => {
+      if (visible.has(p.teacher_id) && p.period_start >= r.cur.start && p.period_start <= r.cur.end) paid[p.teacher_id] = (paid[p.teacher_id] || 0) + Number(p.amount);
+    });
+    res.json({ comp, lessons, paid, period: r.cur });
+  }));
+  app2.post("/api/mvp/teachers/payroll/accrue", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager") return res.status(403).json({ error: "\u041D\u0430\u0447\u0438\u0441\u043B\u044F\u0442\u044C \u043C\u043E\u0436\u0435\u0442 \u0432\u043B\u0430\u0434\u0435\u043B\u0435\u0446 \u0438\u043B\u0438 \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0438\u0439" });
+    const p = req.body || {};
+    const items = Array.isArray(p.items) ? p.items : [];
+    const status = p.status === "paid" ? "paid" : "planned";
+    const ps = p.periodStart || todayStr();
+    const pe = p.periodEnd || todayStr();
+    const comment = p.comment || "\u041C\u0430\u0441\u0441\u043E\u0432\u043E\u0435 \u043D\u0430\u0447\u0438\u0441\u043B\u0435\u043D\u0438\u0435";
+    let valid = items.filter((it) => it.teacherId && Number(it.amount) > 0);
+    if (supabaseEnabled && session.role === "branch_manager") {
+      const users = await supabaseFetch("users", `select=id,branch_id&organization_id=eq.${session.organizationId}&role=eq.teacher&branch_id=eq.${session.dbBranchId}`);
+      const allowed = new Set(users.map((u) => u.id));
+      valid = valid.filter((it) => allowed.has(it.teacherId));
+    }
+    if (valid.length === 0) return res.status(400).json({ error: "\u041D\u0435\u0442 \u0441\u0442\u0440\u043E\u043A \u0434\u043B\u044F \u043D\u0430\u0447\u0438\u0441\u043B\u0435\u043D\u0438\u044F" });
+    if (!supabaseEnabled) {
+      valid.forEach((it) => mockTeacherPayouts.unshift({ id: uid(), teacherId: it.teacherId, amount: Number(it.amount), periodStart: ps, periodEnd: pe, status, comment, createdAt: (/* @__PURE__ */ new Date()).toISOString() }));
+      return res.status(201).json({ created: valid.length });
+    }
+    await supabaseFetch("teacher_payouts", "", {
+      method: "POST",
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify(valid.map((it) => ({ organization_id: session.organizationId, teacher_id: it.teacherId, period_start: ps, period_end: pe, amount: Number(it.amount), status, comment })))
+    });
+    res.status(201).json({ created: valid.length });
+  }));
+  app2.post("/api/mvp/lessons/autoclose", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager") return res.status(403).json({ error: "\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443 \u0438 \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0435\u043C\u0443" });
+    if (!supabaseEnabled) return res.json({ closed: 0 });
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    const branchFilter = session.role === "branch_manager" ? `&branch_id=eq.${session.dbBranchId}` : "";
+    const rows = await supabaseFetch("schedule_lessons", `status=eq.scheduled&ends_at=lt.${nowIso}${branchFilter}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: "completed", updated_at: nowIso })
+    });
+    res.json({ closed: Array.isArray(rows) ? rows.length : 0 });
+  }));
+  app2.get("/api/mvp/teachers/payouts/history", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager") return res.status(403).json({ error: "\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443 \u0438 \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0435\u043C\u0443" });
+    const q = req.query;
+    const months = Math.min(24, Math.max(1, Number(q.months) || 12));
+    const buckets = [];
+    const md = /* @__PURE__ */ new Date();
+    md.setDate(1);
+    for (let i = months - 1; i >= 0; i--) {
+      const d = new Date(md.getFullYear(), md.getMonth() - i, 1);
+      buckets.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+    }
+    const bucketize = (rows2) => buckets.map((mo) => ({
+      month: mo,
+      planned: rows2.filter((p) => String(p.periodStart).slice(0, 7) === mo && p.status !== "paid").reduce((s, p) => s + p.amount, 0),
+      paid: rows2.filter((p) => String(p.periodStart).slice(0, 7) === mo && p.status === "paid").reduce((s, p) => s + p.amount, 0)
+    }));
+    if (!supabaseEnabled) {
+      return res.json({ months: bucketize(mockTeacherPayouts.map((p) => ({ periodStart: p.periodStart, amount: p.amount, status: p.status }))) });
+    }
+    const orgF = `organization_id=eq.${session.organizationId}`;
+    const payoutRows = await supabaseFetch("teacher_payouts", `select=teacher_id,amount,status,period_start&${orgF}&limit=2000`);
+    let rows = payoutRows;
+    if (session.role === "branch_manager") {
+      const users = await supabaseFetch("users", `select=id&${orgF}&role=eq.teacher&branch_id=eq.${session.dbBranchId}`);
+      const allowed = new Set(users.map((u) => u.id));
+      rows = payoutRows.filter((p) => allowed.has(p.teacher_id));
+    }
+    res.json({ months: bucketize(rows.map((p) => ({ periodStart: p.period_start, amount: Number(p.amount), status: p.status }))) });
+  }));
+  app2.get("/api/mvp/journal/dashboard", ah(async (req, res) => {
+    const session = getSession(req);
+    const q = req.query;
+    const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+    const from = q.from || today;
+    const to = q.to || from;
+    if (!supabaseEnabled) return res.json(emptyJournalDashboard(from, to));
+    const toPlus1 = /* @__PURE__ */ new Date(`${to}T00:00:00.000Z`);
+    toPlus1.setUTCDate(toPlus1.getUTCDate() + 1);
+    const upper = toPlus1.toISOString().slice(0, 10);
+    const lessonFilters = [
+      "select=*",
+      `starts_at=gte.${from}T00:00:00`,
+      `starts_at=lt.${upper}T00:00:00`,
+      "order=starts_at.asc"
+    ];
+    let branchId = q.branchId;
+    if (session.role !== "owner") branchId = session.dbBranchId || branchId || void 0;
+    if (branchId) lessonFilters.push(`branch_id=eq.${branchId}`);
+    if (q.groupId) lessonFilters.push(`group_id=eq.${q.groupId}`);
+    try {
+      let teacherGroupIds = null;
+      if (session.role === "teacher") {
+        const myGroups = await supabaseFetch(
+          "groups",
+          `select=id&teacher_id=eq.${session.userId}`
+        ).catch(() => []);
+        teacherGroupIds = new Set(myGroups.map((g) => g.id));
+      }
+      const lessonsRaw = await supabaseFetch("schedule_lessons", lessonFilters.join("&"));
+      const lessons = teacherGroupIds ? lessonsRaw.filter((l) => teacherGroupIds.has(l.group_id)) : lessonsRaw;
+      const lessonIds = lessons.map((l) => l.id);
+      let attendance = [];
+      if (lessonIds.length) {
+        attendance = await supabaseFetch(
+          "attendance",
+          `select=*&lesson_id=in.(${lessonIds.join(",")})`
+        ).catch(() => []);
+      }
+      const orgFilter = `organization_id=eq.${session.organizationId}`;
+      const [students, subs, groups, users] = await Promise.all([
+        supabaseFetch("students", `select=*&${orgFilter}&status=neq.archived&archived_at=is.null`).catch(() => []),
+        supabaseFetch("student_subscriptions", "select=student_id,status,lessons_left,ends_on").catch(() => []),
+        supabaseFetch("groups", `select=id,name,teacher_id,branch_id&${orgFilter}`).catch(() => []),
+        supabaseFetch("users", `select=*&${orgFilter}`).catch(() => [])
+      ]);
+      const subsByStudent = /* @__PURE__ */ new Map();
+      subs.forEach((s) => {
+        const arr = subsByStudent.get(s.student_id) || [];
+        arr.push(s);
+        subsByStudent.set(s.student_id, arr);
+      });
+      const studentName = new Map(students.map((s) => [s.id, s.name]));
+      const groupById = new Map(groups.map((g) => [g.id, g]));
+      const userName = new Map(
+        users.map((u) => [u.id, u.full_name || u.name || [u.first_name, u.last_name].filter(Boolean).join(" ") || "\u041F\u0435\u0434\u0430\u0433\u043E\u0433"])
+      );
+      const groupStudentCount = /* @__PURE__ */ new Map();
+      students.forEach((s) => {
+        if (!s.group_id) return;
+        groupStudentCount.set(s.group_id, (groupStudentCount.get(s.group_id) || 0) + 1);
+      });
+      const visited = /* @__PURE__ */ new Set();
+      const trialStudents = /* @__PURE__ */ new Set();
+      const trialConverted = /* @__PURE__ */ new Set();
+      const markedByLesson = /* @__PURE__ */ new Map();
+      attendance.forEach((a) => {
+        const marked = a.status && a.status !== "unknown";
+        if (marked) markedByLesson.set(a.lesson_id, (markedByLesson.get(a.lesson_id) || 0) + 1);
+        if (a.status === "present" || a.status === "excused" || a.is_trial) visited.add(a.student_id);
+        if (a.is_trial || a.status === "trial") {
+          trialStudents.add(a.student_id);
+          if (a.trial_outcome === "converted") trialConverted.add(a.student_id);
+        }
+      });
+      const presentStudents = /* @__PURE__ */ new Set();
+      attendance.forEach((a) => {
+        if (a.status === "present") presentStudents.add(a.student_id);
+      });
+      const unpaid = [];
+      presentStudents.forEach((sid) => {
+        if (trialStudents.has(sid)) return;
+        if (!hasActiveSubscription(subsByStudent.get(sid) || [], today)) unpaid.push(sid);
+      });
+      const trialBought = [];
+      const trialNotBought = [];
+      trialStudents.forEach((sid) => {
+        const bought = trialConverted.has(sid) || hasActiveSubscription(subsByStudent.get(sid) || [], today);
+        (bought ? trialBought : trialNotBought).push(sid);
+      });
+      const now = Date.now();
+      const openJournals = lessons.filter((l) => {
+        const ended = new Date(l.ends_at).getTime();
+        return ended + 60 * 60 * 1e3 < now;
+      }).map((l) => {
+        const total = groupStudentCount.get(l.group_id) || 0;
+        const marked = markedByLesson.get(l.id) || 0;
+        const unmarkedCount = Math.max(0, total - marked);
+        const g = groupById.get(l.group_id);
+        const fmt = (iso) => new Date(iso).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+        return {
+          lessonId: l.id,
+          groupId: l.group_id,
+          groupName: g?.name || "\u0413\u0440\u0443\u043F\u043F\u0430",
+          teacherId: l.teacher_id || g?.teacher_id || null,
+          teacherName: userName.get(l.teacher_id || g?.teacher_id) || "\u041F\u0435\u0434\u0430\u0433\u043E\u0433",
+          branchId: l.branch_id || null,
+          startsAt: l.starts_at,
+          endsAt: l.ends_at,
+          timeLabel: `${fmt(l.starts_at)} \u2013 ${fmt(l.ends_at)}`,
+          unmarkedCount,
+          minutesOverdue: Math.floor((now - new Date(l.ends_at).getTime()) / 6e4)
+        };
+      }).filter((x) => x.unmarkedCount > 0);
+      res.json({
+        rangeFrom: from,
+        rangeTo: to,
+        visited: { count: visited.size, studentIds: [...visited] },
+        unpaid: { count: unpaid.length, studentIds: unpaid },
+        trialNotBought: { count: trialNotBought.length, studentIds: trialNotBought },
+        trialBought: { count: trialBought.length, studentIds: trialBought },
+        openJournals,
+        _names: Object.fromEntries(studentName)
+      });
+    } catch (error) {
+      res.json(emptyJournalDashboard(from, to));
+    }
+  }));
+  app2.get("/api/mvp/recalculations", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) return res.json({ recalculations: [] });
+    const q = req.query;
+    const filters = [`select=*`, `organization_id=eq.${session.organizationId}`, "order=created_at.desc"];
+    if (q.studentId) filters.push(`student_id=eq.${q.studentId}`);
+    if (q.status) filters.push(`status=eq.${q.status}`);
+    if (session.role !== "owner" && session.dbBranchId) filters.push(`branch_id=eq.${session.dbBranchId}`);
+    try {
+      const rows = await supabaseFetch("recalculations", filters.join("&"));
+      res.json({ recalculations: rows.map((r) => mapDbRecalc(r)) });
+    } catch (error) {
+      res.json({ recalculations: [] });
+    }
+  }));
+  app2.post("/api/mvp/recalculations", ah(async (req, res) => {
+    const session = getSession(req);
+    const p = req.body || {};
+    if (!p.studentId) return res.status(400).json({ error: "studentId is required" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      const studs = await supabaseFetch("students", `select=branch_id&id=eq.${p.studentId}&limit=1`);
+      const branch = studs[0]?.branch_id || session.dbBranchId || null;
+      if (!canSeeBranch(session, branch)) return res.status(403).json({ error: "Branch access denied" });
+      const inserted = await supabaseFetch("recalculations", "", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: session.organizationId,
+          branch_id: branch,
+          student_id: p.studentId,
+          subscription_id: p.subscriptionId || null,
+          period_from: p.periodFrom || null,
+          period_to: p.periodTo || null,
+          lessons_count: Number(p.lessonsCount) || 0,
+          reason: p.reason || null,
+          amount: Number(p.amount) || 0,
+          comment: p.comment || null,
+          attachment_url: p.attachmentUrl || null,
+          attachment_name: p.attachmentName || null,
+          status: "pending",
+          created_by: authorId(session),
+          created_by_name: session.fullName || null
+        })
+      });
+      res.status(201).json({ recalculation: mapDbRecalc(inserted[0]) });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0437\u0434\u0430\u0442\u044C \u043F\u0435\u0440\u0435\u0440\u0430\u0441\u0447\u0451\u0442. \u041F\u0440\u043E\u0432\u0435\u0440\u044C\u0442\u0435, \u043F\u0440\u0438\u043C\u0435\u043D\u0435\u043D\u0430 \u043B\u0438 \u043C\u0438\u0433\u0440\u0430\u0446\u0438\u044F 016." });
+    }
+  }));
+  app2.patch("/api/mvp/recalculations/:id", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const p = req.body || {};
+    const patch = {};
+    if (p.status && ["pending", "applied", "cancelled"].includes(p.status)) {
+      patch.status = p.status;
+      if (p.status === "applied") patch.applied_at = (/* @__PURE__ */ new Date()).toISOString();
+    }
+    if (p.amount !== void 0) patch.amount = Number(p.amount) || 0;
+    if (p.lessonsCount !== void 0) patch.lessons_count = Number(p.lessonsCount) || 0;
+    if (p.comment !== void 0) patch.comment = p.comment;
+    if (p.appliedPaymentId !== void 0) patch.applied_payment_id = p.appliedPaymentId;
+    if (Object.keys(patch).length === 0) return res.status(400).json({ error: "\u041D\u0435\u0442 \u043F\u043E\u043B\u0435\u0439 \u0434\u043B\u044F \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F" });
+    try {
+      const rows = await supabaseFetch(
+        "recalculations",
+        `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
+        { method: "PATCH", body: JSON.stringify(patch) }
+      );
+      res.json({ recalculation: rows[0] ? mapDbRecalc(rows[0]) : null });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u043F\u0435\u0440\u0435\u0440\u0430\u0441\u0447\u0451\u0442" });
+    }
+  }));
+  app2.post("/api/mvp/students/:id/pay-later", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const enabled = req.body?.enabled !== false;
+    try {
+      const studs = await supabaseFetch("students", `select=branch_id&id=eq.${req.params.id}&limit=1`);
+      if (!studs[0]) return res.status(404).json({ error: "Student not found" });
+      if (!canSeeBranch(session, studs[0].branch_id)) return res.status(403).json({ error: "Branch access denied" });
+      const rows = await supabaseFetch(`students`, `id=eq.${req.params.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          pay_later: enabled,
+          pay_later_set_at: enabled ? (/* @__PURE__ */ new Date()).toISOString() : null
+        })
+      });
+      res.json({ ok: true, student: rows[0] || null });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0441\u0442\u0430\u0442\u0443\u0441. \u041F\u0440\u043E\u0432\u0435\u0440\u044C\u0442\u0435 \u043C\u0438\u0433\u0440\u0430\u0446\u0438\u044E 016." });
+    }
+  }));
+  const DOC_STATUSES = ["draft", "active", "expired", "terminated"];
+  const REMIND_DAYS = 30;
+  const orgName = "\u042D\u0445\u043E \u0413\u043E\u0440";
+  const mockDocuments = [
+    { id: uid(), organization_id: orgId2, category: "\u0410\u0440\u0435\u043D\u0434\u0430", contractor: "\u0422\u041E\u041E \xAB\u0410\u043B\u043C\u0430\u0442\u044B \u041C\u043E\u043B\u043B\xBB", subject: "\u0417\u0430\u043B 120 \u043C\xB2, 3 \u044D\u0442\u0430\u0436", amount: 45e4, currency: "\u20B8", date_start: "2026-01-01", date_end: "2026-07-15", auto_renew: false, status: "active", scan_url: null, comment: "", created_at: "2026-01-01T00:00:00Z" },
+    { id: uid(), organization_id: orgId2, category: "\u0423\u0441\u043B\u0443\u0433\u0438 \u2014 \u0443\u0431\u043E\u0440\u043A\u0430", contractor: "\u0418\u041F \u041A\u043B\u0438\u043D\u0438\u043D\u0433 \u0421\u0435\u0440\u0432\u0438\u0441", subject: "\u0415\u0436\u0435\u0434\u043D\u0435\u0432\u043D\u0430\u044F \u0443\u0431\u043E\u0440\u043A\u0430 \u0437\u0430\u043B\u043E\u0432", amount: 9e4, currency: "\u20B8", date_start: "2026-03-01", date_end: "2027-03-01", auto_renew: true, status: "active", scan_url: null, comment: "", created_at: "2026-03-01T00:00:00Z" },
+    { id: uid(), organization_id: orgId2, category: "\u0423\u0441\u043B\u0443\u0433\u0438 \u2014 \u0432\u044B\u0432\u043E\u0437 \u043C\u0443\u0441\u043E\u0440\u0430", contractor: "\u0422\u0430\u0437\u0430\u043B\u044B\u043A", subject: "\u0412\u044B\u0432\u043E\u0437 \u0422\u0411\u041E 2 \u0440\u0430\u0437\u0430/\u043D\u0435\u0434", amount: 25e3, currency: "\u20B8", date_start: "2025-09-01", date_end: "2026-06-30", auto_renew: false, status: "active", scan_url: null, comment: "", created_at: "2025-09-01T00:00:00Z" }
+  ];
+  const mockTemplates = [
+    {
+      id: uid(),
+      organization_id: orgId2,
+      name: "\u0414\u043E\u0433\u043E\u0432\u043E\u0440 \u0430\u0440\u0435\u043D\u0434\u044B \u043F\u043E\u043C\u0435\u0449\u0435\u043D\u0438\u044F",
+      category: "\u0410\u0440\u0435\u043D\u0434\u0430",
+      sort_order: 0,
+      body: '<h2 style="text-align:center">\u0414\u041E\u0413\u041E\u0412\u041E\u0420 \u0410\u0420\u0415\u041D\u0414\u042B \u041F\u041E\u041C\u0415\u0429\u0415\u041D\u0418\u042F</h2><p style="text-align:right">\u0433. {{city}}, {{today}}</p><p>{{org_name}}, \u0438\u043C\u0435\u043D\u0443\u0435\u043C\u043E\u0435 \xAB\u0410\u0440\u0435\u043D\u0434\u0430\u0442\u043E\u0440\xBB, \u0438 {{contractor}}, \u0438\u043C\u0435\u043D\u0443\u0435\u043C\u044B\u0439 \xAB\u0410\u0440\u0435\u043D\u0434\u043E\u0434\u0430\u0442\u0435\u043B\u044C\xBB, \u0437\u0430\u043A\u043B\u044E\u0447\u0438\u043B\u0438 \u043D\u0430\u0441\u0442\u043E\u044F\u0449\u0438\u0439 \u0434\u043E\u0433\u043E\u0432\u043E\u0440.</p><p><b>1. \u041F\u0440\u0435\u0434\u043C\u0435\u0442.</b> \u0410\u0440\u0435\u043D\u0434\u043E\u0434\u0430\u0442\u0435\u043B\u044C \u043F\u0435\u0440\u0435\u0434\u0430\u0451\u0442 \u0432\u043E \u0432\u0440\u0435\u043C\u0435\u043D\u043D\u043E\u0435 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u043D\u0438\u0435 \u043F\u043E\u043C\u0435\u0449\u0435\u043D\u0438\u0435: {{subject}}.</p><p><b>2. \u0421\u0440\u043E\u043A.</b> \u0414\u043E\u0433\u043E\u0432\u043E\u0440 \u0434\u0435\u0439\u0441\u0442\u0432\u0443\u0435\u0442 \u0441 {{date_start}} \u043F\u043E {{date_end}}.[[if auto_renew]] \u041F\u043E \u043E\u043A\u043E\u043D\u0447\u0430\u043D\u0438\u0438 \u0441\u0440\u043E\u043A \u043F\u0440\u043E\u0434\u043B\u0435\u0432\u0430\u0435\u0442\u0441\u044F \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438 \u043D\u0430 \u0442\u043E\u0442 \u0436\u0435 \u043F\u0435\u0440\u0438\u043E\u0434, \u0435\u0441\u043B\u0438 \u043D\u0438 \u043E\u0434\u043D\u0430 \u0438\u0437 \u0441\u0442\u043E\u0440\u043E\u043D \u043D\u0435 \u0437\u0430\u044F\u0432\u0438\u0442 \u043E\u0431 \u043E\u0442\u043A\u0430\u0437\u0435 \u0437\u0430 30 \u0434\u043D\u0435\u0439.[[/if]]</p><p><b>3. \u0410\u0440\u0435\u043D\u0434\u043D\u0430\u044F \u043F\u043B\u0430\u0442\u0430.</b> {{amount}} {{currency}} \u0432 \u043C\u0435\u0441\u044F\u0446.[[if vat]] \u0412 \u0442\u043E\u043C \u0447\u0438\u0441\u043B\u0435 \u041D\u0414\u0421.[[/if]][[if !vat]] \u041D\u0414\u0421 \u043D\u0435 \u043E\u0431\u043B\u0430\u0433\u0430\u0435\u0442\u0441\u044F.[[/if]] [[if prepay]]\u041E\u043F\u043B\u0430\u0442\u0430 \u0430\u0432\u0430\u043D\u0441\u043E\u043C \u0434\u043E 5 \u0447\u0438\u0441\u043B\u0430 \u043C\u0435\u0441\u044F\u0446\u0430.[[/if]][[if !prepay]]\u041E\u043F\u043B\u0430\u0442\u0430 \u043F\u043E \u0444\u0430\u043A\u0442\u0443 \u0434\u043E 10 \u0447\u0438\u0441\u043B\u0430 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0435\u0433\u043E \u043C\u0435\u0441\u044F\u0446\u0430.[[/if]]</p><p><b>4. \u041F\u043E\u0434\u043F\u0438\u0441\u0438 \u0441\u0442\u043E\u0440\u043E\u043D.</b></p><p>\u0410\u0440\u0435\u043D\u0434\u0430\u0442\u043E\u0440: {{org_name}} ____________</p><p>\u0410\u0440\u0435\u043D\u0434\u043E\u0434\u0430\u0442\u0435\u043B\u044C: {{contractor}} ____________</p>',
+      fields: [
+        { key: "contractor", label: "\u0410\u0440\u0435\u043D\u0434\u043E\u0434\u0430\u0442\u0435\u043B\u044C (\u043A\u043E\u043D\u0442\u0440\u0430\u0433\u0435\u043D\u0442)", type: "text", required: true },
+        { key: "subject", label: "\u041F\u043E\u043C\u0435\u0449\u0435\u043D\u0438\u0435 / \u0430\u0434\u0440\u0435\u0441", type: "text", required: true },
+        { key: "amount", label: "\u0410\u0440\u0435\u043D\u0434\u043D\u0430\u044F \u043F\u043B\u0430\u0442\u0430 \u0432 \u043C\u0435\u0441\u044F\u0446", type: "number", required: true },
+        { key: "date_start", label: "\u0414\u0430\u0442\u0430 \u043D\u0430\u0447\u0430\u043B\u0430", type: "date", required: true },
+        { key: "date_end", label: "\u0414\u0430\u0442\u0430 \u043E\u043A\u043E\u043D\u0447\u0430\u043D\u0438\u044F", type: "date", required: false },
+        { key: "city", label: "\u0413\u043E\u0440\u043E\u0434", type: "text", required: false }
+      ],
+      toggles: [
+        { key: "vat", label: "\u0421 \u041D\u0414\u0421", default: false },
+        { key: "prepay", label: "\u041F\u0440\u0435\u0434\u043E\u043F\u043B\u0430\u0442\u0430 (\u0430\u0432\u0430\u043D\u0441)", default: true },
+        { key: "auto_renew", label: "\u0410\u0432\u0442\u043E\u043F\u0440\u043E\u043B\u043E\u043D\u0433\u0430\u0446\u0438\u044F", default: false }
+      ]
+    },
+    {
+      id: uid(),
+      organization_id: orgId2,
+      name: "\u0414\u043E\u0433\u043E\u0432\u043E\u0440 \u043E\u043A\u0430\u0437\u0430\u043D\u0438\u044F \u0443\u0441\u043B\u0443\u0433",
+      category: "\u041F\u043E\u0434\u0440\u044F\u0434\u0447\u0438\u043A\u0438 / \u043F\u043E\u0441\u0442\u0430\u0432\u0449\u0438\u043A\u0438",
+      sort_order: 1,
+      body: '<h2 style="text-align:center">\u0414\u041E\u0413\u041E\u0412\u041E\u0420 \u041E\u041A\u0410\u0417\u0410\u041D\u0418\u042F \u0423\u0421\u041B\u0423\u0413</h2><p style="text-align:right">\u0433. {{city}}, {{today}}</p><p>{{org_name}}, \u0438\u043C\u0435\u043D\u0443\u0435\u043C\u043E\u0435 \xAB\u0417\u0430\u043A\u0430\u0437\u0447\u0438\u043A\xBB, \u0438 {{contractor}}, \u0438\u043C\u0435\u043D\u0443\u0435\u043C\u044B\u0439 \xAB\u0418\u0441\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\xBB, \u0437\u0430\u043A\u043B\u044E\u0447\u0438\u043B\u0438 \u0434\u043E\u0433\u043E\u0432\u043E\u0440.</p><p><b>1. \u041F\u0440\u0435\u0434\u043C\u0435\u0442.</b> \u0418\u0441\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C \u043E\u043A\u0430\u0437\u044B\u0432\u0430\u0435\u0442 \u0443\u0441\u043B\u0443\u0433\u0438: {{subject}}.</p><p><b>2. \u0421\u0440\u043E\u043A.</b> \u0421 {{date_start}} \u043F\u043E {{date_end}}.[[if auto_renew]] \u0414\u043E\u0433\u043E\u0432\u043E\u0440 \u043F\u0440\u043E\u0434\u043B\u0435\u0432\u0430\u0435\u0442\u0441\u044F \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438, \u0435\u0441\u043B\u0438 \u0441\u0442\u043E\u0440\u043E\u043D\u044B \u043D\u0435 \u0437\u0430\u044F\u0432\u044F\u0442 \u043E\u0431 \u043E\u0442\u043A\u0430\u0437\u0435 \u0437\u0430 30 \u0434\u043D\u0435\u0439.[[/if]]</p><p><b>3. \u0421\u0442\u043E\u0438\u043C\u043E\u0441\u0442\u044C.</b> {{amount}} {{currency}}.[[if vat]] \u0412 \u0442\u043E\u043C \u0447\u0438\u0441\u043B\u0435 \u041D\u0414\u0421.[[/if]][[if !vat]] \u041D\u0414\u0421 \u043D\u0435 \u043E\u0431\u043B\u0430\u0433\u0430\u0435\u0442\u0441\u044F.[[/if]] [[if prepay]]\u041F\u0440\u0435\u0434\u043E\u043F\u043B\u0430\u0442\u0430 100%.[[/if]][[if !prepay]]\u041E\u043F\u043B\u0430\u0442\u0430 \u043F\u043E \u0444\u0430\u043A\u0442\u0443.[[/if]][[if act]] \u041F\u0440\u0438\u0451\u043C\u043A\u0430 \u043E\u0444\u043E\u0440\u043C\u043B\u044F\u0435\u0442\u0441\u044F \u0430\u043A\u0442\u043E\u043C \u0432\u044B\u043F\u043E\u043B\u043D\u0435\u043D\u043D\u044B\u0445 \u0440\u0430\u0431\u043E\u0442.[[/if]]</p><p><b>4. \u041F\u043E\u0434\u043F\u0438\u0441\u0438.</b></p><p>\u0417\u0430\u043A\u0430\u0437\u0447\u0438\u043A: {{org_name}} ____________</p><p>\u0418\u0441\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C: {{contractor}} ____________</p>',
+      fields: [
+        { key: "contractor", label: "\u0418\u0441\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C (\u043A\u043E\u043D\u0442\u0440\u0430\u0433\u0435\u043D\u0442)", type: "text", required: true },
+        { key: "subject", label: "\u041A\u0430\u043A\u0438\u0435 \u0443\u0441\u043B\u0443\u0433\u0438", type: "text", required: true },
+        { key: "amount", label: "\u0421\u0442\u043E\u0438\u043C\u043E\u0441\u0442\u044C", type: "number", required: true },
+        { key: "date_start", label: "\u0414\u0430\u0442\u0430 \u043D\u0430\u0447\u0430\u043B\u0430", type: "date", required: true },
+        { key: "date_end", label: "\u0414\u0430\u0442\u0430 \u043E\u043A\u043E\u043D\u0447\u0430\u043D\u0438\u044F", type: "date", required: false },
+        { key: "city", label: "\u0413\u043E\u0440\u043E\u0434", type: "text", required: false }
+      ],
+      toggles: [
+        { key: "vat", label: "\u0421 \u041D\u0414\u0421", default: false },
+        { key: "prepay", label: "\u041F\u0440\u0435\u0434\u043E\u043F\u043B\u0430\u0442\u0430", default: false },
+        { key: "act", label: "\u0421 \u0430\u043A\u0442\u043E\u043C \u043F\u0440\u0438\u0451\u043C\u043A\u0438", default: true },
+        { key: "auto_renew", label: "\u0410\u0432\u0442\u043E\u043F\u0440\u043E\u043B\u043E\u043D\u0433\u0430\u0446\u0438\u044F", default: false }
+      ]
+    }
+  ];
+  const docExpiry = (row) => {
+    if (!row.date_end || row.status === "terminated") return { daysLeft: null, expiring: false, expired: false };
+    const end = /* @__PURE__ */ new Date(row.date_end + "T00:00:00");
+    const days = Math.ceil((end.getTime() - Date.now()) / 864e5);
+    return { daysLeft: days, expiring: days >= 0 && days <= REMIND_DAYS, expired: days < 0 };
+  };
+  const docOut = (r) => ({
+    id: r.id,
+    category: r.category ?? null,
+    contractor: r.contractor ?? null,
+    subject: r.subject ?? null,
+    amount: Number(r.amount) || 0,
+    currency: r.currency ?? "\u20B8",
+    dateStart: r.date_start ?? null,
+    dateEnd: r.date_end ?? null,
+    autoRenew: !!r.auto_renew,
+    status: r.status ?? "draft",
+    scanUrl: r.scan_url ?? null,
+    templateId: r.template_id ?? null,
+    comment: r.comment ?? null,
+    createdAt: r.created_at ?? null,
+    ...docExpiry(r)
+  });
+  const renderTemplate = (body, values, toggles) => {
+    let out = String(body || "");
+    out = out.replace(/\[\[if\s+(!?)([a-z_]+)\]\]([\s\S]*?)\[\[\/if\]\]/gi, (_m, neg, key, inner) => {
+      const on = !!toggles[key];
+      return (neg ? !on : on) ? inner : "";
+    });
+    out = out.replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (_m, key) => {
+      const v = values[key];
+      return v === void 0 || v === null || v === "" ? "\u2014" : String(v);
+    });
+    return out;
+  };
+  const requireOwner = (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") {
+      res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \xAB\u0414\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u043E\u043B\u043E\u0433\xBB \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+      return null;
+    }
+    return session;
+  };
+  app2.get("/api/mvp/documents", ah(async (req, res) => {
+    const session = requireOwner(req, res);
+    if (!session) return;
+    const q = req.query;
+    let rows;
+    if (!supabaseEnabled) {
+      rows = mockDocuments.filter((d) => d.organization_id === session.organizationId);
+    } else {
+      let query = `select=*&organization_id=eq.${session.organizationId}&order=created_at.desc`;
+      if (q.category) query += `&category=eq.${encodeURIComponent(q.category)}`;
+      if (q.status) query += `&status=eq.${encodeURIComponent(q.status)}`;
+      rows = await supabaseFetch("documents", query);
+    }
+    let items = rows.map(docOut);
+    if (!supabaseEnabled) {
+      if (q.category) items = items.filter((d) => d.category === q.category);
+      if (q.status) items = items.filter((d) => d.status === q.status);
+    }
+    const summary = {
+      total: items.length,
+      active: items.filter((d) => d.status === "active").length,
+      expiring: items.filter((d) => d.expiring).length,
+      expired: items.filter((d) => d.expired).length
+    };
+    res.json({ documents: items, summary, remindDays: REMIND_DAYS });
+  }));
+  app2.post("/api/mvp/documents", ah(async (req, res) => {
+    const session = requireOwner(req, res);
+    if (!session) return;
+    const b = req.body || {};
+    const rec = {
+      organization_id: session.organizationId,
+      category: b.category || null,
+      contractor: (b.contractor || "").trim() || null,
+      subject: (b.subject || "").trim() || null,
+      amount: Number(b.amount) || 0,
+      currency: b.currency || "\u20B8",
+      date_start: b.dateStart || null,
+      date_end: b.dateEnd || null,
+      auto_renew: !!b.autoRenew,
+      status: DOC_STATUSES.includes(b.status) ? b.status : "draft",
+      scan_url: b.scanUrl || null,
+      template_id: b.templateId || null,
+      comment: b.comment || null
+    };
+    if (!supabaseEnabled) {
+      const row = { id: uid(), created_at: (/* @__PURE__ */ new Date()).toISOString(), ...rec };
+      mockDocuments.unshift(row);
+      return res.status(201).json({ document: docOut(row) });
+    }
+    const inserted = await supabaseFetch("documents", "", { method: "POST", body: JSON.stringify(rec) });
+    res.status(201).json({ document: docOut(inserted[0]) });
+  }));
+  app2.patch("/api/mvp/documents/:id", ah(async (req, res) => {
+    const session = requireOwner(req, res);
+    if (!session) return;
+    const b = req.body || {};
+    const map = { contractor: "contractor", subject: "subject", category: "category", currency: "currency", comment: "comment", dateStart: "date_start", dateEnd: "date_end", scanUrl: "scan_url" };
+    const patch = {};
+    for (const [k, col] of Object.entries(map)) if (b[k] !== void 0) patch[col] = b[k] === "" ? null : b[k];
+    if (b.amount !== void 0) patch.amount = Number(b.amount) || 0;
+    if (b.autoRenew !== void 0) patch.auto_renew = !!b.autoRenew;
+    if (b.status !== void 0) {
+      if (!DOC_STATUSES.includes(b.status)) return res.status(400).json({ error: "\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0439 \u0441\u0442\u0430\u0442\u0443\u0441" });
+      patch.status = b.status;
+    }
+    patch.updated_at = (/* @__PURE__ */ new Date()).toISOString();
+    if (!supabaseEnabled) {
+      const row = mockDocuments.find((d) => d.id === req.params.id);
+      if (!row) return res.status(404).json({ error: "\u0414\u043E\u0433\u043E\u0432\u043E\u0440 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+      Object.assign(row, patch);
+      return res.json({ document: docOut(row) });
+    }
+    const rows = await supabaseFetch("documents", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", body: JSON.stringify(patch) });
+    res.json({ document: rows[0] ? docOut(rows[0]) : null });
+  }));
+  app2.delete("/api/mvp/documents/:id", ah(async (req, res) => {
+    const session = requireOwner(req, res);
+    if (!session) return;
+    if (!supabaseEnabled) {
+      const i = mockDocuments.findIndex((d) => d.id === req.params.id);
+      if (i >= 0) mockDocuments.splice(i, 1);
+      return res.json({ ok: true });
+    }
+    await supabaseFetch("documents", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+    res.json({ ok: true });
+  }));
+  app2.get("/api/mvp/documents/templates", ah(async (req, res) => {
+    const session = requireOwner(req, res);
+    if (!session) return;
+    let rows;
+    if (!supabaseEnabled) {
+      rows = mockTemplates.filter((t) => t.organization_id === session.organizationId);
+    } else {
+      rows = await supabaseFetch("document_templates", `select=*&organization_id=eq.${session.organizationId}&is_active=eq.true&order=sort_order.asc`);
+    }
+    res.json({ templates: rows.map((t) => ({ id: t.id, name: t.name, category: t.category ?? null, fields: t.fields || [], toggles: t.toggles || [] })) });
+  }));
+  app2.post("/api/mvp/documents/generate", ah(async (req, res) => {
+    const session = requireOwner(req, res);
+    if (!session) return;
+    const b = req.body || {};
+    const templateId = b.templateId;
+    const values = b.values || {};
+    const toggles = b.toggles || {};
+    let tpl;
+    if (!supabaseEnabled) {
+      tpl = mockTemplates.find((t) => t.id === templateId);
+    } else {
+      const rows = await supabaseFetch("document_templates", `select=*&id=eq.${templateId}&organization_id=eq.${session.organizationId}&limit=1`);
+      tpl = rows[0];
+    }
+    if (!tpl) return res.status(404).json({ error: "\u0428\u0430\u0431\u043B\u043E\u043D \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+    const today = (/* @__PURE__ */ new Date()).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+    const ctx = { ...values, org_name: orgName, today, currency: values.currency || "\u20B8" };
+    const inner = renderTemplate(tpl.body || "", ctx, toggles);
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${tpl.name}</title></head><body style="font-family:'Times New Roman',serif;font-size:14px;line-height:1.5;max-width:720px;margin:0 auto">${inner}</body></html>`;
+    const rec = {
+      organization_id: session.organizationId,
+      category: tpl.category || null,
+      contractor: (values.contractor || "").trim() || null,
+      subject: (values.subject || "").trim() || null,
+      amount: Number(values.amount) || 0,
+      currency: ctx.currency,
+      date_start: values.date_start || null,
+      date_end: values.date_end || null,
+      auto_renew: !!toggles.auto_renew,
+      status: "draft",
+      template_id: tpl.id
+    };
+    let document;
+    if (!supabaseEnabled) {
+      const row = { id: uid(), created_at: (/* @__PURE__ */ new Date()).toISOString(), scan_url: null, comment: null, ...rec };
+      mockDocuments.unshift(row);
+      document = docOut(row);
+    } else {
+      const inserted = await supabaseFetch("documents", "", { method: "POST", body: JSON.stringify(rec) });
+      document = docOut(inserted[0]);
+    }
+    res.json({ html, filename: `${tpl.name}.doc`, document });
+  }));
+  const requireMeetingRole = (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager") {
+      res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \xAB\u041F\u043B\u0430\u043D\u0451\u0440\u043A\u0438\xBB \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443 \u0438 \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0435\u043C\u0443" });
+      return null;
+    }
+    return session;
+  };
+  const mockMeetings = [];
+  const mockMeetingItems = [];
+  const meetingOut = (row, items = []) => ({
+    id: row.id,
+    branchId: row.branch_id ?? null,
+    title: row.title,
+    date: row.meeting_date,
+    participants: Array.isArray(row.participants) ? row.participants : row.participants ? row.participants : [],
+    agenda: row.agenda ?? null,
+    summary: row.summary ?? null,
+    transcript: row.transcript ?? null,
+    status: row.status || "draft",
+    createdBy: row.created_by ?? null,
+    createdAt: row.created_at,
+    items: items.map(itemOut),
+    itemsCount: items.length,
+    openItems: items.filter((i) => !i.done).length
+  });
+  const itemOut = (r) => ({ id: r.id, meetingId: r.meeting_id, title: r.title, assignee: r.assignee ?? null, dueDate: r.due_date ?? null, done: !!r.done, source: r.source || "manual", sort: r.sort ?? 0 });
+  app2.get("/api/mvp/meetings", ah(async (req, res) => {
+    const session = requireMeetingRole(req, res);
+    if (!session) return;
+    const q = String(req.query.q || "").trim().toLowerCase();
+    let meetings;
+    let items;
+    if (!supabaseEnabled) {
+      meetings = mockMeetings.filter((m) => m.organization_id === session.organizationId);
+      items = mockMeetingItems.filter((i) => i.organization_id === session.organizationId);
+    } else {
+      meetings = await supabaseFetch("meetings", `select=*&organization_id=eq.${session.organizationId}&order=meeting_date.desc,created_at.desc`);
+      items = await supabaseFetch("meeting_action_items", `select=*&organization_id=eq.${session.organizationId}`).catch(() => []);
+    }
+    if (session.role === "branch_manager" && session.dbBranchId) {
+      meetings = meetings.filter((m) => !m.branch_id || m.branch_id === session.dbBranchId);
+    }
+    const itemsByMeeting = /* @__PURE__ */ new Map();
+    for (const it of items) {
+      const a = itemsByMeeting.get(it.meeting_id) || [];
+      a.push(it);
+      itemsByMeeting.set(it.meeting_id, a);
+    }
+    let out = meetings.map((m) => meetingOut(m, (itemsByMeeting.get(m.id) || []).sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0))));
+    if (q) {
+      out = out.filter(
+        (m) => (m.title || "").toLowerCase().includes(q) || (m.summary || "").toLowerCase().includes(q) || (m.agenda || "").toLowerCase().includes(q) || (Array.isArray(m.participants) ? m.participants.join(" ") : "").toLowerCase().includes(q) || m.items.some((i) => (i.title || "").toLowerCase().includes(q) || (i.assignee || "").toLowerCase().includes(q))
+      );
+    }
+    const summary = {
+      total: out.length,
+      openTasks: out.reduce((s, m) => s + m.openItems, 0),
+      thisMonth: out.filter((m) => (m.date || "").slice(0, 7) === (/* @__PURE__ */ new Date()).toISOString().slice(0, 7)).length
+    };
+    res.json({ meetings: out, summary });
+  }));
+  app2.get("/api/mvp/meetings/:id", ah(async (req, res) => {
+    const session = requireMeetingRole(req, res);
+    if (!session) return;
+    let row;
+    let items;
+    if (!supabaseEnabled) {
+      row = mockMeetings.find((m) => m.id === req.params.id && m.organization_id === session.organizationId);
+      items = mockMeetingItems.filter((i) => i.meeting_id === req.params.id);
+    } else {
+      const rows = await supabaseFetch("meetings", `select=*&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}&limit=1`);
+      row = rows[0];
+      items = row ? await supabaseFetch("meeting_action_items", `select=*&meeting_id=eq.${req.params.id}&order=sort.asc`).catch(() => []) : [];
+    }
+    if (!row) return res.status(404).json({ error: "\u041F\u043B\u0430\u043D\u0451\u0440\u043A\u0430 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430" });
+    res.json({ meeting: meetingOut(row, items.sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0))) });
+  }));
+  app2.post("/api/mvp/meetings", ah(async (req, res) => {
+    const session = requireMeetingRole(req, res);
+    if (!session) return;
+    const b = req.body || {};
+    if (!String(b.title || "").trim()) return res.status(400).json({ error: "\u0423\u043A\u0430\u0436\u0438\u0442\u0435 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u043F\u043B\u0430\u043D\u0451\u0440\u043A\u0438" });
+    const participants = Array.isArray(b.participants) ? b.participants.filter((p) => String(p || "").trim()) : [];
+    const rec = {
+      organization_id: session.organizationId,
+      branch_id: session.role === "branch_manager" ? session.dbBranchId || null : b.branchId || null,
+      title: String(b.title).trim(),
+      meeting_date: b.date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10),
+      participants,
+      agenda: (b.agenda || "").trim() || null,
+      summary: (b.summary || "").trim() || null,
+      transcript: (b.transcript || "").trim() || null,
+      status: ["draft", "held", "archived"].includes(b.status) ? b.status : "draft",
+      created_by: session.fullName || null
+    };
+    if (!supabaseEnabled) {
+      const row = { id: uid(), created_at: (/* @__PURE__ */ new Date()).toISOString(), ...rec };
+      mockMeetings.unshift(row);
+      return res.status(201).json({ meeting: meetingOut(row, []) });
+    }
+    const inserted = await supabaseFetch("meetings", "", { method: "POST", body: JSON.stringify(rec) });
+    res.status(201).json({ meeting: meetingOut(inserted[0], []) });
+  }));
+  app2.patch("/api/mvp/meetings/:id", ah(async (req, res) => {
+    const session = requireMeetingRole(req, res);
+    if (!session) return;
+    const b = req.body || {};
+    const patch = {};
+    if (b.title !== void 0) patch.title = String(b.title).trim();
+    if (b.date !== void 0) patch.meeting_date = b.date;
+    if (b.participants !== void 0) patch.participants = Array.isArray(b.participants) ? b.participants.filter((p) => String(p || "").trim()) : [];
+    if (b.agenda !== void 0) patch.agenda = (b.agenda || "").trim() || null;
+    if (b.summary !== void 0) patch.summary = (b.summary || "").trim() || null;
+    if (b.transcript !== void 0) patch.transcript = (b.transcript || "").trim() || null;
+    if (b.status !== void 0) {
+      if (!["draft", "held", "archived"].includes(b.status)) return res.status(400).json({ error: "\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0439 \u0441\u0442\u0430\u0442\u0443\u0441" });
+      patch.status = b.status;
+    }
+    patch.updated_at = (/* @__PURE__ */ new Date()).toISOString();
+    if (!supabaseEnabled) {
+      const row = mockMeetings.find((m) => m.id === req.params.id && m.organization_id === session.organizationId);
+      if (!row) return res.status(404).json({ error: "\u041F\u043B\u0430\u043D\u0451\u0440\u043A\u0430 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430" });
+      Object.assign(row, patch);
+      const items2 = mockMeetingItems.filter((i) => i.meeting_id === row.id);
+      return res.json({ meeting: meetingOut(row, items2) });
+    }
+    const rows = await supabaseFetch("meetings", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", body: JSON.stringify(patch) });
+    if (!rows[0]) return res.status(404).json({ error: "\u041F\u043B\u0430\u043D\u0451\u0440\u043A\u0430 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430" });
+    const items = await supabaseFetch("meeting_action_items", `select=*&meeting_id=eq.${req.params.id}&order=sort.asc`).catch(() => []);
+    res.json({ meeting: meetingOut(rows[0], items) });
+  }));
+  app2.delete("/api/mvp/meetings/:id", ah(async (req, res) => {
+    const session = requireMeetingRole(req, res);
+    if (!session) return;
+    if (!supabaseEnabled) {
+      const i = mockMeetings.findIndex((m) => m.id === req.params.id && m.organization_id === session.organizationId);
+      if (i >= 0) mockMeetings.splice(i, 1);
+      for (let k = mockMeetingItems.length - 1; k >= 0; k--) if (mockMeetingItems[k].meeting_id === req.params.id) mockMeetingItems.splice(k, 1);
+      return res.json({ ok: true });
+    }
+    await supabaseFetch("meetings", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+    res.json({ ok: true });
+  }));
+  app2.put("/api/mvp/meetings/:id/items", ah(async (req, res) => {
+    const session = requireMeetingRole(req, res);
+    if (!session) return;
+    const list = Array.isArray(req.body?.items) ? req.body.items : [];
+    const rows = list.map((it, idx) => ({
+      title: String(it.title || "").trim(),
+      assignee: (it.assignee || "").toString().trim() || null,
+      due_date: it.dueDate || it.due_date || "" || null,
+      done: !!it.done,
+      source: it.source === "ai" ? "ai" : "manual",
+      sort: idx
+    })).filter((r) => r.title);
+    if (!supabaseEnabled) {
+      const m = mockMeetings.find((x) => x.id === req.params.id && x.organization_id === session.organizationId);
+      if (!m) return res.status(404).json({ error: "\u041F\u043B\u0430\u043D\u0451\u0440\u043A\u0430 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430" });
+      for (let k = mockMeetingItems.length - 1; k >= 0; k--) if (mockMeetingItems[k].meeting_id === req.params.id) mockMeetingItems.splice(k, 1);
+      const created = rows.map((r) => ({ id: uid(), meeting_id: req.params.id, organization_id: session.organizationId, created_at: (/* @__PURE__ */ new Date()).toISOString(), ...r }));
+      mockMeetingItems.push(...created);
+      return res.json({ items: created.map(itemOut) });
+    }
+    const exists = await supabaseFetch("meetings", `select=id&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}&limit=1`);
+    if (!exists[0]) return res.status(404).json({ error: "\u041F\u043B\u0430\u043D\u0451\u0440\u043A\u0430 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430" });
+    await supabaseFetch("meeting_action_items", `meeting_id=eq.${req.params.id}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+    if (rows.length === 0) return res.json({ items: [] });
+    const payload = rows.map((r) => ({ meeting_id: req.params.id, organization_id: session.organizationId, ...r }));
+    const inserted = await supabaseFetch("meeting_action_items", "", { method: "POST", body: JSON.stringify(payload) });
+    res.json({ items: inserted.map(itemOut) });
+  }));
+  app2.patch("/api/mvp/meetings/:id/items/:itemId", ah(async (req, res) => {
+    const session = requireMeetingRole(req, res);
+    if (!session) return;
+    const b = req.body || {};
+    const patch = {};
+    if (b.title !== void 0) patch.title = String(b.title).trim();
+    if (b.assignee !== void 0) patch.assignee = (b.assignee || "").trim() || null;
+    if (b.dueDate !== void 0) patch.due_date = b.dueDate || null;
+    if (b.done !== void 0) patch.done = !!b.done;
+    if (!supabaseEnabled) {
+      const it = mockMeetingItems.find((i) => i.id === req.params.itemId && i.meeting_id === req.params.id);
+      if (!it) return res.status(404).json({ error: "\u0417\u0430\u0434\u0430\u0447\u0430 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430" });
+      Object.assign(it, patch);
+      return res.json({ item: itemOut(it) });
+    }
+    const rows = await supabaseFetch("meeting_action_items", `id=eq.${req.params.itemId}&meeting_id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", body: JSON.stringify(patch) });
+    res.json({ item: rows[0] ? itemOut(rows[0]) : null });
+  }));
+  const planningStore = {};
+  const planningMotivation = {};
+  const planningDaily = {};
+  const planningDefaults = (period) => ({
+    period,
+    branchId: null,
+    source: "prev_month",
+    revenueLines: [
+      { direction: "\u0410\u043D\u0441\u0430\u043C\u0431\u043B\u044C", planned: 9e6, mode: "auto" },
+      { direction: "\u0421\u043E\u043B\u043E", planned: 75e5, mode: "auto" },
+      { direction: "\u0425\u0438\u043F-\u0445\u043E\u043F", planned: 6e6, mode: "auto" },
+      { direction: "\u041C\u0430\u043B\u044B\u0448\u0438", planned: 4e6, mode: "auto" },
+      { direction: "\u0412\u044B\u0441\u0442\u0443\u043F\u043B\u0435\u043D\u0438\u044F", planned: 25e5, mode: "manual" },
+      { direction: "\u0422\u043E\u0432\u0430\u0440\u044B / \u0444\u043E\u0440\u043C\u0430", planned: 1e6, mode: "manual" }
+    ],
+    expenseLines: [
+      { category: "\u0417\u0430\u0440\u043F\u043B\u0430\u0442\u0430", planned: 9e6, mode: "auto" },
+      { category: "\u0410\u0440\u0435\u043D\u0434\u0430", planned: 4e6, mode: "manual" },
+      { category: "\u0420\u0435\u043A\u043B\u0430\u043C\u0430", planned: 25e5, mode: "manual" },
+      { category: "\u041A\u043E\u043C\u043C\u0443\u043D\u0430\u043B\u044C\u043D\u044B\u0435", planned: 8e5, mode: "manual" },
+      { category: "\u041A\u043E\u0441\u0442\u044E\u043C\u044B", planned: 7e5, mode: "manual" },
+      { category: "\u041C\u0430\u0442\u0435\u0440\u0438\u0430\u043B\u044B", planned: 6e5, mode: "manual" },
+      { category: "\u041D\u0430\u043B\u043E\u0433\u0438", planned: 7e5, mode: "manual" },
+      { category: "\u041F\u0440\u043E\u0447\u0435\u0435", planned: 3e5, mode: "manual" }
+    ]
+  });
+  const motivationDefaults = () => [
+    { level: "80% \u043F\u043B\u0430\u043D\u0430", threshold: 80, bonus: "+50 000 \u20B8 \u043A\u043E\u043C\u0430\u043D\u0434\u0435 \u0444\u0438\u043B\u0438\u0430\u043B\u0430" },
+    { level: "100% \u043F\u043B\u0430\u043D\u0430", threshold: 100, bonus: "+150 000 \u20B8 + \u043F\u0440\u0435\u043C\u0438\u044F \u043F\u0435\u0434\u0430\u0433\u043E\u0433\u0430\u043C" },
+    { level: "110% \u043F\u043B\u0430\u043D\u0430", threshold: 110, bonus: "+300 000 \u20B8 + \u043A\u043E\u043C\u0430\u043D\u0434\u043D\u0430\u044F \u043F\u043E\u0435\u0437\u0434\u043A\u0430" }
+  ];
+  const dailyDefaults = () => [
+    { date: "2026-06-28", revenue: 54e4, trials: 4, sales: 3, comment: "\u0421\u0438\u043B\u044C\u043D\u044B\u0439 \u0434\u0435\u043D\u044C, \u0434\u043E\u0431\u043E\u0440 \u0432 \u0410\u043D\u0441\u0430\u043C\u0431\u043B\u044C", author: "\u041C\u0430\u0433\u043E\u043C\u0435\u0434 (\u0443\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0438\u0439)" },
+    { date: "2026-06-27", revenue: 41e4, trials: 6, sales: 2, comment: "\u041C\u043D\u043E\u0433\u043E \u043F\u0440\u043E\u0431\u043D\u044B\u0445, \u043A\u043E\u043D\u0432\u0435\u0440\u0441\u0438\u044F \u043D\u0438\u0437\u043A\u0430\u044F", author: "\u041C\u0430\u0433\u043E\u043C\u0435\u0434 (\u0443\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0438\u0439)" },
+    { date: "2026-06-26", revenue: 62e4, trials: 3, sales: 5, comment: "\u041F\u0440\u043E\u0434\u043B\u0438\u043B\u0438 5 \u0430\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442\u043E\u0432", author: "\u0424\u0430\u0442\u0438\u043C\u0430 (\u0430\u0434\u043C\u0438\u043D)" }
+  ];
+  const planningFactByDirection = {
+    "\u0410\u043D\u0441\u0430\u043C\u0431\u043B\u044C": 71e5,
+    "\u0421\u043E\u043B\u043E": 59e5,
+    "\u0425\u0438\u043F-\u0445\u043E\u043F": 46e5,
+    "\u041C\u0430\u043B\u044B\u0448\u0438": 27e5,
+    "\u0412\u044B\u0441\u0442\u0443\u043F\u043B\u0435\u043D\u0438\u044F": 1e6,
+    "\u0422\u043E\u0432\u0430\u0440\u044B / \u0444\u043E\u0440\u043C\u0430": 6e5
+  };
+  const buildPlanningOverview = (session, period, branchId) => {
+    const key = `${session.organizationId}:${period}`;
+    const budget = planningStore[key] || planningDefaults(period);
+    const plannedRevenue = budget.revenueLines.reduce((s, r) => s + r.planned, 0);
+    const plannedExpense = budget.expenseLines.reduce((s, e) => s + e.planned, 0);
+    const plannedProfit = plannedRevenue - plannedExpense;
+    const margin = plannedRevenue ? Math.round(plannedProfit / plannedRevenue * 1e3) / 10 : 0;
+    const factRevenue = budget.revenueLines.reduce((s, r) => s + (planningFactByDirection[r.direction] ?? Math.round(r.planned * 0.73)), 0);
+    const factExpense = Math.round(plannedExpense * 0.747);
+    const factProfit = factRevenue - factExpense;
+    const factMargin = factRevenue ? Math.round(factProfit / factRevenue * 1e3) / 10 : 0;
+    const incomeByDirection = budget.revenueLines.map((r) => ({
+      direction: r.direction,
+      plan: r.planned,
+      fact: planningFactByDirection[r.direction] ?? Math.round(r.planned * 0.73)
+    }));
+    const levels = [
+      { level: "\u041D\u0430\u0447\u0438\u043D\u0430\u044E\u0449\u0438\u0435", plan: 8e6, fact: 6e6 },
+      { level: "\u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0430\u044E\u0449\u0438\u0435", plan: 12e6, fact: 94e5 },
+      { level: "\u0410\u043D\u0441\u0430\u043C\u0431\u043B\u044C", plan: 1e7, fact: 65e5 }
+    ].map((l) => ({ ...l, deviation: l.fact - l.plan, done: Math.round(l.fact / l.plan * 100) }));
+    const avgCheck = 24e3;
+    const neededSales = Math.max(0, Math.ceil((plannedRevenue - factRevenue) / avgCheck));
+    const funnel = {
+      neededSales,
+      trials: Math.ceil(neededSales / 0.4),
+      // конверсия пробный→продажа 40%
+      signups: Math.ceil(neededSales / 0.6),
+      leads: Math.ceil(neededSales / 0.2)
+      // лид→продажа 20%
+    };
+    return {
+      period,
+      branchId,
+      mode: supabaseEnabled ? "db" : "mock",
+      source: budget.source,
+      basis: { prevMonth: 274e5, prevYear: 241e5, avg6: 26e6 },
+      plan: {
+        revenueLines: budget.revenueLines,
+        expenseLines: budget.expenseLines,
+        plannedRevenue,
+        plannedExpense,
+        plannedProfit,
+        margin
+      },
+      fact: {
+        revenue: factRevenue,
+        expense: factExpense,
+        profit: factProfit,
+        margin: factMargin,
+        donePct: plannedRevenue ? Math.round(factRevenue / plannedRevenue * 100) : 0,
+        incomeByDirection
+      },
+      levels,
+      funnel,
+      motivation: planningMotivation[session.organizationId] || motivationDefaults(),
+      daily: planningDaily[session.organizationId] || dailyDefaults()
+    };
+  };
+  app2.get("/api/mvp/planning/overview", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \xAB\u041F\u043B\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435\xBB \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    const period = String(req.query.period || (/* @__PURE__ */ new Date()).toISOString().slice(0, 7));
+    const branchId = req.query.branch && req.query.branch !== "all" ? String(req.query.branch) : null;
+    res.json(buildPlanningOverview(session, period, branchId));
+  }));
+  app2.post("/api/mvp/planning/budget", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \xAB\u041F\u043B\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435\xBB \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    const b = req.body || {};
+    const period = String(b.period || (/* @__PURE__ */ new Date()).toISOString().slice(0, 7));
+    const key = `${session.organizationId}:${period}`;
+    const base = planningStore[key] || planningDefaults(period);
+    const store = {
+      period,
+      branchId: b.branchId || null,
+      source: b.source || base.source,
+      revenueLines: Array.isArray(b.revenueLines) ? b.revenueLines.map((r) => ({ direction: String(r.direction || "\u041D\u0430\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u0438\u0435"), planned: Number(r.planned) || 0, mode: r.mode === "manual" ? "manual" : "auto" })) : base.revenueLines,
+      expenseLines: Array.isArray(b.expenseLines) ? b.expenseLines.map((e) => ({ category: String(e.category || "\u041A\u0430\u0442\u0435\u0433\u043E\u0440\u0438\u044F"), planned: Number(e.planned) || 0, mode: e.mode === "auto" ? "auto" : "manual" })) : base.expenseLines
+    };
+    planningStore[key] = store;
+    if (supabaseEnabled) {
+      try {
+        await supabaseFetch("planning_budgets", "", {
+          method: "POST",
+          headers: { Prefer: "resolution=merge-duplicates" },
+          body: JSON.stringify({
+            organization_id: session.organizationId,
+            branch_id: store.branchId,
+            period_month: period,
+            source: store.source,
+            planned_revenue: store.revenueLines.reduce((s, r) => s + r.planned, 0),
+            planned_expense: store.expenseLines.reduce((s, e) => s + e.planned, 0)
+          })
+        });
+      } catch (e) {
+      }
+    }
+    res.status(201).json(buildPlanningOverview(session, period, store.branchId));
+  }));
+  app2.patch("/api/mvp/planning/motivation", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \xAB\u041F\u043B\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435\xBB \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    const rows = Array.isArray(req.body?.motivation) ? req.body.motivation : [];
+    planningMotivation[session.organizationId] = rows.map((r) => ({
+      level: String(r.level || ""),
+      threshold: Number(r.threshold) || 0,
+      bonus: String(r.bonus || "")
+    }));
+    res.json({ motivation: planningMotivation[session.organizationId] });
+  }));
+  app2.post("/api/mvp/planning/daily", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \xAB\u041F\u043B\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435\xBB \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    const b = req.body || {};
+    const row = {
+      date: String(b.date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10)),
+      revenue: Number(b.revenue) || 0,
+      trials: Number(b.trials) || 0,
+      sales: Number(b.sales) || 0,
+      comment: String(b.comment || ""),
+      author: String(b.author || "\u0423\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0438\u0439")
+    };
+    const list = planningDaily[session.organizationId] || dailyDefaults();
+    planningDaily[session.organizationId] = [row, ...list];
+    res.status(201).json({ daily: planningDaily[session.organizationId] });
+  }));
+  const penaltyStore = {};
+  const penaltyDefaults = () => [
+    { id: uid(), teacherId: null, teacherName: "\u0410\u0441\u043B\u0430\u043D \u041F\u043B\u0438\u0435\u0432", reason: "\u041E\u043F\u043E\u0437\u0434\u0430\u043D\u0438\u0435", amount: 5e3, period_month: "2026-06", created_by: "\u0423\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0438\u0439", comment: "\u041E\u043F\u043E\u0437\u0434\u0430\u043B \u043D\u0430 25 \u043C\u0438\u043D\u0443\u0442", created_at: "2026-06-18T09:00:00Z" },
+    { id: uid(), teacherId: null, teacherName: "\u0425\u0430\u043C\u0438\u0442 \u041C\u0443\u0440\u0430\u0442\u043E\u0432\u0438\u0447", reason: "\u041D\u0435\u0437\u0430\u043A\u0440\u044B\u0442\u044B\u0439 \u0436\u0443\u0440\u043D\u0430\u043B", amount: 3e3, period_month: "2026-06", created_by: "\u0412\u043B\u0430\u0434\u0435\u043B\u0435\u0446", comment: "\u0416\u0443\u0440\u043D\u0430\u043B \u043D\u0435 \u0437\u0430\u043A\u0440\u044B\u0442 2 \u0434\u043D\u044F", created_at: "2026-06-22T19:00:00Z" }
+  ];
+  app2.get("/api/mvp/teachers/penalties", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager") return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443 \u0438 \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0435\u043C\u0443" });
+    if (!penaltyStore[session.organizationId]) penaltyStore[session.organizationId] = penaltyDefaults();
+    let rows = penaltyStore[session.organizationId];
+    if (supabaseEnabled) {
+      try {
+        rows = await supabaseFetch("teacher_penalties", `select=*&organization_id=eq.${session.organizationId}&order=created_at.desc`);
+      } catch {
+      }
+    }
+    const total = rows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    res.json({ penalties: rows, total });
+  }));
+  app2.post("/api/mvp/teachers/penalties", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager") return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443 \u0438 \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0435\u043C\u0443" });
+    const b = req.body || {};
+    const amount = Number(b.amount);
+    if (!b.reason || !amount || amount <= 0) return res.status(400).json({ error: "\u0423\u043A\u0430\u0436\u0438\u0442\u0435 \u043F\u0440\u0438\u0447\u0438\u043D\u0443 \u0438 \u0441\u0443\u043C\u043C\u0443 \u0448\u0442\u0440\u0430\u0444\u0430" });
+    const row = {
+      id: uid(),
+      teacherId: b.teacherId || null,
+      teacherName: b.teacherName || "\u041F\u0440\u0435\u043F\u043E\u0434\u0430\u0432\u0430\u0442\u0435\u043B\u044C",
+      reason: String(b.reason),
+      amount,
+      period_month: String(b.period_month || (/* @__PURE__ */ new Date()).toISOString().slice(0, 7)),
+      created_by: b.created_by === "\u0423\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0438\u0439" ? "\u0423\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0438\u0439" : "\u0412\u043B\u0430\u0434\u0435\u043B\u0435\u0446",
+      comment: b.comment || null,
+      created_at: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    if (supabaseEnabled) {
+      try {
+        await supabaseFetch("teacher_penalties", "", {
+          method: "POST",
+          body: JSON.stringify({
+            organization_id: session.organizationId,
+            teacher_id: row.teacherId,
+            branch_id: b.branchId || session.dbBranchId || null,
+            reason: row.reason,
+            amount: row.amount,
+            period_month: row.period_month,
+            created_by: row.created_by,
+            comment: row.comment
+          })
+        });
+      } catch {
+      }
+    }
+    if (!penaltyStore[session.organizationId]) penaltyStore[session.organizationId] = penaltyDefaults();
+    penaltyStore[session.organizationId] = [row, ...penaltyStore[session.organizationId]];
+    res.status(201).json({ penalty: row });
+  }));
+  app2.delete("/api/mvp/teachers/penalties/:id", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager") return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443 \u0438 \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0435\u043C\u0443" });
+    const id = req.params.id;
+    if (supabaseEnabled) {
+      try {
+        await supabaseFetch("teacher_penalties", `id=eq.${id}&organization_id=eq.${session.organizationId}`, { method: "DELETE" });
+      } catch {
+      }
+    }
+    if (penaltyStore[session.organizationId]) penaltyStore[session.organizationId] = penaltyStore[session.organizationId].filter((r) => r.id !== id);
+    res.json({ ok: true });
+  }));
 }
 
 // server/geminiApi.ts
 import { GoogleGenAI } from "@google/genai";
 var apiKey = process.env.GEMINI_API_KEY;
-var model = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+var model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+var imageModel = process.env.GEMINI_IMAGE_MODEL || "gemini-2.0-flash-preview-image-generation";
 var genai = apiKey ? new GoogleGenAI({ apiKey }) : null;
 async function generateJson(prompt) {
   if (!genai) throw new Error("GEMINI_API_KEY is not configured");
@@ -2268,6 +5835,21 @@ notes=${JSON.stringify(notes ?? [])}`;
       res.status(502).json({ error: e?.message || "AI request failed" });
     }
   });
+  app2.post("/api/gemini/lesson-plan", async (req, res) => {
+    if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });
+    const { prompt: userPrompt, groupName, groupLevel, studentCount, context } = req.body || {};
+    const prompt = `\u0422\u044B \u2014 \u043C\u0435\u0442\u043E\u0434\u0438\u0441\u0442 \u0438 \u0445\u043E\u0440\u0435\u043E\u0433\u0440\u0430\u0444 \u0448\u043A\u043E\u043B\u044B \u043A\u0430\u0432\u043A\u0430\u0437\u0441\u043A\u043E\u0433\u043E \u0442\u0430\u043D\u0446\u0430 \xAB\u042D\u0445\u043E \u0413\u043E\u0440\xBB. \u041F\u043E\u043C\u043E\u0433\u0438 \u043F\u0440\u0435\u043F\u043E\u0434\u0430\u0432\u0430\u0442\u0435\u043B\u044E \u0438 \u0432\u0435\u0440\u043D\u0438 \u0421\u0422\u0420\u041E\u0413\u041E JSON \u043F\u043E \u0441\u0445\u0435\u043C\u0435:
+{"title": string, "summary": string, "sections": [{"heading": string, "items": string[]}]}
+\u041F\u0438\u0448\u0438 \u043F\u043E-\u0440\u0443\u0441\u0441\u043A\u0438, \u043A\u043E\u043D\u043A\u0440\u0435\u0442\u043D\u043E \u0438 \u043F\u0440\u0438\u043C\u0435\u043D\u0438\u043C\u043E \u043D\u0430 \u0437\u0430\u043D\u044F\u0442\u0438\u0438. \u0415\u0441\u043B\u0438 \u044D\u0442\u043E \u043F\u043B\u0430\u043D \u0437\u0430\u043D\u044F\u0442\u0438\u044F \u2014 \u0440\u0430\u0437\u0434\u0435\u043B\u0438 \u043D\u0430 \u0440\u0430\u0437\u043C\u0438\u043D\u043A\u0443, \u043E\u0441\u043D\u043E\u0432\u043D\u0443\u044E \u0447\u0430\u0441\u0442\u044C, \u043E\u0442\u0440\u0430\u0431\u043E\u0442\u043A\u0443 \u0438 \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043D\u0438\u0435.
+request=${JSON.stringify(userPrompt ?? "\u0421\u043E\u0441\u0442\u0430\u0432\u044C \u043F\u043B\u0430\u043D \u0437\u0430\u043D\u044F\u0442\u0438\u044F")}
+group=${JSON.stringify({ groupName, groupLevel, studentCount })}
+context=${JSON.stringify(context ?? {})}`;
+    try {
+      res.json(await generateJson(prompt));
+    } catch (e) {
+      res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
   app2.post("/api/gemini/competition-consult", async (req, res) => {
     if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });
     const { competition, groupName, groupLevel, studentCount } = req.body || {};
@@ -2282,6 +5864,529 @@ group=${JSON.stringify({ groupName, groupLevel, studentCount })}`;
       res.status(502).json({ error: e?.message || "AI request failed" });
     }
   });
+  app2.post("/api/gemini/parent-advice", async (req, res) => {
+    if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });
+    const { question, childName, childAge, attendanceRate: attendanceRate2 } = req.body || {};
+    const prompt = `\u0422\u044B \u2014 \u0434\u043E\u0431\u0440\u044B\u0439 \u0441\u0435\u043C\u0435\u0439\u043D\u044B\u0439 \u043D\u0430\u0441\u0442\u0430\u0432\u043D\u0438\u043A \u0448\u043A\u043E\u043B\u044B \u043A\u0430\u0432\u043A\u0430\u0437\u0441\u043A\u043E\u0433\u043E \u0442\u0430\u043D\u0446\u0430 \xAB\u042D\u0445\u043E \u0413\u043E\u0440\xBB. \u041F\u043E\u043C\u043E\u0433\u0430\u0435\u0448\u044C \u0440\u043E\u0434\u0438\u0442\u0435\u043B\u044E \u043F\u043E\u0434\u0434\u0435\u0440\u0436\u0430\u0442\u044C \u0440\u0435\u0431\u0451\u043D\u043A\u0430 \u0431\u0435\u0437 \u0434\u0430\u0432\u043B\u0435\u043D\u0438\u044F, \u043E\u043F\u0438\u0440\u0430\u044F\u0441\u044C \u043D\u0430 \u0446\u0435\u043D\u043D\u043E\u0441\u0442\u0438: \u0443\u0432\u0430\u0436\u0435\u043D\u0438\u0435 \u043A \u0441\u0442\u0430\u0440\u0448\u0438\u043C, \u0434\u0438\u0441\u0446\u0438\u043F\u043B\u0438\u043D\u0430, \u043E\u0442\u0432\u0435\u0442\u0441\u0442\u0432\u0435\u043D\u043D\u043E\u0441\u0442\u044C, \u0445\u0430\u0440\u0430\u043A\u0442\u0435\u0440. \u0412\u0435\u0440\u043D\u0438 \u0421\u0422\u0420\u041E\u0413\u041E JSON \u043F\u043E \u0441\u0445\u0435\u043C\u0435:
+{"answer": string, "weekPlan": [{"day": string, "action": string}], "suggestedQuests": [{"title": string, "category": string, "reward": string}]}
+\u041F\u0438\u0448\u0438 \u043F\u043E-\u0440\u0443\u0441\u0441\u043A\u0438, \u0442\u0435\u043F\u043B\u043E \u0438 \u043A\u043E\u043D\u043A\u0440\u0435\u0442\u043D\u043E. weekPlan \u2014 3-4 \u043F\u0443\u043D\u043A\u0442\u0430. suggestedQuests \u2014 2-3 \u043A\u0432\u0435\u0441\u0442\u0430, \u043A\u043E\u0442\u043E\u0440\u044B\u0435 \u0440\u043E\u0434\u0438\u0442\u0435\u043B\u044C \u043C\u043E\u0436\u0435\u0442 \u0434\u0430\u0442\u044C \u0440\u0435\u0431\u0451\u043D\u043A\u0443.
+question=${JSON.stringify(question ?? "")}
+child=${JSON.stringify({ childName, childAge, attendanceRate: attendanceRate2 })}`;
+    try {
+      res.json(await generateJson(prompt));
+    } catch (e) {
+      res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
+  app2.post("/api/gemini/meeting-summary", async (req, res) => {
+    if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });
+    const { transcript, title, participants, meetingDate } = req.body || {};
+    if (!String(transcript || "").trim()) return res.status(400).json({ error: "\u041D\u0435\u0442 \u0442\u0435\u043A\u0441\u0442\u0430 \u0432\u0441\u0442\u0440\u0435\u0447\u0438 \u0434\u043B\u044F \u0430\u043D\u0430\u043B\u0438\u0437\u0430" });
+    const today = meetingDate || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+    const prompt = `\u0422\u044B \u2014 \u0430\u0441\u0441\u0438\u0441\u0442\u0435\u043D\u0442-\u0441\u0435\u043A\u0440\u0435\u0442\u0430\u0440\u044C \u043F\u043B\u0430\u043D\u0451\u0440\u043E\u043A \u0441\u0435\u0442\u0438 \u0448\u043A\u043E\u043B \u043A\u0430\u0432\u043A\u0430\u0437\u0441\u043A\u043E\u0433\u043E \u0442\u0430\u043D\u0446\u0430 \xAB\u042D\u0445\u043E \u0413\u043E\u0440\xBB. \u041D\u0430 \u0432\u0445\u043E\u0434 \u2014 \u0440\u0430\u0441\u0448\u0438\u0444\u0440\u043E\u0432\u043A\u0430 (\u0438\u043B\u0438 \u0437\u0430\u043C\u0435\u0442\u043A\u0438) \u0441\u043E\u0432\u0435\u0449\u0430\u043D\u0438\u044F. \u0421\u043E\u0441\u0442\u0430\u0432\u044C \u0434\u0435\u043B\u043E\u0432\u044B\u0435 \u0438\u0442\u043E\u0433\u0438 \u0438 \u0432\u044B\u0434\u0435\u043B\u0438 \u0437\u0430\u0434\u0430\u0447\u0438. \u0412\u0435\u0440\u043D\u0438 \u0421\u0422\u0420\u041E\u0413\u041E JSON \u043F\u043E \u0441\u0445\u0435\u043C\u0435:
+{"summary": string, "decisions": string[], "actionItems": [{"title": string, "assignee": string, "dueDate": string}]}
+\u041F\u0440\u0430\u0432\u0438\u043B\u0430: \u043F\u0438\u0448\u0438 \u043F\u043E-\u0440\u0443\u0441\u0441\u043A\u0438, \u043A\u0440\u0430\u0442\u043A\u043E \u0438 \u043F\u043E \u0434\u0435\u043B\u0443. summary \u2014 3-6 \u043F\u0440\u0435\u0434\u043B\u043E\u0436\u0435\u043D\u0438\u0439 \u0441\u0443\u0442\u0438 \u0432\u0441\u0442\u0440\u0435\u0447\u0438. decisions \u2014 \u043F\u0440\u0438\u043D\u044F\u0442\u044B\u0435 \u0440\u0435\u0448\u0435\u043D\u0438\u044F. actionItems \u2014 \u043A\u043E\u043D\u043A\u0440\u0435\u0442\u043D\u044B\u0435 \u0437\u0430\u0434\u0430\u0447\u0438; assignee \u2014 \u0438\u043C\u044F \u043E\u0442\u0432\u0435\u0442\u0441\u0442\u0432\u0435\u043D\u043D\u043E\u0433\u043E \u0438\u0437 \u0443\u0447\u0430\u0441\u0442\u043D\u0438\u043A\u043E\u0432 (\u0435\u0441\u043B\u0438 \u043D\u0435 \u043D\u0430\u0437\u0432\u0430\u043D \u2014 \u043F\u0443\u0441\u0442\u0430\u044F \u0441\u0442\u0440\u043E\u043A\u0430); dueDate \u2014 \u0434\u0430\u0442\u0430 \u0432 \u0444\u043E\u0440\u043C\u0430\u0442\u0435 YYYY-MM-DD (\u0435\u0441\u043B\u0438 \u0441\u0440\u043E\u043A \u043D\u0435 \u043D\u0430\u0437\u0432\u0430\u043D \u044F\u0432\u043D\u043E, \u043E\u0441\u0442\u0430\u0432\u044C \u043F\u0443\u0441\u0442\u0443\u044E \u0441\u0442\u0440\u043E\u043A\u0443, \u043D\u0435 \u0432\u044B\u0434\u0443\u043C\u044B\u0432\u0430\u0439). \u0414\u0430\u0442\u0430 \u043F\u043B\u0430\u043D\u0451\u0440\u043A\u0438: ${today}.
+title=${JSON.stringify(title ?? "")}
+participants=${JSON.stringify(participants ?? [])}
+transcript=${JSON.stringify(String(transcript).slice(0, 24e3))}`;
+    try {
+      res.json(await generateJson(prompt));
+    } catch (e) {
+      res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
+  app2.post("/api/gemini/product-image", async (req, res) => {
+    if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });
+    const { name, category, description } = req.body || {};
+    if (!String(name || "").trim()) return res.status(400).json({ error: "\u0423\u043A\u0430\u0436\u0438\u0442\u0435 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u0442\u043E\u0432\u0430\u0440\u0430" });
+    const prompt = `\u041F\u0440\u043E\u0444\u0435\u0441\u0441\u0438\u043E\u043D\u0430\u043B\u044C\u043D\u043E\u0435 \u0440\u0435\u043A\u043B\u0430\u043C\u043D\u043E\u0435 \u0444\u043E\u0442\u043E \u0442\u043E\u0432\u0430\u0440\u0430 \u0434\u043B\u044F \u0438\u043D\u0442\u0435\u0440\u043D\u0435\u0442-\u043C\u0430\u0433\u0430\u0437\u0438\u043D\u0430 \u0448\u043A\u043E\u043B\u044B \u043A\u0430\u0432\u043A\u0430\u0437\u0441\u043A\u043E\u0433\u043E \u0442\u0430\u043D\u0446\u0430 \xAB\u042D\u0445\u043E \u0413\u043E\u0440\xBB: ${name}${category ? `, \u043A\u0430\u0442\u0435\u0433\u043E\u0440\u0438\u044F: ${category}` : ""}${description ? `. ${description}` : ""}. \u0421\u0442\u0443\u0434\u0438\u0439\u043D\u044B\u0439 \u0441\u0432\u0435\u0442, \u0447\u0438\u0441\u0442\u044B\u0439 \u0441\u0432\u0435\u0442\u043B\u044B\u0439 \u0444\u043E\u043D, \u0442\u043E\u0432\u0430\u0440 \u043F\u043E \u0446\u0435\u043D\u0442\u0440\u0443, \u0432\u044B\u0441\u043E\u043A\u0430\u044F \u0434\u0435\u0442\u0430\u043B\u0438\u0437\u0430\u0446\u0438\u044F, \u044D\u0441\u0442\u0435\u0442\u0438\u0447\u043D\u043E, \u0431\u0435\u0437 \u0442\u0435\u043A\u0441\u0442\u0430, \u0432\u043E\u0434\u044F\u043D\u044B\u0445 \u0437\u043D\u0430\u043A\u043E\u0432 \u0438 \u043B\u043E\u0433\u043E\u0442\u0438\u043F\u043E\u0432.`;
+    try {
+      const response = await genai.models.generateContent({
+        model: imageModel,
+        contents: prompt,
+        config: { responseModalities: ["IMAGE", "TEXT"] }
+      });
+      const parts = response?.candidates?.[0]?.content?.parts || [];
+      const img = parts.find((p) => p?.inlineData?.data);
+      if (!img?.inlineData?.data) return res.status(502).json({ error: "\u041C\u043E\u0434\u0435\u043B\u044C \u043D\u0435 \u0432\u0435\u0440\u043D\u0443\u043B\u0430 \u0438\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u0435" });
+      const mime = img.inlineData.mimeType || "image/png";
+      res.json({ dataUrl: `data:${mime};base64,${img.inlineData.data}` });
+    } catch (e) {
+      res.status(502).json({ error: e?.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u0433\u0435\u043D\u0435\u0440\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0438\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u0435" });
+    }
+  });
+}
+
+// server/magomedApi.ts
+var ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
+var ANTHROPIC_VERSION = "2023-06-01";
+var apiKey2 = process.env.ANTHROPIC_API_KEY;
+var model2 = process.env.ANTHROPIC_MODEL || "claude-haiku-4-5-20251001";
+var MAX_TOKENS = Number(process.env.ANTHROPIC_MAX_TOKENS) || 1024;
+var supabaseUrl2 = process.env.SUPABASE_URL?.replace(/\/$/, "");
+var supabaseKey2 = process.env.SUPABASE_SERVICE_ROLE_KEY;
+var supabaseEnabled2 = Boolean(supabaseUrl2 && supabaseKey2);
+var ORG_ID = "00000000-0000-0000-0000-000000000001";
+var DEMO_BRANCH_ALMATY = "00000000-0000-0000-0000-000000000101";
+function getSession2(req) {
+  const raw = String(req.headers["x-demo-role"] || "owner");
+  const role = raw === "branch_manager" || raw === "admin" || raw === "teacher" ? raw : "owner";
+  return {
+    role,
+    organizationId: ORG_ID,
+    dbBranchId: role === "owner" ? null : DEMO_BRANCH_ALMATY
+  };
+}
+async function supabaseFetch2(table, query = "select=*", init = {}) {
+  if (!supabaseEnabled2) throw new Error("SUPABASE_NOT_CONFIGURED");
+  const separator = query ? "?" : "";
+  const response = await fetch(`${supabaseUrl2}/rest/v1/${table}${separator}${query}`, {
+    ...init,
+    headers: {
+      apikey: supabaseKey2,
+      Authorization: `Bearer ${supabaseKey2}`,
+      "Content-Type": "application/json",
+      ...init.headers || {}
+    }
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Supabase ${response.status}: ${text.slice(0, 200)}`);
+  }
+  return await response.json();
+}
+function sanitize(q) {
+  return String(q ?? "").replace(/[(),*]/g, " ").trim().slice(0, 60);
+}
+function branchClause(session) {
+  return session.dbBranchId ? `&branch_id=eq.${session.dbBranchId}` : "";
+}
+function fullName(row) {
+  return [row.first_name, row.last_name].filter(Boolean).join(" ") || row.full_name || "\u2014";
+}
+var STUDENT_STATUS_RU = {
+  lead: "\u041B\u0438\u0434",
+  trial: "\u041F\u0440\u043E\u0431\u043D\u043E\u0435",
+  active: "\u0410\u043A\u0442\u0438\u0432\u0435\u043D",
+  paused: "\u041F\u0430\u0443\u0437\u0430",
+  debt: "\u0414\u043E\u043B\u0436\u043D\u0438\u043A",
+  left: "\u0423\u0448\u0451\u043B",
+  archived: "\u0412 \u0430\u0440\u0445\u0438\u0432\u0435"
+};
+var PRIORITY_RU = {
+  low: "\u043D\u0438\u0437\u043A\u0438\u0439",
+  normal: "\u043E\u0431\u044B\u0447\u043D\u044B\u0439",
+  high: "\u0432\u044B\u0441\u043E\u043A\u0438\u0439"
+};
+async function toolSearchCrm(args, session) {
+  const entity = String(args?.entity || "students");
+  const q = sanitize(args?.query);
+  const enc = encodeURIComponent(`*${q}*`);
+  const org = `organization_id=eq.${session.organizationId}`;
+  const branch = branchClause(session);
+  if (entity === "students") {
+    const or = q ? `&or=(first_name.ilike.${enc},last_name.ilike.${enc},middle_name.ilike.${enc},phone.ilike.${enc},parent_name.ilike.${enc},parent_phone.ilike.${enc})` : "";
+    const rows = await supabaseFetch2(
+      "students",
+      `select=id,first_name,last_name,middle_name,phone,parent_name,parent_phone,status,group_id&${org}&status=neq.archived&deletion_requested_at=is.null${branch}${or}&limit=15`
+    );
+    return {
+      count: rows.length,
+      students: rows.map((r) => ({
+        id: r.id,
+        name: fullName(r),
+        phone: r.phone || r.parent_phone || null,
+        parent: r.parent_name || null,
+        status: STUDENT_STATUS_RU[r.status] || r.status
+      }))
+    };
+  }
+  if (entity === "teachers") {
+    const or = q ? `&or=(full_name.ilike.${enc},phone.ilike.${enc})` : "";
+    const rows = await supabaseFetch2(
+      "users",
+      `select=id,full_name,phone,role,branch_id&${org}&role=eq.teacher${branch}${or}&limit=15`
+    );
+    return {
+      count: rows.length,
+      teachers: rows.map((r) => ({ id: r.id, name: r.full_name, phone: r.phone || null }))
+    };
+  }
+  if (entity === "groups") {
+    const or = q ? `&name=ilike.${enc}` : "";
+    const rows = await supabaseFetch2(
+      "groups",
+      `select=id,name,branch_id,teacher_id&${org}${branch}${or}&limit=20`
+    );
+    return { count: rows.length, groups: rows.map((r) => ({ id: r.id, name: r.name })) };
+  }
+  if (entity === "tasks") {
+    const or = q ? `&or=(title.ilike.${enc},description.ilike.${enc})` : "";
+    const rows = await supabaseFetch2(
+      "tasks",
+      `select=id,title,status,priority,due_at,branch_id${branch}${or}&order=created_at.desc&limit=20`
+    );
+    return {
+      count: rows.length,
+      tasks: rows.map((r) => ({
+        id: r.id,
+        title: r.title,
+        status: r.status,
+        priority: r.priority,
+        dueAt: r.due_at
+      }))
+    };
+  }
+  return { error: `\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u0430\u044F \u0441\u0443\u0449\u043D\u043E\u0441\u0442\u044C: ${entity}. \u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E: students, teachers, groups, tasks.` };
+}
+async function toolGetRecordDetails(args, session) {
+  const entity = String(args?.entity || "students");
+  const id = sanitize(args?.id);
+  if (!id) return { error: "\u041D\u0435 \u0443\u043A\u0430\u0437\u0430\u043D id." };
+  const branch = branchClause(session);
+  if (entity === "students") {
+    const rows = await supabaseFetch2(
+      "students",
+      `select=*&id=eq.${id}${branch}&limit=1`
+    );
+    const r = rows[0];
+    if (!r) return { found: false };
+    const subs = await supabaseFetch2(
+      "student_subscriptions",
+      `select=plan_name,lessons_left,lessons_total,status,ends_on&student_id=eq.${id}&order=ends_on.desc&limit=3`
+    ).catch(() => []);
+    const payments = await supabaseFetch2(
+      "payments",
+      `select=amount,paid_at,status&student_id=eq.${id}&order=paid_at.desc&limit=5`
+    ).catch(() => []);
+    return {
+      found: true,
+      student: {
+        id: r.id,
+        name: fullName(r),
+        phone: r.phone || null,
+        parent: r.parent_name || null,
+        parentPhone: r.parent_phone || null,
+        status: STUDENT_STATUS_RU[r.status] || r.status,
+        birthday: r.birthday || null,
+        comment: r.comment || null,
+        subscriptions: subs,
+        lastPayments: payments
+      }
+    };
+  }
+  if (entity === "tasks") {
+    const rows = await supabaseFetch2("tasks", `select=*&id=eq.${id}${branch}&limit=1`);
+    return rows[0] ? { found: true, task: rows[0] } : { found: false };
+  }
+  if (entity === "groups") {
+    const rows = await supabaseFetch2(
+      "groups",
+      `select=*&id=eq.${id}&organization_id=eq.${session.organizationId}${branch}&limit=1`
+    );
+    return rows[0] ? { found: true, group: rows[0] } : { found: false };
+  }
+  return { error: `\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u0430\u044F \u0441\u0443\u0449\u043D\u043E\u0441\u0442\u044C: ${entity}.` };
+}
+function periodStartIso(period) {
+  const now = /* @__PURE__ */ new Date();
+  if (period === "today") {
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+  }
+  if (period === "week") {
+    const d = new Date(now);
+    d.setDate(d.getDate() - 7);
+    return d.toISOString();
+  }
+  return new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+}
+async function toolGetSalesSummary(args, session) {
+  const period = ["today", "week", "month"].includes(String(args?.period)) ? String(args?.period) : "month";
+  const start = periodStartIso(period);
+  const org = `organization_id=eq.${session.organizationId}`;
+  const branch = branchClause(session);
+  const rows = await supabaseFetch2(
+    "payments",
+    `select=amount,paid_at,status&${org}&status=eq.paid&paid_at=gte.${start}${branch}&limit=2000`
+  );
+  const total = rows.reduce((sum, r) => sum + Number(r.amount || 0), 0);
+  return {
+    period,
+    from: start.slice(0, 10),
+    paymentsCount: rows.length,
+    totalAmount: total,
+    currency: "\u20B8",
+    scope: session.dbBranchId ? "\u0444\u0438\u043B\u0438\u0430\u043B" : "\u0432\u0441\u044F \u0441\u0435\u0442\u044C"
+  };
+}
+async function toolGetStudentsSummary(_args, session) {
+  const org = `organization_id=eq.${session.organizationId}`;
+  const branch = branchClause(session);
+  const rows = await supabaseFetch2(
+    "students",
+    `select=status&${org}&status=neq.archived&deletion_requested_at=is.null${branch}&limit=5000`
+  );
+  const byStatus = {};
+  for (const r of rows) {
+    const key = STUDENT_STATUS_RU[r.status] || r.status || "\u2014";
+    byStatus[key] = (byStatus[key] || 0) + 1;
+  }
+  return {
+    total: rows.length,
+    byStatus,
+    scope: session.dbBranchId ? "\u0444\u0438\u043B\u0438\u0430\u043B" : "\u0432\u0441\u044F \u0441\u0435\u0442\u044C"
+  };
+}
+var AFFIRM_RE = /^(да|ага|угу|ок|окей|окей|подтвержд\w*|подтверждаю|верно|всё верно|все верно|давай|давайте|конечно|yes|yep|yeah|sure|ok|okay)\b/i;
+function isAffirmation(text) {
+  const t = (text || "").trim();
+  return t.length > 0 && t.length <= 30 && AFFIRM_RE.test(t);
+}
+async function toolCreateTask(args, session, lastUserText) {
+  const title = String(args?.title ?? "").trim().slice(0, 200);
+  if (!title) return { error: "\u041D\u0435 \u0443\u043A\u0430\u0437\u0430\u043D \u0437\u0430\u0433\u043E\u043B\u043E\u0432\u043E\u043A \u0437\u0430\u0434\u0430\u0447\u0438." };
+  const priority = ["low", "normal", "high"].includes(String(args?.priority)) ? String(args?.priority) : "normal";
+  const description = args?.description ? String(args.description).slice(0, 1e3) : null;
+  const dueAt = args?.dueAt ? String(args.dueAt).slice(0, 40) : null;
+  let studentId = null;
+  let studentName = null;
+  if (args?.studentName) {
+    const found = await toolSearchCrm(
+      { entity: "students", query: args.studentName },
+      session
+    );
+    const first = found?.students?.[0];
+    if (first) {
+      studentId = first.id;
+      studentName = first.name;
+    }
+  }
+  const preview = {
+    title,
+    priority: PRIORITY_RU[priority],
+    dueAt,
+    student: studentName,
+    scope: session.dbBranchId ? "\u0444\u0438\u043B\u0438\u0430\u043B" : "\u0432\u0441\u044F \u0441\u0435\u0442\u044C"
+  };
+  if (!isAffirmation(lastUserText)) {
+    return {
+      needsConfirmation: true,
+      willCreate: preview,
+      instruction: "\u041D\u0415 \u0441\u043E\u0437\u0434\u0430\u0432\u0430\u0439 \u0437\u0430\u0434\u0430\u0447\u0443 \u0441\u0435\u0439\u0447\u0430\u0441. \u041F\u043E\u043A\u0430\u0436\u0438 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044E \u043F\u0440\u0435\u0432\u044C\u044E (\u0447\u0442\u043E \u0431\u0443\u0434\u0435\u0442 \u0441\u043E\u0437\u0434\u0430\u043D\u043E) \u0438 \u043F\u043E\u043F\u0440\u043E\u0441\u0438 \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u0442\u044C \u0434\u043E\u0441\u043B\u043E\u0432\u043D\u043E: \xAB\u041D\u0430\u043F\u0438\u0448\u0438\u0442\u0435 \xAB\u0414\u0430\xBB \u0434\u043B\u044F \u0441\u043E\u0437\u0434\u0430\u043D\u0438\u044F\xBB. \u0417\u0430\u0434\u0430\u0447\u0430 \u0431\u0443\u0434\u0435\u0442 \u0441\u043E\u0437\u0434\u0430\u043D\u0430 \u0442\u043E\u043B\u044C\u043A\u043E \u043F\u043E\u0441\u043B\u0435 \u0442\u043E\u0433\u043E, \u043A\u0430\u043A \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044C \u043E\u0442\u0432\u0435\u0442\u0438\u0442 \xAB\u0414\u0430\xBB."
+    };
+  }
+  const inserted = await supabaseFetch2("tasks", "", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      branch_id: session.dbBranchId,
+      student_id: studentId,
+      title,
+      description,
+      status: "new",
+      priority,
+      due_at: dueAt
+    })
+  });
+  return {
+    created: true,
+    taskId: inserted?.[0]?.id ?? null,
+    task: preview
+  };
+}
+async function executeTool(name, args, session, lastUserText) {
+  try {
+    if (!supabaseEnabled2) {
+      return { error: "\u0411\u0430\u0437\u0430 \u0434\u0430\u043D\u043D\u044B\u0445 \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0430 (Supabase \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D). \u0421\u043E\u043E\u0431\u0449\u0438 \u043E\u0431 \u044D\u0442\u043E\u043C \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044E." };
+    }
+    if (name === "search_crm") return await toolSearchCrm(args, session);
+    if (name === "get_record_details") return await toolGetRecordDetails(args, session);
+    if (name === "get_sales_summary") return await toolGetSalesSummary(args, session);
+    if (name === "get_students_summary") return await toolGetStudentsSummary(args, session);
+    if (name === "create_task") return await toolCreateTask(args, session, lastUserText);
+    return { error: `\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0439 \u0438\u043D\u0441\u0442\u0440\u0443\u043C\u0435\u043D\u0442: ${name}` };
+  } catch (e) {
+    if (e?.message === "SUPABASE_NOT_CONFIGURED") {
+      return { error: "\u0411\u0430\u0437\u0430 \u0434\u0430\u043D\u043D\u044B\u0445 \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0430 (Supabase \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D)." };
+    }
+    return { error: `\u041E\u0448\u0438\u0431\u043A\u0430 \u043E\u0431\u0440\u0430\u0449\u0435\u043D\u0438\u044F \u043A \u0431\u0430\u0437\u0435: ${e?.message || "unknown"}` };
+  }
+}
+var tools = [
+  {
+    name: "search_crm",
+    description: "\u041F\u043E\u0438\u0441\u043A \u0437\u0430\u043F\u0438\u0441\u0435\u0439 \u0432 CRM \u043F\u043E \u0438\u043C\u0435\u043D\u0438, \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u0443 \u0438\u043B\u0438 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u044E. \u0412\u043E\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442 \u043A\u0440\u0430\u0442\u043A\u0438\u0439 \u0441\u043F\u0438\u0441\u043E\u043A \u0441 id. \u0418\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439, \u043A\u043E\u0433\u0434\u0430 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044C \u0438\u0449\u0435\u0442 \u0443\u0447\u0435\u043D\u0438\u043A\u0430, \u043F\u0440\u0435\u043F\u043E\u0434\u0430\u0432\u0430\u0442\u0435\u043B\u044F, \u0433\u0440\u0443\u043F\u043F\u0443 \u0438\u043B\u0438 \u0437\u0430\u0434\u0430\u0447\u0443.",
+    input_schema: {
+      type: "object",
+      properties: {
+        entity: {
+          type: "string",
+          enum: ["students", "teachers", "groups", "tasks"],
+          description: "\u0422\u0438\u043F \u0437\u0430\u043F\u0438\u0441\u0438"
+        },
+        query: {
+          type: "string",
+          description: "\u041F\u043E\u0438\u0441\u043A\u043E\u0432\u0430\u044F \u0441\u0442\u0440\u043E\u043A\u0430: \u0438\u043C\u044F, \u0444\u0430\u043C\u0438\u043B\u0438\u044F, \u0442\u0435\u043B\u0435\u0444\u043E\u043D \u0438\u043B\u0438 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435. \u041C\u043E\u0436\u0435\u0442 \u0431\u044B\u0442\u044C \u043F\u0443\u0441\u0442\u043E\u0439 \u0434\u043B\u044F \u0441\u043F\u0438\u0441\u043A\u0430."
+        }
+      },
+      required: ["entity"]
+    }
+  },
+  {
+    name: "get_record_details",
+    description: "\u041F\u043E\u043B\u043D\u0430\u044F \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0430 \u043E\u0434\u043D\u043E\u0439 \u0437\u0430\u043F\u0438\u0441\u0438 \u043F\u043E \u0435\u0451 id (\u043F\u043E\u043B\u0443\u0447\u0438 id \u0447\u0435\u0440\u0435\u0437 search_crm). \u0414\u043B\u044F \u0443\u0447\u0435\u043D\u0438\u043A\u0430 \u0432\u043E\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442 \u0430\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442\u044B \u0438 \u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0435 \u043E\u043F\u043B\u0430\u0442\u044B.",
+    input_schema: {
+      type: "object",
+      properties: {
+        entity: { type: "string", enum: ["students", "tasks", "groups"] },
+        id: { type: "string", description: "UUID \u0437\u0430\u043F\u0438\u0441\u0438" }
+      },
+      required: ["entity", "id"]
+    }
+  },
+  {
+    name: "get_sales_summary",
+    description: "\u0421\u0432\u043E\u0434\u043A\u0430 \u043F\u043E \u043E\u043F\u043B\u0430\u0442\u0430\u043C (\u0432\u044B\u0440\u0443\u0447\u043A\u0430) \u0437\u0430 \u043F\u0435\u0440\u0438\u043E\u0434: \u0441\u0435\u0433\u043E\u0434\u043D\u044F, \u043D\u0435\u0434\u0435\u043B\u044F \u0438\u043B\u0438 \u043C\u0435\u0441\u044F\u0446. \u0421\u043A\u043E\u0443\u043F \u0437\u0430\u0432\u0438\u0441\u0438\u0442 \u043E\u0442 \u0440\u043E\u043B\u0438: \u0432\u043B\u0430\u0434\u0435\u043B\u0435\u0446 \u0432\u0438\u0434\u0438\u0442 \u0432\u0441\u044E \u0441\u0435\u0442\u044C, \u043E\u0441\u0442\u0430\u043B\u044C\u043D\u044B\u0435 \u2014 \u0441\u0432\u043E\u0439 \u0444\u0438\u043B\u0438\u0430\u043B.",
+    input_schema: {
+      type: "object",
+      properties: {
+        period: { type: "string", enum: ["today", "week", "month"] }
+      },
+      required: ["period"]
+    }
+  },
+  {
+    name: "get_students_summary",
+    description: "\u0421\u0432\u043E\u0434\u043A\u0430 \u043F\u043E \u0443\u0447\u0435\u043D\u0438\u043A\u0430\u043C: \u043E\u0431\u0449\u0435\u0435 \u043A\u043E\u043B\u0438\u0447\u0435\u0441\u0442\u0432\u043E \u0438 \u0440\u0430\u0437\u0431\u0438\u0432\u043A\u0430 \u043F\u043E \u0441\u0442\u0430\u0442\u0443\u0441\u0430\u043C (\u0410\u043A\u0442\u0438\u0432\u0435\u043D, \u0414\u043E\u043B\u0436\u043D\u0438\u043A, \u041F\u0440\u043E\u0431\u043D\u043E\u0435, \u041B\u0438\u0434, \u041F\u0430\u0443\u0437\u0430, \u0423\u0448\u0451\u043B). \u0418\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 \u0434\u043B\u044F \u0432\u043E\u043F\u0440\u043E\u0441\u043E\u0432 \u0432\u0438\u0434\u0430 \xAB\u0441\u043A\u043E\u043B\u044C\u043A\u043E \u0430\u043A\u0442\u0438\u0432\u043D\u044B\u0445 \u0443\u0447\u0435\u043D\u0438\u043A\u043E\u0432\xBB, \xAB\u0441\u043A\u043E\u043B\u044C\u043A\u043E \u0434\u043E\u043B\u0436\u043D\u0438\u043A\u043E\u0432\xBB, \xAB\u0441\u043A\u043E\u043B\u044C\u043A\u043E \u0432\u0441\u0435\u0433\u043E \u0443\u0447\u0435\u043D\u0438\u043A\u043E\u0432\xBB. \u0421\u043A\u043E\u0443\u043F \u0437\u0430\u0432\u0438\u0441\u0438\u0442 \u043E\u0442 \u0440\u043E\u043B\u0438.",
+    input_schema: { type: "object", properties: {} }
+  },
+  {
+    name: "create_task",
+    description: "\u0421\u043E\u0437\u0434\u0430\u0442\u044C \u0437\u0430\u0434\u0430\u0447\u0443 \u0432 CRM. \u0412\u0410\u0416\u041D\u041E: \u0441\u043D\u0430\u0447\u0430\u043B\u0430 \u0432\u044B\u0437\u043E\u0432\u0438 \u0431\u0435\u0437 confirmed (\u0438\u043B\u0438 confirmed=false), \u0447\u0442\u043E\u0431\u044B \u043F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u043F\u0440\u0435\u0432\u044C\u044E, \u043F\u043E\u043A\u0430\u0436\u0438 \u0435\u0433\u043E \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044E \u0438 \u043F\u043E\u043F\u0440\u043E\u0441\u0438 \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u0438\u0435. \u0412\u044B\u0437\u044B\u0432\u0430\u0439 \u0441 confirmed=true \u0422\u041E\u041B\u042C\u041A\u041E \u043F\u043E\u0441\u043B\u0435 \u044F\u0432\u043D\u043E\u0433\u043E \u0441\u043E\u0433\u043B\u0430\u0441\u0438\u044F \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F.",
+    input_schema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "\u0417\u0430\u0433\u043E\u043B\u043E\u0432\u043E\u043A \u0437\u0430\u0434\u0430\u0447\u0438" },
+        description: { type: "string", description: "\u041E\u043F\u0438\u0441\u0430\u043D\u0438\u0435 (\u043D\u0435\u043E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u043E)" },
+        priority: { type: "string", enum: ["low", "normal", "high"] },
+        dueAt: {
+          type: "string",
+          description: "\u0421\u0440\u043E\u043A \u0432 ISO-\u0444\u043E\u0440\u043C\u0430\u0442\u0435, \u043D\u0430\u043F\u0440. 2026-06-25 (\u043D\u0435\u043E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u043E)"
+        },
+        studentName: {
+          type: "string",
+          description: "\u0418\u043C\u044F \u0443\u0447\u0435\u043D\u0438\u043A\u0430 \u0434\u043B\u044F \u043F\u0440\u0438\u0432\u044F\u0437\u043A\u0438 \u0437\u0430\u0434\u0430\u0447\u0438 (\u043D\u0435\u043E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u043E)"
+        },
+        confirmed: {
+          type: "boolean",
+          description: "true \u2014 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044C \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u043B \u0441\u043E\u0437\u0434\u0430\u043D\u0438\u0435. \u0418\u043D\u0430\u0447\u0435 \u0432\u0435\u0440\u043D\u0451\u0442\u0441\u044F \u0442\u043E\u043B\u044C\u043A\u043E \u043F\u0440\u0435\u0432\u044C\u044E."
+        }
+      },
+      required: ["title"]
+    }
+  }
+];
+var SYSTEM_PROMPT = `\u0422\u044B \u2014 \u041C\u0430\u0433\u043E\u043C\u0435\u0434, \u0443\u043C\u043D\u044B\u0439, \u043D\u0430\u0434\u0451\u0436\u043D\u044B\u0439 \u0438 \u0438\u0441\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u044B\u0439 \u0418\u0418-\u043F\u043E\u043C\u043E\u0449\u043D\u0438\u043A CRM-\u0441\u0438\u0441\u0442\u0435\u043C\u044B \u0448\u043A\u043E\u043B\u044B \u043A\u0430\u0432\u043A\u0430\u0437\u0441\u043A\u043E\u0433\u043E \u0442\u0430\u043D\u0446\u0430 \xAB\u042D\u0445\u043E \u0413\u043E\u0440\xBB. \u0422\u044B \u0432\u0441\u0442\u0440\u043E\u0435\u043D \u0432 \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441 \u043A\u0430\u043A \u0447\u0430\u0442-\u0432\u0438\u0434\u0436\u0435\u0442.
+
+\u0425\u0410\u0420\u0410\u041A\u0422\u0415\u0420 \u0418 \u0421\u0422\u0418\u041B\u042C:
+- \u041F\u0440\u043E\u0444\u0435\u0441\u0441\u0438\u043E\u043D\u0430\u043B\u044C\u043D\u043E, \u0432\u0435\u0436\u043B\u0438\u0432\u043E, \u0441 \u043B\u0451\u0433\u043A\u0438\u043C \u043E\u0442\u0442\u0435\u043D\u043A\u043E\u043C \u0442\u0440\u0430\u0434\u0438\u0446\u0438\u043E\u043D\u043D\u043E\u0433\u043E \u0433\u043E\u0441\u0442\u0435\u043F\u0440\u0438\u0438\u043C\u0441\u0442\u0432\u0430 \u0438 \u0443\u0432\u0430\u0436\u0435\u043D\u0438\u044F \u0432 \u0434\u0443\u0445\u0435 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u044F \xAB\u042D\u0445\u043E \u0433\u043E\u0440\xBB. \u041E\u0431\u0440\u0430\u0449\u0430\u0439\u0441\u044F \u043A \u0441\u043E\u0442\u0440\u0443\u0434\u043D\u0438\u043A\u0443 \u0443\u0432\u0430\u0436\u0438\u0442\u0435\u043B\u044C\u043D\u043E.
+- \u041C\u0430\u043A\u0441\u0438\u043C\u0430\u043B\u044C\u043D\u043E \u043A\u0440\u0430\u0442\u043A\u043E \u0438 \u0447\u0451\u0442\u043A\u043E \u2014 \u0442\u044B \u0440\u0430\u0431\u043E\u0442\u0430\u0435\u0448\u044C \u0432 \u0443\u0437\u043A\u043E\u043C \u0432\u0438\u0434\u0436\u0435\u0442\u0435. \u041D\u0438\u043A\u0430\u043A\u043E\u0439 \u0432\u043E\u0434\u044B. \u041A\u043B\u044E\u0447\u0435\u0432\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435 \u0432\u044B\u0434\u0435\u043B\u044F\u0439 **\u0436\u0438\u0440\u043D\u044B\u043C**, \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 \u043A\u043E\u0440\u043E\u0442\u043A\u0438\u0435 \u0441\u043F\u0438\u0441\u043A\u0438.
+- \u041F\u0440\u043E\u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0441\u0442\u044C: \u043F\u0440\u0435\u0434\u043B\u0430\u0433\u0430\u0439 \u043B\u043E\u0433\u0438\u0447\u043D\u044B\u0439 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u0439 \u0448\u0430\u0433 (\u043E\u0442\u043A\u0440\u044B\u0442\u044C \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0443, \u043F\u043E\u0441\u043C\u043E\u0442\u0440\u0435\u0442\u044C \u043E\u043F\u043B\u0430\u0442\u044B, \u0441\u043E\u0437\u0434\u0430\u0442\u044C \u0437\u0430\u0434\u0430\u0447\u0443).
+
+\u0413\u041B\u0410\u0412\u041D\u042B\u0415 \u041F\u0420\u0410\u0412\u0418\u041B\u0410:
+1. \u041D\u0418\u041A\u0410\u041A\u0418\u0425 \u0413\u0410\u041B\u041B\u042E\u0426\u0418\u041D\u0410\u0426\u0418\u0419. \u041E\u0442\u0432\u0435\u0447\u0430\u0439 \u0418\u0421\u041A\u041B\u042E\u0427\u0418\u0422\u0415\u041B\u042C\u041D\u041E \u043F\u043E \u0434\u0430\u043D\u043D\u044B\u043C, \u043F\u043E\u043B\u0443\u0447\u0435\u043D\u043D\u044B\u043C \u0438\u0437 \u0438\u043D\u0441\u0442\u0440\u0443\u043C\u0435\u043D\u0442\u043E\u0432. \u041D\u0435 \u0432\u044B\u0434\u0443\u043C\u044B\u0432\u0430\u0439 \u0438\u043C\u0435\u043D\u0430, \u0446\u0438\u0444\u0440\u044B, \u0434\u0430\u0442\u044B, \u0441\u0442\u0430\u0442\u0443\u0441\u044B. \u0415\u0441\u043B\u0438 \u0438\u043D\u0441\u0442\u0440\u0443\u043C\u0435\u043D\u0442 \u0432\u0435\u0440\u043D\u0443\u043B \u043F\u0443\u0441\u0442\u043E \u2014 \u0441\u043A\u0430\u0436\u0438 \u043F\u0440\u044F\u043C\u043E: \xAB\u0412 \u0431\u0430\u0437\u0435 \u0434\u0430\u043D\u043D\u044B\u0445 \u043D\u0435\u0442 \u0438\u043D\u0444\u043E\u0440\u043C\u0430\u0446\u0438\u0438 \u043F\u043E \u044D\u0442\u043E\u043C\u0443 \u0437\u0430\u043F\u0440\u043E\u0441\u0443\xBB.
+2. \u0427\u0442\u043E\u0431\u044B \u043E\u0442\u0432\u0435\u0442\u0438\u0442\u044C \u043F\u0440\u043E \u0434\u0430\u043D\u043D\u044B\u0435 CRM \u2014 \u0441\u043D\u0430\u0447\u0430\u043B\u0430 \u0432\u044B\u0437\u043E\u0432\u0438 \u043F\u043E\u0434\u0445\u043E\u0434\u044F\u0449\u0438\u0439 \u0438\u043D\u0441\u0442\u0440\u0443\u043C\u0435\u043D\u0442. \u041D\u0435 \u043E\u0442\u0432\u0435\u0447\u0430\u0439 \u043F\u043E \u043F\u0430\u043C\u044F\u0442\u0438.
+3. \u0417\u0410\u0429\u0418\u0422\u0410 \u041E\u0422 \u0414\u0415\u0421\u0422\u0420\u0423\u041A\u0422\u0418\u0412\u041D\u042B\u0425 \u0414\u0415\u0419\u0421\u0422\u0412\u0418\u0419. \u0421\u043E\u0437\u0434\u0430\u0432\u0430\u0442\u044C \u0437\u0430\u0434\u0430\u0447\u0438 \u043C\u043E\u0436\u043D\u043E \u0447\u0435\u0440\u0435\u0437 create_task, \u043D\u043E \u0422\u041E\u041B\u042C\u041A\u041E \u0441 \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u0438\u0435\u043C: \u0441\u043D\u0430\u0447\u0430\u043B\u0430 \u0432\u044B\u0437\u043E\u0432\u0438 create_task \u0431\u0435\u0437 confirmed, \u043F\u043E\u043A\u0430\u0436\u0438 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044E \u043F\u0440\u0435\u0432\u044C\u044E (\u0447\u0442\u043E \u0438\u043C\u0435\u043D\u043D\u043E \u0441\u043E\u0437\u0434\u0430\u0448\u044C) \u0438 \u043F\u043E\u043F\u0440\u043E\u0441\u0438 \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u0442\u044C \u2014 \xAB\u041D\u0430\u043F\u0438\u0448\u0438\u0442\u0435 \xAB\u0414\u0430\xBB \u0434\u043B\u044F \u0441\u043E\u0437\u0434\u0430\u043D\u0438\u044F\xBB. \u0412\u044B\u0437\u044B\u0432\u0430\u0439 create_task \u0441 confirmed=true \u043B\u0438\u0448\u044C \u043F\u043E\u0441\u043B\u0435 \u044F\u0432\u043D\u043E\u0433\u043E \u0441\u043E\u0433\u043B\u0430\u0441\u0438\u044F. \u0423\u0434\u0430\u043B\u0435\u043D\u0438\u0435, \u043C\u0430\u0441\u0441\u043E\u0432\u0430\u044F \u0440\u0430\u0441\u0441\u044B\u043B\u043A\u0430 \u0438 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u0435 \u0441\u0443\u0449\u0435\u0441\u0442\u0432\u0443\u044E\u0449\u0438\u0445 \u0437\u0430\u043F\u0438\u0441\u0435\u0439 \u0443 \u0442\u0435\u0431\u044F \u041D\u0415 \u0440\u0435\u0430\u043B\u0438\u0437\u043E\u0432\u0430\u043D\u044B \u2014 \u0432\u0435\u0436\u043B\u0438\u0432\u043E \u043E\u0431\u044A\u044F\u0441\u043D\u0438, \u0447\u0442\u043E \u044D\u0442\u043E \u0434\u0435\u043B\u0430\u0435\u0442\u0441\u044F \u0432 \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0435 CRM.
+4. \u0424\u043E\u0440\u043C\u0430\u0442\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435: \u0441\u0443\u043C\u043C\u044B \u2014 \u0441 \u0440\u0430\u0437\u0434\u0435\u043B\u0435\u043D\u0438\u0435\u043C \u0440\u0430\u0437\u0440\u044F\u0434\u043E\u0432 \u0438 \u0437\u043D\u0430\u043A\u043E\u043C \u20B8; \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u044B \u0438 \u0434\u0430\u0442\u044B \u2014 \u0432 \u0443\u0434\u043E\u0431\u043E\u0447\u0438\u0442\u0430\u0435\u043C\u043E\u043C \u0432\u0438\u0434\u0435.
+5. \u0424\u043E\u043A\u0443\u0441 \u043D\u0430 \u0440\u0430\u0431\u043E\u0442\u0435. \u0415\u0441\u043B\u0438 \u0432\u043E\u043F\u0440\u043E\u0441 \u043D\u0435 \u043F\u0440\u043E CRM/\xAB\u042D\u0445\u043E \u0413\u043E\u0440\xBB \u2014 \u0432\u0435\u0436\u043B\u0438\u0432\u043E \u0432\u0435\u0440\u043D\u0438 \u0432 \u0440\u0430\u0431\u043E\u0447\u0435\u0435 \u0440\u0443\u0441\u043B\u043E.
+
+\u041E\u0442\u0432\u0435\u0447\u0430\u0439 \u043D\u0430 \u0440\u0443\u0441\u0441\u043A\u043E\u043C \u044F\u0437\u044B\u043A\u0435.`;
+async function anthropicChat(messages) {
+  const res = await fetch(ANTHROPIC_URL, {
+    method: "POST",
+    headers: {
+      "x-api-key": apiKey2,
+      "anthropic-version": ANTHROPIC_VERSION,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: model2,
+      max_tokens: MAX_TOKENS,
+      system: SYSTEM_PROMPT,
+      messages,
+      tools,
+      temperature: 0.3
+    })
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    const err = new Error(text || `Anthropic ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
+  return res.json();
+}
+function registerMagomedApi(app2) {
+  app2.post("/api/gemini/magomed-chat", async (req, res) => {
+    if (!apiKey2) {
+      return res.status(503).json({ error: "ANTHROPIC_API_KEY is not configured" });
+    }
+    const session = getSession2(req);
+    const history = Array.isArray(req.body?.messages) ? req.body.messages : [];
+    const messages = [];
+    for (const m of history.slice(-16)) {
+      if (m && typeof m.content === "string" && m.content.trim()) {
+        messages.push({
+          role: m.role === "assistant" ? "assistant" : "user",
+          content: m.content
+        });
+      }
+    }
+    if (messages.length === 0) {
+      return res.status(400).json({ error: "\u041F\u0443\u0441\u0442\u043E\u0439 \u0437\u0430\u043F\u0440\u043E\u0441" });
+    }
+    const lastUserText = [...history].reverse().find(
+      (m) => m && m.role !== "assistant" && typeof m.content === "string"
+    )?.content || "";
+    try {
+      let reply = "";
+      for (let step = 0; step < 6; step++) {
+        const data = await anthropicChat(messages);
+        const content = Array.isArray(data?.content) ? data.content : [];
+        if (content.length === 0) break;
+        const text = content.filter((b) => b?.type === "text" && typeof b.text === "string").map((b) => b.text).join("").trim();
+        const toolUses = content.filter((b) => b?.type === "tool_use");
+        if (toolUses.length > 0) {
+          messages.push({ role: "assistant", content });
+          const toolResults = [];
+          for (const tu of toolUses) {
+            const result = await executeTool(tu.name || "", tu.input || {}, session, lastUserText);
+            toolResults.push({
+              type: "tool_result",
+              tool_use_id: tu.id,
+              content: JSON.stringify(result)
+            });
+          }
+          messages.push({ role: "user", content: toolResults });
+          continue;
+        }
+        reply = text;
+        break;
+      }
+      if (!reply) {
+        reply = "\u0418\u0437\u0432\u0438\u043D\u0438\u0442\u0435, \u043D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u0444\u043E\u0440\u043C\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u043E\u0442\u0432\u0435\u0442. \u041F\u043E\u043F\u0440\u043E\u0431\u0443\u0439\u0442\u0435 \u043F\u0435\u0440\u0435\u0444\u043E\u0440\u043C\u0443\u043B\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0437\u0430\u043F\u0440\u043E\u0441.";
+      }
+      res.json({ reply });
+    } catch (e) {
+      if (e?.status === 429 || e?.status === 529) {
+        return res.status(429).json({
+          error: "rate_limited",
+          reply: "\u0421\u0435\u0439\u0447\u0430\u0441 \u0441\u043B\u0438\u0448\u043A\u043E\u043C \u043C\u043D\u043E\u0433\u043E \u0437\u0430\u043F\u0440\u043E\u0441\u043E\u0432 \u043A \u0418\u0418. \u041F\u043E\u0436\u0430\u043B\u0443\u0439\u0441\u0442\u0430, \u043F\u043E\u043F\u0440\u043E\u0431\u0443\u0439\u0442\u0435 \u0447\u0435\u0440\u0435\u0437 \u043C\u0438\u043D\u0443\u0442\u0443."
+        });
+      }
+      res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
 }
 
 // api/__entry.ts
@@ -2289,6 +6394,7 @@ var app = express();
 app.use(express.json());
 registerMvpApi(app);
 registerGeminiApi(app);
+registerMagomedApi(app);
 var entry_default = app;
 export {
   entry_default as default

@@ -5,7 +5,7 @@
  * Историю диалога шлёт на POST /api/gemini/magomed-chat вместе с заголовком
  * x-demo-role (роль активного кабинета) — бэкенд скоупит данные по роли.
  *
- * Деградация: при 503 (нет GEMINI_API_KEY) показывает понятное сообщение,
+ * Деградация: при 503 (нет ANTHROPIC_API_KEY) показывает понятное сообщение,
  * а не падает — как остальные AI-кнопки приложения.
  */
 import { useEffect, useRef, useState } from "react";
@@ -94,7 +94,7 @@ export function MagomedAssistant({ roleHeader, roleLabel }: Props) {
           {
             role: "assistant",
             content:
-              "ИИ-помощник пока не подключён: не задан ключ **GROQ_API_KEY** на сервере. " +
+              "ИИ-помощник пока не подключён: не задан ключ **ANTHROPIC_API_KEY** на сервере. " +
               "Добавьте ключ в .env и перезапустите сервер.",
           },
         ]);
