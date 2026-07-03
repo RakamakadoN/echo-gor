@@ -5928,14 +5928,18 @@ var supabaseKey2 = process.env.SUPABASE_SERVICE_ROLE_KEY;
 var supabaseEnabled2 = Boolean(supabaseUrl2 && supabaseKey2);
 var ORG_ID = "00000000-0000-0000-0000-000000000001";
 var DEMO_BRANCH_ALMATY = "00000000-0000-0000-0000-000000000101";
+var FULL_ACCESS_ROLES = ["owner", "branch_manager"];
 function getSession2(req) {
   const raw = String(req.headers["x-demo-role"] || "owner");
   const role = raw === "branch_manager" || raw === "admin" || raw === "teacher" ? raw : "owner";
   return {
     role,
     organizationId: ORG_ID,
-    dbBranchId: role === "owner" ? null : DEMO_BRANCH_ALMATY
+    dbBranchId: FULL_ACCESS_ROLES.includes(role) ? null : DEMO_BRANCH_ALMATY
   };
+}
+function isFullAccess(session) {
+  return session.dbBranchId === null;
 }
 async function supabaseFetch2(table, query = "select=*", init = {}) {
   if (!supabaseEnabled2) throw new Error("SUPABASE_NOT_CONFIGURED");
@@ -5986,9 +5990,11 @@ async function toolSearchCrm(args, session) {
   const branch = branchClause(session);
   if (entity === "students") {
     const or = q ? `&or=(first_name.ilike.${enc},last_name.ilike.${enc},middle_name.ilike.${enc},phone.ilike.${enc},parent_name.ilike.${enc},parent_phone.ilike.${enc})` : "";
+    const archiveFilter = isFullAccess(session) ? "" : "&status=neq.archived&deletion_requested_at=is.null";
+    const limit = isFullAccess(session) ? 50 : 15;
     const rows = await supabaseFetch2(
       "students",
-      `select=id,first_name,last_name,middle_name,phone,parent_name,parent_phone,status,group_id&${org}&status=neq.archived&deletion_requested_at=is.null${branch}${or}&limit=15`
+      `select=id,first_name,last_name,middle_name,phone,parent_name,parent_phone,status,group_id&${org}${archiveFilter}${branch}${or}&limit=${limit}`
     );
     return {
       count: rows.length,
@@ -6001,15 +6007,44 @@ async function toolSearchCrm(args, session) {
       }))
     };
   }
+  if (entity === "documents") {
+    if (!isFullAccess(session)) {
+      return { error: "\u0414\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u044B \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u044B \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443 \u0438 \u0440\u0443\u043A\u043E\u0432\u043E\u0434\u0438\u0442\u0435\u043B\u044E." };
+    }
+    const or = q ? `&or=(contractor.ilike.${enc},subject.ilike.${enc},category.ilike.${enc})` : "";
+    const rows = await supabaseFetch2(
+      "documents",
+      `select=id,category,contractor,subject,amount,currency,status,date_start,date_end&${org}${or}&order=updated_at.desc&limit=30`
+    );
+    return {
+      count: rows.length,
+      documents: rows.map((r) => ({
+        id: r.id,
+        category: r.category || null,
+        contractor: r.contractor || null,
+        subject: r.subject || null,
+        amount: r.amount,
+        currency: r.currency,
+        status: r.status,
+        from: r.date_start || null,
+        until: r.date_end || null
+      }))
+    };
+  }
   if (entity === "teachers") {
     const or = q ? `&or=(full_name.ilike.${enc},phone.ilike.${enc})` : "";
     const rows = await supabaseFetch2(
       "users",
-      `select=id,full_name,phone,role,branch_id&${org}&role=eq.teacher${branch}${or}&limit=15`
+      `select=id,full_name,phone,role,branch_id,specialization&${org}&role=eq.teacher${branch}${or}&limit=${isFullAccess(session) ? 50 : 15}`
     );
     return {
       count: rows.length,
-      teachers: rows.map((r) => ({ id: r.id, name: r.full_name, phone: r.phone || null }))
+      teachers: rows.map((r) => ({
+        id: r.id,
+        name: r.full_name,
+        phone: r.phone || null,
+        specialization: r.specialization || null
+      }))
     };
   }
   if (entity === "groups") {
@@ -6037,7 +6072,54 @@ async function toolSearchCrm(args, session) {
       }))
     };
   }
-  return { error: `\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u0430\u044F \u0441\u0443\u0449\u043D\u043E\u0441\u0442\u044C: ${entity}. \u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E: students, teachers, groups, tasks.` };
+  if (entity === "performances") {
+    if (!isFullAccess(session)) {
+      return { error: "\u0412\u044B\u0441\u0442\u0443\u043F\u043B\u0435\u043D\u0438\u044F \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u044B \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443 \u0438 \u0440\u0443\u043A\u043E\u0432\u043E\u0434\u0438\u0442\u0435\u043B\u044E." };
+    }
+    const or = q ? `&or=(client_name.ilike.${enc},address.ilike.${enc})` : "";
+    const rows = await supabaseFetch2(
+      "performances",
+      `select=id,client_name,event_date,event_time,type,price,status&${org}${or}&order=event_date.desc&limit=30`
+    );
+    return {
+      count: rows.length,
+      performances: rows.map((r) => ({
+        id: r.id,
+        client: r.client_name,
+        date: r.event_date,
+        time: r.event_time || null,
+        type: r.type,
+        price: r.price,
+        status: r.status
+      }))
+    };
+  }
+  if (entity === "products") {
+    if (!isFullAccess(session)) {
+      return { error: "\u0422\u043E\u0432\u0430\u0440\u044B \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u044B \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443 \u0438 \u0440\u0443\u043A\u043E\u0432\u043E\u0434\u0438\u0442\u0435\u043B\u044E." };
+    }
+    const or = q ? `&or=(name.ilike.${enc},category.ilike.${enc},sku.ilike.${enc})` : "";
+    const rows = await supabaseFetch2(
+      "products",
+      `select=id,name,category,sku,sale_price,cost_price,min_stock,is_active&${org}${or}&order=name.asc&limit=40`
+    );
+    return {
+      count: rows.length,
+      products: rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        category: r.category || null,
+        sku: r.sku || null,
+        salePrice: r.sale_price,
+        costPrice: r.cost_price,
+        minStock: r.min_stock,
+        active: r.is_active
+      }))
+    };
+  }
+  return {
+    error: `\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u0430\u044F \u0441\u0443\u0449\u043D\u043E\u0441\u0442\u044C: ${entity}. \u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E: students, teachers, groups, tasks, documents, performances, products.`
+  };
 }
 async function toolGetRecordDetails(args, session) {
   const entity = String(args?.entity || "students");
@@ -6074,6 +6156,52 @@ async function toolGetRecordDetails(args, session) {
         lastPayments: payments
       }
     };
+  }
+  if (entity === "teachers") {
+    const rows = await supabaseFetch2(
+      "users",
+      `select=*&id=eq.${id}&organization_id=eq.${session.organizationId}&role=eq.teacher${branch}&limit=1`
+    );
+    const r = rows[0];
+    if (!r) return { found: false };
+    const comp = isFullAccess(session) ? await supabaseFetch2(
+      "teacher_compensation",
+      `select=scheme,base_salary,percent,per_lesson_rate,comment&teacher_id=eq.${id}&limit=1`
+    ).catch(() => []) : [];
+    const groups = await supabaseFetch2(
+      "groups",
+      `select=id,name&teacher_id=eq.${id}${branch}&limit=50`
+    ).catch(() => []);
+    const c = comp[0];
+    return {
+      found: true,
+      teacher: {
+        id: r.id,
+        name: r.full_name,
+        phone: r.phone || null,
+        email: r.email || null,
+        specialization: r.specialization || null,
+        status: r.status || null,
+        compensation: c ? {
+          scheme: c.scheme,
+          baseSalary: c.base_salary,
+          percent: c.percent,
+          perLessonRate: c.per_lesson_rate,
+          comment: c.comment || null
+        } : null,
+        groups: groups.map((g) => ({ id: g.id, name: g.name }))
+      }
+    };
+  }
+  if (entity === "documents") {
+    if (!isFullAccess(session)) {
+      return { error: "\u0414\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u044B \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u044B \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443 \u0438 \u0440\u0443\u043A\u043E\u0432\u043E\u0434\u0438\u0442\u0435\u043B\u044E." };
+    }
+    const rows = await supabaseFetch2(
+      "documents",
+      `select=*&id=eq.${id}&organization_id=eq.${session.organizationId}&limit=1`
+    );
+    return rows[0] ? { found: true, document: rows[0] } : { found: false };
   }
   if (entity === "tasks") {
     const rows = await supabaseFetch2("tasks", `select=*&id=eq.${id}${branch}&limit=1`);
@@ -6122,9 +6250,10 @@ async function toolGetSalesSummary(args, session) {
 async function toolGetStudentsSummary(_args, session) {
   const org = `organization_id=eq.${session.organizationId}`;
   const branch = branchClause(session);
+  const archiveFilter = isFullAccess(session) ? "" : "&status=neq.archived&deletion_requested_at=is.null";
   const rows = await supabaseFetch2(
     "students",
-    `select=status&${org}&status=neq.archived&deletion_requested_at=is.null${branch}&limit=5000`
+    `select=status&${org}${archiveFilter}${branch}&limit=5000`
   );
   const byStatus = {};
   for (const r of rows) {
@@ -6135,6 +6264,187 @@ async function toolGetStudentsSummary(_args, session) {
     total: rows.length,
     byStatus,
     scope: session.dbBranchId ? "\u0444\u0438\u043B\u0438\u0430\u043B" : "\u0432\u0441\u044F \u0441\u0435\u0442\u044C"
+  };
+}
+function monthKeyOf(dateStr) {
+  return String(dateStr || "").slice(0, 7);
+}
+async function toolGetFinanceOverview(_args, session) {
+  if (session.role !== "owner") {
+    return { error: "\u0411\u0443\u0445\u0433\u0430\u043B\u0442\u0435\u0440\u0438\u044F \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0430 \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443 \u0441\u0435\u0442\u0438." };
+  }
+  const org = `organization_id=eq.${session.organizationId}`;
+  const [accounts, categories, txns] = await Promise.all([
+    supabaseFetch2("finance_accounts", `select=*&${org}&order=sort.asc`).catch(() => []),
+    supabaseFetch2("finance_categories", `select=*&${org}`).catch(() => []),
+    supabaseFetch2(
+      "finance_transactions",
+      `select=*&${org}&type=in.(income,expense)&order=operation_date.asc&limit=5000`
+    ).catch(() => [])
+  ]);
+  if (txns.length === 0 && accounts.length === 0) {
+    return { note: "\u0412 \u0431\u0443\u0445\u0433\u0430\u043B\u0442\u0435\u0440\u0438\u0438 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442 \u043E\u043F\u0435\u0440\u0430\u0446\u0438\u0439 \u0438 \u0441\u0447\u0435\u0442\u043E\u0432." };
+  }
+  const catName = (id) => categories.find((c) => c.id === id)?.name || "\u0411\u0435\u0437 \u0441\u0442\u0430\u0442\u044C\u0438";
+  const actual = txns.filter((t) => (t.status || "actual") === "actual");
+  const planned = txns.filter((t) => t.status === "planned");
+  const accountsOut = accounts.map((a) => {
+    const inc = actual.filter((t) => t.account_id === a.id && t.type === "income").reduce((s, t) => s + Number(t.amount || 0), 0);
+    const exp = actual.filter((t) => t.account_id === a.id && t.type === "expense").reduce((s, t) => s + Number(t.amount || 0), 0);
+    return { name: a.name, balance: Number(a.opening_balance || 0) + inc - exp };
+  });
+  const months = Array.from(new Set(actual.map((t) => monthKeyOf(t.operation_date)))).sort().slice(-6);
+  const pnl = months.map((m) => {
+    const income = actual.filter((t) => t.type === "income" && monthKeyOf(t.operation_date) === m).reduce((s, t) => s + Number(t.amount || 0), 0);
+    const expense = actual.filter((t) => t.type === "expense" && monthKeyOf(t.operation_date) === m).reduce((s, t) => s + Number(t.amount || 0), 0);
+    const profit = income - expense;
+    return { month: m, income, expense, profit, margin: income > 0 ? Math.round(profit / income * 100) : 0 };
+  });
+  const topBy = (kind) => {
+    const map = {};
+    for (const t of actual.filter((x) => x.type === kind)) {
+      const key = catName(t.category_id);
+      map[key] = (map[key] || 0) + Number(t.amount || 0);
+    }
+    return Object.entries(map).map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount).slice(0, 5);
+  };
+  const incomeTotal = actual.filter((t) => t.type === "income").reduce((s, t) => s + Number(t.amount || 0), 0);
+  const expenseTotal = actual.filter((t) => t.type === "expense").reduce((s, t) => s + Number(t.amount || 0), 0);
+  const plannedIn = planned.filter((t) => t.type === "income").reduce((s, t) => s + Number(t.amount || 0), 0);
+  const plannedOut = planned.filter((t) => t.type === "expense").reduce((s, t) => s + Number(t.amount || 0), 0);
+  return {
+    currency: "\u20B8",
+    scope: "\u0432\u0441\u044F \u0441\u0435\u0442\u044C",
+    totals: {
+      income: incomeTotal,
+      expense: expenseTotal,
+      profit: incomeTotal - expenseTotal,
+      margin: incomeTotal > 0 ? Math.round((incomeTotal - expenseTotal) / incomeTotal * 100) : 0,
+      balanceTotal: accountsOut.reduce((s, a) => s + a.balance, 0),
+      plannedIncome: plannedIn,
+      plannedExpense: plannedOut
+    },
+    accounts: accountsOut,
+    monthlyPnl: pnl,
+    topExpenseCategories: topBy("expense"),
+    topIncomeCategories: topBy("income")
+  };
+}
+async function toolGetMarketingFunnel(_args, session) {
+  const org = `organization_id=eq.${session.organizationId}`;
+  const branch = branchClause(session);
+  const [students, sources] = await Promise.all([
+    supabaseFetch2(
+      "students",
+      `select=status,source_id,created_at&${org}&deletion_requested_at=is.null${branch}&limit=5000`
+    ),
+    supabaseFetch2("lead_sources", `select=id,name`).catch(() => [])
+  ]);
+  const sourceName = (id) => id && sources.find((s) => s.id === id)?.name || "\u0411\u0435\u0437 \u0438\u0441\u0442\u043E\u0447\u043D\u0438\u043A\u0430";
+  const order = ["lead", "trial", "active", "paused", "debt", "left", "archived"];
+  const funnel = {};
+  for (const st of order) funnel[STUDENT_STATUS_RU[st] || st] = 0;
+  for (const r of students) {
+    const key = STUDENT_STATUS_RU[r.status] || r.status || "\u2014";
+    funnel[key] = (funnel[key] || 0) + 1;
+  }
+  const bySrc = {};
+  for (const r of students) {
+    const name = sourceName(r.source_id);
+    if (!bySrc[name]) bySrc[name] = { total: 0, active: 0 };
+    bySrc[name].total += 1;
+    if (r.status === "active") bySrc[name].active += 1;
+  }
+  const bySource = Object.entries(bySrc).map(([source, v]) => ({
+    source,
+    total: v.total,
+    active: v.active,
+    conversion: v.total > 0 ? Math.round(v.active / v.total * 100) : 0
+  })).sort((a, b) => b.total - a.total);
+  const monthStart = /* @__PURE__ */ new Date();
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+  const newThisMonth = students.filter((r) => r.created_at && new Date(r.created_at) >= monthStart).length;
+  const leads = funnel[STUDENT_STATUS_RU.lead] || 0;
+  const active = funnel[STUDENT_STATUS_RU.active] || 0;
+  const total = students.length;
+  return {
+    scope: session.dbBranchId ? "\u0444\u0438\u043B\u0438\u0430\u043B" : "\u0432\u0441\u044F \u0441\u0435\u0442\u044C",
+    totalStudents: total,
+    newStudentsThisMonth: newThisMonth,
+    funnelByStatus: funnel,
+    leadToActiveConversion: total > 0 ? Math.round(active / total * 100) : 0,
+    hint: leads > 0 ? `${leads} \u043B\u0438\u0434\u043E\u0432 \u0435\u0449\u0451 \u043D\u0435 \u0441\u043A\u043E\u043D\u0432\u0435\u0440\u0442\u0438\u0440\u043E\u0432\u0430\u043D\u044B` : void 0,
+    bySource
+  };
+}
+async function toolGetAttendanceSummary(args, session) {
+  if (!isFullAccess(session)) {
+    return { error: "\u0421\u0432\u043E\u0434\u043A\u0430 \u043F\u043E\u0441\u0435\u0449\u0430\u0435\u043C\u043E\u0441\u0442\u0438 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0430 \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443 \u0438 \u0440\u0443\u043A\u043E\u0432\u043E\u0434\u0438\u0442\u0435\u043B\u044E." };
+  }
+  const period = ["today", "week", "month"].includes(String(args?.period)) ? String(args?.period) : "month";
+  const startIso = periodStartIso(period);
+  const rows = await supabaseFetch2(
+    "attendance",
+    `select=status&marked_at=gte.${startIso}&limit=5000`
+  ).catch(() => []);
+  const byStatus = {};
+  let present = 0;
+  let marked = 0;
+  for (const r of rows) {
+    const s = r.status || "unknown";
+    byStatus[s] = (byStatus[s] || 0) + 1;
+    if (s !== "unknown") marked += 1;
+    if (s === "present") present += 1;
+  }
+  return {
+    period,
+    from: startIso.slice(0, 10),
+    totalMarks: rows.length,
+    byStatus,
+    attendanceRate: marked ? Math.round(present / marked * 100) : 0
+  };
+}
+async function toolGetSchedule(args, session) {
+  if (!isFullAccess(session)) {
+    return { error: "\u0420\u0430\u0441\u043F\u0438\u0441\u0430\u043D\u0438\u0435 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443 \u0438 \u0440\u0443\u043A\u043E\u0432\u043E\u0434\u0438\u0442\u0435\u043B\u044E." };
+  }
+  const raw = sanitize(args?.date);
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+  const rows = await supabaseFetch2(
+    "schedule_lessons",
+    `select=starts_at,ends_at,status,group:groups(name),teacher:users!schedule_lessons_teacher_id_fkey(full_name),hall:halls(name)&starts_at=gte.${date}T00:00:00&starts_at=lte.${date}T23:59:59&order=starts_at.asc&limit=200`
+  ).catch(() => []);
+  return {
+    date,
+    count: rows.length,
+    lessons: rows.map((r) => ({
+      from: r.starts_at,
+      to: r.ends_at,
+      status: r.status,
+      group: r.group?.name || null,
+      teacher: r.teacher?.full_name || null,
+      hall: r.hall?.name || null
+    }))
+  };
+}
+async function toolListBranches(_args, session) {
+  if (!isFullAccess(session)) {
+    return { error: "\u0421\u043F\u0438\u0441\u043E\u043A \u0444\u0438\u043B\u0438\u0430\u043B\u043E\u0432 \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443 \u0438 \u0440\u0443\u043A\u043E\u0432\u043E\u0434\u0438\u0442\u0435\u043B\u044E." };
+  }
+  const rows = await supabaseFetch2(
+    "branches",
+    `select=id,name,city,status,halls(name,capacity)&limit=50`
+  ).catch(() => []);
+  return {
+    count: rows.length,
+    branches: rows.map((b) => ({
+      id: b.id,
+      name: b.name,
+      city: b.city || null,
+      status: b.status,
+      halls: (b.halls || []).map((h) => ({ name: h.name, capacity: h.capacity }))
+    }))
   };
 }
 var AFFIRM_RE = /^(да|ага|угу|ок|окей|окей|подтвержд\w*|подтверждаю|верно|всё верно|все верно|давай|давайте|конечно|yes|yep|yeah|sure|ok|okay)\b/i;
@@ -6203,6 +6513,12 @@ async function executeTool(name, args, session, lastUserText) {
     if (name === "get_record_details") return await toolGetRecordDetails(args, session);
     if (name === "get_sales_summary") return await toolGetSalesSummary(args, session);
     if (name === "get_students_summary") return await toolGetStudentsSummary(args, session);
+    if (name === "get_finance_overview") return await toolGetFinanceOverview(args, session);
+    if (name === "get_marketing_funnel") return await toolGetMarketingFunnel(args, session);
+    if (name === "get_attendance_summary") return await toolGetAttendanceSummary(args, session);
+    if (name === "get_schedule") return await toolGetSchedule(args, session);
+    if (name === "list_branches") return await toolListBranches(args, session);
+    if (name === "consult_colleague") return await consultColleague(args, session);
     if (name === "create_task") return await toolCreateTask(args, session, lastUserText);
     return { error: `\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0439 \u0438\u043D\u0441\u0442\u0440\u0443\u043C\u0435\u043D\u0442: ${name}` };
   } catch (e) {
@@ -6215,18 +6531,18 @@ async function executeTool(name, args, session, lastUserText) {
 var tools = [
   {
     name: "search_crm",
-    description: "\u041F\u043E\u0438\u0441\u043A \u0437\u0430\u043F\u0438\u0441\u0435\u0439 \u0432 CRM \u043F\u043E \u0438\u043C\u0435\u043D\u0438, \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u0443 \u0438\u043B\u0438 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u044E. \u0412\u043E\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442 \u043A\u0440\u0430\u0442\u043A\u0438\u0439 \u0441\u043F\u0438\u0441\u043E\u043A \u0441 id. \u0418\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439, \u043A\u043E\u0433\u0434\u0430 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044C \u0438\u0449\u0435\u0442 \u0443\u0447\u0435\u043D\u0438\u043A\u0430, \u043F\u0440\u0435\u043F\u043E\u0434\u0430\u0432\u0430\u0442\u0435\u043B\u044F, \u0433\u0440\u0443\u043F\u043F\u0443 \u0438\u043B\u0438 \u0437\u0430\u0434\u0430\u0447\u0443.",
+    description: "\u041F\u043E\u0438\u0441\u043A \u0437\u0430\u043F\u0438\u0441\u0435\u0439 \u0432 CRM \u043F\u043E \u0438\u043C\u0435\u043D\u0438, \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u0443, \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u044E \u0438\u043B\u0438 \u043A\u043E\u043D\u0442\u0440\u0430\u0433\u0435\u043D\u0442\u0443. \u0412\u043E\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442 \u043A\u0440\u0430\u0442\u043A\u0438\u0439 \u0441\u043F\u0438\u0441\u043E\u043A \u0441 id. \u0418\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439, \u043A\u043E\u0433\u0434\u0430 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044C \u0438\u0449\u0435\u0442 \u0443\u0447\u0435\u043D\u0438\u043A\u0430, \u043F\u0440\u0435\u043F\u043E\u0434\u0430\u0432\u0430\u0442\u0435\u043B\u044F, \u0433\u0440\u0443\u043F\u043F\u0443, \u0437\u0430\u0434\u0430\u0447\u0443 \u0438\u043B\u0438 \u0434\u043E\u043A\u0443\u043C\u0435\u043D\u0442/\u0434\u043E\u0433\u043E\u0432\u043E\u0440. \u0423 \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0430 \u0438 \u0440\u0443\u043A\u043E\u0432\u043E\u0434\u0438\u0442\u0435\u043B\u044F \u043F\u043E\u0438\u0441\u043A \u0443\u0447\u0435\u043D\u0438\u043A\u043E\u0432 \u043E\u0445\u0432\u0430\u0442\u044B\u0432\u0430\u0435\u0442 \u0432\u0441\u044E \u0441\u0435\u0442\u044C, \u0432\u043A\u043B\u044E\u0447\u0430\u044F \u0430\u0440\u0445\u0438\u0432; \u0434\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u044B \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u044B \u0442\u043E\u043B\u044C\u043A\u043E \u0438\u043C.",
     input_schema: {
       type: "object",
       properties: {
         entity: {
           type: "string",
-          enum: ["students", "teachers", "groups", "tasks"],
-          description: "\u0422\u0438\u043F \u0437\u0430\u043F\u0438\u0441\u0438"
+          enum: ["students", "teachers", "groups", "tasks", "documents", "performances", "products"],
+          description: "\u0422\u0438\u043F \u0437\u0430\u043F\u0438\u0441\u0438. documents \u2014 \u0434\u043E\u0433\u043E\u0432\u043E\u0440\u044B, performances \u2014 \u0432\u044B\u0441\u0442\u0443\u043F\u043B\u0435\u043D\u0438\u044F/\u043A\u043E\u043D\u0446\u0435\u0440\u0442\u044B, products \u2014 \u0442\u043E\u0432\u0430\u0440\u044B/\u0441\u043A\u043B\u0430\u0434 (\u044D\u0442\u0438 \u0442\u0440\u0438 \u2014 \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u0435\u0446 \u0438 \u0440\u0443\u043A\u043E\u0432\u043E\u0434\u0438\u0442\u0435\u043B\u044C)."
         },
         query: {
           type: "string",
-          description: "\u041F\u043E\u0438\u0441\u043A\u043E\u0432\u0430\u044F \u0441\u0442\u0440\u043E\u043A\u0430: \u0438\u043C\u044F, \u0444\u0430\u043C\u0438\u043B\u0438\u044F, \u0442\u0435\u043B\u0435\u0444\u043E\u043D \u0438\u043B\u0438 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435. \u041C\u043E\u0436\u0435\u0442 \u0431\u044B\u0442\u044C \u043F\u0443\u0441\u0442\u043E\u0439 \u0434\u043B\u044F \u0441\u043F\u0438\u0441\u043A\u0430."
+          description: "\u041F\u043E\u0438\u0441\u043A\u043E\u0432\u0430\u044F \u0441\u0442\u0440\u043E\u043A\u0430: \u0438\u043C\u044F, \u0444\u0430\u043C\u0438\u043B\u0438\u044F, \u0442\u0435\u043B\u0435\u0444\u043E\u043D, \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u0438\u043B\u0438 \u043A\u043E\u043D\u0442\u0440\u0430\u0433\u0435\u043D\u0442. \u041C\u043E\u0436\u0435\u0442 \u0431\u044B\u0442\u044C \u043F\u0443\u0441\u0442\u043E\u0439 \u0434\u043B\u044F \u0441\u043F\u0438\u0441\u043A\u0430."
         }
       },
       required: ["entity"]
@@ -6234,11 +6550,11 @@ var tools = [
   },
   {
     name: "get_record_details",
-    description: "\u041F\u043E\u043B\u043D\u0430\u044F \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0430 \u043E\u0434\u043D\u043E\u0439 \u0437\u0430\u043F\u0438\u0441\u0438 \u043F\u043E \u0435\u0451 id (\u043F\u043E\u043B\u0443\u0447\u0438 id \u0447\u0435\u0440\u0435\u0437 search_crm). \u0414\u043B\u044F \u0443\u0447\u0435\u043D\u0438\u043A\u0430 \u0432\u043E\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442 \u0430\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442\u044B \u0438 \u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0435 \u043E\u043F\u043B\u0430\u0442\u044B.",
+    description: "\u041F\u043E\u043B\u043D\u0430\u044F \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0430 \u043E\u0434\u043D\u043E\u0439 \u0437\u0430\u043F\u0438\u0441\u0438 \u043F\u043E \u0435\u0451 id (\u043F\u043E\u043B\u0443\u0447\u0438 id \u0447\u0435\u0440\u0435\u0437 search_crm). \u0423\u0447\u0435\u043D\u0438\u043A \u2014 \u0430\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442\u044B \u0438 \u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0435 \u043E\u043F\u043B\u0430\u0442\u044B. \u041F\u0440\u0435\u043F\u043E\u0434\u0430\u0432\u0430\u0442\u0435\u043B\u044C \u2014 \u043A\u043E\u043D\u0442\u0430\u043A\u0442\u044B, \u0441\u0445\u0435\u043C\u0430 \u0437\u0430\u0440\u043F\u043B\u0430\u0442\u044B \u0438 \u0433\u0440\u0443\u043F\u043F\u044B. \u0414\u043E\u043A\u0443\u043C\u0435\u043D\u0442 \u2014 \u0432\u0441\u0435 \u043F\u043E\u043B\u044F \u0434\u043E\u0433\u043E\u0432\u043E\u0440\u0430 (\u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u0435\u0446 \u0438 \u0440\u0443\u043A\u043E\u0432\u043E\u0434\u0438\u0442\u0435\u043B\u044C).",
     input_schema: {
       type: "object",
       properties: {
-        entity: { type: "string", enum: ["students", "tasks", "groups"] },
+        entity: { type: "string", enum: ["students", "teachers", "groups", "tasks", "documents"] },
         id: { type: "string", description: "UUID \u0437\u0430\u043F\u0438\u0441\u0438" }
       },
       required: ["entity", "id"]
@@ -6258,6 +6574,40 @@ var tools = [
   {
     name: "get_students_summary",
     description: "\u0421\u0432\u043E\u0434\u043A\u0430 \u043F\u043E \u0443\u0447\u0435\u043D\u0438\u043A\u0430\u043C: \u043E\u0431\u0449\u0435\u0435 \u043A\u043E\u043B\u0438\u0447\u0435\u0441\u0442\u0432\u043E \u0438 \u0440\u0430\u0437\u0431\u0438\u0432\u043A\u0430 \u043F\u043E \u0441\u0442\u0430\u0442\u0443\u0441\u0430\u043C (\u0410\u043A\u0442\u0438\u0432\u0435\u043D, \u0414\u043E\u043B\u0436\u043D\u0438\u043A, \u041F\u0440\u043E\u0431\u043D\u043E\u0435, \u041B\u0438\u0434, \u041F\u0430\u0443\u0437\u0430, \u0423\u0448\u0451\u043B). \u0418\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 \u0434\u043B\u044F \u0432\u043E\u043F\u0440\u043E\u0441\u043E\u0432 \u0432\u0438\u0434\u0430 \xAB\u0441\u043A\u043E\u043B\u044C\u043A\u043E \u0430\u043A\u0442\u0438\u0432\u043D\u044B\u0445 \u0443\u0447\u0435\u043D\u0438\u043A\u043E\u0432\xBB, \xAB\u0441\u043A\u043E\u043B\u044C\u043A\u043E \u0434\u043E\u043B\u0436\u043D\u0438\u043A\u043E\u0432\xBB, \xAB\u0441\u043A\u043E\u043B\u044C\u043A\u043E \u0432\u0441\u0435\u0433\u043E \u0443\u0447\u0435\u043D\u0438\u043A\u043E\u0432\xBB. \u0421\u043A\u043E\u0443\u043F \u0437\u0430\u0432\u0438\u0441\u0438\u0442 \u043E\u0442 \u0440\u043E\u043B\u0438.",
+    input_schema: { type: "object", properties: {} }
+  },
+  {
+    name: "get_finance_overview",
+    description: "\u0424\u0438\u043D\u0430\u043D\u0441\u043E\u0432\u0430\u044F \u0441\u0432\u043E\u0434\u043A\u0430 \u043F\u043E \u0431\u0443\u0445\u0433\u0430\u043B\u0442\u0435\u0440\u0438\u0438 (\u0414\u0414\u0421/\u041E\u041F\u0438\u0423): \u0438\u0442\u043E\u0433\u0438 \u0434\u043E\u0445\u043E\u0434\u043E\u0432/\u0440\u0430\u0441\u0445\u043E\u0434\u043E\u0432/\u043F\u0440\u0438\u0431\u044B\u043B\u0438 \u0438 \u043C\u0430\u0440\u0436\u0430, \u043E\u0441\u0442\u0430\u0442\u043A\u0438 \u043F\u043E \u0441\u0447\u0435\u0442\u0430\u043C, \u043F\u043E\u043C\u0435\u0441\u044F\u0447\u043D\u0430\u044F \u0434\u0438\u043D\u0430\u043C\u0438\u043A\u0430 (P&L \u0437\u0430 \u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0435 \u043C\u0435\u0441\u044F\u0446\u044B), \u0442\u043E\u043F \u0441\u0442\u0430\u0442\u0435\u0439 \u0440\u0430\u0441\u0445\u043E\u0434\u043E\u0432 \u0438 \u0434\u043E\u0445\u043E\u0434\u043E\u0432, \u043F\u043B\u0430\u043D\u043E\u0432\u044B\u0435 \u043F\u043E\u0441\u0442\u0443\u043F\u043B\u0435\u043D\u0438\u044F \u0438 \u0432\u044B\u043F\u043B\u0430\u0442\u044B. \u0418\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 \u0434\u043B\u044F \u0432\u043E\u043F\u0440\u043E\u0441\u043E\u0432 \u043F\u0440\u043E \u0434\u0435\u043D\u044C\u0433\u0438, \u043F\u0440\u0438\u0431\u044B\u043B\u044C, \u0440\u0430\u0441\u0445\u043E\u0434\u044B, \u043D\u0430\u043B\u043E\u0433\u0438, \u0444\u0438\u043D\u0430\u043D\u0441\u043E\u0432\u043E\u0435 \u043F\u043B\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435. \u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443.",
+    input_schema: { type: "object", properties: {} }
+  },
+  {
+    name: "get_marketing_funnel",
+    description: "\u041C\u0430\u0440\u043A\u0435\u0442\u0438\u043D\u0433\u043E\u0432\u0430\u044F \u0432\u043E\u0440\u043E\u043D\u043A\u0430 \u0438 \u0438\u0441\u0442\u043E\u0447\u043D\u0438\u043A\u0438 \u043B\u0438\u0434\u043E\u0432: \u043A\u043E\u043B\u0438\u0447\u0435\u0441\u0442\u0432\u043E \u0443\u0447\u0435\u043D\u0438\u043A\u043E\u0432 \u043F\u043E \u0441\u0442\u0430\u0442\u0443\u0441\u0430\u043C (\u041B\u0438\u0434 \u2192 \u041F\u0440\u043E\u0431\u043D\u043E\u0435 \u2192 \u0410\u043A\u0442\u0438\u0432\u0435\u043D \u2192 \u041F\u0430\u0443\u0437\u0430 \u2192 \u0414\u043E\u043B\u0436\u043D\u0438\u043A \u2192 \u0423\u0448\u0451\u043B), \u043D\u043E\u0432\u044B\u0435 \u0443\u0447\u0435\u043D\u0438\u043A\u0438 \u0437\u0430 \u0442\u0435\u043A\u0443\u0449\u0438\u0439 \u043C\u0435\u0441\u044F\u0446, \u043A\u043E\u043D\u0432\u0435\u0440\u0441\u0438\u044F \u043B\u0438\u0434\u2192\u0430\u043A\u0442\u0438\u0432, \u0430 \u0442\u0430\u043A\u0436\u0435 \u0440\u0430\u0437\u0431\u0438\u0432\u043A\u0430 \u043F\u043E \u0440\u0435\u043A\u043B\u0430\u043C\u043D\u044B\u043C \u0438\u0441\u0442\u043E\u0447\u043D\u0438\u043A\u0430\u043C \u0441 \u043A\u043E\u043D\u0432\u0435\u0440\u0441\u0438\u0435\u0439 \u043A\u0430\u0436\u0434\u043E\u0433\u043E \u0432 \u0430\u043A\u0442\u0438\u0432\u043D\u044B\u0445. \u0418\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 \u0434\u043B\u044F \u0432\u043E\u043F\u0440\u043E\u0441\u043E\u0432 \u043F\u0440\u043E \u0432\u043E\u0440\u043E\u043D\u043A\u0443, \u0438\u0441\u0442\u043E\u0447\u043D\u0438\u043A\u0438 \u0442\u0440\u0430\u0444\u0438\u043A\u0430, \u043A\u043E\u043D\u0432\u0435\u0440\u0441\u0438\u044E, \u043F\u0440\u0438\u0432\u043B\u0435\u0447\u0435\u043D\u0438\u0435 \u0438 \u0443\u0434\u0435\u0440\u0436\u0430\u043D\u0438\u0435.",
+    input_schema: { type: "object", properties: {} }
+  },
+  {
+    name: "get_attendance_summary",
+    description: "\u0421\u0432\u043E\u0434\u043A\u0430 \u043F\u043E\u0441\u0435\u0449\u0430\u0435\u043C\u043E\u0441\u0442\u0438 \u0437\u0430 \u043F\u0435\u0440\u0438\u043E\u0434 (\u0441\u0435\u0433\u043E\u0434\u043D\u044F/\u043D\u0435\u0434\u0435\u043B\u044F/\u043C\u0435\u0441\u044F\u0446): \u0432\u0441\u0435\u0433\u043E \u043E\u0442\u043C\u0435\u0442\u043E\u043A, \u0440\u0430\u0437\u0431\u0438\u0432\u043A\u0430 \u043F\u043E \u0441\u0442\u0430\u0442\u0443\u0441\u0430\u043C \u0438 \u043F\u0440\u043E\u0446\u0435\u043D\u0442 \u043F\u043E\u0441\u0435\u0449\u0430\u0435\u043C\u043E\u0441\u0442\u0438. \u0418\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 \u0434\u043B\u044F \u0432\u043E\u043F\u0440\u043E\u0441\u043E\u0432 \u043F\u0440\u043E \u043F\u043E\u0441\u0435\u0449\u0430\u0435\u043C\u043E\u0441\u0442\u044C, \u044F\u0432\u043A\u0443, \u043F\u0440\u043E\u043F\u0443\u0441\u043A\u0438. \u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443 \u0438 \u0440\u0443\u043A\u043E\u0432\u043E\u0434\u0438\u0442\u0435\u043B\u044E.",
+    input_schema: {
+      type: "object",
+      properties: { period: { type: "string", enum: ["today", "week", "month"] } },
+      required: ["period"]
+    }
+  },
+  {
+    name: "get_schedule",
+    description: "\u0420\u0430\u0441\u043F\u0438\u0441\u0430\u043D\u0438\u0435 \u0437\u0430\u043D\u044F\u0442\u0438\u0439 \u043D\u0430 \u043A\u043E\u043D\u043A\u0440\u0435\u0442\u043D\u044B\u0439 \u0434\u0435\u043D\u044C: \u0432\u0440\u0435\u043C\u044F, \u0433\u0440\u0443\u043F\u043F\u0430, \u043F\u0440\u0435\u043F\u043E\u0434\u0430\u0432\u0430\u0442\u0435\u043B\u044C, \u0437\u0430\u043B, \u0441\u0442\u0430\u0442\u0443\u0441. \u0418\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 \u0434\u043B\u044F \u0432\u043E\u043F\u0440\u043E\u0441\u043E\u0432 \u043F\u0440\u043E \u0440\u0430\u0441\u043F\u0438\u0441\u0430\u043D\u0438\u0435, \u0437\u0430\u043D\u044F\u0442\u0438\u044F, \u0437\u0430\u0433\u0440\u0443\u0437\u043A\u0443 \u0437\u0430\u043B\u043E\u0432 \u043D\u0430 \u0434\u0430\u0442\u0443. \u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443 \u0438 \u0440\u0443\u043A\u043E\u0432\u043E\u0434\u0438\u0442\u0435\u043B\u044E.",
+    input_schema: {
+      type: "object",
+      properties: {
+        date: { type: "string", description: "\u0414\u0430\u0442\u0430 \u0432 \u0444\u043E\u0440\u043C\u0430\u0442\u0435 YYYY-MM-DD. \u041F\u043E \u0443\u043C\u043E\u043B\u0447\u0430\u043D\u0438\u044E \u2014 \u0441\u0435\u0433\u043E\u0434\u043D\u044F." }
+      }
+    }
+  },
+  {
+    name: "list_branches",
+    description: "\u0421\u043F\u0438\u0441\u043E\u043A \u0444\u0438\u043B\u0438\u0430\u043B\u043E\u0432 \u0441\u0435\u0442\u0438 \u0441 \u0437\u0430\u043B\u0430\u043C\u0438 (\u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435, \u0433\u043E\u0440\u043E\u0434, \u0441\u0442\u0430\u0442\u0443\u0441, \u0437\u0430\u043B\u044B \u0438 \u0438\u0445 \u0432\u043C\u0435\u0441\u0442\u0438\u043C\u043E\u0441\u0442\u044C). \u0418\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 \u0434\u043B\u044F \u0432\u043E\u043F\u0440\u043E\u0441\u043E\u0432 \u043F\u0440\u043E \u0444\u0438\u043B\u0438\u0430\u043B\u044B, \u0437\u0430\u043B\u044B, \u0441\u0442\u0440\u0443\u043A\u0442\u0443\u0440\u0443 \u0441\u0435\u0442\u0438. \u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443 \u0438 \u0440\u0443\u043A\u043E\u0432\u043E\u0434\u0438\u0442\u0435\u043B\u044E.",
     input_schema: { type: "object", properties: {} }
   },
   {
@@ -6293,6 +6643,10 @@ var SYSTEM_PROMPT = `\u0422\u044B \u2014 \u041C\u0430\u0433\u043E\u043C\u0435\u0
 - \u041C\u0430\u043A\u0441\u0438\u043C\u0430\u043B\u044C\u043D\u043E \u043A\u0440\u0430\u0442\u043A\u043E \u0438 \u0447\u0451\u0442\u043A\u043E \u2014 \u0442\u044B \u0440\u0430\u0431\u043E\u0442\u0430\u0435\u0448\u044C \u0432 \u0443\u0437\u043A\u043E\u043C \u0432\u0438\u0434\u0436\u0435\u0442\u0435. \u041D\u0438\u043A\u0430\u043A\u043E\u0439 \u0432\u043E\u0434\u044B. \u041A\u043B\u044E\u0447\u0435\u0432\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435 \u0432\u044B\u0434\u0435\u043B\u044F\u0439 **\u0436\u0438\u0440\u043D\u044B\u043C**, \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 \u043A\u043E\u0440\u043E\u0442\u043A\u0438\u0435 \u0441\u043F\u0438\u0441\u043A\u0438.
 - \u041F\u0440\u043E\u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0441\u0442\u044C: \u043F\u0440\u0435\u0434\u043B\u0430\u0433\u0430\u0439 \u043B\u043E\u0433\u0438\u0447\u043D\u044B\u0439 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u0439 \u0448\u0430\u0433 (\u043E\u0442\u043A\u0440\u044B\u0442\u044C \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0443, \u043F\u043E\u0441\u043C\u043E\u0442\u0440\u0435\u0442\u044C \u043E\u043F\u043B\u0430\u0442\u044B, \u0441\u043E\u0437\u0434\u0430\u0442\u044C \u0437\u0430\u0434\u0430\u0447\u0443).
 
+\u0414\u041E\u0421\u0422\u0423\u041F \u041A \u0414\u0410\u041D\u041D\u042B\u041C:
+- \u0412\u043B\u0430\u0434\u0435\u043B\u0435\u0446 \u0438 \u0440\u0443\u043A\u043E\u0432\u043E\u0434\u0438\u0442\u0435\u043B\u044C \u0444\u0438\u043B\u0438\u0430\u043B\u0430 \u0432\u0438\u0434\u044F\u0442 \u0447\u0435\u0440\u0435\u0437 \u0442\u0435\u0431\u044F \u0410\u0411\u0421\u041E\u041B\u042E\u0422\u041D\u041E \u0412\u0421\u042E \u0431\u0430\u0437\u0443 \u0441\u0435\u0442\u0438. \u0422\u044B \u2014 \u0433\u043B\u0430\u0432\u043D\u044B\u0439 \u0430\u0441\u0441\u0438\u0441\u0442\u0435\u043D\u0442, \u0434\u043B\u044F \u043D\u0438\u0445 \u043E\u0433\u0440\u0430\u043D\u0438\u0447\u0435\u043D\u0438\u0439 \u043F\u043E \u0444\u0438\u043B\u0438\u0430\u043B\u0430\u043C \u043D\u0435\u0442. \u0422\u0435\u0431\u0435 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u044B \u0438\u043D\u0441\u0442\u0440\u0443\u043C\u0435\u043D\u0442\u044B \u043F\u043E \u0432\u0441\u0435\u043C \u0440\u0430\u0437\u0434\u0435\u043B\u0430\u043C: \u0443\u0447\u0435\u043D\u0438\u043A\u0438 (\u0432\u043A\u043B\u044E\u0447\u0430\u044F \u0430\u0440\u0445\u0438\u0432 \u0438 \u043F\u043E\u043C\u0435\u0447\u0435\u043D\u043D\u044B\u0445 \u043D\u0430 \u0443\u0434\u0430\u043B\u0435\u043D\u0438\u0435), \u043F\u0440\u0435\u043F\u043E\u0434\u0430\u0432\u0430\u0442\u0435\u043B\u0438 \u0441 \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0430\u043C\u0438 \u0438 \u0441\u0445\u0435\u043C\u0430\u043C\u0438 \u0437\u0430\u0440\u043F\u043B\u0430\u0442\u044B, \u0433\u0440\u0443\u043F\u043F\u044B, \u0437\u0430\u0434\u0430\u0447\u0438, \u0434\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u044B \u0438 \u0434\u043E\u0433\u043E\u0432\u043E\u0440\u044B (search_crm/get_record_details); \u0432\u044B\u0440\u0443\u0447\u043A\u0430 (get_sales_summary); \u043F\u043E\u043B\u043D\u0430\u044F \u0431\u0443\u0445\u0433\u0430\u043B\u0442\u0435\u0440\u0438\u044F \u2014 \u0434\u043E\u0445\u043E\u0434/\u0440\u0430\u0441\u0445\u043E\u0434/\u043F\u0440\u0438\u0431\u044B\u043B\u044C/\u043C\u0430\u0440\u0436\u0430, \u0441\u0447\u0435\u0442\u0430, \u041E\u041F\u0438\u0423 (get_finance_overview); \u043C\u0430\u0440\u043A\u0435\u0442\u0438\u043D\u0433\u043E\u0432\u0430\u044F \u0432\u043E\u0440\u043E\u043D\u043A\u0430 \u0438 \u0438\u0441\u0442\u043E\u0447\u043D\u0438\u043A\u0438 \u043B\u0438\u0434\u043E\u0432 (get_marketing_funnel); \u043F\u043E\u0441\u0435\u0449\u0430\u0435\u043C\u043E\u0441\u0442\u044C (get_attendance_summary); \u0440\u0430\u0441\u043F\u0438\u0441\u0430\u043D\u0438\u0435 \u0437\u0430\u043D\u044F\u0442\u0438\u0439 \u0438 \u0437\u0430\u0433\u0440\u0443\u0437\u043A\u0430 \u0437\u0430\u043B\u043E\u0432 (get_schedule); \u0444\u0438\u043B\u0438\u0430\u043B\u044B \u0438 \u0437\u0430\u043B\u044B (list_branches); \u0432\u044B\u0441\u0442\u0443\u043F\u043B\u0435\u043D\u0438\u044F/\u043A\u043E\u043D\u0446\u0435\u0440\u0442\u044B \u0438 \u0442\u043E\u0432\u0430\u0440\u044B/\u0441\u043A\u043B\u0430\u0434 (search_crm). \u0415\u0441\u043B\u0438 \u0432\u043E\u043F\u0440\u043E\u0441 \u043F\u0440\u043E \u043B\u044E\u0431\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435 \u0448\u043A\u043E\u043B\u044B \u2014 \u0443 \u0442\u0435\u0431\u044F \u043F\u043E\u0447\u0442\u0438 \u043D\u0430\u0432\u0435\u0440\u043D\u044F\u043A\u0430 \u0435\u0441\u0442\u044C \u0438\u043D\u0441\u0442\u0440\u0443\u043C\u0435\u043D\u0442; \u0432\u044B\u0437\u043E\u0432\u0438 \u043F\u043E\u0434\u0445\u043E\u0434\u044F\u0449\u0438\u0439.
+- \u0410\u0434\u043C\u0438\u043D\u0438\u0441\u0442\u0440\u0430\u0442\u043E\u0440 \u0438 \u043F\u0435\u0434\u0430\u0433\u043E\u0433 \u0440\u0430\u0431\u043E\u0442\u0430\u044E\u0442 \u0442\u043E\u043B\u044C\u043A\u043E \u0432 \u0440\u0430\u043C\u043A\u0430\u0445 \u0441\u0432\u043E\u0435\u0433\u043E \u0444\u0438\u043B\u0438\u0430\u043B\u0430; \u0431\u0443\u0445\u0433\u0430\u043B\u0442\u0435\u0440\u0438\u044F, \u0434\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u044B, \u0432\u044B\u0441\u0442\u0443\u043F\u043B\u0435\u043D\u0438\u044F, \u0442\u043E\u0432\u0430\u0440\u044B, \u0440\u0430\u0441\u043F\u0438\u0441\u0430\u043D\u0438\u0435 \u0438 \u0441\u043F\u0438\u0441\u043E\u043A \u0444\u0438\u043B\u0438\u0430\u043B\u043E\u0432 \u0438\u043C \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u044B \u2014 \u0432\u0435\u0436\u043B\u0438\u0432\u043E \u043E\u0431\u044A\u044F\u0441\u043D\u0438 \u044D\u0442\u043E, \u0435\u0441\u043B\u0438 \u043F\u043E\u043F\u0440\u043E\u0441\u044F\u0442.
+
 \u0413\u041B\u0410\u0412\u041D\u042B\u0415 \u041F\u0420\u0410\u0412\u0418\u041B\u0410:
 1. \u041D\u0418\u041A\u0410\u041A\u0418\u0425 \u0413\u0410\u041B\u041B\u042E\u0426\u0418\u041D\u0410\u0426\u0418\u0419. \u041E\u0442\u0432\u0435\u0447\u0430\u0439 \u0418\u0421\u041A\u041B\u042E\u0427\u0418\u0422\u0415\u041B\u042C\u041D\u041E \u043F\u043E \u0434\u0430\u043D\u043D\u044B\u043C, \u043F\u043E\u043B\u0443\u0447\u0435\u043D\u043D\u044B\u043C \u0438\u0437 \u0438\u043D\u0441\u0442\u0440\u0443\u043C\u0435\u043D\u0442\u043E\u0432. \u041D\u0435 \u0432\u044B\u0434\u0443\u043C\u044B\u0432\u0430\u0439 \u0438\u043C\u0435\u043D\u0430, \u0446\u0438\u0444\u0440\u044B, \u0434\u0430\u0442\u044B, \u0441\u0442\u0430\u0442\u0443\u0441\u044B. \u0415\u0441\u043B\u0438 \u0438\u043D\u0441\u0442\u0440\u0443\u043C\u0435\u043D\u0442 \u0432\u0435\u0440\u043D\u0443\u043B \u043F\u0443\u0441\u0442\u043E \u2014 \u0441\u043A\u0430\u0436\u0438 \u043F\u0440\u044F\u043C\u043E: \xAB\u0412 \u0431\u0430\u0437\u0435 \u0434\u0430\u043D\u043D\u044B\u0445 \u043D\u0435\u0442 \u0438\u043D\u0444\u043E\u0440\u043C\u0430\u0446\u0438\u0438 \u043F\u043E \u044D\u0442\u043E\u043C\u0443 \u0437\u0430\u043F\u0440\u043E\u0441\u0443\xBB.
 2. \u0427\u0442\u043E\u0431\u044B \u043E\u0442\u0432\u0435\u0442\u0438\u0442\u044C \u043F\u0440\u043E \u0434\u0430\u043D\u043D\u044B\u0435 CRM \u2014 \u0441\u043D\u0430\u0447\u0430\u043B\u0430 \u0432\u044B\u0437\u043E\u0432\u0438 \u043F\u043E\u0434\u0445\u043E\u0434\u044F\u0449\u0438\u0439 \u0438\u043D\u0441\u0442\u0440\u0443\u043C\u0435\u043D\u0442. \u041D\u0435 \u043E\u0442\u0432\u0435\u0447\u0430\u0439 \u043F\u043E \u043F\u0430\u043C\u044F\u0442\u0438.
@@ -6301,7 +6655,7 @@ var SYSTEM_PROMPT = `\u0422\u044B \u2014 \u041C\u0430\u0433\u043E\u043C\u0435\u0
 5. \u0424\u043E\u043A\u0443\u0441 \u043D\u0430 \u0440\u0430\u0431\u043E\u0442\u0435. \u0415\u0441\u043B\u0438 \u0432\u043E\u043F\u0440\u043E\u0441 \u043D\u0435 \u043F\u0440\u043E CRM/\xAB\u042D\u0445\u043E \u0413\u043E\u0440\xBB \u2014 \u0432\u0435\u0436\u043B\u0438\u0432\u043E \u0432\u0435\u0440\u043D\u0438 \u0432 \u0440\u0430\u0431\u043E\u0447\u0435\u0435 \u0440\u0443\u0441\u043B\u043E.
 
 \u041E\u0442\u0432\u0435\u0447\u0430\u0439 \u043D\u0430 \u0440\u0443\u0441\u0441\u043A\u043E\u043C \u044F\u0437\u044B\u043A\u0435.`;
-async function anthropicChat(messages) {
+async function anthropicChat(messages, system = SYSTEM_PROMPT, maxTokens = MAX_TOKENS, toolset = tools) {
   const res = await fetch(ANTHROPIC_URL, {
     method: "POST",
     headers: {
@@ -6311,10 +6665,10 @@ async function anthropicChat(messages) {
     },
     body: JSON.stringify({
       model: model2,
-      max_tokens: MAX_TOKENS,
-      system: SYSTEM_PROMPT,
+      max_tokens: maxTokens,
+      system,
       messages,
-      tools,
+      tools: toolset,
       temperature: 0.3
     })
   });
@@ -6326,22 +6680,449 @@ async function anthropicChat(messages) {
   }
   return res.json();
 }
+async function anthropicStream(messages, system, maxTokens, toolset, onDelta) {
+  const res = await fetch(ANTHROPIC_URL, {
+    method: "POST",
+    headers: {
+      "x-api-key": apiKey2,
+      "anthropic-version": ANTHROPIC_VERSION,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: model2,
+      max_tokens: maxTokens,
+      system,
+      messages,
+      tools: toolset,
+      temperature: 0.3,
+      stream: true
+    })
+  });
+  if (!res.ok || !res.body) {
+    const text = await res.text().catch(() => "");
+    const err = new Error(text || `Anthropic ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
+  const blocks = [];
+  const partialJson = {};
+  let stopReason = null;
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const handleEvent = (jsonStr) => {
+    let ev;
+    try {
+      ev = JSON.parse(jsonStr);
+    } catch {
+      return;
+    }
+    const type = ev?.type;
+    if (type === "content_block_start") {
+      const cb = ev.content_block || {};
+      blocks[ev.index] = cb.type === "tool_use" ? { type: "tool_use", id: cb.id, name: cb.name, input: {} } : { type: "text", text: "" };
+      if (cb.type === "tool_use") partialJson[ev.index] = "";
+    } else if (type === "content_block_delta") {
+      const d = ev.delta || {};
+      if (d.type === "text_delta" && typeof d.text === "string") {
+        if (blocks[ev.index]) blocks[ev.index].text += d.text;
+        onDelta(d.text);
+      } else if (d.type === "input_json_delta" && typeof d.partial_json === "string") {
+        partialJson[ev.index] = (partialJson[ev.index] || "") + d.partial_json;
+      }
+    } else if (type === "content_block_stop") {
+      const b = blocks[ev.index];
+      if (b?.type === "tool_use") {
+        try {
+          b.input = partialJson[ev.index] ? JSON.parse(partialJson[ev.index]) : {};
+        } catch {
+          b.input = {};
+        }
+      }
+    } else if (type === "message_delta") {
+      if (ev.delta?.stop_reason) stopReason = ev.delta.stop_reason;
+    } else if (type === "error") {
+      const err = new Error(ev.error?.message || "stream error");
+      err.status = 502;
+      throw err;
+    }
+  };
+  for await (const chunk of res.body) {
+    buffer += decoder.decode(chunk, { stream: true });
+    let sep;
+    while ((sep = buffer.indexOf("\n\n")) !== -1) {
+      const raw = buffer.slice(0, sep);
+      buffer = buffer.slice(sep + 2);
+      for (const line of raw.split("\n")) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith("data:")) {
+          handleEvent(trimmed.slice(5).trim());
+        }
+      }
+    }
+  }
+  return { content: blocks.filter(Boolean), stop_reason: stopReason };
+}
+var AGENT_MAX_TOKENS = Number(process.env.ANTHROPIC_AGENT_MAX_TOKENS) || 2048;
+var AGENT_SHARED_RULES = `
+\u041E\u0411\u0429\u0418\u0415 \u041F\u0420\u0410\u0412\u0418\u041B\u0410 \u0414\u041B\u042F \u0412\u0421\u0415\u0425 \u0410\u0413\u0415\u041D\u0422\u041E\u0412:
+1. \u041D\u0418\u041A\u0410\u041A\u0418\u0425 \u0413\u0410\u041B\u041B\u042E\u0426\u0418\u041D\u0410\u0426\u0418\u0419 \u041E \u0414\u0410\u041D\u041D\u042B\u0425. \u041B\u044E\u0431\u044B\u0435 \u0446\u0438\u0444\u0440\u044B, \u0438\u043C\u0435\u043D\u0430, \u0441\u0443\u043C\u043C\u044B, \u0441\u0442\u0430\u0442\u0443\u0441\u044B \u0431\u0435\u0440\u0438 \u0422\u041E\u041B\u042C\u041A\u041E \u0438\u0437 \u0438\u043D\u0441\u0442\u0440\u0443\u043C\u0435\u043D\u0442\u043E\u0432 CRM. \u0415\u0441\u043B\u0438 \u0438\u043D\u0441\u0442\u0440\u0443\u043C\u0435\u043D\u0442 \u0432\u0435\u0440\u043D\u0443\u043B \u043F\u0443\u0441\u0442\u043E \u2014 \u0442\u0430\u043A \u0438 \u0441\u043A\u0430\u0436\u0438. \u042D\u043A\u0441\u043F\u0435\u0440\u0442\u043D\u044B\u0435 \u0440\u0435\u043A\u043E\u043C\u0435\u043D\u0434\u0430\u0446\u0438\u0438 (\u0441\u043E\u0432\u0435\u0442\u044B, \u0448\u0430\u0431\u043B\u043E\u043D\u044B, \u0442\u0435\u043A\u0441\u0442\u044B) \u043C\u043E\u0436\u0435\u0448\u044C \u0434\u0430\u0432\u0430\u0442\u044C \u0438\u0437 \u0441\u0432\u043E\u0438\u0445 \u0437\u043D\u0430\u043D\u0438\u0439, \u043D\u043E \u0447\u0451\u0442\u043A\u043E \u043E\u0442\u0434\u0435\u043B\u044F\u0439 \xAB\u0434\u0430\u043D\u043D\u044B\u0435 \u0438\u0437 \u0431\u0430\u0437\u044B\xBB \u043E\u0442 \xAB\u043C\u043E\u044F \u0440\u0435\u043A\u043E\u043C\u0435\u043D\u0434\u0430\u0446\u0438\u044F\xBB.
+2. \u0427\u0442\u043E\u0431\u044B \u0441\u043E\u0441\u043B\u0430\u0442\u044C\u0441\u044F \u043D\u0430 \u0440\u0435\u0430\u043B\u044C\u043D\u044B\u0435 \u043F\u043E\u043A\u0430\u0437\u0430\u0442\u0435\u043B\u0438 \u0448\u043A\u043E\u043B\u044B \u2014 \u0441\u043D\u0430\u0447\u0430\u043B\u0430 \u0432\u044B\u0437\u043E\u0432\u0438 \u0438\u043D\u0441\u0442\u0440\u0443\u043C\u0435\u043D\u0442 (get_students_summary, get_sales_summary, search_crm, get_record_details). \u041D\u0435 \u0432\u044B\u0434\u0443\u043C\u044B\u0432\u0430\u0439.
+3. \u0421\u043E\u0437\u0434\u0430\u043D\u0438\u0435 \u0437\u0430\u0434\u0430\u0447 \u2014 \u0442\u043E\u043B\u044C\u043A\u043E \u0447\u0435\u0440\u0435\u0437 create_task \u0441 \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u0438\u0435\u043C: \u0441\u043F\u0435\u0440\u0432\u0430 \u043F\u0440\u0435\u0432\u044C\u044E \u0431\u0435\u0437 confirmed, \u0437\u0430\u0442\u0435\u043C confirmed=true \u043F\u043E\u0441\u043B\u0435 \u044F\u0432\u043D\u043E\u0433\u043E \xAB\u0414\u0430\xBB. \u0423\u0434\u0430\u043B\u0435\u043D\u0438\u0435 \u0438 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u0435 \u0437\u0430\u043F\u0438\u0441\u0435\u0439 \u0434\u0435\u043B\u0430\u044E\u0442\u0441\u044F \u0432 \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0435 CRM.
+4. \u0421\u0443\u043C\u043C\u044B \u2014 \u0441 \u0440\u0430\u0437\u0434\u0435\u043B\u0435\u043D\u0438\u0435\u043C \u0440\u0430\u0437\u0440\u044F\u0434\u043E\u0432 \u0438 \u0437\u043D\u0430\u043A\u043E\u043C \u20B8. \u041E\u0442\u0432\u0435\u0447\u0430\u0439 \u043D\u0430 \u0440\u0443\u0441\u0441\u043A\u043E\u043C, \u0441\u0442\u0440\u0443\u043A\u0442\u0443\u0440\u043D\u043E, \u043F\u043E \u0434\u0435\u043B\u0443. \u041A\u043B\u044E\u0447\u0435\u0432\u043E\u0435 \u0432\u044B\u0434\u0435\u043B\u044F\u0439 **\u0436\u0438\u0440\u043D\u044B\u043C**.
+5. \u0422\u044B \u2014 \u044D\u043A\u0441\u043F\u0435\u0440\u0442 \u0432 \u0441\u0432\u043E\u0435\u0439 \u043E\u0431\u043B\u0430\u0441\u0442\u0438. \u0415\u0441\u043B\u0438 \u0432\u043E\u043F\u0440\u043E\u0441\u0443 \u043D\u0443\u0436\u043D\u0430 \u044D\u043A\u0441\u043F\u0435\u0440\u0442\u0438\u0437\u0430 \u043A\u043E\u043B\u043B\u0435\u0433\u0438 (\u043C\u0430\u0440\u043A\u0435\u0442\u043E\u043B\u043E\u0433/\u044E\u0440\u0438\u0441\u0442/\u0431\u0443\u0445\u0433\u0430\u043B\u0442\u0435\u0440/HR) \u2014 \u0432\u044B\u0437\u043E\u0432\u0438 consult_colleague, \u043F\u043E\u043B\u0443\u0447\u0438 \u0435\u0433\u043E \u043C\u043D\u0435\u043D\u0438\u0435 \u0438 \u0432\u043F\u043B\u0435\u0442\u0438 \u0432 \u0441\u0432\u043E\u0439 \u043E\u0442\u0432\u0435\u0442, \u0447\u0435\u0441\u0442\u043D\u043E \u0443\u043A\u0430\u0437\u0430\u0432 \xAB\u0443\u0442\u043E\u0447\u043D\u0438\u043B \u0443 \u044E\u0440\u0438\u0441\u0442\u0430/\u0431\u0443\u0445\u0433\u0430\u043B\u0442\u0435\u0440\u0430\u2026\xBB. \u041A\u043E\u043D\u0441\u0443\u043B\u044C\u0442\u0438\u0440\u0443\u0439\u0441\u044F \u0442\u043E\u043B\u044C\u043A\u043E \u043A\u043E\u0433\u0434\u0430 \u044D\u0442\u043E \u0440\u0435\u0430\u043B\u044C\u043D\u043E \u043F\u043E\u043C\u043E\u0433\u0430\u0435\u0442, \u043D\u0435 \u043F\u043E \u043A\u0430\u0436\u0434\u043E\u043C\u0443 \u043F\u0443\u0441\u0442\u044F\u043A\u0443.`;
+var AGENT_PROMPTS = {
+  marketing: {
+    label: "\u041C\u0430\u0440\u043A\u0435\u0442\u043E\u043B\u043E\u0433",
+    system: `\u0422\u044B \u2014 \u0418\u0418-\u043C\u0430\u0440\u043A\u0435\u0442\u043E\u043B\u043E\u0433 \u0441\u0435\u0442\u0438 \u0448\u043A\u043E\u043B \u043A\u0430\u0432\u043A\u0430\u0437\u0441\u043A\u043E\u0433\u043E \u0442\u0430\u043D\u0446\u0430 \xAB\u042D\u0445\u043E \u0413\u043E\u0440\xBB. \u041F\u043E\u043C\u043E\u0433\u0430\u0435\u0448\u044C \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443 \u043F\u0440\u0438\u0432\u043B\u0435\u043A\u0430\u0442\u044C \u0438 \u0443\u0434\u0435\u0440\u0436\u0438\u0432\u0430\u0442\u044C \u0443\u0447\u0435\u043D\u0438\u043A\u043E\u0432.
+\u0421\u041F\u0415\u0426\u0418\u0410\u041B\u0418\u0417\u0410\u0426\u0418\u042F: \u0432\u043E\u0440\u043E\u043D\u043A\u0430 \u043F\u0440\u043E\u0434\u0430\u0436 \u0438 \u043A\u043E\u043D\u0432\u0435\u0440\u0441\u0438\u044F \u043F\u0440\u043E\u0431\u043D\u044B\u0445 \u0437\u0430\u043D\u044F\u0442\u0438\u0439, \u0438\u0441\u0442\u043E\u0447\u043D\u0438\u043A\u0438 \u043B\u0438\u0434\u043E\u0432 (\u043E\u0442\u043A\u0443\u0434\u0430 \u043F\u0440\u0438\u0445\u043E\u0434\u044F\u0442 \u0443\u0447\u0435\u043D\u0438\u043A\u0438), \u0443\u0434\u0435\u0440\u0436\u0430\u043D\u0438\u0435 \u0438 \u043E\u0442\u0442\u043E\u043A, \u0440\u0435\u0430\u043A\u0442\u0438\u0432\u0430\u0446\u0438\u044F \u0443\u0448\u0435\u0434\u0448\u0438\u0445, \u0430\u043A\u0446\u0438\u0438 \u0438 \u0441\u043F\u0435\u0446\u043F\u0440\u0435\u0434\u043B\u043E\u0436\u0435\u043D\u0438\u044F, \u0442\u0435\u043A\u0441\u0442\u044B \u0434\u043B\u044F \u043F\u043E\u0441\u0442\u043E\u0432, \u0440\u0430\u0441\u0441\u044B\u043B\u043E\u043A \u0438 \u0440\u0435\u043A\u043B\u0430\u043C\u044B (Instagram, WhatsApp, TikTok), \u043F\u043E\u0437\u0438\u0446\u0438\u043E\u043D\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435 \u0431\u0440\u0435\u043D\u0434\u0430, \u0441\u0435\u0437\u043E\u043D\u043D\u044B\u0435 \u043D\u0430\u0431\u043E\u0440\u044B \u0432 \u0433\u0440\u0443\u043F\u043F\u044B.
+\u041A\u0410\u041A \u0420\u0410\u0411\u041E\u0422\u0410\u0415\u0428\u042C: \u043E\u043F\u0438\u0440\u0430\u0439\u0441\u044F \u043D\u0430 \u0440\u0435\u0430\u043B\u044C\u043D\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435. \u0414\u043B\u044F \u0432\u043E\u0440\u043E\u043D\u043A\u0438, \u0438\u0441\u0442\u043E\u0447\u043D\u0438\u043A\u043E\u0432 \u0442\u0440\u0430\u0444\u0438\u043A\u0430 \u0438 \u043A\u043E\u043D\u0432\u0435\u0440\u0441\u0438\u0438 \u0432\u044B\u0437\u044B\u0432\u0430\u0439 get_marketing_funnel (\u0441\u0442\u0430\u0442\u0443\u0441\u044B, \u043D\u043E\u0432\u044B\u0435 \u043B\u0438\u0434\u044B \u0437\u0430 \u043C\u0435\u0441\u044F\u0446, \u043A\u043E\u043D\u0432\u0435\u0440\u0441\u0438\u044F \u043A\u0430\u0436\u0434\u043E\u0433\u043E \u0438\u0441\u0442\u043E\u0447\u043D\u0438\u043A\u0430 \u0432 \u0430\u043A\u0442\u0438\u0432\u043D\u044B\u0445). \u0414\u043B\u044F \u0432\u044B\u0440\u0443\u0447\u043A\u0438 \u2014 get_sales_summary. \u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u043F\u043E\u0441\u043C\u043E\u0442\u0440\u0438 \u0434\u0430\u043D\u043D\u044B\u0435, \u043F\u043E\u0442\u043E\u043C \u0434\u0430\u0439 \u043A\u043E\u043D\u043A\u0440\u0435\u0442\u043D\u044B\u0435 \u0440\u0435\u043A\u043E\u043C\u0435\u043D\u0434\u0430\u0446\u0438\u0438 \u0441 \u0446\u0438\u0444\u0440\u0430\u043C\u0438. \u041F\u0440\u0435\u0434\u043B\u0430\u0433\u0430\u0439 \u0433\u043E\u0442\u043E\u0432\u044B\u0435 \u0442\u0435\u043A\u0441\u0442\u044B \u0438 \u0441\u0432\u044F\u0437\u043A\u0438 \xAB\u043F\u0440\u043E\u0431\u043B\u0435\u043C\u0430 \u2192 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0435 \u2192 \u043E\u0436\u0438\u0434\u0430\u0435\u043C\u044B\u0439 \u0440\u0435\u0437\u0443\u043B\u044C\u0442\u0430\u0442\xBB.` + AGENT_SHARED_RULES
+  },
+  legal: {
+    label: "\u042E\u0440\u0438\u0441\u0442",
+    system: `\u0422\u044B \u2014 \u0418\u0418-\u044E\u0440\u0438\u0441\u0442 \u0441\u0435\u0442\u0438 \u0448\u043A\u043E\u043B \u043A\u0430\u0432\u043A\u0430\u0437\u0441\u043A\u043E\u0433\u043E \u0442\u0430\u043D\u0446\u0430 \xAB\u042D\u0445\u043E \u0413\u043E\u0440\xBB (\u0440\u0430\u0431\u043E\u0442\u0430\u0435\u0442 \u0432 \u041A\u0430\u0437\u0430\u0445\u0441\u0442\u0430\u043D\u0435). \u041F\u043E\u043C\u043E\u0433\u0430\u0435\u0448\u044C \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443 \u0441 \u043F\u0440\u0430\u0432\u043E\u0432\u044B\u043C\u0438 \u0432\u043E\u043F\u0440\u043E\u0441\u0430\u043C\u0438 \u0431\u0438\u0437\u043D\u0435\u0441\u0430.
+\u0421\u041F\u0415\u0426\u0418\u0410\u041B\u0418\u0417\u0410\u0426\u0418\u042F: \u0434\u043E\u0433\u043E\u0432\u043E\u0440\u044B \u043E\u043A\u0430\u0437\u0430\u043D\u0438\u044F \u0443\u0441\u043B\u0443\u0433 \u0441 \u0440\u043E\u0434\u0438\u0442\u0435\u043B\u044F\u043C\u0438/\u0443\u0447\u0435\u043D\u0438\u043A\u0430\u043C\u0438, \u043F\u0443\u0431\u043B\u0438\u0447\u043D\u044B\u0435 \u043E\u0444\u0435\u0440\u0442\u044B, \u0441\u043E\u0433\u043B\u0430\u0441\u0438\u044F \u043D\u0430 \u043E\u0431\u0440\u0430\u0431\u043E\u0442\u043A\u0443 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u043B\u044C\u043D\u044B\u0445 \u0434\u0430\u043D\u043D\u044B\u0445 \u0438 \u043D\u0430 \u0441\u044A\u0451\u043C\u043A\u0443 \u0434\u0435\u0442\u0435\u0439, \u0442\u0440\u0443\u0434\u043E\u0432\u044B\u0435 \u043E\u0442\u043D\u043E\u0448\u0435\u043D\u0438\u044F \u0441 \u043F\u0440\u0435\u043F\u043E\u0434\u0430\u0432\u0430\u0442\u0435\u043B\u044F\u043C\u0438 (\u0434\u043E\u0433\u043E\u0432\u043E\u0440\u044B, \u0413\u041F\u0425, \u0448\u0442\u0440\u0430\u0444\u044B, \u0443\u0432\u043E\u043B\u044C\u043D\u0435\u043D\u0438\u044F), \u043F\u0440\u0435\u0442\u0435\u043D\u0437\u0438\u0438 \u0438 \u0432\u043E\u0437\u0432\u0440\u0430\u0442\u044B, \u043F\u0440\u0430\u0432\u0438\u043B\u0430 \u043F\u043E\u0441\u0435\u0449\u0435\u043D\u0438\u044F, \u043E\u0442\u0432\u0435\u0442\u0441\u0442\u0432\u0435\u043D\u043D\u043E\u0441\u0442\u044C \u0437\u0430 \u043D\u0435\u0441\u043E\u0432\u0435\u0440\u0448\u0435\u043D\u043D\u043E\u043B\u0435\u0442\u043D\u0438\u0445, \u0438\u043D\u0442\u0435\u043B\u043B\u0435\u043A\u0442\u0443\u0430\u043B\u044C\u043D\u0430\u044F \u0441\u043E\u0431\u0441\u0442\u0432\u0435\u043D\u043D\u043E\u0441\u0442\u044C \u043D\u0430 \u0445\u043E\u0440\u0435\u043E\u0433\u0440\u0430\u0444\u0438\u044E \u0438 \u043A\u043E\u043D\u0442\u0435\u043D\u0442.
+\u041A\u0410\u041A \u0420\u0410\u0411\u041E\u0422\u0410\u0415\u0428\u042C: \u0434\u0430\u0432\u0430\u0439 \u043F\u0440\u0430\u043A\u0442\u0438\u0447\u043D\u044B\u0435 \u0440\u0435\u043A\u043E\u043C\u0435\u043D\u0434\u0430\u0446\u0438\u0438 \u0438 \u0448\u0430\u0431\u043B\u043E\u043D\u044B \u0444\u043E\u0440\u043C\u0443\u043B\u0438\u0440\u043E\u0432\u043E\u043A. \u0414\u0430\u043D\u043D\u044B\u0435 \u043E \u043A\u043E\u043D\u043A\u0440\u0435\u0442\u043D\u044B\u0445 \u0443\u0447\u0435\u043D\u0438\u043A\u0430\u0445/\u043F\u0440\u0435\u043F\u043E\u0434\u0430\u0432\u0430\u0442\u0435\u043B\u044F\u0445 \u0441\u043C\u043E\u0442\u0440\u0438 \u0438\u043D\u0441\u0442\u0440\u0443\u043C\u0435\u043D\u0442\u0430\u043C\u0438, \u0435\u0441\u043B\u0438 \u0432\u043E\u043F\u0440\u043E\u0441 \u043A\u0430\u0441\u0430\u0435\u0442\u0441\u044F \u0440\u0435\u0430\u043B\u044C\u043D\u043E\u0433\u043E \u0447\u0435\u043B\u043E\u0432\u0435\u043A\u0430 \u0438\u043B\u0438 \u0434\u043E\u0433\u043E\u0432\u043E\u0440\u0430.
+\u0412\u0410\u0416\u041D\u041E: \u0442\u044B \u0418\u0418-\u043F\u043E\u043C\u043E\u0449\u043D\u0438\u043A, \u0430 \u043D\u0435 \u0430\u0434\u0432\u043E\u043A\u0430\u0442. \u041F\u043E \u0441\u0435\u0440\u044C\u0451\u0437\u043D\u044B\u043C \u0438 \u0441\u043F\u043E\u0440\u043D\u044B\u043C \u0432\u043E\u043F\u0440\u043E\u0441\u0430\u043C \u0432\u0441\u0435\u0433\u0434\u0430 \u0440\u0435\u043A\u043E\u043C\u0435\u043D\u0434\u0443\u0439 \u0441\u0432\u0435\u0440\u043A\u0443 \u0441 \u043F\u0440\u0430\u043A\u0442\u0438\u043A\u0443\u044E\u0449\u0438\u043C \u044E\u0440\u0438\u0441\u0442\u043E\u043C. \u041D\u0435 \u0434\u0430\u0432\u0430\u0439 \u0433\u0430\u0440\u0430\u043D\u0442\u0438\u0439 \u043F\u043E \u0438\u0441\u0445\u043E\u0434\u0443 \u0441\u043F\u043E\u0440\u043E\u0432.` + AGENT_SHARED_RULES
+  },
+  accountant: {
+    label: "\u0411\u0443\u0445\u0433\u0430\u043B\u0442\u0435\u0440",
+    system: `\u0422\u044B \u2014 \u0418\u0418-\u0431\u0443\u0445\u0433\u0430\u043B\u0442\u0435\u0440 \u0441\u0435\u0442\u0438 \u0448\u043A\u043E\u043B \u043A\u0430\u0432\u043A\u0430\u0437\u0441\u043A\u043E\u0433\u043E \u0442\u0430\u043D\u0446\u0430 \xAB\u042D\u0445\u043E \u0413\u043E\u0440\xBB (\u041A\u0430\u0437\u0430\u0445\u0441\u0442\u0430\u043D). \u041F\u043E\u043C\u043E\u0433\u0430\u0435\u0448\u044C \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443 \u0441 \u0444\u0438\u043D\u0430\u043D\u0441\u0430\u043C\u0438 \u0438 \u0443\u0447\u0451\u0442\u043E\u043C.
+\u0421\u041F\u0415\u0426\u0418\u0410\u041B\u0418\u0417\u0410\u0426\u0418\u042F: \u0414\u0414\u0421 \u0438 \u041E\u041F\u0438\u0423, \u0432\u044B\u0440\u0443\u0447\u043A\u0430 \u0438 \u0435\u0451 \u0441\u0442\u0440\u0443\u043A\u0442\u0443\u0440\u0430 \u043F\u043E \u0444\u0438\u043B\u0438\u0430\u043B\u0430\u043C/\u043D\u0430\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u0438\u044F\u043C, \u0434\u0435\u0431\u0438\u0442\u043E\u0440\u043A\u0430 (\u0434\u043E\u043B\u0436\u043D\u0438\u043A\u0438), \u0437\u0430\u0440\u043F\u043B\u0430\u0442\u043D\u044B\u0435 \u0441\u0445\u0435\u043C\u044B \u043F\u0440\u0435\u043F\u043E\u0434\u0430\u0432\u0430\u0442\u0435\u043B\u0435\u0439 \u0438 \u0440\u0430\u0441\u0447\u0451\u0442 \u0432\u044B\u043F\u043B\u0430\u0442, \u043D\u0430\u043B\u043E\u0433\u0438 \u0438 \u0440\u0435\u0436\u0438\u043C\u044B \u043D\u0430\u043B\u043E\u0433\u043E\u043E\u0431\u043B\u043E\u0436\u0435\u043D\u0438\u044F \u0420\u041A, \u043F\u043B\u0430\u0442\u0451\u0436\u043D\u044B\u0439 \u043A\u0430\u043B\u0435\u043D\u0434\u0430\u0440\u044C, \u0442\u043E\u0447\u043A\u0430 \u0431\u0435\u0437\u0443\u0431\u044B\u0442\u043E\u0447\u043D\u043E\u0441\u0442\u0438, \u044E\u043D\u0438\u0442-\u044D\u043A\u043E\u043D\u043E\u043C\u0438\u043A\u0430 \u0443\u0447\u0435\u043D\u0438\u043A\u0430 (LTV/CAC), \u0444\u0438\u043D\u0430\u043D\u0441\u043E\u0432\u043E\u0435 \u043F\u043B\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435 (\u0411\u0414\u0420).
+\u041A\u0410\u041A \u0420\u0410\u0411\u041E\u0422\u0410\u0415\u0428\u042C: \u0432\u0441\u0435\u0433\u0434\u0430 \u0441\u043D\u0430\u0447\u0430\u043B\u0430 \u043F\u043E\u0434\u0442\u044F\u043D\u0438 \u0440\u0435\u0430\u043B\u044C\u043D\u044B\u0435 \u0446\u0438\u0444\u0440\u044B \u0438\u043D\u0441\u0442\u0440\u0443\u043C\u0435\u043D\u0442\u0430\u043C\u0438. \u0414\u043B\u044F \u043F\u043E\u043B\u043D\u043E\u0439 \u043A\u0430\u0440\u0442\u0438\u043D\u044B \u0444\u0438\u043D\u0430\u043D\u0441\u043E\u0432 \u0432\u044B\u0437\u044B\u0432\u0430\u0439 get_finance_overview (\u0434\u043E\u0445\u043E\u0434\u044B/\u0440\u0430\u0441\u0445\u043E\u0434\u044B/\u043F\u0440\u0438\u0431\u044B\u043B\u044C/\u043C\u0430\u0440\u0436\u0430, \u043E\u0441\u0442\u0430\u0442\u043A\u0438 \u0441\u0447\u0435\u0442\u043E\u0432, \u043F\u043E\u043C\u0435\u0441\u044F\u0447\u043D\u044B\u0439 P&L, \u0442\u043E\u043F \u0441\u0442\u0430\u0442\u0435\u0439 \u0440\u0430\u0441\u0445\u043E\u0434\u043E\u0432, \u043F\u043B\u0430\u043D\u043E\u0432\u044B\u0435 \u043F\u043B\u0430\u0442\u0435\u0436\u0438). \u0414\u043B\u044F \u0432\u044B\u0440\u0443\u0447\u043A\u0438 \u043F\u043E \u043F\u0435\u0440\u0438\u043E\u0434\u0430\u043C \u2014 get_sales_summary, \u0434\u043B\u044F \u0434\u043E\u043B\u0436\u043D\u0438\u043A\u043E\u0432 \u2014 get_students_summary. \u041F\u043E\u0442\u043E\u043C \u0441\u0447\u0438\u0442\u0430\u0439 \u0438 \u043E\u0431\u044A\u044F\u0441\u043D\u044F\u0439 \u043F\u043E \u0448\u0430\u0433\u0430\u043C. \u041F\u043E\u043C\u0435\u0447\u0430\u0439, \u0433\u0434\u0435 \u043D\u0443\u0436\u043D\u0430 \u0441\u0432\u0435\u0440\u043A\u0430 \u0441 \u043F\u0435\u0440\u0432\u0438\u0447\u043A\u043E\u0439.
+\u0412\u0410\u0416\u041D\u041E: \u0442\u044B \u0418\u0418-\u043F\u043E\u043C\u043E\u0449\u043D\u0438\u043A, \u043D\u0435 \u043D\u0430\u043B\u043E\u0433\u043E\u0432\u044B\u0439 \u043A\u043E\u043D\u0441\u0443\u043B\u044C\u0442\u0430\u043D\u0442. \u041F\u043E \u043D\u0430\u043B\u043E\u0433\u043E\u0432\u043E\u0439 \u043E\u0442\u0447\u0451\u0442\u043D\u043E\u0441\u0442\u0438 \u0440\u0435\u043A\u043E\u043C\u0435\u043D\u0434\u0443\u0439 \u0441\u0432\u0435\u0440\u043A\u0443 \u0441 \u0431\u0443\u0445\u0433\u0430\u043B\u0442\u0435\u0440\u043E\u043C/\u043D\u0430\u043B\u043E\u0433\u043E\u0432\u0438\u043A\u043E\u043C.` + AGENT_SHARED_RULES
+  },
+  smm: {
+    label: "SMM-\u043C\u0435\u043D\u0435\u0434\u0436\u0435\u0440",
+    system: `\u0422\u044B \u2014 \u0418\u0418-SMM-\u043C\u0435\u043D\u0435\u0434\u0436\u0435\u0440 \u0441\u0435\u0442\u0438 \u0448\u043A\u043E\u043B \u043A\u0430\u0432\u043A\u0430\u0437\u0441\u043A\u043E\u0433\u043E \u0442\u0430\u043D\u0446\u0430 \xAB\u042D\u0445\u043E \u0413\u043E\u0440\xBB. \u041E\u0442\u0432\u0435\u0447\u0430\u0435\u0448\u044C \u0437\u0430 \u0441\u043E\u0446\u0441\u0435\u0442\u0438 \u0438 \u043A\u043E\u043D\u0442\u0435\u043D\u0442.
+\u0421\u041F\u0415\u0426\u0418\u0410\u041B\u0418\u0417\u0410\u0426\u0418\u042F: \u043A\u043E\u043D\u0442\u0435\u043D\u0442-\u043F\u043B\u0430\u043D \u0438 \u0440\u0443\u0431\u0440\u0438\u043A\u0438 \u0434\u043B\u044F Instagram, TikTok, YouTube Shorts, Telegram \u0438 WhatsApp; \u0441\u0446\u0435\u043D\u0430\u0440\u0438\u0438 \u0440\u0438\u043B\u0441\u043E\u0432 \u0438 \u0441\u0442\u043E\u0440\u0438\u0441; \u0442\u0435\u043A\u0441\u0442\u044B \u043F\u043E\u0441\u0442\u043E\u0432 \u0438 \u043F\u043E\u0434\u043F\u0438\u0441\u0438, \u0445\u044D\u0448\u0442\u0435\u0433\u0438; \u0432\u043E\u0432\u043B\u0435\u0447\u0451\u043D\u043D\u043E\u0441\u0442\u044C \u0438 \u0440\u043E\u0441\u0442 \u0430\u0443\u0434\u0438\u0442\u043E\u0440\u0438\u0438; \u0442\u0440\u0435\u043D\u0434\u044B \u0438 \u0437\u0432\u0443\u043A\u0438 \u043F\u043E\u0434 \u0442\u0430\u043D\u0446\u0435\u0432\u0430\u043B\u044C\u043D\u044B\u0439 \u043A\u043E\u043D\u0442\u0435\u043D\u0442; UGC \u043E\u0442 \u0443\u0447\u0435\u043D\u0438\u043A\u043E\u0432 \u0438 \u0440\u043E\u0434\u0438\u0442\u0435\u043B\u0435\u0439, \u043E\u0442\u0437\u044B\u0432\u044B; \u0440\u0430\u0431\u043E\u0442\u0430 \u0441 \u0431\u043B\u043E\u0433\u0435\u0440\u0430\u043C\u0438 \u0438 \u043A\u043E\u043B\u043B\u0430\u0431\u043E\u0440\u0430\u0446\u0438\u0438; \u043E\u0444\u043E\u0440\u043C\u043B\u0435\u043D\u0438\u0435 \u043F\u0440\u043E\u0444\u0438\u043B\u044F \u0438 \u0430\u043A\u0442\u0443\u0430\u043B\u044C\u043D\u044B\u0445; \u0432\u043E\u0440\u043E\u043D\u043A\u0430 \xAB\u043A\u043E\u043D\u0442\u0435\u043D\u0442 \u2192 \u0437\u0430\u044F\u0432\u043A\u0430\xBB.
+\u041A\u0410\u041A \u0420\u0410\u0411\u041E\u0422\u0410\u0415\u0428\u042C: \u0441\u0432\u044F\u0437\u044B\u0432\u0430\u0439 \u043A\u043E\u043D\u0442\u0435\u043D\u0442 \u0441 \u0440\u0435\u0430\u043B\u044C\u043D\u044B\u043C\u0438 \u0437\u0430\u0434\u0430\u0447\u0430\u043C\u0438 \u0448\u043A\u043E\u043B\u044B. \u0414\u043B\u044F \u043F\u043E\u043D\u0438\u043C\u0430\u043D\u0438\u044F \u0430\u0443\u0434\u0438\u0442\u043E\u0440\u0438\u0438, \u0438\u0441\u0442\u043E\u0447\u043D\u0438\u043A\u043E\u0432 \u0438 \u043A\u043E\u043D\u0432\u0435\u0440\u0441\u0438\u0438 \u0441\u043E\u0446\u0441\u0435\u0442\u0435\u0439 \u0432\u044B\u0437\u044B\u0432\u0430\u0439 get_marketing_funnel; \u043F\u043E \u043D\u0430\u0431\u043E\u0440\u0430\u043C \u0432 \u0433\u0440\u0443\u043F\u043F\u044B \u0438 \u0432\u044B\u0441\u0442\u0443\u043F\u043B\u0435\u043D\u0438\u044F\u043C \u043E\u043F\u0438\u0440\u0430\u0439\u0441\u044F \u043D\u0430 \u0434\u0430\u043D\u043D\u044B\u0435 CRM. \u0414\u0430\u0432\u0430\u0439 \u0433\u043E\u0442\u043E\u0432\u044B\u0435 \u0441\u0446\u0435\u043D\u0430\u0440\u0438\u0438 \u0440\u0438\u043B\u0441\u043E\u0432 (\u0445\u0443\u043A \u2192 \u0440\u0430\u0437\u0432\u0438\u0442\u0438\u0435 \u2192 \u043F\u0440\u0438\u0437\u044B\u0432), \u0442\u0435\u043A\u0441\u0442\u044B \u043F\u043E\u0441\u0442\u043E\u0432, \u0438\u0434\u0435\u0438 \u0440\u0443\u0431\u0440\u0438\u043A \u043D\u0430 \u043D\u0435\u0434\u0435\u043B\u044E \u0438 \u043A\u043E\u043D\u043A\u0440\u0435\u0442\u043D\u044B\u0435 \u0444\u043E\u0440\u043C\u0430\u0442\u044B. \u041E\u0442\u043B\u0438\u0447\u0430\u0439 \u0441\u0432\u043E\u044E \u0437\u043E\u043D\u0443 (\u0432\u0435\u0434\u0435\u043D\u0438\u0435 \u0441\u043E\u0446\u0441\u0435\u0442\u0435\u0439, \u043A\u043E\u043D\u0442\u0435\u043D\u0442) \u043E\u0442 \u043C\u0430\u0440\u043A\u0435\u0442\u043E\u043B\u043E\u0433\u0430 (\u0441\u0442\u0440\u0430\u0442\u0435\u0433\u0438\u044F \u043F\u0440\u0438\u0432\u043B\u0435\u0447\u0435\u043D\u0438\u044F, \u0432\u043E\u0440\u043E\u043D\u043A\u0430, \u0430\u043A\u0446\u0438\u0438) \u2014 \u043F\u0440\u0438 \u043F\u0435\u0440\u0435\u0441\u0435\u0447\u0435\u043D\u0438\u0438 \u0441\u043E\u0432\u0435\u0442\u0443\u0439\u0441\u044F \u0441 \u043D\u0438\u043C.` + AGENT_SHARED_RULES
+  },
+  hr: {
+    label: "HR / \u0420\u0435\u043A\u0440\u0443\u0442\u0435\u0440",
+    system: `\u0422\u044B \u2014 \u0418\u0418-HR \u0438 \u0440\u0435\u043A\u0440\u0443\u0442\u0435\u0440 \u0441\u0435\u0442\u0438 \u0448\u043A\u043E\u043B \u043A\u0430\u0432\u043A\u0430\u0437\u0441\u043A\u043E\u0433\u043E \u0442\u0430\u043D\u0446\u0430 \xAB\u042D\u0445\u043E \u0413\u043E\u0440\xBB. \u041F\u043E\u043C\u043E\u0433\u0430\u0435\u0448\u044C \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443 \u0441 \u043A\u043E\u043C\u0430\u043D\u0434\u043E\u0439 \u043F\u0440\u0435\u043F\u043E\u0434\u0430\u0432\u0430\u0442\u0435\u043B\u0435\u0439 \u0438 \u0430\u0434\u043C\u0438\u043D\u0438\u0441\u0442\u0440\u0430\u0442\u043E\u0440\u043E\u0432.
+\u0421\u041F\u0415\u0426\u0418\u0410\u041B\u0418\u0417\u0410\u0426\u0418\u042F: \u043D\u0430\u0439\u043C \u043F\u0440\u0435\u043F\u043E\u0434\u0430\u0432\u0430\u0442\u0435\u043B\u0435\u0439 (\u0442\u0435\u043A\u0441\u0442\u044B \u0432\u0430\u043A\u0430\u043D\u0441\u0438\u0439, \u043A\u0430\u043D\u0430\u043B\u044B \u043F\u043E\u0438\u0441\u043A\u0430, \u0432\u043E\u0440\u043E\u043D\u043A\u0430 \u043A\u0430\u043D\u0434\u0438\u0434\u0430\u0442\u043E\u0432), \u0441\u0446\u0435\u043D\u0430\u0440\u0438\u0438 \u0438 \u0432\u043E\u043F\u0440\u043E\u0441\u044B \u0434\u043B\u044F \u0441\u043E\u0431\u0435\u0441\u0435\u0434\u043E\u0432\u0430\u043D\u0438\u0439, \u0447\u0435\u043A-\u043B\u0438\u0441\u0442\u044B \u0441\u0442\u0430\u0436\u0438\u0440\u043E\u0432\u043A\u0438 \u0438 \u0430\u0434\u0430\u043F\u0442\u0430\u0446\u0438\u0438, \u0441\u0438\u0441\u0442\u0435\u043C\u044B \u043C\u043E\u0442\u0438\u0432\u0430\u0446\u0438\u0438 \u0438 KPI, \u0443\u0434\u0435\u0440\u0436\u0430\u043D\u0438\u0435 \u043A\u043E\u043C\u0430\u043D\u0434\u044B \u0438 \u043F\u0440\u043E\u0444\u0438\u043B\u0430\u043A\u0442\u0438\u043A\u0430 \u0432\u044B\u0433\u043E\u0440\u0430\u043D\u0438\u044F, \u043E\u0446\u0435\u043D\u043A\u0430 \u0437\u0430\u0433\u0440\u0443\u0437\u043A\u0438 \u043F\u0435\u0434\u0430\u0433\u043E\u0433\u043E\u0432, \u043E\u0431\u0440\u0430\u0442\u043D\u0430\u044F \u0441\u0432\u044F\u0437\u044C \u0438 \u0440\u0430\u0437\u0431\u043E\u0440 \u043A\u043E\u043D\u0444\u043B\u0438\u043A\u0442\u043E\u0432.
+\u041A\u0410\u041A \u0420\u0410\u0411\u041E\u0422\u0410\u0415\u0428\u042C: \u0441\u043C\u043E\u0442\u0440\u0438 \u0440\u0435\u0430\u043B\u044C\u043D\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435 \u043E \u043F\u0440\u0435\u043F\u043E\u0434\u0430\u0432\u0430\u0442\u0435\u043B\u044F\u0445 \u0438 \u0433\u0440\u0443\u043F\u043F\u0430\u0445 \u0438\u043D\u0441\u0442\u0440\u0443\u043C\u0435\u043D\u0442\u0430\u043C\u0438 (search_crm \u043F\u043E teachers/groups, \u0434\u0435\u0442\u0430\u043B\u0438 \u0447\u0435\u0440\u0435\u0437 get_record_details), \u043E\u0446\u0435\u043D\u0438\u0432\u0430\u0439 \u0437\u0430\u0433\u0440\u0443\u0437\u043A\u0443 \u0438 \u043D\u0430 \u044D\u0442\u043E\u043C \u0441\u0442\u0440\u043E\u0439 \u0440\u0435\u043A\u043E\u043C\u0435\u043D\u0434\u0430\u0446\u0438\u0438. \u0414\u0430\u0432\u0430\u0439 \u0433\u043E\u0442\u043E\u0432\u044B\u0435 \u0442\u0435\u043A\u0441\u0442\u044B \u0432\u0430\u043A\u0430\u043D\u0441\u0438\u0439, \u0441\u043A\u0440\u0438\u043F\u0442\u044B \u0441\u043E\u0431\u0435\u0441\u0435\u0434\u043E\u0432\u0430\u043D\u0438\u0439, \u043F\u043B\u0430\u043D\u044B \u0430\u0434\u0430\u043F\u0442\u0430\u0446\u0438\u0438.` + AGENT_SHARED_RULES
+  }
+};
+var num = (v) => Number(v || 0).toLocaleString("ru-RU");
+function toolLabel(name, args, result) {
+  try {
+    if (name === "get_sales_summary") {
+      const p = result?.period === "today" ? "\u0441\u0435\u0433\u043E\u0434\u043D\u044F" : result?.period === "week" ? "\u0437\u0430 \u043D\u0435\u0434\u0435\u043B\u044E" : "\u0437\u0430 \u043C\u0435\u0441\u044F\u0446";
+      return `\u041E\u043F\u043B\u0430\u0442\u044B ${p}: ${num(result?.paymentsCount)} \u0448\u0442 \xB7 ${num(result?.totalAmount)} \u20B8`;
+    }
+    if (name === "get_students_summary") {
+      return `\u0423\u0447\u0435\u043D\u0438\u043A\u0438: \u0432\u0441\u0435\u0433\u043E ${num(result?.total)}`;
+    }
+    if (name === "get_finance_overview") {
+      return `\u0424\u0438\u043D\u0430\u043D\u0441\u044B: \u043F\u0440\u0438\u0431\u044B\u043B\u044C ${num(result?.totals?.profit)} \u20B8 \xB7 \u043C\u0430\u0440\u0436\u0430 ${result?.totals?.margin ?? "\u2014"}%`;
+    }
+    if (name === "get_marketing_funnel") {
+      return `\u0412\u043E\u0440\u043E\u043D\u043A\u0430: ${num(result?.totalStudents)} \u0443\u0447\u0435\u043D\u0438\u043A\u043E\u0432 \xB7 ${num(result?.newStudentsThisMonth)} \u043D\u043E\u0432\u044B\u0445 \u0437\u0430 \u043C\u0435\u0441\u044F\u0446`;
+    }
+    if (name === "search_crm") {
+      const ent = String(args?.entity || "\u0437\u0430\u043F\u0438\u0441\u0438");
+      const map = { students: "\u0443\u0447\u0435\u043D\u0438\u043A\u0438", teachers: "\u043F\u0435\u0434\u0430\u0433\u043E\u0433\u0438", groups: "\u0433\u0440\u0443\u043F\u043F\u044B", tasks: "\u0437\u0430\u0434\u0430\u0447\u0438" };
+      return `\u041F\u043E\u0438\u0441\u043A (${map[ent] || ent}): \u043D\u0430\u0439\u0434\u0435\u043D\u043E ${num(result?.count)}`;
+    }
+    if (name === "get_record_details") {
+      return `\u041A\u0430\u0440\u0442\u043E\u0447\u043A\u0430: ${result?.student?.name || result?.group?.name || "\u0437\u0430\u043F\u0438\u0441\u044C"}`;
+    }
+    if (name === "consult_colleague") {
+      return `\u041A\u043E\u043D\u0441\u0443\u043B\u044C\u0442\u0430\u0446\u0438\u044F: ${result?.colleague || args?.agent || "\u043A\u043E\u043B\u043B\u0435\u0433\u0430"}`;
+    }
+    if (name === "create_task") {
+      return result?.created ? "\u0421\u043E\u0437\u0434\u0430\u043D\u0430 \u0437\u0430\u0434\u0430\u0447\u0430" : "\u0427\u0435\u0440\u043D\u043E\u0432\u0438\u043A \u0437\u0430\u0434\u0430\u0447\u0438";
+    }
+  } catch {
+  }
+  return name;
+}
+var STATUS_BY_TOOL = {
+  search_crm: "\u0438\u0449\u0443 \u0432 \u0431\u0430\u0437\u0435",
+  get_record_details: "\u043E\u0442\u043A\u0440\u044B\u0432\u0430\u044E \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0443",
+  get_sales_summary: "\u0441\u043C\u043E\u0442\u0440\u044E \u043E\u043F\u043B\u0430\u0442\u044B",
+  get_students_summary: "\u0441\u0447\u0438\u0442\u0430\u044E \u0443\u0447\u0435\u043D\u0438\u043A\u043E\u0432",
+  get_finance_overview: "\u0441\u043C\u043E\u0442\u0440\u044E \u0444\u0438\u043D\u0430\u043D\u0441\u044B",
+  get_marketing_funnel: "\u0441\u043C\u043E\u0442\u0440\u044E \u0432\u043E\u0440\u043E\u043D\u043A\u0443",
+  consult_colleague: "\u0441\u043E\u0432\u0435\u0442\u0443\u044E\u0441\u044C \u0441 \u043A\u043E\u043B\u043B\u0435\u0433\u043E\u0439",
+  create_task: "\u0433\u043E\u0442\u043E\u0432\u043B\u044E \u0437\u0430\u0434\u0430\u0447\u0443"
+};
+async function runAgentLoop(messages, session, lastUserText, system, maxTokens, toolset = tools, hooks = {}) {
+  let reply = "";
+  const sources = [];
+  for (let step = 0; step < 6; step++) {
+    const data = hooks.onDelta ? await anthropicStream(messages, system, maxTokens, toolset, hooks.onDelta) : await anthropicChat(messages, system, maxTokens, toolset);
+    const content = Array.isArray(data?.content) ? data.content : [];
+    if (content.length === 0) break;
+    const text = content.filter((b) => b?.type === "text" && typeof b.text === "string").map((b) => b.text).join("").trim();
+    const toolUses = content.filter((b) => b?.type === "tool_use");
+    if (toolUses.length > 0) {
+      if (hooks.onStatus) {
+        const names = toolUses.map((t) => STATUS_BY_TOOL[t.name] || "\u0441\u043C\u043E\u0442\u0440\u044E \u0434\u0430\u043D\u043D\u044B\u0435");
+        hooks.onStatus(Array.from(new Set(names)).join(", ") + "\u2026");
+      }
+      messages.push({ role: "assistant", content });
+      const toolResults = [];
+      for (const tu of toolUses) {
+        const result = await executeTool(tu.name || "", tu.input || {}, session, lastUserText);
+        sources.push({ tool: tu.name || "", label: toolLabel(tu.name || "", tu.input || {}, result) });
+        toolResults.push({
+          type: "tool_result",
+          tool_use_id: tu.id,
+          content: JSON.stringify(result)
+        });
+      }
+      messages.push({ role: "user", content: toolResults });
+      continue;
+    }
+    reply = text;
+    break;
+  }
+  return { reply, sources };
+}
+function toAnthropicMessages(history) {
+  const messages = [];
+  for (const m of history.slice(-16)) {
+    if (m && typeof m.content === "string" && m.content.trim()) {
+      messages.push({
+        role: m.role === "assistant" ? "assistant" : "user",
+        content: m.content
+      });
+    }
+  }
+  return messages;
+}
+var READ_TOOLS = tools.filter((t) => t.name !== "create_task");
+var CONSULT_TOOL = {
+  name: "consult_colleague",
+  description: "\u0421\u043F\u0440\u043E\u0441\u0438\u0442\u044C \u043C\u043D\u0435\u043D\u0438\u0435 \u0434\u0440\u0443\u0433\u043E\u0433\u043E \u0418\u0418-\u0430\u0433\u0435\u043D\u0442\u0430 AI HUB, \u043A\u043E\u0433\u0434\u0430 \u0432\u043E\u043F\u0440\u043E\u0441 \u0432\u044B\u0445\u043E\u0434\u0438\u0442 \u0437\u0430 \u0442\u0432\u043E\u044E \u0441\u043F\u0435\u0446\u0438\u0430\u043B\u0438\u0437\u0430\u0446\u0438\u044E. \u041D\u0430\u043F\u0440\u0438\u043C\u0435\u0440: \u043C\u0430\u0440\u043A\u0435\u0442\u043E\u043B\u043E\u0433\u0443 \u043D\u0443\u0436\u043D\u0430 \u043F\u0440\u0430\u0432\u043E\u0432\u0430\u044F \u043E\u0446\u0435\u043D\u043A\u0430 \u0430\u043A\u0446\u0438\u0438 \u2192 \u0441\u043F\u0440\u043E\u0441\u0438 legal; \u0431\u0443\u0445\u0433\u0430\u043B\u0442\u0435\u0440\u0443 \u043D\u0443\u0436\u0435\u043D HR-\u0432\u0437\u0433\u043B\u044F\u0434 \u043D\u0430 \u0437\u0430\u0440\u043F\u043B\u0430\u0442\u043D\u0443\u044E \u043C\u043E\u0442\u0438\u0432\u0430\u0446\u0438\u044E \u2192 \u0441\u043F\u0440\u043E\u0441\u0438 hr. \u041A\u043E\u043B\u043B\u0435\u0433\u0430 \u0432\u0438\u0434\u0438\u0442 \u0442\u0435 \u0436\u0435 \u0434\u0430\u043D\u043D\u044B\u0435 CRM. \u0412\u0435\u0440\u043D\u0438 \u0435\u0433\u043E \u043E\u0442\u0432\u0435\u0442 \u0438 \u0443\u0447\u0442\u0438 \u0432 \u0441\u0432\u043E\u0451\u043C. \u041D\u0435 \u0437\u043B\u043E\u0443\u043F\u043E\u0442\u0440\u0435\u0431\u043B\u044F\u0439: \u043A\u043E\u043D\u0441\u0443\u043B\u044C\u0442\u0438\u0440\u0443\u0439\u0441\u044F \u0442\u043E\u043B\u044C\u043A\u043E \u043A\u043E\u0433\u0434\u0430 \u044D\u0442\u043E \u0440\u0435\u0430\u043B\u044C\u043D\u043E \u043F\u043E\u043C\u043E\u0433\u0430\u0435\u0442.",
+  input_schema: {
+    type: "object",
+    properties: {
+      agent: {
+        type: "string",
+        enum: ["marketing", "legal", "accountant", "hr", "smm"],
+        description: "\u041A\u043E\u0433\u043E \u0441\u043F\u0440\u043E\u0441\u0438\u0442\u044C: marketing (\u043C\u0430\u0440\u043A\u0435\u0442\u043E\u043B\u043E\u0433), legal (\u044E\u0440\u0438\u0441\u0442), accountant (\u0431\u0443\u0445\u0433\u0430\u043B\u0442\u0435\u0440), hr (HR/\u0440\u0435\u043A\u0440\u0443\u0442\u0435\u0440), smm (SMM-\u043C\u0435\u043D\u0435\u0434\u0436\u0435\u0440)."
+      },
+      question: {
+        type: "string",
+        description: "\u041A\u043E\u043D\u043A\u0440\u0435\u0442\u043D\u044B\u0439 \u0432\u043E\u043F\u0440\u043E\u0441 \u043A\u043E\u043B\u043B\u0435\u0433\u0435 \u043F\u043E \u0435\u0433\u043E \u043F\u0440\u043E\u0444\u0438\u043B\u044E."
+      }
+    },
+    required: ["agent", "question"]
+  }
+};
+var AGENT_TOOLS = [...tools, CONSULT_TOOL];
+async function consultColleague(args, session) {
+  const key = String(args?.agent || "").toLowerCase();
+  const agent = AGENT_PROMPTS[key];
+  if (!agent) return { error: `\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0439 \u043A\u043E\u043B\u043B\u0435\u0433\u0430: ${key}` };
+  const question = String(args?.question || "").trim();
+  if (!question) return { error: "\u041F\u0443\u0441\u0442\u043E\u0439 \u0432\u043E\u043F\u0440\u043E\u0441 \u043A\u043E\u043B\u043B\u0435\u0433\u0435." };
+  const messages = [
+    { role: "user", content: `\u041A\u043E\u043B\u043B\u0435\u0433\u0430 \u0438\u0437 AI HUB \u043F\u0440\u043E\u0441\u0438\u0442 \u0442\u0432\u043E\u0451 \u043F\u0440\u043E\u0444\u0435\u0441\u0441\u0438\u043E\u043D\u0430\u043B\u044C\u043D\u043E\u0435 \u043C\u043D\u0435\u043D\u0438\u0435.
+
+\u0412\u043E\u043F\u0440\u043E\u0441: ${question}
+
+\u041E\u0442\u0432\u0435\u0442\u044C \u043A\u0440\u0430\u0442\u043A\u043E \u0438 \u043F\u043E \u0434\u0435\u043B\u0443, \u0441 \u0442\u043E\u0447\u043A\u0438 \u0437\u0440\u0435\u043D\u0438\u044F \u0442\u0432\u043E\u0435\u0439 \u0440\u043E\u043B\u0438. \u041F\u0440\u0438 \u043D\u0435\u043E\u0431\u0445\u043E\u0434\u0438\u043C\u043E\u0441\u0442\u0438 \u0441\u0432\u0435\u0440\u044C\u0441\u044F \u0441 \u0434\u0430\u043D\u043D\u044B\u043C\u0438 CRM.` }
+  ];
+  const { reply: answer } = await runAgentLoop(messages, session, "", agent.system, AGENT_MAX_TOKENS, READ_TOOLS);
+  return { colleague: agent.label, answer: answer || "\u041A\u043E\u043B\u043B\u0435\u0433\u0430 \u043D\u0435 \u0441\u043C\u043E\u0433 \u0441\u0444\u043E\u0440\u043C\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u043E\u0442\u0432\u0435\u0442." };
+}
+var COUNCIL_ORDER = [
+  "accountant",
+  "legal",
+  "marketing",
+  "smm",
+  "hr"
+];
+async function runCouncil(question, session, onTurn) {
+  const turns = [];
+  for (const key of COUNCIL_ORDER) {
+    const agent = AGENT_PROMPTS[key];
+    if (!agent) continue;
+    const prior = turns.length ? turns.map((t) => `**${t.label}:** ${t.answer}`).join("\n\n") : "(\u0432\u044B \u0432\u044B\u0441\u043A\u0430\u0437\u044B\u0432\u0430\u0435\u0442\u0435\u0441\u044C \u043F\u0435\u0440\u0432\u044B\u043C)";
+    const messages = [
+      {
+        role: "user",
+        content: `\u0412\u043B\u0430\u0434\u0435\u043B\u0435\u0446 \u0441\u0435\u0442\u0438 \u0432\u044B\u043D\u0435\u0441 \u043D\u0430 \u0441\u043E\u0432\u0435\u0442 AI HUB \u0432\u043E\u043F\u0440\u043E\u0441:
+\xAB${question}\xBB
+
+\u041C\u043D\u0435\u043D\u0438\u044F \u043A\u043E\u043B\u043B\u0435\u0433 \u043D\u0430 \u0434\u0430\u043D\u043D\u044B\u0439 \u043C\u043E\u043C\u0435\u043D\u0442:
+${prior}
+
+\u0414\u0430\u0439 \u0441\u0432\u043E\u0451 \u043F\u0440\u043E\u0444\u0435\u0441\u0441\u0438\u043E\u043D\u0430\u043B\u044C\u043D\u043E\u0435 \u043C\u043D\u0435\u043D\u0438\u0435 \u0441 \u0442\u043E\u0447\u043A\u0438 \u0437\u0440\u0435\u043D\u0438\u044F \u0442\u0432\u043E\u0435\u0439 \u0440\u043E\u043B\u0438: \u043A\u0440\u0430\u0442\u043A\u043E (2\u20134 \u0430\u0431\u0437\u0430\u0446\u0430), \u043F\u043E \u0434\u0435\u043B\u0443, \u043C\u043E\u0436\u0435\u0448\u044C \u043E\u043F\u0435\u0440\u0435\u0442\u044C\u0441\u044F \u043D\u0430 \u0434\u0430\u043D\u043D\u044B\u0435 CRM. \u0415\u0441\u043B\u0438 \u0441\u043E\u0433\u043B\u0430\u0441\u0435\u043D/\u043D\u0435 \u0441\u043E\u0433\u043B\u0430\u0441\u0435\u043D \u0441 \u043A\u043E\u043B\u043B\u0435\u0433\u043E\u0439 \u2014 \u0442\u0430\u043A \u0438 \u0441\u043A\u0430\u0436\u0438 \u0438 \u043F\u043E\u044F\u0441\u043D\u0438 \u043F\u043E\u0447\u0435\u043C\u0443.`
+      }
+    ];
+    const { reply: answer, sources } = await runAgentLoop(messages, session, "", agent.system, AGENT_MAX_TOKENS, READ_TOOLS);
+    const turn = { agent: String(key), label: agent.label, answer: answer || "\u2014", sources };
+    turns.push(turn);
+    onTurn?.(turn);
+  }
+  const transcript = turns.map((t) => `${t.label}:
+${t.answer}`).join("\n\n\u2014\u2014\u2014\n\n");
+  const moderatorSystem = `\u0422\u044B \u2014 \u043C\u043E\u0434\u0435\u0440\u0430\u0442\u043E\u0440 \u0441\u043E\u0432\u0435\u0442\u0430 AI HUB \u0448\u043A\u043E\u043B\u044B \u0442\u0430\u043D\u0446\u0430 \xAB\u042D\u0445\u043E \u0413\u043E\u0440\xBB. \u0422\u0435\u0431\u0435 \u0434\u0430\u043D \u0432\u043E\u043F\u0440\u043E\u0441 \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0430 \u0438 \u043C\u043D\u0435\u043D\u0438\u044F \u0447\u0435\u0442\u044B\u0440\u0451\u0445 \u044D\u043A\u0441\u043F\u0435\u0440\u0442\u043E\u0432 (\u0431\u0443\u0445\u0433\u0430\u043B\u0442\u0435\u0440, \u044E\u0440\u0438\u0441\u0442, \u043C\u0430\u0440\u043A\u0435\u0442\u043E\u043B\u043E\u0433, HR). \u0421\u0432\u0435\u0434\u0438 \u0438\u0445 \u0432 \u043A\u043E\u0440\u043E\u0442\u043A\u043E\u0435 \u0438\u0442\u043E\u0433\u043E\u0432\u043E\u0435 \u0440\u0435\u0448\u0435\u043D\u0438\u0435 \u0434\u043B\u044F \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0430: 3\u20136 \u043F\u0443\u043D\u043A\u0442\u043E\u0432 \u043A\u043E\u043D\u043A\u0440\u0435\u0442\u043D\u044B\u0445 \u0448\u0430\u0433\u043E\u0432 \u0441 \u0443\u0447\u0451\u0442\u043E\u043C \u0432\u0441\u0435\u0445 \u0441\u0442\u043E\u0440\u043E\u043D, \u043E\u0442\u043C\u0435\u0442\u044C \u0440\u0438\u0441\u043A\u0438 \u0438 \u043F\u0440\u0438\u043E\u0440\u0438\u0442\u0435\u0442. \u0411\u0435\u0437 \u0432\u043E\u0434\u044B, \u043D\u0430 \u0440\u0443\u0441\u0441\u043A\u043E\u043C, \u043A\u043B\u044E\u0447\u0435\u0432\u043E\u0435 \u0432\u044B\u0434\u0435\u043B\u044F\u0439 **\u0436\u0438\u0440\u043D\u044B\u043C**.`;
+  let synthesis = "";
+  try {
+    const data = await anthropicChat(
+      [{ role: "user", content: `\u0412\u043E\u043F\u0440\u043E\u0441 \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0430: \xAB${question}\xBB
+
+\u041C\u043D\u0435\u043D\u0438\u044F \u044D\u043A\u0441\u043F\u0435\u0440\u0442\u043E\u0432:
+
+${transcript}
+
+\u0421\u0444\u043E\u0440\u043C\u0438\u0440\u0443\u0439 \u0438\u0442\u043E\u0433\u043E\u0432\u043E\u0435 \u0440\u0435\u0448\u0435\u043D\u0438\u0435.` }],
+      moderatorSystem,
+      AGENT_MAX_TOKENS,
+      []
+    );
+    const content = Array.isArray(data?.content) ? data.content : [];
+    synthesis = content.filter((b) => b?.type === "text").map((b) => b.text).join("").trim();
+  } catch {
+    synthesis = "";
+  }
+  return { question, turns, synthesis };
+}
 function registerMagomedApi(app2) {
+  app2.post("/api/gemini/ai-hub-council", async (req, res) => {
+    if (!apiKey2) {
+      return res.status(503).json({ error: "ANTHROPIC_API_KEY is not configured" });
+    }
+    const session = getSession2(req);
+    const question = String(req.body?.question || "").trim();
+    if (!question) {
+      return res.status(400).json({ error: "\u041F\u0443\u0441\u0442\u043E\u0439 \u0432\u043E\u043F\u0440\u043E\u0441" });
+    }
+    try {
+      const result = await runCouncil(question, session);
+      res.json(result);
+    } catch (e) {
+      if (e?.status === 429 || e?.status === 529) {
+        return res.status(429).json({
+          error: "rate_limited",
+          reply: "\u0421\u0435\u0439\u0447\u0430\u0441 \u0441\u043B\u0438\u0448\u043A\u043E\u043C \u043C\u043D\u043E\u0433\u043E \u0437\u0430\u043F\u0440\u043E\u0441\u043E\u0432 \u043A \u0418\u0418. \u041F\u043E\u0436\u0430\u043B\u0443\u0439\u0441\u0442\u0430, \u043F\u043E\u043F\u0440\u043E\u0431\u0443\u0439\u0442\u0435 \u0447\u0435\u0440\u0435\u0437 \u043C\u0438\u043D\u0443\u0442\u0443."
+        });
+      }
+      res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
+  app2.post("/api/gemini/ai-hub-chat", async (req, res) => {
+    if (!apiKey2) {
+      return res.status(503).json({ error: "ANTHROPIC_API_KEY is not configured" });
+    }
+    const session = getSession2(req);
+    const agentKey = String(req.body?.agent || "").toLowerCase();
+    const agent = AGENT_PROMPTS[agentKey];
+    if (!agent) {
+      return res.status(400).json({ error: `\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0439 \u0430\u0433\u0435\u043D\u0442: ${agentKey}` });
+    }
+    const history = Array.isArray(req.body?.messages) ? req.body.messages : [];
+    const messages = toAnthropicMessages(history);
+    if (messages.length === 0) {
+      return res.status(400).json({ error: "\u041F\u0443\u0441\u0442\u043E\u0439 \u0437\u0430\u043F\u0440\u043E\u0441" });
+    }
+    const lastUserText = [...history].reverse().find(
+      (m) => m && m.role !== "assistant" && typeof m.content === "string"
+    )?.content || "";
+    const collaborate = req.body?.collaborate === true;
+    const toolset = collaborate ? AGENT_TOOLS : tools;
+    try {
+      const result = await runAgentLoop(
+        messages,
+        session,
+        lastUserText,
+        agent.system,
+        AGENT_MAX_TOKENS,
+        toolset
+      );
+      const reply = result.reply || "\u0418\u0437\u0432\u0438\u043D\u0438\u0442\u0435, \u043D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u0444\u043E\u0440\u043C\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u043E\u0442\u0432\u0435\u0442. \u041F\u043E\u043F\u0440\u043E\u0431\u0443\u0439\u0442\u0435 \u043F\u0435\u0440\u0435\u0444\u043E\u0440\u043C\u0443\u043B\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0437\u0430\u043F\u0440\u043E\u0441.";
+      res.json({ reply, agent: agentKey, sources: result.sources });
+    } catch (e) {
+      if (e?.status === 429 || e?.status === 529) {
+        return res.status(429).json({
+          error: "rate_limited",
+          reply: "\u0421\u0435\u0439\u0447\u0430\u0441 \u0441\u043B\u0438\u0448\u043A\u043E\u043C \u043C\u043D\u043E\u0433\u043E \u0437\u0430\u043F\u0440\u043E\u0441\u043E\u0432 \u043A \u0418\u0418. \u041F\u043E\u0436\u0430\u043B\u0443\u0439\u0441\u0442\u0430, \u043F\u043E\u043F\u0440\u043E\u0431\u0443\u0439\u0442\u0435 \u0447\u0435\u0440\u0435\u0437 \u043C\u0438\u043D\u0443\u0442\u0443."
+        });
+      }
+      res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
+  app2.post("/api/gemini/ai-hub-stream", async (req, res) => {
+    if (!apiKey2) return res.status(503).json({ error: "ANTHROPIC_API_KEY is not configured" });
+    const session = getSession2(req);
+    const agentKey = String(req.body?.agent || "").toLowerCase();
+    const agent = AGENT_PROMPTS[agentKey];
+    if (!agent) return res.status(400).json({ error: `\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0439 \u0430\u0433\u0435\u043D\u0442: ${agentKey}` });
+    const history = Array.isArray(req.body?.messages) ? req.body.messages : [];
+    const messages = toAnthropicMessages(history);
+    if (messages.length === 0) return res.status(400).json({ error: "\u041F\u0443\u0441\u0442\u043E\u0439 \u0437\u0430\u043F\u0440\u043E\u0441" });
+    const lastUserText = [...history].reverse().find((m) => m && m.role !== "assistant" && typeof m.content === "string")?.content || "";
+    const collaborate = req.body?.collaborate === true;
+    const toolset = collaborate ? AGENT_TOOLS : tools;
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no"
+    });
+    const send = (event, data) => res.write(`event: ${event}
+data: ${JSON.stringify(data)}
+
+`);
+    try {
+      const result = await runAgentLoop(
+        messages,
+        session,
+        lastUserText,
+        agent.system,
+        AGENT_MAX_TOKENS,
+        toolset,
+        { onStatus: (text) => send("status", { text }), onDelta: (chunk) => send("delta", { text: chunk }) }
+      );
+      send("done", { reply: result.reply, sources: result.sources });
+    } catch (e) {
+      const rate = e?.status === 429 || e?.status === 529;
+      send("error", { message: rate ? "rate_limited" : e?.message || "AI request failed" });
+    } finally {
+      res.end();
+    }
+  });
+  app2.post("/api/gemini/ai-hub-council-stream", async (req, res) => {
+    if (!apiKey2) return res.status(503).json({ error: "ANTHROPIC_API_KEY is not configured" });
+    const session = getSession2(req);
+    const question = String(req.body?.question || "").trim();
+    if (!question) return res.status(400).json({ error: "\u041F\u0443\u0441\u0442\u043E\u0439 \u0432\u043E\u043F\u0440\u043E\u0441" });
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no"
+    });
+    const send = (event, data) => res.write(`event: ${event}
+data: ${JSON.stringify(data)}
+
+`);
+    const order = COUNCIL_ORDER.map((k) => ({ agent: String(k), label: AGENT_PROMPTS[k]?.label })).filter((o) => o.label);
+    try {
+      send("start", { question, order });
+      const result = await runCouncil(question, session, (turn) => send("turn", turn));
+      send("synthesis", { synthesis: result.synthesis });
+      send("done", {});
+    } catch (e) {
+      const rate = e?.status === 429 || e?.status === 529;
+      send("error", { message: rate ? "rate_limited" : e?.message || "AI request failed" });
+    } finally {
+      res.end();
+    }
+  });
   app2.post("/api/gemini/magomed-chat", async (req, res) => {
     if (!apiKey2) {
       return res.status(503).json({ error: "ANTHROPIC_API_KEY is not configured" });
     }
     const session = getSession2(req);
     const history = Array.isArray(req.body?.messages) ? req.body.messages : [];
-    const messages = [];
-    for (const m of history.slice(-16)) {
-      if (m && typeof m.content === "string" && m.content.trim()) {
-        messages.push({
-          role: m.role === "assistant" ? "assistant" : "user",
-          content: m.content
-        });
-      }
-    }
+    const messages = toAnthropicMessages(history);
     if (messages.length === 0) {
       return res.status(400).json({ error: "\u041F\u0443\u0441\u0442\u043E\u0439 \u0437\u0430\u043F\u0440\u043E\u0441" });
     }
@@ -6349,33 +7130,8 @@ function registerMagomedApi(app2) {
       (m) => m && m.role !== "assistant" && typeof m.content === "string"
     )?.content || "";
     try {
-      let reply = "";
-      for (let step = 0; step < 6; step++) {
-        const data = await anthropicChat(messages);
-        const content = Array.isArray(data?.content) ? data.content : [];
-        if (content.length === 0) break;
-        const text = content.filter((b) => b?.type === "text" && typeof b.text === "string").map((b) => b.text).join("").trim();
-        const toolUses = content.filter((b) => b?.type === "tool_use");
-        if (toolUses.length > 0) {
-          messages.push({ role: "assistant", content });
-          const toolResults = [];
-          for (const tu of toolUses) {
-            const result = await executeTool(tu.name || "", tu.input || {}, session, lastUserText);
-            toolResults.push({
-              type: "tool_result",
-              tool_use_id: tu.id,
-              content: JSON.stringify(result)
-            });
-          }
-          messages.push({ role: "user", content: toolResults });
-          continue;
-        }
-        reply = text;
-        break;
-      }
-      if (!reply) {
-        reply = "\u0418\u0437\u0432\u0438\u043D\u0438\u0442\u0435, \u043D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u0444\u043E\u0440\u043C\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u043E\u0442\u0432\u0435\u0442. \u041F\u043E\u043F\u0440\u043E\u0431\u0443\u0439\u0442\u0435 \u043F\u0435\u0440\u0435\u0444\u043E\u0440\u043C\u0443\u043B\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0437\u0430\u043F\u0440\u043E\u0441.";
-      }
+      const result = await runAgentLoop(messages, session, lastUserText, SYSTEM_PROMPT, MAX_TOKENS);
+      const reply = result.reply || "\u0418\u0437\u0432\u0438\u043D\u0438\u0442\u0435, \u043D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u0444\u043E\u0440\u043C\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u043E\u0442\u0432\u0435\u0442. \u041F\u043E\u043F\u0440\u043E\u0431\u0443\u0439\u0442\u0435 \u043F\u0435\u0440\u0435\u0444\u043E\u0440\u043C\u0443\u043B\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0437\u0430\u043F\u0440\u043E\u0441.";
       res.json({ reply });
     } catch (e) {
       if (e?.status === 429 || e?.status === 529) {

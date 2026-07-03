@@ -238,7 +238,58 @@ async function toolSearchCrm(args: any, session: MagomedSession) {
     };
   }
 
-  return { error: `Неизвестная сущность: ${entity}. Доступно: students, teachers, groups, tasks.` };
+  if (entity === "performances") {
+    // Выступления/концерты — полный доступ (владелец/руководитель).
+    if (!isFullAccess(session)) {
+      return { error: "Выступления доступны только владельцу и руководителю." };
+    }
+    const or = q ? `&or=(client_name.ilike.${enc},address.ilike.${enc})` : "";
+    const rows = await supabaseFetch<any[]>(
+      "performances",
+      `select=id,client_name,event_date,event_time,type,price,status&${org}${or}&order=event_date.desc&limit=30`
+    );
+    return {
+      count: rows.length,
+      performances: rows.map((r) => ({
+        id: r.id,
+        client: r.client_name,
+        date: r.event_date,
+        time: r.event_time || null,
+        type: r.type,
+        price: r.price,
+        status: r.status,
+      })),
+    };
+  }
+
+  if (entity === "products") {
+    // Товары/склад — полный доступ (владелец/руководитель).
+    if (!isFullAccess(session)) {
+      return { error: "Товары доступны только владельцу и руководителю." };
+    }
+    const or = q ? `&or=(name.ilike.${enc},category.ilike.${enc},sku.ilike.${enc})` : "";
+    const rows = await supabaseFetch<any[]>(
+      "products",
+      `select=id,name,category,sku,sale_price,cost_price,min_stock,is_active&${org}${or}&order=name.asc&limit=40`
+    );
+    return {
+      count: rows.length,
+      products: rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        category: r.category || null,
+        sku: r.sku || null,
+        salePrice: r.sale_price,
+        costPrice: r.cost_price,
+        minStock: r.min_stock,
+        active: r.is_active,
+      })),
+    };
+  }
+
+  return {
+    error: `Неизвестная сущность: ${entity}. Доступно: students, teachers, groups, tasks, documents, performances, products.`,
+  };
 }
 
 async function toolGetRecordDetails(args: any, session: MagomedSession) {
@@ -550,6 +601,84 @@ async function toolGetMarketingFunnel(_args: any, session: MagomedSession) {
   };
 }
 
+// ── Посещаемость за период (только владелец/руководитель) ──
+async function toolGetAttendanceSummary(args: any, session: MagomedSession) {
+  if (!isFullAccess(session)) {
+    return { error: "Сводка посещаемости доступна только владельцу и руководителю." };
+  }
+  const period = ["today", "week", "month"].includes(String(args?.period))
+    ? String(args?.period)
+    : "month";
+  const startIso = periodStartIso(period);
+  const rows = await supabaseFetch<any[]>(
+    "attendance",
+    `select=status&marked_at=gte.${startIso}&limit=5000`
+  ).catch(() => []);
+  const byStatus: Record<string, number> = {};
+  let present = 0;
+  let marked = 0;
+  for (const r of rows) {
+    const s = r.status || "unknown";
+    byStatus[s] = (byStatus[s] || 0) + 1;
+    if (s !== "unknown") marked += 1;
+    if (s === "present") present += 1;
+  }
+  return {
+    period,
+    from: startIso.slice(0, 10),
+    totalMarks: rows.length,
+    byStatus,
+    attendanceRate: marked ? Math.round((present / marked) * 100) : 0,
+  };
+}
+
+// ── Расписание занятий на день (только владелец/руководитель) ──
+async function toolGetSchedule(args: any, session: MagomedSession) {
+  if (!isFullAccess(session)) {
+    return { error: "Расписание доступно только владельцу и руководителю." };
+  }
+  const raw = sanitize(args?.date);
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : new Date().toISOString().slice(0, 10);
+  const rows = await supabaseFetch<any[]>(
+    "schedule_lessons",
+    `select=starts_at,ends_at,status,group:groups(name),teacher:users!schedule_lessons_teacher_id_fkey(full_name),hall:halls(name)` +
+      `&starts_at=gte.${date}T00:00:00&starts_at=lte.${date}T23:59:59&order=starts_at.asc&limit=200`
+  ).catch(() => []);
+  return {
+    date,
+    count: rows.length,
+    lessons: rows.map((r) => ({
+      from: r.starts_at,
+      to: r.ends_at,
+      status: r.status,
+      group: r.group?.name || null,
+      teacher: r.teacher?.full_name || null,
+      hall: r.hall?.name || null,
+    })),
+  };
+}
+
+// ── Филиалы и залы (только владелец/руководитель) ──
+async function toolListBranches(_args: any, session: MagomedSession) {
+  if (!isFullAccess(session)) {
+    return { error: "Список филиалов доступен только владельцу и руководителю." };
+  }
+  const rows = await supabaseFetch<any[]>(
+    "branches",
+    `select=id,name,city,status,halls(name,capacity)&limit=50`
+  ).catch(() => []);
+  return {
+    count: rows.length,
+    branches: rows.map((b) => ({
+      id: b.id,
+      name: b.name,
+      city: b.city || null,
+      status: b.status,
+      halls: (b.halls || []).map((h: any) => ({ name: h.name, capacity: h.capacity })),
+    })),
+  };
+}
+
 // Является ли последнее сообщение пользователя явным подтверждением.
 // Короткая фраза-согласие — защита от создания задачи в том же ходе, что и
 // запрос (слабые модели любят сразу проставлять confirmed=true).
@@ -644,6 +773,9 @@ async function executeTool(
     if (name === "get_students_summary") return await toolGetStudentsSummary(args, session);
     if (name === "get_finance_overview") return await toolGetFinanceOverview(args, session);
     if (name === "get_marketing_funnel") return await toolGetMarketingFunnel(args, session);
+    if (name === "get_attendance_summary") return await toolGetAttendanceSummary(args, session);
+    if (name === "get_schedule") return await toolGetSchedule(args, session);
+    if (name === "list_branches") return await toolListBranches(args, session);
     if (name === "consult_colleague") return await consultColleague(args, session);
     if (name === "create_task") return await toolCreateTask(args, session, lastUserText);
     return { error: `Неизвестный инструмент: ${name}` };
@@ -670,8 +802,10 @@ const tools = [
       properties: {
         entity: {
           type: "string",
-          enum: ["students", "teachers", "groups", "tasks", "documents"],
-          description: "Тип записи. documents — договоры/документы (только владелец и руководитель).",
+          enum: ["students", "teachers", "groups", "tasks", "documents", "performances", "products"],
+          description:
+            "Тип записи. documents — договоры, performances — выступления/концерты, products — товары/склад " +
+            "(эти три — только владелец и руководитель).",
         },
         query: {
           type: "string",
@@ -736,6 +870,39 @@ const tools = [
     input_schema: { type: "object", properties: {} },
   },
   {
+    name: "get_attendance_summary",
+    description:
+      "Сводка посещаемости за период (сегодня/неделя/месяц): всего отметок, разбивка по статусам " +
+      "и процент посещаемости. Используй для вопросов про посещаемость, явку, пропуски. " +
+      "Доступно только владельцу и руководителю.",
+    input_schema: {
+      type: "object",
+      properties: { period: { type: "string", enum: ["today", "week", "month"] } },
+      required: ["period"],
+    },
+  },
+  {
+    name: "get_schedule",
+    description:
+      "Расписание занятий на конкретный день: время, группа, преподаватель, зал, статус. " +
+      "Используй для вопросов про расписание, занятия, загрузку залов на дату. " +
+      "Доступно только владельцу и руководителю.",
+    input_schema: {
+      type: "object",
+      properties: {
+        date: { type: "string", description: "Дата в формате YYYY-MM-DD. По умолчанию — сегодня." },
+      },
+    },
+  },
+  {
+    name: "list_branches",
+    description:
+      "Список филиалов сети с залами (название, город, статус, залы и их вместимость). " +
+      "Используй для вопросов про филиалы, залы, структуру сети. " +
+      "Доступно только владельцу и руководителю.",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
     name: "create_task",
     description:
       "Создать задачу в CRM. ВАЖНО: сначала вызови без confirmed (или confirmed=false), " +
@@ -773,8 +940,8 @@ const SYSTEM_PROMPT = `Ты — Магомед, умный, надёжный и 
 - Проактивность: предлагай логичный следующий шаг (открыть карточку, посмотреть оплаты, создать задачу).
 
 ДОСТУП К ДАННЫМ:
-- Владелец и руководитель филиала видят через тебя АБСОЛЮТНО ВСЮ базу сети: всех учеников (включая архив и помеченных на удаление), всех преподавателей с их карточками и схемами зарплаты, все документы и договоры. Ты — главный ассистент, для них ограничений по филиалам нет.
-- Администратор и педагог работают только в рамках своего филиала; документы им недоступны — вежливо объясни это, если попросят.
+- Владелец и руководитель филиала видят через тебя АБСОЛЮТНО ВСЮ базу сети. Ты — главный ассистент, для них ограничений по филиалам нет. Тебе доступны инструменты по всем разделам: ученики (включая архив и помеченных на удаление), преподаватели с карточками и схемами зарплаты, группы, задачи, документы и договоры (search_crm/get_record_details); выручка (get_sales_summary); полная бухгалтерия — доход/расход/прибыль/маржа, счета, ОПиУ (get_finance_overview); маркетинговая воронка и источники лидов (get_marketing_funnel); посещаемость (get_attendance_summary); расписание занятий и загрузка залов (get_schedule); филиалы и залы (list_branches); выступления/концерты и товары/склад (search_crm). Если вопрос про любые данные школы — у тебя почти наверняка есть инструмент; вызови подходящий.
+- Администратор и педагог работают только в рамках своего филиала; бухгалтерия, документы, выступления, товары, расписание и список филиалов им недоступны — вежливо объясни это, если попросят.
 
 ГЛАВНЫЕ ПРАВИЛА:
 1. НИКАКИХ ГАЛЛЮЦИНАЦИЙ. Отвечай ИСКЛЮЧИТЕЛЬНО по данным, полученным из инструментов. Не выдумывай имена, цифры, даты, статусы. Если инструмент вернул пусто — скажи прямо: «В базе данных нет информации по этому запросу».
