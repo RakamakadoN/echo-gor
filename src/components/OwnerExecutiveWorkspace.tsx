@@ -58,6 +58,7 @@ import {
   Boxes,
   Upload,
   Camera,
+  Bot,
   X
 } from "lucide-react";
 import { Announcement, AnnouncementAudience, Branch, Competition, ExecutiveSummary, Group, Payment, Student, SubscriptionPlan, Teacher, LeadSource, WaitlistEntry } from "../types";
@@ -70,6 +71,7 @@ import StudentsRegistry, { type RegistryPreset } from "./StudentsRegistry";
 import { ArchiveReasonModal } from "./ArchiveReasonModal";
 import AttendanceJournalView from "./AttendanceJournalView";
 import { BranchesGroupsView } from "./BranchesGroupsView";
+import AiHubView from "./AiHubView";
 import { computeOwnerDashboard, type DashFilters, type PeriodKey, type LevelKey, type DashExtras, type Delta, type DailyReport } from "../ownerDashboardAnalytics";
 
 // Память состояния свёрнутых блоков дашборда — отдельно для каждого пользователя (по роли).
@@ -190,7 +192,7 @@ interface OwnerExecutiveWorkspaceProps {
   onJournalTask?: (p: { studentId: string; studentName: string; title: string }) => void;
 }
 
-type OwnerTab = "dashboard" | "branches" | "students" | "teachers" | "payroll" | "journal" | "schedule" | "finance" | "planning" | "reports" | "performances" | "products" | "documents" | "marketing" | "events" | "feed" | "announcements" | "analytics" | "ai" | "settings";
+type OwnerTab = "dashboard" | "branches" | "students" | "teachers" | "payroll" | "journal" | "schedule" | "finance" | "planning" | "meetings" | "reports" | "performances" | "products" | "documents" | "marketing" | "events" | "feed" | "announcements" | "analytics" | "ai" | "aihub" | "settings";
 
 const ownerTabs: { id: OwnerTab; label: string; short: string; icon: React.ElementType }[] = [
   { id: "dashboard", label: "Dashboard", short: "Главная", icon: Activity },
@@ -202,6 +204,7 @@ const ownerTabs: { id: OwnerTab; label: string; short: string; icon: React.Eleme
   { id: "schedule", label: "Расписание", short: "Расписание", icon: CalendarDays },
   { id: "finance", label: "Бухгалтерия", short: "Учёт", icon: Coins },
   { id: "planning", label: "Планирование (БДР)", short: "План", icon: LineChart },
+  { id: "meetings", label: "Планёрки", short: "Планёрки", icon: CalendarClock },
   { id: "reports", label: "Отчётность", short: "Отчёты", icon: FileSpreadsheet },
   { id: "performances", label: "Выступления", short: "Сцена", icon: Mic2 },
   { id: "products", label: "Товары и склад", short: "Товары", icon: ShoppingBag },
@@ -212,6 +215,7 @@ const ownerTabs: { id: OwnerTab; label: string; short: string; icon: React.Eleme
   { id: "announcements", label: "Объявления", short: "Связь", icon: Megaphone },
   { id: "analytics", label: "Аналитика", short: "BI", icon: BarChart3 },
   { id: "ai", label: "AI Assistant", short: "AI", icon: Sparkles },
+  { id: "aihub", label: "AI HUB", short: "AI HUB", icon: Bot },
   { id: "settings", label: "Настройки сети", short: "Еще", icon: Settings }
 ];
 
@@ -279,6 +283,7 @@ export function OwnerExecutiveWorkspace({
   const [activeTab, setActiveTab] = useState<OwnerTab>("dashboard");
   // Сворачивание бокового меню — любой раздел можно открыть на всю ширину.
   const [navCollapsed, setNavCollapsed] = useState(false);
+  const [globalSearch, setGlobalSearch] = useState("");
   // Пресет-фильтр для вкладки «Ученики» — задаётся кликом по KPI/риску в дашборде.
   const [studentsPreset, setStudentsPreset] = useState<RegistryPreset | null>(null);
   const openStudentsWithPreset = (preset: RegistryPreset) => {
@@ -313,38 +318,50 @@ export function OwnerExecutiveWorkspace({
   return (
     <div className="min-h-full bg-[#080808] text-slate-200">
       <div className="mx-auto flex max-w-[1560px] gap-0 lg:gap-5">
-        <aside className={`sticky top-0 hidden h-[calc(100vh-64px)] w-76 shrink-0 border-r border-white/5 bg-[#0F0F0F] p-4 ${navCollapsed ? "lg:hidden" : "lg:block"}`}>
-          <div className="rounded-[2rem] border border-[#C5A059]/25 bg-gradient-to-br from-[#2A2110] to-[#111] p-4">
+        <aside className={`sticky top-0 hidden h-[calc(100vh-64px)] w-64 shrink-0 flex-col border-r border-white/5 bg-[#0F0F0F] ${navCollapsed ? "lg:hidden" : "lg:flex"}`}>
+          {/* Лого-бокс (референс .eg-logo-box) */}
+          <div className="border-b border-white/5 px-5 py-5">
             <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#C5A059] text-black">
-                <Crown className="h-6 w-6" />
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#C5A059] text-black">
+                <Crown className="h-5 w-5" />
               </div>
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">Владелец сети</p>
-                <h2 className="text-lg font-black text-white">CEO Command</h2>
+                <h2 className="text-lg font-black leading-tight text-white" style={{ fontFamily: "'Oswald', sans-serif" }}>ЭХО ГОР</h2>
               </div>
             </div>
-            <p className="mt-3 text-xs leading-relaxed text-slate-400">Вся сеть, финансы, филиалы, люди, риски и точки роста в одном executive-центре.</p>
           </div>
-          <nav className="mt-5 space-y-1">
+          {/* Навигация (референс .nav) — прокручиваемая */}
+          <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
             {ownerTabs.map((tab) => (
               <OwnerNavButton key={tab.id} tab={tab} active={activeTab === tab.id} onClick={() => setActiveTab(tab.id)} />
             ))}
           </nav>
-          <div className="mt-5 rounded-3xl border border-emerald-500/20 bg-emerald-500/10 p-4">
-            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-emerald-400">Полный доступ</p>
-            <p className="mt-2 text-sm font-bold text-white">Network Owner RBAC</p>
-            <p className="mt-1 text-xs leading-relaxed text-slate-400">Видит все филиалы, финансы, роли, настройки, audit log и AI-аналитику сети.</p>
+          {/* Ценности (референс .eg-values) */}
+          <div className="border-t border-white/5 px-5 py-4">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#C5A059]" style={{ fontFamily: "'Oswald', sans-serif" }}>Культура · Сила · Характер</div>
+            <div className="mt-1.5 text-xs leading-relaxed text-slate-400">Казахстан · обучаем от 5 лет</div>
           </div>
         </aside>
 
         <main className="min-w-0 flex-1 px-4 pb-24 pt-4 md:px-6 md:pt-6 lg:pb-8">
-          {/* Тумблер бокового меню (десктоп): спрятать/показать вкладки для полноэкранного раздела */}
-          <button onClick={() => setNavCollapsed((v) => !v)}
-            className="mb-3 hidden items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-slate-200 hover:bg-white/10 lg:inline-flex">
-            {navCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-            {navCollapsed ? "Показать меню" : "Скрыть меню"}
-          </button>
+          {/* Топбар (референс .eg-topbar): тумблер меню + строка поиска */}
+          <div className="mb-4 hidden items-center gap-4 lg:flex">
+            <button onClick={() => setNavCollapsed((v) => !v)}
+              className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-xs font-bold text-slate-200 hover:bg-white/10">
+              {navCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+              {navCollapsed ? "Показать меню" : "Скрыть меню"}
+            </button>
+            <div className="flex max-w-[440px] flex-1 items-center gap-2.5 rounded-xl border border-white/10 bg-white/5 px-3.5 py-2.5">
+              <Search className="h-4 w-4 shrink-0 text-slate-500" />
+              <input
+                value={globalSearch}
+                onChange={(e) => setGlobalSearch(e.target.value)}
+                placeholder="Поиск учеников, групп, оплат…"
+                className="min-w-0 flex-1 border-none bg-transparent p-0 text-sm text-white outline-none placeholder:text-slate-500 focus:ring-0"
+              />
+            </div>
+          </div>
           <div className="sticky top-0 z-30 -mx-4 mb-4 border-b border-white/5 bg-[#080808]/90 px-4 py-3 backdrop-blur-xl md:-mx-6 md:px-6 lg:hidden">
             <div className="flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#C5A059] text-black"><Crown className="h-5 w-5" /></div>
@@ -377,6 +394,7 @@ export function OwnerExecutiveWorkspace({
           {activeTab === "payroll" && <PayrollView teachers={teachers} students={students} groups={groups} payments={payments} />}
           {activeTab === "finance" && <BookkeepingView branches={branchScorecards} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
           {activeTab === "planning" && <PlanningView />}
+          {activeTab === "meetings" && <MeetingsView />}
           {activeTab === "reports" && <ReportsView students={students} payments={payments} branches={branches} groups={groups} teachers={teachers} leadSources={leadSources} />}
           {activeTab === "performances" && <PerformancesView />}
           {activeTab === "products" && <ProductsView />}
@@ -417,6 +435,7 @@ export function OwnerExecutiveWorkspace({
           {activeTab === "announcements" && <OwnerAnnouncementsView announcements={announcements} branches={branches} onCreateAnnouncement={onCreateAnnouncement} onUpdateAnnouncement={onUpdateAnnouncement} onDeleteAnnouncement={onDeleteAnnouncement} />}
           {activeTab === "analytics" && <ExecutiveAnalyticsView branches={branchScorecards} groups={groups} teachers={teachers} students={students} payments={payments} metrics={metrics} />}
           {activeTab === "ai" && <OwnerAiView branches={branchScorecards} renewals={renewals} debt={debt} aiResult={aiResult} aiGenerating={aiGenerating} onTriggerAiReport={onTriggerAiReport} />}
+          {activeTab === "aihub" && <AiHubView roleHeader="owner" />}
           {activeTab === "marketing" && <MarketingView studentArchive={studentArchive} branches={branches} />}
           {activeTab === "settings" && <NetworkSettingsView branches={branches} teachers={teachers} />}
         </main>
@@ -4519,7 +4538,7 @@ export function ProductsView({ role = "owner" }: { role?: string } = {}) {
   const hdr = { headers: { "x-demo-role": role } };
   const jhdr = { headers: { "Content-Type": "application/json", "x-demo-role": role } };
 
-  const [tab, setTab] = useState<"products" | "sales" | "stock" | "receipts" | "writeoffs" | "orders">(isCashier ? "sales" : "products");
+  const [tab, setTab] = useState<"products" | "sales" | "stock" | "receipts" | "writeoffs" | "orders" | "echo">(isCashier ? "sales" : "products");
   const [products, setProducts] = useState<any[]>([]);
   const [sales, setSales] = useState<any[]>([]);
   const [stock, setStock] = useState<any[]>([]);
@@ -4533,6 +4552,7 @@ export function ProductsView({ role = "owner" }: { role?: string } = {}) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [modal, setModal] = useState<null | "product" | "sale" | "receipt" | "writeoff">(null);
+  const [editProduct, setEditProduct] = useState<any | null>(null);
 
   const load = async () => {
     setLoading(true); setError(null);
@@ -4576,6 +4596,20 @@ export function ProductsView({ role = "owner" }: { role?: string } = {}) {
     } catch (e: any) { setError(e?.message || errMsg); } finally { setBusy(false); }
   };
   const createProduct = (p: any) => post(`/api/mvp/products`, p, "Не удалось создать товар");
+  const updateProduct = async (p: any) => {
+    if (!editProduct) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/mvp/products/${editProduct.id}`, { method: "PATCH", ...jhdr, body: JSON.stringify(p) });
+      if (!res.ok) throw new Error(await res.text());
+      setEditProduct(null); await load();
+    } catch (e: any) { setError(e?.message || "Не удалось изменить товар"); } finally { setBusy(false); }
+  };
+  const toggleProductActive = async (p: any) => {
+    setBusy(true);
+    try { await fetch(`/api/mvp/products/${p.id}`, { method: "PATCH", ...jhdr, body: JSON.stringify({ isActive: !(p.isActive !== false) }) }); await load(); }
+    catch (e: any) { setError(e?.message || "Не удалось изменить статус"); } finally { setBusy(false); }
+  };
   const createSale = (p: any) => post(`/api/mvp/products/sales`, p, "Не удалось оформить продажу");
   const createReceipt = (p: any) => post(`/api/mvp/products/receipts`, p, "Не удалось оформить поступление");
   const createWriteoff = (p: any) => post(`/api/mvp/products/writeoffs`, p, "Не удалось оформить списание");
@@ -4590,7 +4624,7 @@ export function ProductsView({ role = "owner" }: { role?: string } = {}) {
   const ordersLabel = `Заказы${newOrders ? ` (${newOrders})` : ""}`;
   const tabs: [typeof tab, string][] = isCashier
     ? [["sales", "Продажи за сегодня"], ["products", "Каталог"], ["orders", ordersLabel]]
-    : [["products", "Товары"], ["sales", "Продажи"], ["stock", "Остатки"], ["receipts", "Поступления"], ["writeoffs", "Списания"], ["orders", ordersLabel]];
+    : [["products", "Товары"], ["sales", "Продажи"], ["stock", "Остатки"], ["receipts", "Поступления"], ["writeoffs", "Списания"], ["orders", ordersLabel], ["echo", "ЭхоБаксы"]];
 
   return (
     <OwnerScreen
@@ -4662,7 +4696,7 @@ export function ProductsView({ role = "owner" }: { role?: string } = {}) {
 
       {/* ТОВАРЫ */}
       {!loading && tab === "products" && (
-        <ModuleTable cols={["Товар", "Категория", "Артикул", "Цена продажи", "Закупочная", "Остаток", "Мин. остаток", "Статус"]} empty={products.length === 0}>
+        <ModuleTable cols={["Товар", "Категория", "Цена продажи", "ЭхоБаксы", "Остаток", "Статус", ...(isCashier ? [] : ["Действия"])]} empty={products.length === 0}>
           {products.map((p) => (
             <tr key={p.id} className="border-b border-white/5">
               <td className="px-4 py-3 font-bold text-white">
@@ -4670,22 +4704,34 @@ export function ProductsView({ role = "owner" }: { role?: string } = {}) {
                   {p.photoUrl
                     ? <img src={p.photoUrl} alt="" className="h-9 w-9 flex-shrink-0 rounded-lg object-cover" />
                     : <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-white/5 text-slate-600"><Package className="h-4 w-4" /></div>}
-                  <span>{p.name}</span>
+                  <div className="min-w-0">
+                    <span>{p.name}</span>
+                    {p.description && <p className="max-w-xs truncate text-[11px] font-normal text-slate-500">{p.description}</p>}
+                  </div>
                 </div>
               </td>
               <td className="px-4 py-3 text-slate-400">{p.category || "—"}</td>
-              <td className="px-4 py-3 text-slate-400">{p.sku || "—"}</td>
               <td className="px-4 py-3 text-right text-white">{money(p.salePrice)}</td>
-              <td className="px-4 py-3 text-right text-slate-400">{money(p.costPrice)}</td>
-              <td className="px-4 py-3 text-right font-bold text-white">{p.stock} шт.</td>
-              <td className="px-4 py-3 text-right text-slate-400">{p.minStock} шт.</td>
-              <td className="px-4 py-3">{p.low
-                ? <span className="rounded-lg bg-rose-500/15 px-2 py-1 text-[11px] font-bold text-rose-300">Нужно пополнить</span>
-                : <span className="rounded-lg bg-emerald-500/15 px-2 py-1 text-[11px] font-bold text-emerald-300">В норме</span>}</td>
+              <td className="px-4 py-3 text-right">{p.echoPrice > 0 ? <span className="font-bold text-[#C5A059]">{p.echoPrice} ⭐</span> : <span className="text-slate-600">—</span>}</td>
+              <td className="px-4 py-3 text-right font-bold text-white">{p.stock} шт.{p.low && <span className="ml-1 text-[10px] text-rose-300">низкий</span>}</td>
+              <td className="px-4 py-3">{p.isActive !== false
+                ? <span className="rounded-lg bg-emerald-500/15 px-2 py-1 text-[11px] font-bold text-emerald-300">Активен</span>
+                : <span className="rounded-lg bg-white/5 px-2 py-1 text-[11px] font-bold text-slate-400">Отключён</span>}</td>
+              {!isCashier && (
+                <td className="px-4 py-3">
+                  <div className="flex gap-1.5">
+                    <button onClick={() => setEditProduct(p)} className="rounded-lg border border-white/10 px-2 py-1 text-[11px] font-bold text-slate-200 hover:border-[#C5A059]/40 hover:text-white">Изменить</button>
+                    <button onClick={() => toggleProductActive(p)} disabled={busy} className="rounded-lg border border-white/10 px-2 py-1 text-[11px] font-bold text-slate-400 hover:text-white disabled:opacity-50">{p.isActive !== false ? "Отключить" : "Включить"}</button>
+                  </div>
+                </td>
+              )}
             </tr>
           ))}
         </ModuleTable>
       )}
+
+      {/* ЭХОБАКСЫ — начисление ученикам */}
+      {!loading && tab === "echo" && <EchoGrantPanel role={role} />}
 
       {/* ПРОДАЖИ */}
       {!loading && tab === "sales" && (
@@ -4791,6 +4837,7 @@ export function ProductsView({ role = "owner" }: { role?: string } = {}) {
       )}
 
       {modal === "product" && <ProductAddModal busy={busy} role={role} onClose={() => setModal(null)} onSubmit={createProduct} />}
+      {editProduct && <ProductAddModal busy={busy} role={role} initial={editProduct} onClose={() => setEditProduct(null)} onSubmit={updateProduct} />}
       {modal === "sale" && <SaleModal busy={busy} products={products} onClose={() => setModal(null)} onSubmit={createSale} />}
       {modal === "receipt" && <ReceiptModal busy={busy} products={products} onClose={() => setModal(null)} onSubmit={createReceipt} />}
       {modal === "writeoff" && <WriteoffModal busy={busy} products={products} onClose={() => setModal(null)} onSubmit={createWriteoff} />}
@@ -4815,9 +4862,16 @@ function ModuleTable({ cols, empty, children }: { cols: string[]; empty: boolean
   );
 }
 
-function ProductAddModal({ busy, onClose, onSubmit, role = "owner" }: any) {
+function ProductAddModal({ busy, onClose, onSubmit, role = "owner", initial = null }: any) {
   const categories = useSettingsList("product_category", role);
-  const [f, setF] = useState<any>({ name: "", category: "", sku: "", salePrice: "", costPrice: "", minStock: "", comment: "", photoUrl: "" });
+  const isEdit = !!initial;
+  const [f, setF] = useState<any>({
+    name: initial?.name || "", category: initial?.category || "", sku: initial?.sku || "",
+    salePrice: initial?.salePrice ?? "", costPrice: initial?.costPrice ?? "", minStock: initial?.minStock ?? "",
+    comment: initial?.comment || "", description: initial?.description || "",
+    echoPrice: initial?.echoPrice ?? "", isActive: initial ? initial.isActive !== false : true,
+    photoUrl: initial?.photoUrl || "",
+  });
   const [genBusy, setGenBusy] = useState(false);
   const [genErr, setGenErr] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -4864,9 +4918,9 @@ function ProductAddModal({ busy, onClose, onSubmit, role = "owner" }: any) {
     finally { setGenBusy(false); }
   };
 
-  const submit = () => { if (!f.name.trim()) return; onSubmit({ ...f, salePrice: Number(f.salePrice) || 0, costPrice: Number(f.costPrice) || 0, minStock: Number(f.minStock) || 0 }); };
+  const submit = () => { if (!f.name.trim()) return; onSubmit({ ...f, salePrice: Number(f.salePrice) || 0, costPrice: Number(f.costPrice) || 0, minStock: Number(f.minStock) || 0, echoPrice: Number(f.echoPrice) || 0, isActive: !!f.isActive }); };
   return (
-    <ModalShell title="Новый товар" onClose={onClose}>
+    <ModalShell title={isEdit ? "Изменить товар" : "Новый товар"} onClose={onClose}>
       <ModalInput label="Название *" value={f.name} onChange={(v) => set("name", v)} full />
       <label className="flex flex-col gap-1 text-[11px] text-slate-400">Категория
         <select value={f.category} onChange={(e) => set("category", e.target.value)} className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white">
@@ -4895,9 +4949,118 @@ function ProductAddModal({ busy, onClose, onSubmit, role = "owner" }: any) {
           </div>
         ) : null}
       </div>
-      <ModalInput label="Комментарий" value={f.comment} onChange={(v) => set("comment", v)} full />
-      <ModalActions busy={busy} onClose={onClose} onSubmit={submit} submitLabel="Создать" />
+      <label className="flex flex-col gap-1 text-[11px] text-slate-400 sm:col-span-2">Описание (показывается в кабинете ученика)
+        <textarea value={f.description} onChange={(e) => set("description", e.target.value)} rows={2} placeholder="Короткое описание товара / награды" className="resize-y rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white placeholder:text-slate-600" />
+      </label>
+      <ModalInput label="Цена в ЭхоБаксах (0 — не в магазине наград)" type="number" value={f.echoPrice} onChange={(v) => set("echoPrice", v)} />
+      <label className="flex items-center gap-2 self-end text-sm text-slate-200">
+        <input type="checkbox" checked={f.isActive} onChange={(e) => set("isActive", e.target.checked)} className="h-4 w-4 accent-[#C5A059]" />
+        Товар активен (виден в магазине и кассе)
+      </label>
+      <ModalInput label="Комментарий (внутренний)" value={f.comment} onChange={(v) => set("comment", v)} full />
+      <ModalActions busy={busy} onClose={onClose} onSubmit={submit} submitLabel={isEdit ? "Сохранить" : "Создать"} />
     </ModalShell>
+  );
+}
+
+// Панель начисления ЭхоБаксов ученикам (владелец/управляющий/админ).
+function EchoGrantPanel({ role }: { role: string }) {
+  const hdr = { headers: { "x-demo-role": role } };
+  const jhdr = { headers: { "Content-Type": "application/json", "x-demo-role": role } };
+  const [students, setStudents] = useState<any[]>([]);
+  const [q, setQ] = useState("");
+  const [sel, setSel] = useState<any | null>(null);
+  const [amount, setAmount] = useState("");
+  const [reason, setReason] = useState("");
+  const [wallet, setWallet] = useState<any | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
+
+  const loadStudents = async () => {
+    try { const r = await fetch("/api/mvp/shop/echo/students", hdr); if (r.ok) setStudents((await r.json()).students || []); }
+    catch { /* ignore */ }
+  };
+  useEffect(() => { loadStudents(); /* eslint-disable-next-line */ }, []);
+  const openStudent = async (s: any) => {
+    setSel(s); setWallet(null); setErr(null); setOk(null);
+    try { const r = await fetch(`/api/mvp/shop/echo/wallet?studentId=${encodeURIComponent(s.id)}`, hdr); if (r.ok) setWallet(await r.json()); } catch { /* ignore */ }
+  };
+  const grant = async (sign: number) => {
+    if (!sel) return;
+    const amt = (Number(amount) || 0) * sign;
+    if (!amt) { setErr("Укажите количество ЭхоБаксов"); return; }
+    setBusy(true); setErr(null); setOk(null);
+    try {
+      const res = await fetch("/api/mvp/shop/echo/grant", { method: "POST", ...jhdr, body: JSON.stringify({ studentId: sel.id, amount: amt, reason }) });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Не удалось");
+      const j = await res.json();
+      setOk(`${amt > 0 ? "Начислено" : "Списано"} ${Math.abs(amt)} ⭐. Баланс: ${j.balance} ⭐`);
+      setAmount(""); setReason("");
+      await Promise.all([loadStudents(), openStudent({ ...sel })]);
+    } catch (e: any) { setErr(e?.message || "Ошибка"); } finally { setBusy(false); }
+  };
+
+  const filtered = students.filter((s) => s.name.toLowerCase().includes(q.trim().toLowerCase()));
+
+  return (
+    <section className="grid gap-4 lg:grid-cols-[320px_1fr]">
+      <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.02] p-3">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Поиск ученика…" className="w-full rounded-xl border border-white/10 bg-white/[0.03] py-2 pl-9 pr-3 text-sm text-white placeholder:text-slate-500 focus:border-[#C5A059]/40 focus:outline-none" />
+        </div>
+        <div className="mt-2 max-h-[420px] space-y-1 overflow-y-auto">
+          {filtered.length === 0 && <p className="py-6 text-center text-xs text-slate-500">Учеников нет</p>}
+          {filtered.map((s) => (
+            <button key={s.id} onClick={() => openStudent(s)} className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition ${sel?.id === s.id ? "border border-[#C5A059]/25 bg-[#C5A059]/10 text-white" : "text-slate-300 hover:bg-white/5"}`}>
+              <span className="truncate">{s.name}</span>
+              <span className="ml-2 shrink-0 font-bold text-[#C5A059]">{s.balance} ⭐</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.02] p-5">
+        {!sel ? (
+          <p className="py-16 text-center text-sm text-slate-500">Выберите ученика слева, чтобы начислить или списать ЭхоБаксы.</p>
+        ) : (
+          <>
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-black text-white">{sel.name}</h3>
+                <p className="text-xs text-slate-500">Баланс кошелька</p>
+              </div>
+              <p className="text-3xl font-black text-[#C5A059]">{wallet?.balance ?? sel.balance} ⭐</p>
+            </div>
+            {err && <p className="mt-3 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-300">{err}</p>}
+            {ok && <p className="mt-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">{ok}</p>}
+            <div className="mt-4 grid gap-2 sm:grid-cols-[160px_1fr]">
+              <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Кол-во ⭐" className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-[#C5A059]/40 focus:outline-none" />
+              <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="За что (напр. «Победа на конкурсе», «Без пропусков»)" className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-[#C5A059]/40 focus:outline-none" />
+            </div>
+            <div className="mt-2 flex gap-2">
+              <button onClick={() => grant(1)} disabled={busy} className="flex items-center gap-1.5 rounded-xl bg-[#C5A059] px-4 py-2 text-xs font-black text-black hover:bg-[#d4af6a] disabled:opacity-50"><Plus className="h-4 w-4" /> Начислить</button>
+              <button onClick={() => grant(-1)} disabled={busy} className="rounded-xl border border-white/10 px-4 py-2 text-xs font-bold text-slate-300 hover:border-rose-500/40 hover:text-rose-300 disabled:opacity-50">Списать</button>
+            </div>
+
+            <h4 className="mt-6 text-[11px] uppercase tracking-wider text-slate-500">История операций</h4>
+            <div className="mt-2 space-y-1.5">
+              {(!wallet || wallet.transactions.length === 0) && <p className="py-4 text-center text-xs text-slate-600">Операций пока нет</p>}
+              {wallet?.transactions?.map((t: any) => (
+                <div key={t.id} className="flex items-center justify-between rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2 text-sm">
+                  <div className="min-w-0">
+                    <span className={`font-bold ${t.amount >= 0 ? "text-emerald-400" : "text-rose-300"}`}>{t.amount >= 0 ? "+" : ""}{t.amount} ⭐</span>
+                    <span className="ml-2 text-slate-400">{t.reason || (t.kind === "purchase" ? "Покупка" : "Начисление")}</span>
+                  </div>
+                  <span className="ml-2 shrink-0 text-[11px] text-slate-600">{t.createdAt ? new Date(t.createdAt).toLocaleDateString("ru-RU", { day: "numeric", month: "short" }) : ""}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -6680,6 +6843,326 @@ const planMonthLabel = (p: string) => {
   return `${months[Number(m) - 1]} ${y}`;
 };
 
+// ============================ ПЛАНЁРКИ ============================
+// Совещания сети: создание, участники, итоги, история + поиск. AI-слой:
+// запись речи в браузере (Web Speech API) → текст → «Собрать итоги AI»
+// (/api/gemini/meeting-summary) → итоги, задачи, ответственные, сроки.
+
+const MEETING_STATUS_META: Record<string, { label: string; cls: string }> = {
+  draft: { label: "Черновик", cls: "border-slate-500/30 bg-slate-500/10 text-slate-300" },
+  held: { label: "Проведена", cls: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" },
+  archived: { label: "В архиве", cls: "border-white/10 bg-white/5 text-slate-400" },
+};
+
+function fmtMeetingDate(d?: string | null) {
+  if (!d) return "—";
+  try { return new Date(d + "T00:00:00").toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" }); }
+  catch { return d; }
+}
+
+export function MeetingsView() {
+  const hdr = { headers: { "x-demo-role": "owner" } };
+  const jhdr = { headers: { "Content-Type": "application/json", "x-demo-role": "owner" } };
+
+  const [meetings, setMeetings] = useState<any[]>([]);
+  const [summary, setSummary] = useState<any>(null);
+  const [q, setQ] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<any | null>(null);
+
+  const load = async (query = "") => {
+    setLoading(true); setError(null);
+    try {
+      const res = await fetch(`/api/mvp/meetings${query ? `?q=${encodeURIComponent(query)}` : ""}`, hdr);
+      if (!res.ok) throw new Error(await res.text());
+      const j = await res.json();
+      setMeetings(j.meetings || []); setSummary(j.summary || null);
+    } catch (e: any) { setError(e?.message || "Не удалось загрузить планёрки"); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+  // Поиск с задержкой.
+  useEffect(() => { const t = setTimeout(() => load(q.trim()), 300); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q]);
+
+  return (
+    <OwnerScreen
+      title="Планёрки"
+      subtitle="Совещания сети: создание планёрки, участники, текстовые итоги и задачи. Включите запись — речь превратится в текст, а AI соберёт итоги, задачи, ответственных и сроки. Вся история с поиском.">
+      {error && <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">{error}</div>}
+
+      <section className="grid gap-3 sm:grid-cols-3">
+        <StatPill label="Всего планёрок" value={summary?.total ?? "—"} tone="white" />
+        <StatPill label="Открытых задач" value={summary?.openTasks ?? "—"} tone="gold" hint="не отмечены выполненными" />
+        <StatPill label="В этом месяце" value={summary?.thisMonth ?? "—"} tone="emerald" />
+      </section>
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="relative w-full max-w-sm">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Поиск по названию, итогам, участникам, задачам…"
+            className="w-full rounded-xl border border-white/10 bg-white/[0.03] py-2 pl-9 pr-3 text-sm text-white placeholder:text-slate-500 focus:border-[#C5A059]/40 focus:outline-none" />
+        </div>
+        <button onClick={() => setEditing({ _new: true, status: "draft", date: new Date().toISOString().slice(0, 10), participants: [], items: [] })}
+          className="flex items-center gap-1.5 rounded-xl bg-[#C5A059] px-3 py-2 text-xs font-black text-black hover:bg-[#d4af6a]">
+          <Plus className="h-4 w-4" /> Новая планёрка
+        </button>
+      </div>
+
+      <div className="space-y-2.5">
+        {loading ? (
+          <p className="py-16 text-center text-sm text-slate-500">Загрузка…</p>
+        ) : meetings.length === 0 ? (
+          <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.02] py-16 text-center">
+            <CalendarClock className="mx-auto h-8 w-8 text-slate-600" />
+            <p className="mt-3 text-sm text-slate-400">{q ? "Ничего не найдено." : "Планёрок пока нет — создайте первую."}</p>
+          </div>
+        ) : (
+          meetings.map((m) => (
+            <button key={m.id} onClick={() => setEditing(m)}
+              className="flex w-full items-center gap-4 rounded-[1.25rem] border border-white/10 bg-white/[0.02] p-4 text-left transition hover:border-[#C5A059]/40 hover:bg-white/[0.04]">
+              <div className="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-xl border border-white/10 bg-white/[0.03]">
+                <span className="text-[10px] uppercase text-slate-500">{new Date(m.date + "T00:00:00").toLocaleDateString("ru-RU", { month: "short" })}</span>
+                <span className="text-lg font-black leading-none text-white">{new Date(m.date + "T00:00:00").getDate()}</span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <h3 className="truncate font-bold text-white">{m.title}</h3>
+                  <span className={`shrink-0 rounded-lg border px-2 py-0.5 text-[10px] font-bold ${MEETING_STATUS_META[m.status]?.cls}`}>{MEETING_STATUS_META[m.status]?.label}</span>
+                </div>
+                <p className="mt-0.5 truncate text-xs text-slate-400">
+                  {m.summary ? m.summary : (m.agenda || "Итоги ещё не заполнены")}
+                </p>
+                <div className="mt-1.5 flex flex-wrap items-center gap-3 text-[11px] text-slate-500">
+                  <span className="flex items-center gap-1"><Users className="h-3 w-3" /> {Array.isArray(m.participants) ? m.participants.length : 0} участн.</span>
+                  {m.itemsCount > 0 && <span className="flex items-center gap-1"><CheckCircle className="h-3 w-3" /> {m.itemsCount - m.openItems}/{m.itemsCount} задач</span>}
+                  {m.openItems > 0 && <span className="flex items-center gap-1 text-amber-400"><Clock className="h-3 w-3" /> {m.openItems} открыто</span>}
+                </div>
+              </div>
+              <ChevronRight className="h-4 w-4 shrink-0 text-slate-600" />
+            </button>
+          ))
+        )}
+      </div>
+
+      {editing && <MeetingModal meeting={editing} jhdr={jhdr} hdr={hdr} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(q.trim()); }} setError={setError} />}
+    </OwnerScreen>
+  );
+}
+
+function MeetingModal({ meeting, jhdr, hdr, onClose, onSaved, setError }: {
+  meeting: any; jhdr: any; hdr: any; onClose: () => void; onSaved: () => void; setError: (s: string | null) => void;
+}) {
+  const isNew = !!meeting._new;
+  const [id, setId] = useState<string | null>(isNew ? null : meeting.id);
+  const [title, setTitle] = useState(meeting.title || "");
+  const [date, setDate] = useState(meeting.date || new Date().toISOString().slice(0, 10));
+  const [status, setStatus] = useState(meeting.status || "draft");
+  const [participantsText, setParticipantsText] = useState((meeting.participants || []).join(", "));
+  const [agenda, setAgenda] = useState(meeting.agenda || "");
+  const [transcript, setTranscript] = useState(meeting.transcript || "");
+  const [summaryText, setSummaryText] = useState(meeting.summary || "");
+  const [items, setItems] = useState<any[]>(meeting.items || []);
+  const [busy, setBusy] = useState(false);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [recError, setRecError] = useState<string | null>(null);
+  const recRef = useRef<any>(null);
+
+  const participants = participantsText.split(",").map((s) => s.trim()).filter(Boolean);
+
+  // ---- Запись речи в браузере (Web Speech API), ru-RU ----
+  const toggleRecording = () => {
+    if (recording) { try { recRef.current?.stop(); } catch {} setRecording(false); return; }
+    const SR = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
+    if (!SR) { setRecError("Браузер не поддерживает распознавание речи. Используйте Chrome или введите заметки вручную."); return; }
+    setRecError(null);
+    const rec = new SR();
+    rec.lang = "ru-RU"; rec.continuous = true; rec.interimResults = true;
+    let finalBuf = "";
+    rec.onresult = (ev: any) => {
+      let interim = "";
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        const t = ev.results[i][0].transcript;
+        if (ev.results[i].isFinal) finalBuf += t + " "; else interim += t;
+      }
+      if (finalBuf) { setTranscript((prev: string) => (prev ? prev + " " : "") + finalBuf.trim()); finalBuf = ""; }
+    };
+    rec.onerror = (e: any) => { setRecError("Ошибка записи: " + (e?.error || "неизвестно")); setRecording(false); };
+    rec.onend = () => { if (recRef.current === rec && recording) { try { rec.start(); } catch {} } };
+    recRef.current = rec;
+    try { rec.start(); setRecording(true); } catch (e: any) { setRecError("Не удалось начать запись"); }
+  };
+  useEffect(() => () => { try { recRef.current?.stop(); } catch {} }, []);
+
+  // Сохранить планёрку (создать или обновить). Возвращает id.
+  const persist = async (): Promise<string | null> => {
+    const payload = { title, date, status, participants, agenda, summary: summaryText, transcript };
+    const url = id ? `/api/mvp/meetings/${id}` : "/api/mvp/meetings";
+    const res = await fetch(url, { method: id ? "PATCH" : "POST", ...jhdr, body: JSON.stringify(payload) });
+    if (!res.ok) throw new Error(await res.text());
+    const j = await res.json();
+    const newId = j.meeting?.id || id;
+    if (newId && newId !== id) setId(newId);
+    return newId;
+  };
+
+  const saveItems = async (mid: string, list: any[]) => {
+    const res = await fetch(`/api/mvp/meetings/${mid}/items`, { method: "PUT", ...jhdr, body: JSON.stringify({ items: list }) });
+    if (!res.ok) throw new Error(await res.text());
+    return (await res.json()).items || [];
+  };
+
+  const onSaveAll = async () => {
+    if (!title.trim()) { setError("Укажите название планёрки"); return; }
+    setBusy(true); setError(null);
+    try {
+      const mid = await persist();
+      if (mid) await saveItems(mid, items);
+      onSaved();
+    } catch (e: any) { setError(e?.message || "Не удалось сохранить"); }
+    finally { setBusy(false); }
+  };
+
+  const onDelete = async () => {
+    if (!id) { onClose(); return; }
+    if (!confirm("Удалить планёрку вместе с задачами?")) return;
+    setBusy(true);
+    try { await fetch(`/api/mvp/meetings/${id}`, { method: "DELETE", ...hdr }); onSaved(); }
+    catch (e: any) { setError(e?.message || "Не удалось удалить"); }
+    finally { setBusy(false); }
+  };
+
+  // AI: расшифровка/заметки → итоги + задачи.
+  const onAiSummarize = async () => {
+    const text = (transcript || "").trim();
+    if (!text) { setRecError("Сначала запишите речь или введите заметки встречи."); return; }
+    setAiBusy(true); setError(null); setRecError(null);
+    try {
+      const res = await fetch("/api/gemini/meeting-summary", { method: "POST", ...jhdr, body: JSON.stringify({ transcript: text, title, participants, meetingDate: date }) });
+      if (!res.ok) {
+        const msg = res.status === 503 ? "AI недоступен: не настроен ключ Gemini на сервере." : (await res.text());
+        throw new Error(msg);
+      }
+      const j = await res.json();
+      let sum = j.summary || "";
+      if (Array.isArray(j.decisions) && j.decisions.length) sum += (sum ? "\n\n" : "") + "Решения:\n— " + j.decisions.join("\n— ");
+      setSummaryText(sum || summaryText);
+      const aiItems = (j.actionItems || []).map((it: any) => ({ title: it.title || "", assignee: it.assignee || "", dueDate: it.dueDate || "", done: false, source: "ai" })).filter((it: any) => it.title);
+      if (aiItems.length) setItems((prev: any[]) => [...prev, ...aiItems]);
+      if (status === "draft") setStatus("held");
+    } catch (e: any) { setError(e?.message || "AI не смог обработать текст"); }
+    finally { setAiBusy(false); }
+  };
+
+  const addItem = () => setItems((p) => [...p, { title: "", assignee: "", dueDate: "", done: false, source: "manual" }]);
+  const updItem = (i: number, patch: any) => setItems((p) => p.map((it, k) => (k === i ? { ...it, ...patch } : it)));
+  const delItem = (i: number) => setItems((p) => p.filter((_, k) => k !== i));
+
+  const inputCls = "w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-[#C5A059]/40 focus:outline-none";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="my-6 w-full max-w-3xl rounded-[1.75rem] border border-white/10 bg-[#0F0F0F] p-5 sm:p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1">
+            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Название планёрки (напр. «Итоги недели»)"
+              className="w-full bg-transparent text-lg font-black text-white placeholder:text-slate-600 focus:outline-none" />
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-white/5 hover:text-white"><X className="h-5 w-5" /></button>
+        </div>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <label className="block">
+            <span className="mb-1 block text-[11px] uppercase tracking-wider text-slate-500">Дата</span>
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-[11px] uppercase tracking-wider text-slate-500">Статус</span>
+            <select value={status} onChange={(e) => setStatus(e.target.value)} className={inputCls}>
+              <option value="draft">Черновик</option>
+              <option value="held">Проведена</option>
+              <option value="archived">В архиве</option>
+            </select>
+          </label>
+        </div>
+
+        <label className="mt-3 block">
+          <span className="mb-1 block text-[11px] uppercase tracking-wider text-slate-500">Участники (через запятую)</span>
+          <input value={participantsText} onChange={(e) => setParticipantsText(e.target.value)} placeholder="Асланбек, Магомед, Фатима…" className={inputCls} />
+        </label>
+
+        <label className="mt-3 block">
+          <span className="mb-1 block text-[11px] uppercase tracking-wider text-slate-500">Повестка (необязательно)</span>
+          <input value={agenda} onChange={(e) => setAgenda(e.target.value)} placeholder="О чём говорим" className={inputCls} />
+        </label>
+
+        {/* Запись речи + заметки */}
+        <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.02] p-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] uppercase tracking-wider text-slate-500">Запись / заметки встречи</span>
+            <div className="flex gap-2">
+              <button onClick={toggleRecording}
+                className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition ${recording ? "bg-rose-500/90 text-white" : "border border-white/10 text-slate-200 hover:border-white/30"}`}>
+                <Mic2 className="h-4 w-4" /> {recording ? "Остановить запись" : "Запись речи"}
+                {recording && <span className="ml-1 h-2 w-2 animate-pulse rounded-full bg-white" />}
+              </button>
+              <button onClick={onAiSummarize} disabled={aiBusy}
+                className="flex items-center gap-1.5 rounded-xl bg-[#C5A059] px-3 py-1.5 text-xs font-black text-black hover:bg-[#d4af6a] disabled:opacity-50">
+                <Sparkles className="h-4 w-4" /> {aiBusy ? "Обработка…" : "Собрать итоги AI"}
+              </button>
+            </div>
+          </div>
+          {recError && <p className="mt-2 text-[11px] text-amber-400">{recError}</p>}
+          <textarea value={transcript} onChange={(e) => setTranscript(e.target.value)} rows={4}
+            placeholder="Здесь появится распознанная речь. Можно печатать и вручную. Затем нажмите «Собрать итоги AI»."
+            className={`mt-2 ${inputCls} resize-y`} />
+        </div>
+
+        <label className="mt-3 block">
+          <span className="mb-1 block text-[11px] uppercase tracking-wider text-slate-500">Итоги встречи</span>
+          <textarea value={summaryText} onChange={(e) => setSummaryText(e.target.value)} rows={4} placeholder="Итоги — заполняются вручную или собираются AI." className={`${inputCls} resize-y`} />
+        </label>
+
+        {/* Задачи */}
+        <div className="mt-4">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] uppercase tracking-wider text-slate-500">Задачи ({items.length})</span>
+            <button onClick={addItem} className="flex items-center gap-1 rounded-lg border border-white/10 px-2 py-1 text-[11px] font-bold text-slate-200 hover:border-white/30"><Plus className="h-3.5 w-3.5" /> Добавить</button>
+          </div>
+          <div className="mt-2 space-y-2">
+            {items.length === 0 && <p className="rounded-xl border border-dashed border-white/10 py-4 text-center text-xs text-slate-600">Задач нет. Добавьте вручную или соберите AI.</p>}
+            {items.map((it, i) => (
+              <div key={i} className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] p-2">
+                <button onClick={() => updItem(i, { done: !it.done })} className={`shrink-0 rounded-md border p-1 ${it.done ? "border-emerald-500/40 bg-emerald-500/20 text-emerald-300" : "border-white/15 text-slate-500"}`}>
+                  <CheckCircle className="h-4 w-4" />
+                </button>
+                <input value={it.title} onChange={(e) => updItem(i, { title: e.target.value })} placeholder="Что сделать"
+                  className={`min-w-[8rem] flex-1 rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1.5 text-sm text-white placeholder:text-slate-500 focus:border-[#C5A059]/40 focus:outline-none ${it.done ? "line-through opacity-60" : ""}`} />
+                <input value={it.assignee || ""} onChange={(e) => updItem(i, { assignee: e.target.value })} placeholder="Ответственный"
+                  className="w-36 rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1.5 text-sm text-white placeholder:text-slate-500 focus:border-[#C5A059]/40 focus:outline-none" />
+                <input type="date" value={it.dueDate || ""} onChange={(e) => updItem(i, { dueDate: e.target.value })}
+                  className="w-36 rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1.5 text-sm text-white focus:border-[#C5A059]/40 focus:outline-none" />
+                {it.source === "ai" && <span className="rounded-md border border-[#C5A059]/30 bg-[#C5A059]/10 px-1.5 py-0.5 text-[10px] font-bold text-[#C5A059]">AI</span>}
+                <button onClick={() => delItem(i)} className="shrink-0 rounded-md p-1 text-slate-500 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-5 flex items-center justify-between gap-3">
+          <button onClick={onDelete} disabled={busy} className="rounded-xl border border-rose-500/30 px-3 py-2 text-xs font-bold text-rose-300 hover:bg-rose-500/10 disabled:opacity-50">
+            {isNew ? "Отмена" : "Удалить"}
+          </button>
+          <button onClick={onSaveAll} disabled={busy} className="flex items-center gap-1.5 rounded-xl bg-[#C5A059] px-5 py-2 text-sm font-black text-black hover:bg-[#d4af6a] disabled:opacity-50">
+            {busy ? "Сохранение…" : "Сохранить планёрку"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PlanningView() {
   const [tab, setTab] = useState<"plan" | "fact" | "planfact" | "daily" | "ai" | "motivation">("plan");
   const [period, setPeriod] = useState("2026-06");
@@ -7062,9 +7545,9 @@ function OwnerScreen({ title, subtitle, children }: { title: string; subtitle: s
   return (
     <div className="space-y-5">
       <div>
-        <p className="text-[10px] font-black uppercase tracking-[0.28em] text-[#C5A059]">CEO Network Command</p>
-        <h1 className="mt-1 text-2xl font-black text-white md:text-3xl">{title}</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-400">{subtitle}</p>
+        <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-[#C5A059]">CEO Network Command</p>
+        <h1 className="mt-1.5 text-3xl font-extrabold leading-[1.1] tracking-tight text-white md:text-[38px]">{title}</h1>
+        <p className="mt-2.5 max-w-3xl text-sm leading-relaxed text-slate-400">{subtitle}</p>
       </div>
       {children}
     </div>

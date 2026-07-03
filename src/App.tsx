@@ -5,7 +5,6 @@
 
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { TeacherWorkspace } from "./components/TeacherWorkspace";
-import { ParentWorkspace } from "./components/ParentWorkspace";
 import { StudentArtistCabinet } from "./components/StudentArtistCabinet";
 import { BranchManagerWorkspace } from "./components/BranchManagerWorkspace";
 import { OwnerExecutiveWorkspace } from "./components/OwnerExecutiveWorkspace";
@@ -53,7 +52,6 @@ import {
   User,
   AlertTriangle,
   NotebookText,
-  Heart,
   CalendarDays,
   Menu,
   FileText,
@@ -127,16 +125,15 @@ export default function App() {
     { id: "branch", name: "Руководитель филиала", icon: Building2, badge: "Branch Manager" },
     { id: "admin", name: "Администратор", icon: UserCheck, badge: "Registrar" },
     { id: "teacher", name: "Преподаватель", icon: GraduationCap, badge: "Sifu/Ustaz" },
-    { id: "parent", name: "Родитель", icon: Heart, badge: "Family Control" },
     { id: "student", name: "Ученик", icon: Flame, badge: "Artist Way" },
   ];
 
   // Active role
   const [activeRole, setActiveRole] = useState<string>("owner");
   const [themeMode, setThemeMode] = useState<"dark" | "day" | "iman">(() => {
-    if (typeof window === "undefined") return "dark";
+    if (typeof window === "undefined") return "day";
     const saved = window.localStorage.getItem("echogor-theme");
-    return saved === "day" || saved === "iman" ? saved : "dark";
+    return saved === "day" || saved === "iman" || saved === "dark" ? saved : "day";
   });
   const [isThemeMenuOpen, setIsThemeMenuOpen] = useState<boolean>(false);
 
@@ -375,10 +372,6 @@ export default function App() {
     if (roleId === "student") {
       setActiveTab("artist-way");
       setSelectedStudentId("stud-soslan"); // Soslan has rich achievements
-    } else if (roleId === "parent") {
-      setActiveTab("parent-workspace");
-      setSelectedStudentId("stud-timur"); // default kids
-      loadParentChildData("stud-timur");
     } else if (roleId === "teacher") {
       setActiveTab("teacher-board");
     } else {
@@ -1282,65 +1275,6 @@ export default function App() {
       return true;
     } catch (error: any) {
       setMvpDataError(error.message || "Не удалось отменить урок");
-      return false;
-    }
-  };
-
-  // ─── Parent: данные конкретного ребёнка ──────────────────────────────────────
-
-  const [parentChildData, setParentChildData] = useState<{ student: any; payments: any[]; quests?: any[] } | null>(null);
-  const [parentQuests, setParentQuests] = useState<any[]>([]);
-
-  const loadParentChildData = async (studentId: string) => {
-    if (mvpDataMode !== "supabase") return;
-    try {
-      const response = await fetch(`/api/mvp/parent/child?studentId=${studentId}`, {
-        headers: { "x-demo-role": getMvpRoleHeader() },
-      });
-      if (!response.ok) return;
-      const data = await response.json();
-      setParentChildData(data);
-      setParentQuests(Array.isArray(data.quests) ? data.quests : []);
-    } catch {
-      // silent — ParentWorkspace falls back to bootstrap students
-    }
-  };
-
-  // ─── Parent: семейные квесты (family_quests) ────────────────────────────────
-  // Возвращает true → ParentWorkspace отработал через бэкенд; false → пусть ведёт локально.
-  const handleCreateQuest = async (quest: { title: string; category?: string; reward?: string; minutes?: string }) => {
-    const studentId = parentChildData?.student?.id || selectedStudentId;
-    if (mvpDataMode !== "supabase" || !studentId) return false;
-    try {
-      const response = await fetch("/api/mvp/parent/quests", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
-        body: JSON.stringify({ ...quest, studentId })
-      });
-      if (!response.ok) throw new Error(await response.text());
-      const data = await response.json();
-      setParentQuests((prev) => [data.quest, ...prev]);
-      return true;
-    } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось создать квест");
-      return false;
-    }
-  };
-
-  const handleUpdateQuestStatus = async (id: string, status: "in_progress" | "awaiting" | "confirmed") => {
-    if (mvpDataMode !== "supabase") return false;
-    try {
-      const response = await fetch(`/api/mvp/parent/quests/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
-        body: JSON.stringify({ status })
-      });
-      if (!response.ok) throw new Error(await response.text());
-      const data = await response.json();
-      setParentQuests((prev) => prev.map((q) => (q.id === id ? data.quest : q)));
-      return true;
-    } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось обновить квест");
       return false;
     }
   };
@@ -2305,8 +2239,6 @@ export default function App() {
     
     if (emailLower.includes("teacher") || emailLower.includes("ustaz")) {
       targetedRole = "teacher";
-    } else if (emailLower.includes("parent")) {
-      targetedRole = "parent";
     } else if (emailLower.includes("student") || emailLower.includes("solist")) {
       targetedRole = "student";
     } else if (emailLower.includes("admin") || emailLower.includes("registrar")) {
@@ -2585,32 +2517,6 @@ export default function App() {
                    </div>
                  </div>
 
-                 {/* Hotspot 3: Parent */}
-                 <div 
-                   className="absolute top-[45%] left-[34%] z-20 group cursor-pointer"
-                   onClick={() => {
-                     setDesktopEmail("parent@echogor.ru");
-                     setDesktopPassword("family2026");
-                     setActiveRole("parent");
-                     setActiveHotspot("hotspot-parent");
-                     setDesktopLoginError(null);
-                     addAuditLog("Хотспот Автозаполнения", "Выбран профиль Родителя (parent@echogor.ru)");
-                   }}
-                 >
-                   <span className="absolute -inset-2.5 rounded-full bg-amber-500/30 animate-ping duration-1000"></span>
-                   <div className={`w-3.5 h-3.5 rounded-full border-2 ${activeHotspot === "hotspot-parent" ? 'bg-amber-400 border-white scale-110' : 'bg-[#C5A059] border-[#0A0D14]'} transition-all shadow-[0_0_12px_#C5A059] relative z-30 flex items-center justify-center`}>
-                      <div className="w-1 h-1 bg-white rounded-full"></div>
-                   </div>
-                   
-                   {/* Tooltip */}
-                   <div className="absolute left-1/2 -translate-x-1/2 bottom-5 mb-1 w-52 bg-black/95 text-xs text-white p-2.5 rounded-xl border border-[#C5A059]/40 opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity duration-300 shadow-2xl z-40 text-center">
-                      <div className="absolute bottom-[-5px] left-1/2 -translate-x-1/2 w-2.5 h-2.5 bg-black border-r border-b border-[#C5A059]/40 rotate-45"></div>
-                      <p className="font-extrabold text-[#C5A059] uppercase text-[9px] tracking-wider mb-0.5">Родитель (Абонементы)</p>
-                      <p className="text-[9px] text-slate-300 leading-normal">Контроль платежей, электронный штрих-код пропуска ребенка</p>
-                      <p className="text-[8px] text-amber-500 font-mono mt-1 font-bold">Нажмите для автозаполнения</p>
-                   </div>
-                 </div>
-
                  {/* Hotspot 4: Student (Soloist) */}
                  <div 
                    className="absolute top-[68%] left-[51%] z-20 group cursor-pointer"
@@ -2705,7 +2611,7 @@ export default function App() {
                 {activeHotspot && (
                   <div className="p-3 bg-[#9C784D]/10 border border-[#9C784D]/30 rounded-xl text-xs flex items-center justify-between animate-fade-in">
                     <span className="text-slate-300 font-medium">
-                      Загружен демо-аккаунт: <strong className="text-white">{activeHotspot === "hotspot-director" ? "Владелец" : activeHotspot === "hotspot-teacher" ? "Хореограф" : activeHotspot === "hotspot-parent" ? "Родитель" : "Солист"}</strong>
+                      Загружен демо-аккаунт: <strong className="text-white">{activeHotspot === "hotspot-director" ? "Владелец" : activeHotspot === "hotspot-teacher" ? "Хореограф" : "Солист"}</strong>
                     </span>
                     <button 
                       type="button"
@@ -3078,8 +2984,19 @@ export default function App() {
 
         {/* Sidebar Nav */}
         {activeRole !== "chart" && activeRole !== "teacher" && activeRole !== "branch" && activeRole !== "owner" && activeRole !== "admin" && (
-        <aside className="hidden lg:flex w-64 bg-[#0F0F0F] border-r border-white/5 flex-col p-4 justify-between flex-shrink-0">
-          <div className="space-y-6">
+        <aside className="hidden lg:flex w-64 bg-[#0F0F0F] border-r border-white/5 flex-col flex-shrink-0">
+          <div className="border-b border-white/5 px-5 py-5">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#C5A059] text-black">
+                <Flame className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">Кабинет ученика</p>
+                <h2 className="text-lg font-black leading-tight text-white" style={{ fontFamily: "'Oswald', sans-serif" }}>ЭХО ГОР</h2>
+              </div>
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
             <div>
               <p className="text-[10px] text-slate-500 font-extrabold uppercase tracking-widest pl-2 mb-2">
                 Кабинеты и экраны
@@ -3163,16 +3080,6 @@ export default function App() {
                   </>
                 )}
 
-                {activeRole === "parent" && (
-                  <button
-                    onClick={() => setActiveTab("parent-workspace")}
-                    className={`px-4 py-2.5 rounded-xl flex items-center space-x-3 text-xs font-bold transition-all bg-[#C5A059]/10 text-[#C5A059] border border-[#C5A059]/20`}
-                  >
-                    <Heart className="w-4 h-4" />
-                    <span>Кабинет Родителя</span>
-                  </button>
-                )}
-
                 {activeRole === "student" && (
                   <button
                     onClick={() => setActiveTab("artist-way")}
@@ -3227,7 +3134,7 @@ export default function App() {
             </div>
           </div>
 
-          <div className="space-y-4">
+          <div className="px-4 pt-4 space-y-4">
             {/* Gamified level bottom card */}
             <div className="bg-gradient-to-br from-[#8B0000] to-[#510000] rounded-2xl p-4 shadow-xl border border-white/10">
               <p className="text-[9px] text-white/70 uppercase tracking-widest font-bold mb-1">
@@ -3251,6 +3158,10 @@ export default function App() {
             >
               Сбросить демо-данные
             </button>
+          </div>
+          <div className="border-t border-white/5 px-5 py-4">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#C5A059]" style={{ fontFamily: "'Oswald', sans-serif" }}>Культура · Сила · Характер</div>
+            <div className="mt-1.5 text-xs leading-relaxed text-slate-400">Казахстан · обучаем от 5 лет</div>
           </div>
         </aside>
         )}
@@ -3437,34 +3348,14 @@ export default function App() {
             />
           ) : (
             <>
-              {activeRole === "parent" && (
-                <ParentWorkspace
-                  students={parentChildData ? [parentChildData.student] : students}
-                  groups={groups}
-                  teachers={teachers}
-                  announcements={announcements}
-                  selectedStudentId={selectedStudentId}
-                  onSelectStudent={(id) => {
-                    setSelectedStudentId(id);
-                    loadParentChildData(id);
-                  }}
-                  onRenewSubscription={(student) => {
-                    const activeSub = student.subscriptions?.[0];
-                    setPaymentAmount(activeSub ? activeSub.price : 4500);
-                    setPaymentDesc(`Продление абонемента для ${student.name}`);
-                    setPaymentType("subscription");
-                    setShowAddPaymentModal(true);
-                  }}
-                  backendQuests={mvpDataMode === "supabase" ? parentQuests : undefined}
-                  onCreateQuest={handleCreateQuest}
-                  onUpdateQuestStatus={handleUpdateQuestStatus}
-                />
-              )}
-
               {activeRole === "student" && (
                 <StudentArtistCabinet
                   student={students.find((std) => std.id === selectedStudentId) || students[0]}
                   group={groups.find((group) => group.id === (students.find((std) => std.id === selectedStudentId) || students[0])?.groupId)}
+                  allStudents={students}
+                  groups={groups}
+                  branches={branches}
+                  teachers={teachers}
                   readOnlyPreview
                 />
               )}
@@ -6050,208 +5941,6 @@ export default function App() {
           )}
 
 
-          {/* VIEW: PARENT WORKSPACE (Family Desk) */}
-          {false && activeTab === "parent-workspace" && (
-            <div className="grid grid-cols-12 gap-6 items-start">
-              
-              <div className="col-span-12 xl:col-span-8 bg-[#161616] rounded-3xl border border-white/5 p-4 md:p-6 space-y-6">
-                <div className="space-y-1 flex justify-between items-center border-b border-white/5 pb-4">
-                  <div>
-                    <h2 className="text-lg font-bold text-white">Кабинет родителя</h2>
-                    <p className="text-xs text-slate-500 font-sans">
-                      Здесь Вы контролируете обучение Ваших детей в академии танца
-                    </p>
-                  </div>
-                  
-                  {/* Switch child simulation */}
-                  <div>
-                    <span className="text-[10px] text-slate-500 uppercase font-bold mr-2">Ребенок:</span>
-                    <select
-                      value={selectedStudentId}
-                      onChange={(e) => setSelectedStudentId(e.target.value)}
-                      className="bg-black border border-white/10 text-xs rounded-xl px-2.5 py-1.5 text-white"
-                    >
-                      <option value="stud-timur">Тимур Юсупов (7 лет)</option>
-                      <option value="stud-amina">Амина Гаджиева (10 лет)</option>
-                      <option value="stud-soslan">Сослан Болотаев (17 лет)</option>
-                    </select>
-                  </div>
-                </div>
-
-                {(() => {
-                  const s = students.find((std) => std.id === selectedStudentId);
-                  if (!s) return null;
-                  const activeSub = s.subscriptions[0];
-                  
-                  return (
-                    <div className="space-y-6">
-
-                      {/* URGENT MASSOVYE UPADOMLENIYA */}
-                      {unreadSimulatedAlerts.length > 0 && (
-                        <div className="bg-gradient-to-r from-amber-600/25 to-red-600/20 border border-[#C5A059]/40 p-5 rounded-3xl space-y-3 relative overflow-hidden animate-pulse shadow-xl">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-2.5">
-                              <Bell className="w-5 h-5 text-[#C5A059]" />
-                              <span className="text-xs font-serif font-extrabold text-white uppercase tracking-wider">
-                                🚨 СРОЧНОЕ УВЕДОМЛЕНИЕ ОТ РУКОВОДСТВА СЕТИ
-                              </span>
-                            </div>
-                            <button 
-                              onClick={() => setUnreadSimulatedAlerts([])}
-                              className="text-[10px] uppercase font-bold text-slate-400 hover:text-white transition-colors"
-                            >
-                              Склеить / Стереть
-                            </button>
-                          </div>
-                          
-                          {unreadSimulatedAlerts.map((alert) => (
-                            <div key={alert.id} className="space-y-1.5 p-3.5 bg-black/40 rounded-2xl border border-white/5">
-                              <div className="flex items-center justify-between">
-                                <h4 className="text-xs font-bold text-white">{alert.title}</h4>
-                                <span className="text-[10px] text-[#C5A059] font-bold">по Email & Push</span>
-                              </div>
-                              <p className="text-xs text-slate-300 leading-normal font-sans">{alert.content}</p>
-                              <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono pt-1">
-                                <span>Диспетчер: {alert.authorName} (Мастер Сети)</span>
-                                <span>{new Date(alert.sentAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</span>
-                              </div>
-                            </div>
-                          ))}
-
-                          <div className="flex justify-end pt-1">
-                            <button
-                              onClick={() => {
-                                setUnreadSimulatedAlerts([]);
-                                addAuditLog("Подтверждение прочтения", `Родитель ${s.parentName} официально ознакомился с новым событием`);
-                              }}
-                              className="px-4 py-2 bg-[#C5A059] text-black text-[11px] uppercase tracking-wider font-extrabold rounded-xl hover:bg-amber-400 transition-all shadow-md"
-                            >
-                              ✓ Подтвердить получение (Письмо отправлено на {s.parentPhone})
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                      
-                      {/* Kid bio */}
-                      <div className="flex items-center space-x-4">
-                        <img
-                          src={s.photoUrl}
-                          alt={s.name}
-                          className="w-12 h-12 rounded-full border-2 border-[#C5A059] object-cover"
-                        />
-                        <div>
-                          <p className="text-sm font-bold text-white">{s.name}</p>
-                          <span className="text-xs text-[#C5A059] font-serif italic uppercase">{s.artistLevel}</span>
-                        </div>
-                      </div>
-
-                      {/* Schedule child calendar info */}
-                      <div className="p-4 bg-white/5 rounded-2xl border border-white/5 space-y-2">
-                        <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center">
-                          <Clock className="w-4 h-4 mr-1 text-[#C5A059]" />
-                          <span>Расписание занятий</span>
-                        </h4>
-                        <p className="text-xs text-slate-300">
-                          Дни: <strong className="text-white">Понедельник, Среда, Пятница</strong>
-                        </p>
-                        <p className="text-[11px] text-slate-400">
-                          Время сбора в раздевалке: 16:15. Ребенок обязательно должен быть в кавказской тренировочной форме (черная футболка / ичиги).
-                        </p>
-                      </div>
-
-                      {/* Attendance checklist from parent perspective */}
-                      <div className="space-y-3">
-                        <h4 className="text-xs font-bold text-white uppercase tracking-wider">История посещений ребенка</h4>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                          {Object.keys(s.attendance).map((date) => {
-                            const att = s.attendance[date];
-                            return (
-                              <div key={date} className="p-3 bg-black/35 rounded-xl border border-white/5 space-y-1">
-                                <span className="text-[10px] text-slate-500">{date}</span>
-                                <div className="flex items-center space-x-1">
-                                  {att.status === "present" ? (
-                                    <>
-                                      <CheckCircle className="w-4 h-4 text-emerald-500" />
-                                      <span className="text-xs text-white">Присутствовал</span>
-                                    </>
-                                  ) : att.status === "sick" ? (
-                                    <>
-                                      <AlertTriangle className="text-amber-500 w-4 h-4" />
-                                      <span className="text-[11px] text-slate-3.1-flash-lite">Болен</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <XCircle className="w-4 h-4 text-red-500" />
-                                      <span className="text-xs text-white">Пропуск</span>
-                                    </>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* Parent Finance Renew subscription tool */}
-                      <div className="p-4 bg-black/50 rounded-2xl border border-white/5 flex flex-col sm:flex-row items-center justify-between gap-4">
-                        <div>
-                          <p className="text-xs font-bold text-white uppercase">Абонемент: {activeSub ? activeSub.name : "Младший Старт"}</p>
-                          <p className="text-xs text-slate-400">
-                            Остаток: <strong className="text-[#C5A059]">{activeSub ? activeSub.lessonsLeft : 0} тренировок</strong>. Действует до {activeSub ? activeSub.validUntil : "15 июня"}
-                          </p>
-                        </div>
-                        <button
-                          onClick={() => {
-                            setPaymentAmount(activeSub ? activeSub.price : 3500);
-                            setPaymentDesc(`Продление абонемента для ${s.name}`);
-                            setPaymentType("subscription");
-                            setShowAddPaymentModal(true);
-                          }}
-                          className="px-4 py-2 bg-[#C5A059] text-black font-extrabold rounded-xl text-xs tracking-wide uppercase transition-all shadow-md"
-                        >
-                          Купить абонемент
-                        </button>
-                      </div>
-
-                      {/* Public feedback from teacher visible to parents */}
-                      <div className="space-y-3">
-                        <h4 className="text-xs font-bold text-white uppercase tracking-wider">Отзывы наставников</h4>
-                        <div className="space-y-2">
-                          {s.notes.filter(n => !n.isPrivate).map((n) => (
-                            <div key={n.id} className="p-3 bg-white/5 rounded-xl border border-white/5 space-y-1">
-                              <p className="text-xs font-bold text-white">{n.teacherName}</p>
-                              <p className="text-xs text-slate-300 leading-normal italic">"{n.content}"</p>
-                              <p className="text-[10px] text-slate-500">{n.date}</p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                    </div>
-                  );
-                })()}
-
-              </div>
-
-              {/* Sidebar messages */}
-              <div className="col-span-12 xl:col-span-4 space-y-6">
-                <div className="bg-[#161616] rounded-3xl border border-white/5 p-5 space-y-4">
-                  <h3 className="text-sm font-bold text-white uppercase tracking-wider">Уведомления школы</h3>
-                  <div className="space-y-3">
-                    <div className="p-3.5 bg-[#8B0000]/10 border border-[#8B0000]/20 rounded-xl">
-                      <p className="text-xs text-white font-bold">Линейка Летнего Ансамбля!</p>
-                      <p className="text-[11px] text-slate-400 mt-1">Всем родителям необходимо сдать взносы на костюмы для Летнего Выступления до конца недели.</p>
-                    </div>
-                    <div className="p-3.5 bg-white/5 border border-white/5 rounded-xl">
-                      <p className="text-xs text-white font-bold">Оплата подтверждена</p>
-                      <p className="text-[11px] text-slate-400 mt-1">Оплата платежа за абонемент Амины Гаджиевой проведена успешно.</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-            </div>
-          )}
 
 
           {/* VIEW: STUDENT CAMPAIGN (Path of Artist) */}

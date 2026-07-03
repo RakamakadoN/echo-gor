@@ -113,6 +113,26 @@ child=${JSON.stringify({ childName, childAge, attendanceRate })}`;
     }
   });
 
+  // Планёрки: расшифровка/заметки встречи → итоги, задачи, ответственные, сроки.
+  // Используется кнопкой «Собрать итоги AI» в разделе «Планёрки» (владелец/управляющий).
+  app.post("/api/gemini/meeting-summary", async (req, res) => {
+    if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });
+    const { transcript, title, participants, meetingDate } = req.body || {};
+    if (!String(transcript || "").trim()) return res.status(400).json({ error: "Нет текста встречи для анализа" });
+    const today = meetingDate || new Date().toISOString().slice(0, 10);
+    const prompt = `Ты — ассистент-секретарь планёрок сети школ кавказского танца «Эхо Гор». На вход — расшифровка (или заметки) совещания. Составь деловые итоги и выдели задачи. Верни СТРОГО JSON по схеме:
+{"summary": string, "decisions": string[], "actionItems": [{"title": string, "assignee": string, "dueDate": string}]}
+Правила: пиши по-русски, кратко и по делу. summary — 3-6 предложений сути встречи. decisions — принятые решения. actionItems — конкретные задачи; assignee — имя ответственного из участников (если не назван — пустая строка); dueDate — дата в формате YYYY-MM-DD (если срок не назван явно, оставь пустую строку, не выдумывай). Дата планёрки: ${today}.
+title=${JSON.stringify(title ?? "")}
+participants=${JSON.stringify(participants ?? [])}
+transcript=${JSON.stringify(String(transcript).slice(0, 24000))}`;
+    try {
+      res.json(await generateJson(prompt));
+    } catch (e: any) {
+      res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
+
   // Генерация красивого фото товара нейросетью (для каталога и магазина родителя).
   // Возвращает data-URL (base64 PNG), который фронт кладёт в photoUrl товара.
   app.post("/api/gemini/product-image", async (req, res) => {

@@ -186,17 +186,18 @@ export function BranchManagerWorkspace({
   return (
     <div className="min-h-full bg-[#0A0A0A] text-slate-200">
       <div className="mx-auto flex max-w-[1500px] gap-0 lg:gap-5">
-        <aside className={`sticky top-0 hidden h-[calc(100vh-64px)] w-72 shrink-0 border-r border-white/5 bg-[#0F0F0F] p-4 ${navCollapsed ? "lg:hidden" : "lg:block"}`}>
-          <BranchIdentity branch={branch} />
-          <nav className="mt-5 space-y-1">
+        <aside className={`sticky top-0 hidden h-[calc(100vh-64px)] w-64 shrink-0 flex-col border-r border-white/5 bg-[#0F0F0F] ${navCollapsed ? "lg:hidden" : "lg:flex"}`}>
+          <div className="border-b border-white/5 px-5 py-5">
+            <BranchIdentity branch={branch} />
+          </div>
+          <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
             {branchTabs.map((tab) => (
               <NavButton key={tab.id} tab={tab} active={activeTab === tab.id} onClick={() => setActiveTab(tab.id)} />
             ))}
           </nav>
-          <div className="mt-5 rounded-3xl border border-[#C5A059]/20 bg-[#C5A059]/10 p-4">
-            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">RBAC</p>
-            <p className="mt-2 text-sm font-bold text-white">Только свой филиал</p>
-            <p className="mt-1 text-xs leading-relaxed text-slate-400">Нет доступа к другим филиалам, лицензии и глобальным настройкам сети.</p>
+          <div className="border-t border-white/5 px-5 py-4">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#C5A059]" style={{ fontFamily: "'Oswald', sans-serif" }}>Культура · Сила · Характер</div>
+            <div className="mt-1.5 text-xs leading-relaxed text-slate-400">Казахстан · обучаем от 5 лет</div>
           </div>
         </aside>
 

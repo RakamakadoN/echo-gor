@@ -5,11 +5,16 @@
  * Историю диалога шлёт на POST /api/gemini/magomed-chat вместе с заголовком
  * x-demo-role (роль активного кабинета) — бэкенд скоупит данные по роли.
  *
+ * Голосовой ввод: кнопка микрофона использует браузерный Web Speech API
+ * (ru-RU), как в модуле «Планёрки». Наговор пишется прямо в поле ввода,
+ * пользователь проверяет текст и отправляет вручную. Если браузер не
+ * поддерживает распознавание (не Chrome) — показываем понятную подсказку.
+ *
  * Деградация: при 503 (нет ANTHROPIC_API_KEY) показывает понятное сообщение,
  * а не падает — как остальные AI-кнопки приложения.
  */
 import { useEffect, useRef, useState } from "react";
-import { MessageCircle, Send, X, Sparkles, Loader2 } from "lucide-react";
+import { MessageCircle, Send, X, Sparkles, Loader2, Mic } from "lucide-react";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
 
@@ -55,8 +60,13 @@ export function MagomedAssistant({ roleHeader, roleLabel }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: "assistant", content: GREETING },
   ]);
+  const [recording, setRecording] = useState(false);
+  const [recError, setRecError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const recRef = useRef<any>(null);
+  // Текст в поле до старта записи — к нему дописываем распознанное.
+  const baseRef = useRef<string>("");
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -68,9 +78,80 @@ export function MagomedAssistant({ roleHeader, roleLabel }: Props) {
     if (open) inputRef.current?.focus();
   }, [open]);
 
+  // Остановить запись при размонтировании / сворачивании панели.
+  useEffect(() => {
+    if (!open && recRef.current) {
+      try { recRef.current.stop(); } catch {}
+    }
+  }, [open]);
+  useEffect(() => () => { try { recRef.current?.stop(); } catch {} }, []);
+
+  // ── Голосовой ввод (Web Speech API, ru-RU) ──
+  // Одна фраза: continuous=false — распознавание само завершится после паузы.
+  // interimResults показывают текст «на лету» прямо в поле ввода.
+  function toggleRecording() {
+    if (recording) {
+      try { recRef.current?.stop(); } catch {}
+      setRecording(false);
+      return;
+    }
+    const SR = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
+    if (!SR) {
+      setRecError("Голосовой ввод поддерживается в Chrome. Наберите запрос вручную.");
+      return;
+    }
+    setRecError(null);
+    baseRef.current = input ? input.trim() + " " : "";
+    const rec = new SR();
+    rec.lang = "ru-RU";
+    rec.continuous = false;
+    rec.interimResults = true;
+    let finalBuf = "";
+    rec.onresult = (ev: any) => {
+      let interim = "";
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        const t = ev.results[i][0].transcript;
+        if (ev.results[i].isFinal) finalBuf += t + " ";
+        else interim += t;
+      }
+      setInput((baseRef.current + finalBuf + interim).trimStart());
+    };
+    rec.onerror = (e: any) => {
+      const code = e?.error;
+      if (code === "not-allowed" || code === "service-not-allowed") {
+        setRecError("Нет доступа к микрофону. Разрешите его в настройках браузера.");
+      } else if (code !== "aborted" && code !== "no-speech") {
+        setRecError("Ошибка распознавания речи. Попробуйте ещё раз.");
+      }
+      setRecording(false);
+    };
+    rec.onend = () => {
+      if (recRef.current === rec) {
+        recRef.current = null;
+        setRecording(false);
+        inputRef.current?.focus();
+      }
+    };
+    recRef.current = rec;
+    try {
+      rec.start();
+      setRecording(true);
+    } catch {
+      setRecError("Не удалось начать запись.");
+      setRecording(false);
+    }
+  }
+
   async function send(text: string) {
     const trimmed = text.trim();
     if (!trimmed || loading) return;
+
+    // Остановить запись, если шла — иначе наговор перетрёт очищенное поле.
+    if (recRef.current) {
+      try { recRef.current.stop(); } catch {}
+      recRef.current = null;
+      setRecording(false);
+    }
 
     const next: ChatMessage[] = [...messages, { role: "user", content: trimmed }];
     setMessages(next);
@@ -223,6 +304,18 @@ export function MagomedAssistant({ roleHeader, roleLabel }: Props) {
 
           {/* Поле ввода */}
           <div className="border-t border-white/10 bg-[#0C0E14] p-3">
+            {recording && (
+              <div className="mb-2 flex items-center gap-2 px-1 text-[11px] text-[#E8C887]">
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+                </span>
+                Слушаю… говорите, текст появится в поле
+              </div>
+            )}
+            {recError && (
+              <div className="mb-2 px-1 text-[11px] text-red-400">{recError}</div>
+            )}
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -234,10 +327,24 @@ export function MagomedAssistant({ roleHeader, roleLabel }: Props) {
                 ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Спросите Магомеда…"
+                placeholder={recording ? "Говорите…" : "Спросите Магомеда…"}
                 disabled={loading}
                 className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3.5 py-2.5 text-[13px] text-white placeholder:text-slate-500 outline-none focus:border-[#C5A059]/50 disabled:opacity-60"
               />
+              <button
+                type="button"
+                onClick={toggleRecording}
+                disabled={loading}
+                aria-label={recording ? "Остановить запись" : "Голосовой ввод"}
+                title={recording ? "Остановить запись" : "Голосовой ввод"}
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer ${
+                  recording
+                    ? "border-red-500/60 bg-red-500/20 text-red-300 animate-pulse"
+                    : "border-white/10 bg-white/5 text-slate-300 hover:border-[#C5A059]/50 hover:text-[#E8C887]"
+                }`}
+              >
+                <Mic size={17} />
+              </button>
               <button
                 type="submit"
                 disabled={loading || !input.trim()}

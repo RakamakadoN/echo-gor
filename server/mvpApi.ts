@@ -188,28 +188,6 @@ function mapDbTask(row: any, studentNameById?: Map<string, string>) {
   };
 }
 
-// Семейный квест → форма, удобная фронту (ParentWorkspace).
-// status в БД: in_progress | awaiting | confirmed → русские подписи UI.
-const QUEST_STATUS_LABEL: Record<string, string> = {
-  in_progress: "В процессе",
-  awaiting: "Ждет подтверждения",
-  confirmed: "Подтверждено"
-};
-function mapDbQuest(row: any) {
-  return {
-    id: row.id,
-    studentId: row.student_id || null,
-    title: row.title,
-    category: row.category || "",
-    reward: row.reward || "",
-    minutes: row.minutes || "",
-    status: QUEST_STATUS_LABEL[row.status] || "В процессе",
-    statusKey: row.status || "in_progress",
-    createdAt: row.created_at || null,
-    confirmedAt: row.confirmed_at || null
-  };
-}
-
 function mapDbPlan(row: any) {
   return {
     id: row.id,
@@ -1972,147 +1950,6 @@ export function registerMvpApi(app: express.Express) {
     }
   });
 
-  // ───────────────── Parent cabinet: данные конкретного ребёнка ────────────────
-
-  // GET /api/mvp/parent/child?studentId=...
-  // Возвращает профиль ученика + группа + подписки + платежи + посещаемость.
-  // В MVP доступно всем ролям (родитель узнаёт studentId из URL или сессии).
-  app.get("/api/mvp/parent/child", async (req, res) => {
-    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
-    const { studentId } = req.query as Record<string, string>;
-    if (!studentId) return res.status(400).json({ error: "studentId обязателен" });
-    try {
-      const [studentsRaw, subscriptionsRaw, paymentsRaw, lessons, attendanceRaw, plans, questsRaw] = await Promise.all([
-        supabaseFetch<any[]>("students", `select=*&id=eq.${studentId}&status=neq.archived`),
-        supabaseFetch<any[]>("student_subscriptions", `select=*&student_id=eq.${studentId}&order=starts_on.desc`),
-        supabaseFetch<any[]>("payments", `select=*&student_id=eq.${studentId}&order=paid_at.desc&limit=20`),
-        supabaseFetch<any[]>("schedule_lessons", `select=*&order=starts_at.desc&limit=60`),
-        supabaseFetch<any[]>("attendance", `select=*&student_id=eq.${studentId}`),
-        supabaseFetch<any[]>("subscription_plans", `select=*`),
-        supabaseFetch<any[]>("family_quests", `select=*&student_id=eq.${studentId}&order=created_at.desc`).catch(() => []),
-      ]);
-      const student = studentsRaw[0];
-      if (!student) return res.status(404).json({ error: "Ученик не найден" });
-
-      const planById = new Map(plans.map((p) => [p.id, p]));
-      const lessonById = new Map(lessons.map((l) => [l.id, l]));
-      const attendanceMap: Record<string, Attendance> = {};
-      attendanceRaw.forEach((row) => {
-        const lesson = lessonById.get(row.lesson_id);
-        if (!lesson) return;
-        const date = toDate(lesson.starts_at);
-        attendanceMap[date] = {
-          date,
-          status: row.status === "unknown" ? "unmarked" : row.status,
-          markedBy: row.marked_by || undefined,
-          note: row.comment || undefined,
-        };
-      });
-      const subsMapped = subscriptionsRaw.map((sub) => {
-        const plan = planById.get(sub.plan_id);
-        return {
-          id: sub.id,
-          studentId: sub.student_id,
-          name: plan?.name || "Абонемент",
-          price: Number(sub.price || 0),
-          lessonsTotal: sub.lessons_total || 0,
-          lessonsLeft: sub.lessons_left || 0,
-          validUntil: sub.ends_on,
-          isAutoRenew: false,
-          status: sub.status === "active" ? "active" : "expired",
-          startsOn: sub.starts_on,
-          discountAmount: Number(sub.discount_amount || 0),
-          groupId: sub.group_id || null,
-        };
-      });
-      const paymentsMapped = paymentsRaw.map(mapDbPayment);
-      const questsMapped = (questsRaw || []).map(mapDbQuest);
-      const mapped = mapDbStudent(student, new Map([[studentId, attendanceMap]]), new Map([[studentId, subscriptionsRaw]]));
-      res.json({ student: { ...mapped, subscriptions: subsMapped }, payments: paymentsMapped, quests: questsMapped });
-    } catch (error: any) {
-      res.status(400).json({ error: error.message || "Не удалось загрузить данные ребёнка" });
-    }
-  });
-
-  // ===== Семейные квесты родительского кабинета (family_quests) =====
-  // Родитель создаёт квест, ребёнок выполняет, семья подтверждает.
-  // GET — список квестов ребёнка.
-  app.get("/api/mvp/parent/quests", async (req, res) => {
-    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
-    const { studentId } = req.query as Record<string, string>;
-    if (!studentId) return res.status(400).json({ error: "studentId обязателен" });
-    try {
-      const rows = await supabaseFetch<any[]>("family_quests", `select=*&student_id=eq.${studentId}&order=created_at.desc`);
-      res.json({ quests: rows.map(mapDbQuest) });
-    } catch (error: any) {
-      res.status(400).json({ error: error.message || "Не удалось загрузить квесты" });
-    }
-  });
-
-  // POST — создать квест для ребёнка.
-  app.post("/api/mvp/parent/quests", async (req, res) => {
-    const session = getSession(req);
-    const payload = req.body || {};
-    if (!payload.studentId) return res.status(400).json({ error: "studentId обязателен" });
-    if (!payload.title || !String(payload.title).trim()) return res.status(400).json({ error: "title is required" });
-    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
-    const allowed = new Set(["in_progress", "awaiting", "confirmed"]);
-    const status = allowed.has(payload.status) ? payload.status : "in_progress";
-    try {
-      const inserted = await supabaseFetch<any[]>("family_quests", "", {
-        method: "POST",
-        body: JSON.stringify({
-          organization_id: session.organizationId,
-          student_id: payload.studentId,
-          created_by: session.userId,
-          title: String(payload.title).trim(),
-          category: payload.category || null,
-          reward: payload.reward || null,
-          minutes: payload.minutes || null,
-          status
-        })
-      });
-      res.status(201).json({ quest: mapDbQuest(inserted[0]) });
-    } catch (error: any) {
-      res.status(400).json({ error: error.message || "Не удалось создать квест" });
-    }
-  });
-
-  // PATCH — обновить статус квеста (подтверждение выполнения и т.п.).
-  app.patch("/api/mvp/parent/quests/:id", async (req, res) => {
-    const payload = req.body || {};
-    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
-    const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
-    if (payload.status !== undefined) {
-      const allowed = new Set(["in_progress", "awaiting", "confirmed"]);
-      if (!allowed.has(payload.status)) return res.status(400).json({ error: "Недопустимый статус" });
-      updates.status = payload.status;
-      updates.confirmed_at = payload.status === "confirmed" ? new Date().toISOString() : null;
-    }
-    if (payload.title !== undefined) updates.title = String(payload.title).trim();
-    if (payload.category !== undefined) updates.category = payload.category || null;
-    if (payload.reward !== undefined) updates.reward = payload.reward || null;
-    if (Object.keys(updates).length <= 1) return res.status(400).json({ error: "Нет полей для обновления" });
-    try {
-      const rows = await supabaseFetch<any[]>("family_quests", `id=eq.${req.params.id}`, { method: "PATCH", body: JSON.stringify(updates) });
-      if (!rows[0]) return res.status(404).json({ error: "Квест не найден" });
-      res.json({ quest: mapDbQuest(rows[0]) });
-    } catch (error: any) {
-      res.status(400).json({ error: error.message || "Не удалось обновить квест" });
-    }
-  });
-
-  // DELETE — удалить квест.
-  app.delete("/api/mvp/parent/quests/:id", async (req, res) => {
-    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
-    try {
-      await supabaseFetch("family_quests", `id=eq.${req.params.id}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
-      res.json({ ok: true });
-    } catch (error: any) {
-      res.status(400).json({ error: error.message || "Не удалось удалить квест" });
-    }
-  });
-
   // ===== Задачи администратора (tasks) =====
   app.post("/api/mvp/tasks", async (req, res) => {
     const session = getSession(req);
@@ -3003,10 +2840,10 @@ export function registerMvpApi(app: express.Express) {
     { id: uid(), clientName: "Банкет Нурлан", clientPhone: "+7 701 555 0003", address: "Банкетный зал «Астана»", eventDate: "2026-06-10", eventTime: "19:00", type: "interactive", price: 200000, status: "planned", comment: "Танец с интерактивом", branchId: demoBranchAlmaty, payments: [] },
   ];
   const mockProducts: any[] = [
-    { id: uid(), name: "Футболка ECHO GOR", category: "Мерч", sku: "TSH-001", salePrice: 15000, costPrice: 8000, minStock: 10, branchId: demoBranchAlmaty },
-    { id: uid(), name: "Худи ECHO GOR", category: "Мерч", sku: "HOD-002", salePrice: 28000, costPrice: 16000, minStock: 5, branchId: demoBranchAlmaty },
-    { id: uid(), name: "Штаны тренировочные", category: "Форма", sku: "PNT-003", salePrice: 20000, costPrice: 12000, minStock: 5, branchId: demoBranchAlmaty },
-    { id: uid(), name: "Шапка ECHO GOR", category: "Мерч", sku: "CAP-004", salePrice: 7000, costPrice: 3500, minStock: 5, branchId: demoBranchAlmaty },
+    { id: uid(), name: "Футболка ECHO GOR", category: "Мерч", sku: "TSH-001", salePrice: 15000, costPrice: 8000, minStock: 10, branchId: demoBranchAlmaty, echoPrice: 500, isActive: true, description: "Фирменная футболка ансамбля. Мягкий хлопок, логотип на груди." },
+    { id: uid(), name: "Худи ECHO GOR", category: "Мерч", sku: "HOD-002", salePrice: 28000, costPrice: 16000, minStock: 5, branchId: demoBranchAlmaty, echoPrice: 1200, isActive: true, description: "Тёплое худи с вышивкой ансамбля — награда за упорство." },
+    { id: uid(), name: "Штаны тренировочные", category: "Форма", sku: "PNT-003", salePrice: 20000, costPrice: 12000, minStock: 5, branchId: demoBranchAlmaty, echoPrice: 0, isActive: true, description: "Тренировочные штаны для занятий." },
+    { id: uid(), name: "Шапка ECHO GOR", category: "Мерч", sku: "CAP-004", salePrice: 7000, costPrice: 3500, minStock: 5, branchId: demoBranchAlmaty, echoPrice: 300, isActive: true, description: "Стильная шапка с логотипом — приятный бонус за баллы." },
   ];
   const mockReceipts: any[] = [
     { id: uid(), productId: mockProducts[0].id, qty: 30, costPrice: 8000, movementDate: "2026-05-01", comment: "Закуп партии", branchId: demoBranchAlmaty },
@@ -3352,6 +3189,9 @@ export function registerMvpApi(app: express.Express) {
     id: pr.id, name: pr.name, category: pr.category ?? pr.category ?? null, sku: pr.sku ?? null,
     salePrice: Number(pr.salePrice ?? pr.sale_price) || 0, costPrice: Number(pr.costPrice ?? pr.cost_price) || 0,
     minStock: Number(pr.minStock ?? pr.min_stock) || 0, comment: pr.comment ?? null,
+    description: pr.description ?? null,
+    echoPrice: Number(pr.echoPrice ?? pr.echo_price) || 0,
+    isActive: (pr.isActive ?? pr.is_active) !== false,
     photoUrl: pr.photoUrl ?? pr.photo_url ?? null,
     branchId: pr.branchId ?? pr.branch_id ?? null,
   });
@@ -3518,6 +3358,136 @@ export function registerMvpApi(app: express.Express) {
     res.json({ ok: true, status, fulfilled });
   }));
 
+  // ======================================================================
+  // ЭХОБАКСЫ — магазин наград/товаров за внутреннюю валюту (роадмап §2).
+  // Кошелёк ученика (students.echo_balance) + история (echo_transactions).
+  // Персонал (владелец/управляющий/админ/преподаватель) начисляет и списывает,
+  // ученик покупает активные товары с echo_price > 0. Есть mock-фолбэк.
+  // ======================================================================
+  const echoStaff = ["owner", "branch_manager", "admin", "teacher"];
+  const mockEchoBalances: Record<string, number> = {};
+  const mockEchoTx: any[] = [];
+  const echoTxOut = (t: any) => ({
+    id: t.id, studentId: t.studentId ?? t.student_id, amount: Number(t.amount) || 0,
+    kind: t.kind || "grant", reason: t.reason ?? null, productId: t.productId ?? t.product_id ?? null,
+    balanceAfter: Number(t.balanceAfter ?? t.balance_after) || 0, createdBy: t.createdBy ?? t.created_by ?? null,
+    createdAt: t.createdAt ?? t.created_at,
+  });
+
+  // Применить движение ЭхоБаксов. amount>0 — начислить, amount<0 — списать.
+  // Возвращает {balance} или бросает Error("INSUFFICIENT").
+  const applyEcho = async (session: MvpSession, studentId: string, amount: number, kind: string, reason: string | null, productId: string | null) => {
+    if (!supabaseEnabled) {
+      const cur = mockEchoBalances[studentId] ?? 0;
+      const next = cur + amount;
+      if (next < 0) throw new Error("INSUFFICIENT");
+      mockEchoBalances[studentId] = next;
+      const tx = { id: uid(), studentId, amount, kind, reason, productId, balanceAfter: next, createdBy: session.fullName || null, createdAt: new Date().toISOString() };
+      mockEchoTx.unshift(tx);
+      return { balance: next, tx: echoTxOut(tx) };
+    }
+    const st = await supabaseFetch<any[]>("students", `select=id,echo_balance&id=eq.${studentId}&organization_id=eq.${session.organizationId}&limit=1`);
+    if (!st[0]) throw new Error("NOT_FOUND");
+    const cur = Number(st[0].echo_balance) || 0;
+    const next = cur + amount;
+    if (next < 0) throw new Error("INSUFFICIENT");
+    await supabaseFetch("students", `id=eq.${studentId}&organization_id=eq.${session.organizationId}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ echo_balance: next }) });
+    const ins = await supabaseFetch<any[]>("echo_transactions", "", { method: "POST", body: JSON.stringify({ organization_id: session.organizationId, student_id: studentId, amount, kind, reason, product_id: productId, balance_after: next, created_by: session.fullName || null }) });
+    return { balance: next, tx: ins[0] ? echoTxOut(ins[0]) : null };
+  };
+
+  // Каталог магазина ЭхоБаксов: активные товары с ценой в ЭхоБаксах.
+  app.get("/api/mvp/shop/echo/catalog", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) {
+      const items = mockProducts.filter((p) => p.isActive !== false && Number(p.echoPrice) > 0)
+        .map((p) => ({ id: p.id, name: p.name, category: p.category || null, echoPrice: Number(p.echoPrice) || 0, description: p.description || null, photoUrl: p.photoUrl || null }))
+        .sort((a, b) => a.echoPrice - b.echoPrice);
+      return res.json({ products: items });
+    }
+    const rows = await supabaseFetch<any[]>("products", `select=*&organization_id=eq.${session.organizationId}`);
+    const items = rows.filter((r) => (r.is_active ?? true) && Number(r.echo_price) > 0)
+      .map((r) => ({ id: r.id, name: r.name, category: r.category || null, echoPrice: Number(r.echo_price) || 0, description: r.description || null, photoUrl: r.photo_url || null }))
+      .sort((a, b) => a.echoPrice - b.echoPrice);
+    res.json({ products: items });
+  }));
+
+  // Кошелёк ученика: баланс + последние операции.
+  app.get("/api/mvp/shop/echo/wallet", ah(async (req, res) => {
+    const session = getSession(req);
+    const studentId = String((req.query as any).studentId || "");
+    if (!studentId) return res.status(400).json({ error: "Не указан ученик" });
+    if (!supabaseEnabled) {
+      return res.json({ balance: mockEchoBalances[studentId] ?? 0, transactions: mockEchoTx.filter((t) => t.studentId === studentId).slice(0, 50).map(echoTxOut) });
+    }
+    const st = await supabaseFetch<any[]>("students", `select=id,echo_balance&id=eq.${studentId}&organization_id=eq.${session.organizationId}&limit=1`);
+    const balance = st[0] ? Number(st[0].echo_balance) || 0 : 0;
+    const tx = await supabaseFetch<any[]>("echo_transactions", `select=*&student_id=eq.${studentId}&order=created_at.desc&limit=50`).catch(() => [] as any[]);
+    res.json({ balance, transactions: tx.map(echoTxOut) });
+  }));
+
+  // Список учеников с балансами (для начисления персоналом).
+  app.get("/api/mvp/shop/echo/students", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!echoStaff.includes(session.role)) return res.status(403).json({ error: "Недостаточно прав" });
+    if (!supabaseEnabled) {
+      const list = initialStudents
+        .filter((s: any) => session.role === "owner" || canSeeBranch(session, s.branchId))
+        .map((s: any) => ({ id: s.id, name: s.name, balance: mockEchoBalances[s.id] ?? 0 }));
+      return res.json({ students: list });
+    }
+    const rows = await supabaseFetch<any[]>("students", `select=id,first_name,last_name,full_name,echo_balance,branch_id&organization_id=eq.${session.organizationId}&status=neq.archived&order=first_name.asc`);
+    const scoped = rows.filter((r) => canSeeBranch(session, r.branch_id));
+    res.json({ students: scoped.map((r) => ({ id: r.id, name: [r.first_name, r.last_name].filter(Boolean).join(" ") || r.full_name || "Ученик", balance: Number(r.echo_balance) || 0 })) });
+  }));
+
+  // Начислить / списать ЭхоБаксы (staff). amount может быть отрицательным.
+  app.post("/api/mvp/shop/echo/grant", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!echoStaff.includes(session.role)) return res.status(403).json({ error: "Недостаточно прав" });
+    const b = req.body || {};
+    const studentId = String(b.studentId || "");
+    const amount = Math.trunc(Number(b.amount) || 0);
+    if (!studentId) return res.status(400).json({ error: "Не указан ученик" });
+    if (!amount) return res.status(400).json({ error: "Укажите количество ЭхоБаксов (со знаком минус — списание)" });
+    try {
+      const { balance, tx } = await applyEcho(session, studentId, amount, "grant", (b.reason || "").toString().trim() || null, null);
+      res.json({ balance, transaction: tx });
+    } catch (e: any) {
+      if (e?.message === "INSUFFICIENT") return res.status(400).json({ error: "Недостаточно баланса для списания" });
+      if (e?.message === "NOT_FOUND") return res.status(404).json({ error: "Ученик не найден" });
+      throw e;
+    }
+  }));
+
+  // Покупка товара за ЭхоБаксы (ученик).
+  app.post("/api/mvp/shop/echo/purchase", ah(async (req, res) => {
+    const session = getSession(req);
+    const b = req.body || {};
+    const studentId = String(b.studentId || "");
+    const productId = String(b.productId || "");
+    if (!studentId || !productId) return res.status(400).json({ error: "Не указан ученик или товар" });
+    // Цена и активность товара.
+    let prod: { name: string; echoPrice: number; active: boolean } | null = null;
+    if (!supabaseEnabled) {
+      const p = mockProducts.find((x) => x.id === productId);
+      if (p) prod = { name: p.name, echoPrice: Number(p.echoPrice) || 0, active: p.isActive !== false };
+    } else {
+      const rows = await supabaseFetch<any[]>("products", `select=name,echo_price,is_active&id=eq.${productId}&organization_id=eq.${session.organizationId}&limit=1`);
+      if (rows[0]) prod = { name: rows[0].name, echoPrice: Number(rows[0].echo_price) || 0, active: rows[0].is_active ?? true };
+    }
+    if (!prod) return res.status(404).json({ error: "Товар не найден" });
+    if (!prod.active || prod.echoPrice <= 0) return res.status(400).json({ error: "Товар недоступен для покупки за ЭхоБаксы" });
+    try {
+      const { balance, tx } = await applyEcho(session, studentId, -prod.echoPrice, "purchase", `Покупка: ${prod.name}`, productId);
+      res.json({ balance, transaction: tx, productName: prod.name });
+    } catch (e: any) {
+      if (e?.message === "INSUFFICIENT") return res.status(400).json({ error: "Недостаточно ЭхоБаксов для покупки" });
+      if (e?.message === "NOT_FOUND") return res.status(404).json({ error: "Ученик не найден" });
+      throw e;
+    }
+  }));
+
   // ===== Маркетинг: авторассылка приглашений (WhatsApp Cloud API) =====
   // Работает, если заданы WHATSAPP_TOKEN и WHATSAPP_PHONE_ID. Иначе 503 — фронт
   // переключается на ручное открытие диалогов wa.me.
@@ -3642,13 +3612,13 @@ export function registerMvpApi(app: express.Express) {
     const p = req.body || {};
     if (!String(p.name || "").trim()) return res.status(400).json({ error: "Укажите название товара" });
     if (!supabaseEnabled) {
-      const rec = { id: uid(), name: String(p.name).trim(), category: p.category || null, sku: p.sku || null, salePrice: Number(p.salePrice) || 0, costPrice: Number(p.costPrice) || 0, minStock: Number(p.minStock) || 0, comment: p.comment || null, photoUrl: p.photoUrl || null, branchId: p.branchId || session.dbBranchId || demoBranchAlmaty };
+      const rec = { id: uid(), name: String(p.name).trim(), category: p.category || null, sku: p.sku || null, salePrice: Number(p.salePrice) || 0, costPrice: Number(p.costPrice) || 0, minStock: Number(p.minStock) || 0, comment: p.comment || null, description: p.description || null, echoPrice: Number(p.echoPrice) || 0, isActive: p.isActive !== false, photoUrl: p.photoUrl || null, branchId: p.branchId || session.dbBranchId || demoBranchAlmaty };
       mockProducts.unshift(rec);
       return res.status(201).json({ product: { ...prodOut(rec), stock: 0, low: 0 <= rec.minStock } });
     }
     const inserted = await supabaseFetch<any[]>("products", "", {
       method: "POST",
-      body: JSON.stringify({ organization_id: session.organizationId, branch_id: p.branchId || session.dbBranchId || null, name: String(p.name).trim(), category: p.category || null, sku: p.sku || null, sale_price: Number(p.salePrice) || 0, cost_price: Number(p.costPrice) || 0, min_stock: Number(p.minStock) || 0, comment: p.comment || null, photo_url: p.photoUrl || null }),
+      body: JSON.stringify({ organization_id: session.organizationId, branch_id: p.branchId || session.dbBranchId || null, name: String(p.name).trim(), category: p.category || null, sku: p.sku || null, sale_price: Number(p.salePrice) || 0, cost_price: Number(p.costPrice) || 0, min_stock: Number(p.minStock) || 0, comment: p.comment || null, description: p.description || null, echo_price: Number(p.echoPrice) || 0, is_active: p.isActive !== false, photo_url: p.photoUrl || null }),
     });
     res.status(201).json({ product: { ...prodOut(inserted[0]), stock: 0, low: 0 <= (Number(p.minStock) || 0) } });
   }));
@@ -3661,10 +3631,12 @@ export function registerMvpApi(app: express.Express) {
     if (!supabaseEnabled) {
       const rec = mockProducts.find((x) => x.id === req.params.id);
       if (!rec) return res.status(404).json({ error: "Товар не найден" });
-      ["name", "category", "sku", "comment", "photoUrl"].forEach((k) => { if (p[k] !== undefined) rec[k] = p[k]; });
+      ["name", "category", "sku", "comment", "description", "photoUrl"].forEach((k) => { if (p[k] !== undefined) rec[k] = p[k]; });
       if (p.salePrice !== undefined) rec.salePrice = Number(p.salePrice) || 0;
       if (p.costPrice !== undefined) rec.costPrice = Number(p.costPrice) || 0;
       if (p.minStock !== undefined) rec.minStock = Number(p.minStock) || 0;
+      if (p.echoPrice !== undefined) rec.echoPrice = Number(p.echoPrice) || 0;
+      if (p.isActive !== undefined) rec.isActive = !!p.isActive;
       return res.json({ product: prodOut(rec) });
     }
     const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
@@ -3676,6 +3648,9 @@ export function registerMvpApi(app: express.Express) {
     if (p.costPrice !== undefined) patch.cost_price = Number(p.costPrice) || 0;
     if (p.minStock !== undefined) patch.min_stock = Number(p.minStock) || 0;
     if (p.comment !== undefined) patch.comment = p.comment || null;
+    if (p.description !== undefined) patch.description = p.description || null;
+    if (p.echoPrice !== undefined) patch.echo_price = Number(p.echoPrice) || 0;
+    if (p.isActive !== undefined) patch.is_active = !!p.isActive;
     const rows = await supabaseFetch<any[]>("products", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", body: JSON.stringify(patch) });
     res.json({ product: rows[0] ? prodOut(rows[0]) : null });
   }));
@@ -4510,6 +4485,205 @@ export function registerMvpApi(app: express.Express) {
       document = docOut(inserted[0]);
     }
     res.json({ html, filename: `${tpl.name}.doc`, document });
+  }));
+
+  // ======================================================================
+  // ПЛАНЁРКИ (совещания сети). Доступ: владелец и управляющий (руководитель
+  // филиала). CRUD + задачи планёрки. AI-итоги живут в /api/gemini/meeting-summary.
+  // В mock-режиме хранит данные в памяти процесса, в supabase-режиме — в таблицах
+  // meetings / meeting_action_items (миграция 030).
+  // ======================================================================
+  const requireMeetingRole = (req: express.Request, res: express.Response) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager") {
+      res.status(403).json({ error: "Раздел «Планёрки» доступен владельцу и управляющему" }); return null;
+    }
+    return session;
+  };
+  const mockMeetings: any[] = [];
+  const mockMeetingItems: any[] = [];
+  const meetingOut = (row: any, items: any[] = []) => ({
+    id: row.id,
+    branchId: row.branch_id ?? null,
+    title: row.title,
+    date: row.meeting_date,
+    participants: Array.isArray(row.participants) ? row.participants : (row.participants ? row.participants : []),
+    agenda: row.agenda ?? null,
+    summary: row.summary ?? null,
+    transcript: row.transcript ?? null,
+    status: row.status || "draft",
+    createdBy: row.created_by ?? null,
+    createdAt: row.created_at,
+    items: items.map(itemOut),
+    itemsCount: items.length,
+    openItems: items.filter((i) => !i.done).length,
+  });
+  const itemOut = (r: any) => ({ id: r.id, meetingId: r.meeting_id, title: r.title, assignee: r.assignee ?? null, dueDate: r.due_date ?? null, done: !!r.done, source: r.source || "manual", sort: r.sort ?? 0 });
+
+  // Список планёрок (+ поиск q по названию/итогам/участникам). Новые сверху.
+  app.get("/api/mvp/meetings", ah(async (req, res) => {
+    const session = requireMeetingRole(req, res); if (!session) return;
+    const q = String((req.query as any).q || "").trim().toLowerCase();
+    let meetings: any[]; let items: any[];
+    if (!supabaseEnabled) {
+      meetings = mockMeetings.filter((m) => m.organization_id === session.organizationId);
+      items = mockMeetingItems.filter((i) => i.organization_id === session.organizationId);
+    } else {
+      meetings = await supabaseFetch<any[]>("meetings", `select=*&organization_id=eq.${session.organizationId}&order=meeting_date.desc,created_at.desc`);
+      items = await supabaseFetch<any[]>("meeting_action_items", `select=*&organization_id=eq.${session.organizationId}`).catch(() => [] as any[]);
+    }
+    if (session.role === "branch_manager" && session.dbBranchId) {
+      meetings = meetings.filter((m) => !m.branch_id || m.branch_id === session.dbBranchId);
+    }
+    const itemsByMeeting = new Map<string, any[]>();
+    for (const it of items) { const a = itemsByMeeting.get(it.meeting_id) || []; a.push(it); itemsByMeeting.set(it.meeting_id, a); }
+    let out = meetings.map((m) => meetingOut(m, (itemsByMeeting.get(m.id) || []).sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0))));
+    if (q) {
+      out = out.filter((m) =>
+        (m.title || "").toLowerCase().includes(q) ||
+        (m.summary || "").toLowerCase().includes(q) ||
+        (m.agenda || "").toLowerCase().includes(q) ||
+        (Array.isArray(m.participants) ? m.participants.join(" ") : "").toLowerCase().includes(q) ||
+        m.items.some((i: any) => (i.title || "").toLowerCase().includes(q) || (i.assignee || "").toLowerCase().includes(q))
+      );
+    }
+    const summary = {
+      total: out.length,
+      openTasks: out.reduce((s, m) => s + m.openItems, 0),
+      thisMonth: out.filter((m) => (m.date || "").slice(0, 7) === new Date().toISOString().slice(0, 7)).length,
+    };
+    res.json({ meetings: out, summary });
+  }));
+
+  // Одна планёрка с задачами.
+  app.get("/api/mvp/meetings/:id", ah(async (req, res) => {
+    const session = requireMeetingRole(req, res); if (!session) return;
+    let row: any; let items: any[];
+    if (!supabaseEnabled) {
+      row = mockMeetings.find((m) => m.id === req.params.id && m.organization_id === session.organizationId);
+      items = mockMeetingItems.filter((i) => i.meeting_id === req.params.id);
+    } else {
+      const rows = await supabaseFetch<any[]>("meetings", `select=*&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}&limit=1`);
+      row = rows[0];
+      items = row ? await supabaseFetch<any[]>("meeting_action_items", `select=*&meeting_id=eq.${req.params.id}&order=sort.asc`).catch(() => [] as any[]) : [];
+    }
+    if (!row) return res.status(404).json({ error: "Планёрка не найдена" });
+    res.json({ meeting: meetingOut(row, items.sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0))) });
+  }));
+
+  // Создать планёрку.
+  app.post("/api/mvp/meetings", ah(async (req, res) => {
+    const session = requireMeetingRole(req, res); if (!session) return;
+    const b = req.body || {};
+    if (!String(b.title || "").trim()) return res.status(400).json({ error: "Укажите название планёрки" });
+    const participants = Array.isArray(b.participants) ? b.participants.filter((p: any) => String(p || "").trim()) : [];
+    const rec = {
+      organization_id: session.organizationId,
+      branch_id: session.role === "branch_manager" ? (session.dbBranchId || null) : (b.branchId || null),
+      title: String(b.title).trim(),
+      meeting_date: b.date || new Date().toISOString().slice(0, 10),
+      participants,
+      agenda: (b.agenda || "").trim() || null,
+      summary: (b.summary || "").trim() || null,
+      transcript: (b.transcript || "").trim() || null,
+      status: ["draft", "held", "archived"].includes(b.status) ? b.status : "draft",
+      created_by: session.fullName || null,
+    };
+    if (!supabaseEnabled) {
+      const row = { id: uid(), created_at: new Date().toISOString(), ...rec };
+      mockMeetings.unshift(row);
+      return res.status(201).json({ meeting: meetingOut(row, []) });
+    }
+    const inserted = await supabaseFetch<any[]>("meetings", "", { method: "POST", body: JSON.stringify(rec) });
+    res.status(201).json({ meeting: meetingOut(inserted[0], []) });
+  }));
+
+  // Изменить планёрку.
+  app.patch("/api/mvp/meetings/:id", ah(async (req, res) => {
+    const session = requireMeetingRole(req, res); if (!session) return;
+    const b = req.body || {};
+    const patch: Record<string, any> = {};
+    if (b.title !== undefined) patch.title = String(b.title).trim();
+    if (b.date !== undefined) patch.meeting_date = b.date;
+    if (b.participants !== undefined) patch.participants = Array.isArray(b.participants) ? b.participants.filter((p: any) => String(p || "").trim()) : [];
+    if (b.agenda !== undefined) patch.agenda = (b.agenda || "").trim() || null;
+    if (b.summary !== undefined) patch.summary = (b.summary || "").trim() || null;
+    if (b.transcript !== undefined) patch.transcript = (b.transcript || "").trim() || null;
+    if (b.status !== undefined) { if (!["draft", "held", "archived"].includes(b.status)) return res.status(400).json({ error: "Неизвестный статус" }); patch.status = b.status; }
+    patch.updated_at = new Date().toISOString();
+    if (!supabaseEnabled) {
+      const row = mockMeetings.find((m) => m.id === req.params.id && m.organization_id === session.organizationId);
+      if (!row) return res.status(404).json({ error: "Планёрка не найдена" });
+      Object.assign(row, patch);
+      const items = mockMeetingItems.filter((i) => i.meeting_id === row.id);
+      return res.json({ meeting: meetingOut(row, items) });
+    }
+    const rows = await supabaseFetch<any[]>("meetings", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", body: JSON.stringify(patch) });
+    if (!rows[0]) return res.status(404).json({ error: "Планёрка не найдена" });
+    const items = await supabaseFetch<any[]>("meeting_action_items", `select=*&meeting_id=eq.${req.params.id}&order=sort.asc`).catch(() => [] as any[]);
+    res.json({ meeting: meetingOut(rows[0], items) });
+  }));
+
+  // Удалить планёрку (задачи уйдут каскадом).
+  app.delete("/api/mvp/meetings/:id", ah(async (req, res) => {
+    const session = requireMeetingRole(req, res); if (!session) return;
+    if (!supabaseEnabled) {
+      const i = mockMeetings.findIndex((m) => m.id === req.params.id && m.organization_id === session.organizationId);
+      if (i >= 0) mockMeetings.splice(i, 1);
+      for (let k = mockMeetingItems.length - 1; k >= 0; k--) if (mockMeetingItems[k].meeting_id === req.params.id) mockMeetingItems.splice(k, 1);
+      return res.json({ ok: true });
+    }
+    await supabaseFetch("meetings", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+    res.json({ ok: true });
+  }));
+
+  // Заменить набор задач планёрки (используется после AI-разбора и ручного редактирования).
+  app.put("/api/mvp/meetings/:id/items", ah(async (req, res) => {
+    const session = requireMeetingRole(req, res); if (!session) return;
+    const list = Array.isArray(req.body?.items) ? req.body.items : [];
+    const rows = list.map((it: any, idx: number) => ({
+      title: String(it.title || "").trim(),
+      assignee: (it.assignee || "").toString().trim() || null,
+      due_date: (it.dueDate || it.due_date || "") || null,
+      done: !!it.done,
+      source: it.source === "ai" ? "ai" : "manual",
+      sort: idx,
+    })).filter((r: any) => r.title);
+    // Проверка, что планёрка существует и в области видимости.
+    if (!supabaseEnabled) {
+      const m = mockMeetings.find((x) => x.id === req.params.id && x.organization_id === session.organizationId);
+      if (!m) return res.status(404).json({ error: "Планёрка не найдена" });
+      for (let k = mockMeetingItems.length - 1; k >= 0; k--) if (mockMeetingItems[k].meeting_id === req.params.id) mockMeetingItems.splice(k, 1);
+      const created = rows.map((r: any) => ({ id: uid(), meeting_id: req.params.id, organization_id: session.organizationId, created_at: new Date().toISOString(), ...r }));
+      mockMeetingItems.push(...created);
+      return res.json({ items: created.map(itemOut) });
+    }
+    const exists = await supabaseFetch<any[]>("meetings", `select=id&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}&limit=1`);
+    if (!exists[0]) return res.status(404).json({ error: "Планёрка не найдена" });
+    await supabaseFetch("meeting_action_items", `meeting_id=eq.${req.params.id}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+    if (rows.length === 0) return res.json({ items: [] });
+    const payload = rows.map((r: any) => ({ meeting_id: req.params.id, organization_id: session.organizationId, ...r }));
+    const inserted = await supabaseFetch<any[]>("meeting_action_items", "", { method: "POST", body: JSON.stringify(payload) });
+    res.json({ items: inserted.map(itemOut) });
+  }));
+
+  // Переключить/изменить одну задачу планёрки (обычно отметка «выполнено»).
+  app.patch("/api/mvp/meetings/:id/items/:itemId", ah(async (req, res) => {
+    const session = requireMeetingRole(req, res); if (!session) return;
+    const b = req.body || {};
+    const patch: Record<string, any> = {};
+    if (b.title !== undefined) patch.title = String(b.title).trim();
+    if (b.assignee !== undefined) patch.assignee = (b.assignee || "").trim() || null;
+    if (b.dueDate !== undefined) patch.due_date = b.dueDate || null;
+    if (b.done !== undefined) patch.done = !!b.done;
+    if (!supabaseEnabled) {
+      const it = mockMeetingItems.find((i) => i.id === req.params.itemId && i.meeting_id === req.params.id);
+      if (!it) return res.status(404).json({ error: "Задача не найдена" });
+      Object.assign(it, patch);
+      return res.json({ item: itemOut(it) });
+    }
+    const rows = await supabaseFetch<any[]>("meeting_action_items", `id=eq.${req.params.itemId}&meeting_id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", body: JSON.stringify(patch) });
+    res.json({ item: rows[0] ? itemOut(rows[0]) : null });
   }));
 
   // ======================================================================

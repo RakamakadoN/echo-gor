@@ -244,35 +244,29 @@ export function AdminEduErpWorkspace({
     <div className="min-h-full bg-[#080808] text-slate-200">
       <ToastHost />
       <div className="mx-auto flex max-w-[1560px] gap-0 lg:gap-5">
-        <aside className={`sticky top-0 hidden h-[calc(100vh-64px)] w-76 shrink-0 border-r border-white/5 bg-[#0F0F0F] p-4 ${navCollapsed ? "lg:hidden" : "lg:block"}`}>
-          <section className="rounded-[2rem] border border-[#C5A059]/25 bg-gradient-to-br from-[#2B2315] to-[#111] p-4">
+        <aside className={`sticky top-0 hidden h-[calc(100vh-64px)] w-64 shrink-0 flex-col border-r border-white/5 bg-[#0F0F0F] ${navCollapsed ? "lg:hidden" : "lg:flex"}`}>
+          <div className="border-b border-white/5 px-5 py-5">
             <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#C5A059] text-black">
-                <ShieldCheck className="h-6 w-6" />
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#C5A059] text-black">
+                <ShieldCheck className="h-5 w-5" />
               </div>
               <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">EduERP parity</p>
-                <h2 className="text-lg font-black text-white">Операционный центр</h2>
+                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">Администратор</p>
+                <h2 className="text-lg font-black leading-tight text-white" style={{ fontFamily: "'Oswald', sans-serif" }}>ЭХО ГОР</h2>
               </div>
             </div>
-            <p className="mt-3 text-xs leading-relaxed text-slate-400">
-              Перенос функционала: посетители, журнал, расписание, финансы, отчеты, рассылки, задачи и справочники.
-            </p>
-          </section>
+          </div>
 
-          <nav className="mt-5 space-y-1">
+          <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
             {tabs.map((tab) => (
               <NavButton key={tab.id} tab={tab} active={activeTab === tab.id} onClick={() => setActiveTab(tab.id)} />
             ))}
           </nav>
 
-          <section className="mt-5 rounded-3xl border border-emerald-500/20 bg-emerald-500/10 p-4">
-            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-emerald-400">Администратор</p>
-            <p className="mt-2 text-sm font-bold text-white">Операции без доступа к лицензии</p>
-            <p className="mt-1 text-xs leading-relaxed text-slate-400">
-              Может вести учеников, журнал, счета и рассылки. Глобальные права сети остаются у владельца.
-            </p>
-          </section>
+          <div className="border-t border-white/5 px-5 py-4">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#C5A059]" style={{ fontFamily: "'Oswald', sans-serif" }}>Культура · Сила · Характер</div>
+            <div className="mt-1.5 text-xs leading-relaxed text-slate-400">Казахстан · обучаем от 5 лет</div>
+          </div>
         </aside>
 
         <main className="min-w-0 flex-1 px-4 pb-24 pt-4 md:px-6 md:pt-6 lg:pb-8">

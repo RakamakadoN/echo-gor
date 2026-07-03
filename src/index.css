@@ -23,23 +23,40 @@
 }
 
 :root.day-theme body {
-  background: #f4f7fb;
+  background: #E8ECF1;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
 }
 
 :root.day-theme .day-theme-app {
-  background: #f4f7fb !important;
-  color: #1f2937 !important;
+  background: #E8ECF1 !important;
+  color: #222B33 !important;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+/* Reference typography — Oswald for section headings, tightened tracking. */
+:root.day-theme .day-theme-app h1,
+:root.day-theme .day-theme-app h2,
+:root.day-theme .day-theme-app h3 {
+  font-family: 'Oswald', 'Inter', system-ui, sans-serif;
+  letter-spacing: -0.01em;
+  color: #11171D !important;
 }
 
 /* Tier 1 — page chrome and the deepest container backgrounds become the
-   light page surface. */
+   light page surface (reference --bg #E8ECF1). */
 :root.day-theme .day-theme-app header,
-:root.day-theme .day-theme-app aside,
 :root.day-theme .day-theme-app main,
 :root.day-theme .day-theme-app footer,
 :root.day-theme .day-theme-app [class*="bg-[#080808]"],
 :root.day-theme .day-theme-app [class*="bg-[#0A0A0A]"] {
-  background-color: #f4f7fb !important;
+  background-color: #E8ECF1 !important;
+}
+
+/* Sidebar / aside surfaces become clean white panels with a right border,
+   matching the reference .side (white, 1px #DCE2E8 divider). */
+:root.day-theme .day-theme-app aside {
+  background-color: #FFFFFF !important;
+  border-color: #DCE2E8 !important;
 }
 
 /* Tier 2 — every solid dark CARD/panel surface becomes a clean white card
@@ -60,17 +77,18 @@
 :root.day-theme .day-theme-app [class*="bg-[#11121a]" i],
 :root.day-theme .day-theme-app [class*="bg-[#12141c]" i],
 :root.day-theme .day-theme-app [class*="bg-[#140f10]" i] {
-  background-color: #ffffff !important;
-  border-color: rgba(15, 23, 42, 0.08) !important;
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06) !important;
+  background-color: #FFFFFF !important;
+  border-color: #DCE2E8 !important;
+  box-shadow: 0 4px 16px rgba(17, 23, 29, 0.06) !important;
 }
 
 /* Tier 3 — subtle translucent overlays (bg-black/NN, bg-white/NN) become a
-   light tint so nested boxes still read as gentle insets on white cards. */
+   light inset tint (reference --inset #F1F4F7) so nested boxes read as gentle
+   insets on white cards. */
 :root.day-theme .day-theme-app [class*="bg-black"],
 :root.day-theme .day-theme-app [class*="bg-white/"],
 :root.day-theme .day-theme-app [class*="bg-white\\["] {
-  background-color: #eef2f7 !important;
+  background-color: #F1F4F7 !important;
 }
 
 /* Exception — full-screen modal backdrops (fixed inset-0 bg-black/NN) must stay
@@ -90,23 +108,102 @@
 
 :root.day-theme .day-theme-app [class*="border-white/"],
 :root.day-theme .day-theme-app [class*="border-[#"] {
-  border-color: rgba(15, 23, 42, 0.1) !important;
+  border-color: #DCE2E8 !important;
 }
 
 :root.day-theme .day-theme-app [class*="text-white"] {
-  color: #111827 !important;
+  color: #11171D !important;
 }
 
 :root.day-theme .day-theme-app [class*="text-slate-100"],
 :root.day-theme .day-theme-app [class*="text-slate-200"],
 :root.day-theme .day-theme-app [class*="text-slate-300"] {
-  color: #334155 !important;
+  color: #46505B !important;
 }
 
 :root.day-theme .day-theme-app [class*="text-slate-400"],
 :root.day-theme .day-theme-app [class*="text-slate-500"],
 :root.day-theme .day-theme-app [class*="text-slate-600"] {
-  color: #64748b !important;
+  color: #6B7682 !important;
+}
+
+/* ---- Reference gold accent (#947C51 muted gold) ----
+   The app's dark theme uses a brighter gold (#C5A059) for the active nav item,
+   primary buttons and accent text. In the light reference the accent is a more
+   muted, ink-friendly gold. Remap so active nav / primary buttons read like the
+   prototype's .nav a.active (gold-soft fill, gold-ink text) and gold CTAs. */
+:root.day-theme .day-theme-app [class*="bg-[#C5A059]"] {
+  background-color: #947C51 !important;
+  color: #FFFFFF !important;
+}
+:root.day-theme .day-theme-app [class*="text-[#C5A059]"] {
+  color: #7E6840 !important;
+}
+:root.day-theme .day-theme-app [class*="border-[#C5A059]"] {
+  border-color: rgba(148, 124, 81, 0.35) !important;
+}
+/* Soft gold surfaces — ANY opacity variant (bg-[#C5A059]/5, /10, /20, /30…)
+   becomes a warm gold tint like the reference .nav a.active. Must come after
+   the solid rule above so opacity variants win over the solid fill. */
+:root.day-theme .day-theme-app [class*="bg-[#C5A059]/"] {
+  background-color: rgba(148, 124, 81, 0.12) !important;
+  color: #7E6840 !important;
+}
+
+/* ---- Tables — reference table look (inset thead, hairline rows) ---- */
+:root.day-theme .day-theme-app table thead th {
+  background-color: #F1F4F7 !important;
+  color: #6B7682 !important;
+  border-bottom-color: #DCE2E8 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+:root.day-theme .day-theme-app table td {
+  border-color: #EEF1F4 !important;
+}
+:root.day-theme .day-theme-app table tbody tr:hover {
+  background-color: #FAFBFC !important;
+}
+
+/* ---- Emerald "full access" style cards keep a soft green tint ---- */
+:root.day-theme .day-theme-app [class*="bg-emerald-500/1"] {
+  background-color: rgba(79, 138, 99, 0.12) !important;
+}
+
+/* ---- Display type: large headings & KPI numbers use Oswald, like the
+   reference (h1 38px / h2 26px / .kpi .v 28px, all condensed & bold). Only
+   applied to display sizes so small bold UI labels stay in Inter. ---- */
+:root.day-theme .day-theme-app [class*="text-2xl"],
+:root.day-theme .day-theme-app [class*="text-3xl"],
+:root.day-theme .day-theme-app [class*="text-4xl"],
+:root.day-theme .day-theme-app [class*="text-5xl"],
+:root.day-theme .day-theme-app [class*="text-6xl"] {
+  font-family: 'Oswald', 'Inter', system-ui, sans-serif;
+  letter-spacing: -0.01em;
+}
+
+/* ---- Buttons — primary gold CTA & neutral controls (reference .btn) ---- */
+:root.day-theme .day-theme-app button {
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+/* ---- Pills / badges keep the reference pill geometry (rounded-full already
+   used across the app; ensure comfortable weight & tracking) ---- */
+:root.day-theme .day-theme-app [class*="rounded-full"][class*="uppercase"] {
+  letter-spacing: 0.04em;
+}
+
+/* ---- Light scrollbars (reference --scrollbar #CCD4DD) ---- */
+:root.day-theme .day-theme-app *::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+:root.day-theme .day-theme-app *::-webkit-scrollbar-track {
+  background: transparent;
+}
+:root.day-theme .day-theme-app *::-webkit-scrollbar-thumb {
+  background: #CCD4DD !important;
+  border-radius: 6px;
 }
 
 :root.day-theme .day-theme-app [class*="shadow-2xl"],
@@ -117,14 +214,20 @@
 :root.day-theme .day-theme-app input,
 :root.day-theme .day-theme-app textarea,
 :root.day-theme .day-theme-app select {
-  background: rgba(255, 255, 255, 0.9) !important;
-  color: #111827 !important;
-  border-color: rgba(15, 23, 42, 0.12) !important;
+  background: #F1F4F7 !important;
+  color: #222B33 !important;
+  border-color: #DCE2E8 !important;
+}
+
+:root.day-theme .day-theme-app input:focus,
+:root.day-theme .day-theme-app textarea:focus,
+:root.day-theme .day-theme-app select:focus {
+  border-color: #947C51 !important;
 }
 
 :root.day-theme .day-theme-app input::placeholder,
 :root.day-theme .day-theme-app textarea::placeholder {
-  color: #94a3b8 !important;
+  color: #A2ADB8 !important;
 }
 
 :root.day-theme .day-theme-app .login-auth-screen input,
