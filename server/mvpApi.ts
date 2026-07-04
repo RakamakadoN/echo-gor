@@ -3460,7 +3460,7 @@ export function registerMvpApi(app: express.Express) {
       return { id: s.id, name: s.name, age: s.age ?? ageFromBirthday(s.birthday), branchId: s.branchId ?? null,
         levelManual: rec?.level ?? null, token: rec?.token ?? null, code: rec?.code ?? null, enabled: !!rec?.enabled };
     }
-    const rows = await supabaseFetch<any[]>("students", `select=id,first_name,last_name,full_name,birthday,branch_id,access_level,access_token,access_code,access_enabled&id=eq.${studentId}&organization_id=eq.${session.organizationId}&limit=1`);
+    const rows = await supabaseFetch<any[]>("students", `select=id,first_name,last_name,birthday,branch_id,access_level,access_token,access_code,access_enabled&id=eq.${studentId}&organization_id=eq.${session.organizationId}&limit=1`);
     const r = rows[0];
     if (!r) return null;
     return { id: r.id, name: [r.first_name, r.last_name].filter(Boolean).join(" ") || r.full_name || "Ученик",
@@ -3575,7 +3575,7 @@ export function registerMvpApi(app: express.Express) {
     const filter = token
       ? `access_token=eq.${token}`
       : `access_code=eq.${code}`;
-    const rows = await supabaseFetch<any[]>("students", `select=id,first_name,last_name,full_name,birthday,branch_id,access_level,access_token,access_enabled&${filter}&access_enabled=is.true&limit=1`);
+    const rows = await supabaseFetch<any[]>("students", `select=id,first_name,last_name,birthday,branch_id,access_level,access_token,access_enabled&${filter}&access_enabled=is.true&limit=1`);
     const r = rows[0];
     if (!r) return badCred();
     const name = [r.first_name, r.last_name].filter(Boolean).join(" ") || r.full_name || "Ученик";
@@ -3667,7 +3667,7 @@ export function registerMvpApi(app: express.Express) {
         .map((s: any) => ({ id: s.id, name: s.name, balance: mockEchoBalances[s.id] ?? 0 }));
       return res.json({ students: list });
     }
-    const rows = await supabaseFetch<any[]>("students", `select=id,first_name,last_name,full_name,echo_balance,branch_id&organization_id=eq.${session.organizationId}&status=neq.archived&order=first_name.asc`);
+    const rows = await supabaseFetch<any[]>("students", `select=id,first_name,last_name,echo_balance,branch_id&organization_id=eq.${session.organizationId}&status=neq.archived&order=first_name.asc`);
     const scoped = rows.filter((r) => canSeeBranch(session, r.branch_id));
     res.json({ students: scoped.map((r) => ({ id: r.id, name: [r.first_name, r.last_name].filter(Boolean).join(" ") || r.full_name || "Ученик", balance: Number(r.echo_balance) || 0 })) });
   }));
