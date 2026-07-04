@@ -766,7 +766,9 @@ export function registerMvpApi(app: express.Express) {
       });
       res.json({ ok: true, written: rows.length, periodMonth });
     } catch (error: any) {
-      res.status(503).json({ error: error.message });
+      // Снапшот — фоновая запись истории (форвард-коллектор). Не роняем клиента
+      // 5xx, если что-то ещё не засеяно/не готово — просто помечаем как пропуск.
+      res.json({ ok: false, skipped: true, error: error?.message });
     }
   });
 
