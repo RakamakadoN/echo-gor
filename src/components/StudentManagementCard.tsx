@@ -223,7 +223,8 @@ export default function StudentManagementCard({
   // ——— Вход ученика по ссылке/QR (владелец/руководитель/админ) ———
   const [accessBusy, setAccessBusy] = useState(false);
   const [accessErr, setAccessErr] = useState<string | null>(null);
-  const [accessStatus, setAccessStatus] = useState<null | { enabled: boolean; level: "junior" | "senior"; levelManual: "junior" | "senior" | null; autoLevel: "junior" | "senior"; token: string | null }>(null);
+  const [accessStatus, setAccessStatus] = useState<null | { enabled: boolean; level: "junior" | "senior"; levelManual: "junior" | "senior" | null; autoLevel: "junior" | "senior"; token: string | null; code: string | null }>(null);
+  const [accessCodeCopied, setAccessCodeCopied] = useState(false);
   const [accessLevelPick, setAccessLevelPick] = useState<"auto" | "junior" | "senior">("auto");
   const [accessQr, setAccessQr] = useState<string>("");
   const [accessCopied, setAccessCopied] = useState(false);
@@ -297,6 +298,10 @@ export default function StudentManagementCard({
   const copyAccessUrl = async () => {
     if (!accessUrl) return;
     try { await navigator.clipboard.writeText(accessUrl); setAccessCopied(true); setTimeout(() => setAccessCopied(false), 1800); } catch { /* clipboard недоступен */ }
+  };
+  const copyAccessCode = async () => {
+    if (!accessStatus?.code) return;
+    try { await navigator.clipboard.writeText(accessStatus.code); setAccessCodeCopied(true); setTimeout(() => setAccessCodeCopied(false), 1800); } catch { /* clipboard недоступен */ }
   };
 
   const submitTrial = async () => {
@@ -799,6 +804,19 @@ export default function StudentManagementCard({
                     <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
                       Уровень: {accessStatus.level === "junior" ? "Маленькая" : "Взрослая"}
                     </p>
+                    {accessStatus.code && (
+                      <div className="mt-1 rounded-xl border border-[#C5A059]/40 bg-white p-2.5">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Код для входа</p>
+                        <div className="mt-1 flex items-center gap-2">
+                          <span className="select-all font-mono text-2xl font-black tracking-[0.25em] text-slate-800">{accessStatus.code}</span>
+                          <button onClick={copyAccessCode} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-600 transition hover:bg-slate-50">
+                            {accessCodeCopied ? <><Check className="h-3.5 w-3.5 text-emerald-500" /> Скоп.</> : <><Copy className="h-3.5 w-3.5 text-slate-400" /> Код</>}
+                          </button>
+                        </div>
+                        <p className="mt-1 text-[11px] text-slate-500">Ученик вводит его на экране входа → «Я ученик».</p>
+                      </div>
+                    )}
+                    <p className="mt-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">Ссылка / QR (один тап)</p>
                     <p className="mt-1 break-all rounded-lg bg-slate-50 px-2 py-1.5 text-xs text-slate-600">{accessUrl}</p>
                     <div className="mt-2 flex flex-wrap gap-2">
                       <button onClick={copyAccessUrl} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50">

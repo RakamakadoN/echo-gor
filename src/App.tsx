@@ -37,6 +37,8 @@ import {
   Search,
   Calendar,
   Flame,
+  X,
+  KeyRound,
   UserCheck,
   Award,
   BookOpen,
@@ -289,9 +291,13 @@ export default function App() {
   const [annSubTab, setAnnSubTab] = useState<"feed" | "dispatch">("feed");
   const [pieBranchFilter, setPieBranchFilter] = useState<string>("all");
   const [isPlayingPromo, setIsPlayingPromo] = useState<boolean>(true);
-  // Вход ученика по ссылке/QR (?student=<token>). Уровень задаёт набор вкладок кабинета.
+  // Вход ученика по ссылке/QR (?student=<token>) или короткому коду. Уровень задаёт набор вкладок кабинета.
   const [studentAccessLevel, setStudentAccessLevel] = useState<"junior" | "senior" | null>(null);
   const [studentAccessToken, setStudentAccessToken] = useState<string>("");
+  const [showStudentLogin, setShowStudentLogin] = useState<boolean>(false);
+  const [studentCodeInput, setStudentCodeInput] = useState<string>("");
+  const [studentLoginBusy, setStudentLoginBusy] = useState<boolean>(false);
+  const [studentLoginError, setStudentLoginError] = useState<string | null>(null);
   const [mvpDataMode, setMvpDataMode] = useState<"mock" | "supabase">("mock");
   const [mvpDataError, setMvpDataError] = useState<string | null>(null);
 
@@ -456,6 +462,41 @@ export default function App() {
     loadMvpBootstrap(activeRole);
   }, [activeRole]);
 
+  // Применить успешный вход ученика (общий путь для ссылки/QR и кода).
+  const applyStudentAuth = (data: any, fallbackToken?: string) => {
+    setStudentAccessToken(data?.token || fallbackToken || "");
+    setStudentAccessLevel(data?.level === "junior" ? "junior" : "senior");
+    if (data?.studentId) setSelectedStudentId(data.studentId);
+    setActiveRole("student");
+    setShowStudentLogin(false);
+    setStudentCodeInput("");
+    setStudentLoginError(null);
+    setIsPlayingPromo(false);
+  };
+
+  // Вход по короткому коду с экрана «Я ученик».
+  const submitStudentCode = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const code = studentCodeInput.trim();
+    if (!code) { setStudentLoginError("Введите код"); return; }
+    setStudentLoginBusy(true);
+    setStudentLoginError(null);
+    try {
+      const resp = await fetch("/api/mvp/student-auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) { setStudentLoginError(data?.error || "Код недействителен"); return; }
+      applyStudentAuth(data);
+    } catch {
+      setStudentLoginError("Нет связи с сервером. Попробуйте ещё раз.");
+    } finally {
+      setStudentLoginBusy(false);
+    }
+  };
+
   // Вход ученика по ссылке/QR: ?student=<token>. Обмениваем токен на профиль,
   // включаем кабинет ученика с нужным уровнем прав и убираем токен из адреса.
   useEffect(() => {
@@ -471,11 +512,7 @@ export default function App() {
         });
         if (!resp.ok) return; // недействительная/отозванная ссылка — оставляем обычный вход
         const data = await resp.json();
-        setStudentAccessToken(token);
-        setStudentAccessLevel(data.level === "junior" ? "junior" : "senior");
-        if (data.studentId) setSelectedStudentId(data.studentId);
-        setActiveRole("student");
-        setIsPlayingPromo(false);
+        applyStudentAuth(data, token);
         window.history.replaceState({}, "", window.location.pathname);
       } catch {
         /* сеть недоступна — показываем обычный экран входа */
@@ -2412,6 +2449,65 @@ export default function App() {
             <Smartphone className="w-3.5 h-3.5 text-[#C5A059]" />
             <span>Запустить мобильный кабинет</span>
           </button>
+
+          {/* Вход ученика: видимая кнопка «Я ученик» поверх экрана входа. */}
+          <button
+            type="button"
+            onClick={() => { setShowStudentLogin(true); setStudentLoginError(null); setStudentCodeInput(""); }}
+            className="absolute bottom-6 left-1/2 z-20 inline-flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/30 bg-black/45 px-6 py-3 text-sm font-black text-white shadow-xl backdrop-blur-md transition hover:bg-black/65 active:scale-95"
+          >
+            <Flame className="h-4 w-4 text-[#C5A059]" /> Я ученик — вход по коду
+          </button>
+
+          {/* Оверлей ввода короткого кода. */}
+          {showStudentLogin && (
+            <div
+              className="absolute inset-0 z-30 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-fade-in"
+              onClick={() => setShowStudentLogin(false)}
+            >
+              <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                <div className="mb-1 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <KeyRound className="h-5 w-5 text-[#C5A059]" />
+                    <h2 className="text-lg font-black text-slate-800">Вход ученика</h2>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label="Закрыть"
+                    onClick={() => setShowStudentLogin(false)}
+                    className="rounded-full p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+                <p className="mb-4 text-sm text-slate-500">Введите код, который выдал педагог или администратор.</p>
+                <form onSubmit={submitStudentCode}>
+                  <input
+                    autoFocus
+                    value={studentCodeInput}
+                    onChange={(e) => { setStudentCodeInput(e.target.value.toUpperCase()); setStudentLoginError(null); }}
+                    placeholder="ABC234"
+                    maxLength={12}
+                    autoCapitalize="characters"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-center font-mono text-2xl font-black tracking-[0.3em] text-slate-800 outline-none transition placeholder:text-slate-300 focus:border-[#C5A059] focus:ring-2 focus:ring-[#C5A059]/30"
+                  />
+                  {studentLoginError && (
+                    <p className="mt-2 text-sm font-semibold text-rose-500">{studentLoginError}</p>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={studentLoginBusy}
+                    className="mt-4 w-full rounded-2xl bg-[#C5A059] px-4 py-3 text-base font-black text-white transition hover:bg-[#b3914c] disabled:opacity-50"
+                  >
+                    {studentLoginBusy ? "Входим…" : "Войти"}
+                  </button>
+                </form>
+                <p className="mt-3 text-center text-xs text-slate-400">Нет кода? Попроси его у педагога или администратора.</p>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

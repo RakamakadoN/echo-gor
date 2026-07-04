@@ -74,6 +74,19 @@ function newAccessToken() {
   const rnd = () => (globalThis.crypto?.randomUUID?.() || `${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`);
   return `st_${rnd()}${rnd()}`.replace(/-/g, "");
 }
+// Короткий код входа ученика (для ручного ввода): 6 знаков без похожих
+// символов (без 0/O/1/I/L). Нормализация ввода — normalizeAccessCode.
+const ACCESS_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+function newAccessCode() {
+  let s = "";
+  for (let i = 0; i < 6; i++) s += ACCESS_CODE_ALPHABET[Math.floor(Math.random() * ACCESS_CODE_ALPHABET.length)];
+  return s;
+}
+function normalizeAccessCode(raw: string) {
+  // Алфавит кода не содержит O/0/I/1/L, поэтому просто приводим к верхнему
+  // регистру и убираем всё, кроме букв/цифр (пробелы, дефисы и т.п.).
+  return String(raw || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12);
+}
 
 // Organization UUID — MUST match the organizations row seeded in db/seed_mvp_demo.sql.
 const orgId = "00000000-0000-0000-0000-000000000001";
@@ -3421,8 +3434,8 @@ export function registerMvpApi(app: express.Express) {
   // Ученик входит по секретному токену; уровень (junior «маленькая» /
   // senior «взрослая») задаёт набор доступных вкладок кабинета.
   // ======================================================================
-  // mock-хранилище состояния доступа: studentId -> { token, level(ручной|null), enabled, by, at }
-  const mockStudentAccess: Record<string, { token: string; level: "junior" | "senior" | null; enabled: boolean; by: string | null; at: string }> = {};
+  // mock-хранилище состояния доступа: studentId -> { token, code, level(ручной|null), enabled, by, at }
+  const mockStudentAccess: Record<string, { token: string; code: string; level: "junior" | "senior" | null; enabled: boolean; by: string | null; at: string }> = {};
 
   const ageFromBirthday = (b?: string | null): number | null => {
     if (!b) return null;
@@ -3438,28 +3451,28 @@ export function registerMvpApi(app: express.Express) {
   // Единый вид ученика для роутов доступа (mock + supabase).
   const loadStudentAccess = async (session: MvpSession, studentId: string): Promise<null | {
     id: string; name: string; age: number | null; branchId: string | null;
-    levelManual: "junior" | "senior" | null; token: string | null; enabled: boolean;
+    levelManual: "junior" | "senior" | null; token: string | null; code: string | null; enabled: boolean;
   }> => {
     if (!supabaseEnabled) {
       const s: any = initialStudents.find((x: any) => x.id === studentId);
       if (!s) return null;
       const rec = mockStudentAccess[studentId];
       return { id: s.id, name: s.name, age: s.age ?? ageFromBirthday(s.birthday), branchId: s.branchId ?? null,
-        levelManual: rec?.level ?? null, token: rec?.token ?? null, enabled: !!rec?.enabled };
+        levelManual: rec?.level ?? null, token: rec?.token ?? null, code: rec?.code ?? null, enabled: !!rec?.enabled };
     }
-    const rows = await supabaseFetch<any[]>("students", `select=id,first_name,last_name,full_name,birthday,branch_id,access_level,access_token,access_enabled&id=eq.${studentId}&organization_id=eq.${session.organizationId}&limit=1`);
+    const rows = await supabaseFetch<any[]>("students", `select=id,first_name,last_name,full_name,birthday,branch_id,access_level,access_token,access_code,access_enabled&id=eq.${studentId}&organization_id=eq.${session.organizationId}&limit=1`);
     const r = rows[0];
     if (!r) return null;
     return { id: r.id, name: [r.first_name, r.last_name].filter(Boolean).join(" ") || r.full_name || "Ученик",
       age: ageFromBirthday(r.birthday), branchId: r.branch_id ?? null,
       levelManual: (r.access_level === "junior" || r.access_level === "senior") ? r.access_level : null,
-      token: r.access_token ?? null, enabled: !!r.access_enabled };
+      token: r.access_token ?? null, code: r.access_code ?? null, enabled: !!r.access_enabled };
   };
 
-  const accessStatusOut = (st: { levelManual: "junior" | "senior" | null; age: number | null; token: string | null; enabled: boolean }) => {
+  const accessStatusOut = (st: { levelManual: "junior" | "senior" | null; age: number | null; token: string | null; code: string | null; enabled: boolean }) => {
     const level = effectiveAccessLevel(st.levelManual, st.age);
     return { enabled: st.enabled, level, levelManual: st.levelManual, autoLevel: effectiveAccessLevel(null, st.age),
-      token: st.enabled ? st.token : null, tabs: tabsForLevel(level) };
+      token: st.enabled ? st.token : null, code: st.enabled ? st.code : null, tabs: tabsForLevel(level) };
   };
 
   // Текущее состояние доступа ученика.
@@ -3483,21 +3496,35 @@ export function registerMvpApi(app: express.Express) {
     const rawLevel = String((req.body || {}).level || "auto");
     const manual: "junior" | "senior" | null = rawLevel === "junior" || rawLevel === "senior" ? rawLevel : null;
     const token = st.token || newAccessToken();
+    // Короткий код — не повторяем существующий, если у ученика он уже есть.
+    const uniqueAccessCode = async (): Promise<string> => {
+      for (let i = 0; i < 6; i++) {
+        const c = newAccessCode();
+        if (!supabaseEnabled) {
+          if (!Object.values(mockStudentAccess).some((v) => v.code === c)) return c;
+        } else {
+          const ex = await supabaseFetch<any[]>("students", `select=id&access_code=eq.${c}&limit=1`).catch(() => [] as any[]);
+          if (!ex[0]) return c;
+        }
+      }
+      return newAccessCode();
+    };
+    const code = st.code || (await uniqueAccessCode());
     const level = effectiveAccessLevel(manual, st.age);
     const nowIso = new Date().toISOString();
 
     if (supabaseEnabled) {
       await supabaseFetch("students", `id=eq.${st.id}&organization_id=eq.${session.organizationId}`, {
         method: "PATCH", headers: { Prefer: "return=minimal" },
-        body: JSON.stringify({ access_token: token, access_level: manual, access_enabled: true, access_granted_by: session.fullName || null, access_granted_at: nowIso }),
+        body: JSON.stringify({ access_token: token, access_code: code, access_level: manual, access_enabled: true, access_granted_by: session.fullName || null, access_granted_at: nowIso }),
       });
     } else {
-      mockStudentAccess[st.id] = { token, level: manual, enabled: true, by: session.fullName || null, at: nowIso };
+      mockStudentAccess[st.id] = { token, code, level: manual, enabled: true, by: session.fullName || null, at: nowIso };
     }
     // наполнить резолвер сессий (для обоих режимов)
     studentAccessTokens.set(token, { studentId: st.id, level, branchId: st.branchId });
 
-    res.json({ ...accessStatusOut({ levelManual: manual, age: st.age, token, enabled: true }), grantedBy: session.fullName || null, grantedAt: nowIso });
+    res.json({ ...accessStatusOut({ levelManual: manual, age: st.age, token, code, enabled: true }), grantedBy: session.fullName || null, grantedAt: nowIso });
   }));
 
   // Отозвать доступ.
@@ -3510,39 +3537,52 @@ export function registerMvpApi(app: express.Express) {
     if (st.token) studentAccessTokens.delete(st.token);
     if (supabaseEnabled) {
       await supabaseFetch("students", `id=eq.${st.id}&organization_id=eq.${session.organizationId}`, {
-        method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ access_enabled: false, access_token: null }),
+        method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ access_enabled: false, access_token: null, access_code: null }),
       });
     } else if (mockStudentAccess[st.id]) {
       mockStudentAccess[st.id].enabled = false;
       mockStudentAccess[st.id].token = "";
+      mockStudentAccess[st.id].code = "";
     }
     res.json({ ok: true });
   }));
 
-  // Вход ученика: обмен токена (из ссылки/QR) на профиль + уровень + вкладки.
+  // Вход ученика: обмен токена (из ссылки/QR) ИЛИ короткого кода (ручной ввод)
+  // на профиль + уровень + вкладки. Возвращает и токен — для скоупа последующих
+  // запросов (x-student-token).
   app.post("/api/mvp/student-auth", ah(async (req, res) => {
-    const token = String((req.body || {}).token || "").trim();
-    if (!token) return res.status(400).json({ error: "Не указан код доступа" });
+    const body = req.body || {};
+    const token = String(body.token || "").trim();
+    const code = normalizeAccessCode(body.code || "");
+    if (!token && !code) return res.status(400).json({ error: "Введите код или откройте ссылку" });
+    const badCred = () => res.status(401).json({ error: "Код недействителен или доступ отозван" });
 
     if (!supabaseEnabled) {
-      const entry = Object.entries(mockStudentAccess).find(([, v]) => v.enabled && v.token === token);
-      const cached = studentAccessTokens.get(token);
+      const entry = Object.entries(mockStudentAccess).find(([, v]) =>
+        v.enabled && ((token && v.token === token) || (code && v.code === code)));
+      const cached = !entry && token ? studentAccessTokens.get(token) : undefined;
       const studentId = entry?.[0] || cached?.studentId;
-      if (!studentId) return res.status(401).json({ error: "Ссылка недействительна или доступ отозван" });
+      if (!studentId) return badCred();
       const s: any = initialStudents.find((x: any) => x.id === studentId);
       if (!s) return res.status(404).json({ error: "Ученик не найден" });
-      const level = effectiveAccessLevel(entry?.[1].level ?? null, s.age ?? ageFromBirthday(s.birthday));
-      studentAccessTokens.set(token, { studentId, level, branchId: s.branchId ?? null });
-      return res.json({ studentId, name: s.name, level, tabs: tabsForLevel(level) });
+      const rec = mockStudentAccess[studentId];
+      const level = effectiveAccessLevel(rec?.level ?? null, s.age ?? ageFromBirthday(s.birthday));
+      const outToken = rec?.token || token || "";
+      if (outToken) studentAccessTokens.set(outToken, { studentId, level, branchId: s.branchId ?? null });
+      return res.json({ studentId, name: s.name, level, token: outToken || null, tabs: tabsForLevel(level) });
     }
 
-    const rows = await supabaseFetch<any[]>("students", `select=id,first_name,last_name,full_name,birthday,branch_id,access_level,access_enabled&access_token=eq.${token}&access_enabled=is.true&limit=1`);
+    const filter = token
+      ? `access_token=eq.${token}`
+      : `access_code=eq.${code}`;
+    const rows = await supabaseFetch<any[]>("students", `select=id,first_name,last_name,full_name,birthday,branch_id,access_level,access_token,access_enabled&${filter}&access_enabled=is.true&limit=1`);
     const r = rows[0];
-    if (!r) return res.status(401).json({ error: "Ссылка недействительна или доступ отозван" });
+    if (!r) return badCred();
     const name = [r.first_name, r.last_name].filter(Boolean).join(" ") || r.full_name || "Ученик";
     const level = effectiveAccessLevel(r.access_level, ageFromBirthday(r.birthday));
-    studentAccessTokens.set(token, { studentId: r.id, level, branchId: r.branch_id ?? null });
-    res.json({ studentId: r.id, name, level, tabs: tabsForLevel(level) });
+    const outToken = r.access_token || token || "";
+    if (outToken) studentAccessTokens.set(outToken, { studentId: r.id, level, branchId: r.branch_id ?? null });
+    res.json({ studentId: r.id, name, level, token: outToken || null, tabs: tabsForLevel(level) });
   }));
 
   // ======================================================================
