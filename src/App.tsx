@@ -23,7 +23,6 @@ import mobileLoginBg from "./assets/images/login_mobile_bg.png";
 // @ts-ignore
 import studentArtistCard from "./assets/images/student_artist_card.png";
 // @ts-ignore
-import loginTransitionVideo from "./assets/videos/login_transition.mp4";
 import {
   Shield,
   Building2,
@@ -118,8 +117,6 @@ import {
 import { getAvailableAchievements, getExecutiveSummary } from "./dataMock";
 
 export default function App() {
-  const loginVideoRef = useRef<HTMLVideoElement | null>(null);
-
   // Roles list
   const roles = [
     { id: "owner", name: "Владелец сети", icon: Shield, badge: "Network Owner" },
@@ -2270,28 +2267,8 @@ export default function App() {
     }
   };
 
-  const primeLoginVideoAudio = () => {
-    const video = loginVideoRef.current;
-    if (!video) return;
-
-    video.muted = false;
-    video.volume = 1;
-    video.play().catch(() => {
-      setLoginVideoNeedsTap(true);
-    });
-  };
-
-  const finishLoginVideo = () => {
-    if (loginVideoTarget === "desktop") {
-      setIsPlayingPromo(false);
-    } else if (loginVideoTarget === "mobile") {
-      setMobileAuthStep("main");
-    }
-
-    setIsLoginVideoPlaying(false);
-    setLoginVideoNeedsTap(false);
-    setLoginVideoTarget(null);
-  };
+  // Видео при входе удалено — звук больше не воспроизводится.
+  const primeLoginVideoAudio = () => {};
 
   const handleDesktopLogin = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -2312,6 +2289,16 @@ export default function App() {
     
     setActiveRole(targetedRole);
     addAuditLog("Авторизация CRM (Десктоп)", `Вход ученика/директора: ${desktopEmail || "Владелец (По умолчанию)"}. Права: ${targetedRole}`);
+    startLoginVideo("desktop");
+  };
+
+  // Быстрый вход выбором роли-плитки на экране входа
+  const handleRoleLogin = (roleId: string) => {
+    const roleName = roles.find((r) => r.id === roleId)?.name || roleId;
+    setActiveRole(roleId);
+    setActiveHotspot(null);
+    setDesktopLoginError(null);
+    addAuditLog("Авторизация CRM (Выбор роли)", `Вход по роли: ${roleName}`);
     startLoginVideo("desktop");
   };
 
@@ -2447,6 +2434,31 @@ export default function App() {
             <span>Запустить мобильный кабинет</span>
           </button>
 
+          {/* Быстрый выбор роли: плитки поверх экрана входа. */}
+          <div className="absolute bottom-24 left-1/2 z-20 w-full max-w-3xl -translate-x-1/2 px-4">
+            <p className="mb-3 text-center text-[11px] font-black uppercase tracking-[0.35em] text-white/70 drop-shadow-[0_1px_6px_rgba(0,0,0,0.8)]">
+              Выберите роль для входа
+            </p>
+            <div className="flex flex-wrap items-stretch justify-center gap-2.5">
+              {roles.map((r) => {
+                const RoleIcon = r.icon;
+                return (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => handleRoleLogin(r.id)}
+                    className="group flex min-w-[120px] flex-1 basis-[120px] flex-col items-center gap-1.5 rounded-2xl border border-white/25 bg-black/45 px-4 py-3 text-center shadow-xl backdrop-blur-md transition hover:border-[#C5A059]/70 hover:bg-black/65 active:scale-95"
+                  >
+                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#C5A059]/20 text-[#C5A059] transition group-hover:bg-[#C5A059]/30">
+                      <RoleIcon className="h-5 w-5" />
+                    </span>
+                    <span className="text-sm font-black leading-tight text-white">{r.id === "teacher" ? "Педагог" : r.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Вход ученика: видимая кнопка «Я ученик» поверх экрана входа. */}
           <button
             type="button"
@@ -2508,38 +2520,7 @@ export default function App() {
         </div>
       )}
 
-      <div className={`fixed inset-0 z-[10000] bg-black overflow-hidden transition-opacity duration-300 ${isLoginVideoPlaying ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}>
-          <video
-            ref={loginVideoRef}
-            src={loginTransitionVideo}
-            className="h-full w-full object-cover"
-            playsInline
-            preload="auto"
-            onClick={(e) => {
-              e.currentTarget.muted = false;
-              e.currentTarget.volume = 1;
-              e.currentTarget.play().catch(() => {});
-            }}
-            onEnded={finishLoginVideo}
-            onError={finishLoginVideo}
-          />
-          <button
-            type="button"
-            onClick={finishLoginVideo}
-            className="absolute right-5 top-5 rounded-full border border-white/20 bg-black/35 px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-white/80 backdrop-blur-sm transition hover:bg-white/10 hover:text-white"
-          >
-            Пропустить
-          </button>
-          {loginVideoNeedsTap && (
-            <button
-              type="button"
-              onClick={primeLoginVideoAudio}
-              className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/25 bg-black/55 px-6 py-3 text-xs font-bold uppercase tracking-widest text-white backdrop-blur-md transition hover:bg-white/15"
-            >
-              Включить звук
-            </button>
-          )}
-      </div>
+      {/* Видео-переход при входе полностью удалён. */}
 
       {/* Old assembled login screen kept disabled while the supplied mockup drives the visible UI. */}
       {false && isPlayingPromo && (
