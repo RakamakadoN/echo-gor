@@ -16,6 +16,7 @@
  * сообщения вместо падения — как остальные AI-кнопки приложения.
  */
 import { useEffect, useRef, useState } from "react";
+import AiBriefingPanel from "./AiBriefingPanel";
 import {
   Send,
   Loader2,
@@ -646,6 +647,8 @@ export function AiHubView({ roleHeader = "owner" }: Props) {
           )}
         </div>
       )}
+
+      {mode === "agents" && <AiBriefingPanel roleHeader={roleHeader} />}
 
       {mode === "agents" && (
       <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">

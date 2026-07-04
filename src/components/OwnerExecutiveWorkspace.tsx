@@ -668,6 +668,16 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
   const subsTotal = m.revenue.total || 0;
   const perfTotal = streamRev.perf?.revenue?.total || 0;
   const prodTotal = streamRev.prod?.revenue?.total || 0;
+  // Ряды для мини-графиков карточек выручки (последние 6 месяцев).
+  const subsSeries = ((m.charts?.revenueByMonth || []) as any[]).slice(-6).map((x) => Number(x.cur) || 0);
+  const perfSeries = ((streamRev.perf?.byMonth || []) as any[]).slice(-6).map((x) => Number(x.amount) || 0);
+  const prodSeries = ((streamRev.prod?.byMonth || []) as any[]).slice(-6).map((x) => Number(x.amount) || 0);
+  const totalSeries = (() => {
+    const len = Math.max(subsSeries.length, perfSeries.length, prodSeries.length);
+    const at = (a: number[], i: number) => a[a.length - len + i] ?? 0;
+    return Array.from({ length: len }, (_, i) => at(subsSeries, i) + at(perfSeries, i) + at(prodSeries, i));
+  })();
+  const STREAM_COLORS = { subs: "#16A34A", perf: "#7C3AED", prod: "#2563EB", total: "#C5A059" };
   const openTotalRevenue = () => openInfo("Общая выручка за период", [
     ["Абонементы", money(subsTotal)],
     ["Выступления", money(perfTotal)],
@@ -776,44 +786,67 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
 
       {/* 1.5 ЕЖЕДНЕВНЫЙ ОТЧЁТ РУКОВОДИТЕЛЯ */}
       <CollapsibleSection id="daily" icon={ClipboardList} title="Ежедневный отчёт руководителя" hint="Здоровье студии за 30 секунд"
-        open={sectionOpen("daily")} onToggle={() => toggleSection("daily")}>
+        locked open={sectionOpen("daily")} onToggle={() => toggleSection("daily")}>
         <DailyManagerReport report={m.dailyReport} scopeLabel={m.scope.label} periodLabel={m.ranges.cur.label}
           onOpenList={openList} onGo={go} onRevenue={openRevenue} />
       </CollapsibleSection>
 
       {/* 1.7 ВЫРУЧКА ПО НАПРАВЛЕНИЯМ */}
-      <CollapsibleSection id="streams" icon={Coins} title="Выручка по направлениям" hint="Абонементы · выступления · товары · общая"
-        open={sectionOpen("streams")} onToggle={() => toggleSection("streams")}>
+      <CollapsibleSection id="streams" icon={Coins} title="Основные показатели" hint="Абонементы · выступления · товары · общая выручка"
+        locked open={sectionOpen("streams")} onToggle={() => toggleSection("streams")}>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <BigKpi label="Выручка от абонементов" value={money(subsTotal)} onClick={openRevenue}
-            rows={[
-              { k: "К пред. периоду", v: <DeltaBadge pct={m.revenue.momPct} /> },
-              { k: "Год к году", v: <DeltaBadge pct={m.revenue.yoyPct} /> },
-            ]} />
-          <BigKpi label="Выручка от выступлений" value={money(perfTotal)} onClick={() => go("performances")}
-            rows={[
-              { k: "К пред. периоду", v: <DeltaBadge pct={streamRev.perf?.revenue?.momPct ?? null} /> },
-              { k: "Год к году", v: <DeltaBadge pct={streamRev.perf?.revenue?.yoyPct ?? null} /> },
-              { k: "Раздел", v: <span className="text-[#C5A059]">Выступления ›</span> },
-            ]} />
-          <BigKpi label="Выручка от товаров" value={money(prodTotal)} onClick={() => go("products")}
-            rows={[
-              { k: "К пред. периоду", v: <DeltaBadge pct={streamRev.prod?.revenue?.momPct ?? null} /> },
-              { k: "Год к году", v: <DeltaBadge pct={streamRev.prod?.revenue?.yoyPct ?? null} /> },
-              { k: "Раздел", v: <span className="text-[#C5A059]">Товары и склад ›</span> },
-            ]} />
-          <BigKpi label="Общая выручка" value={money(subsTotal + perfTotal + prodTotal)} tone="emerald" onClick={openTotalRevenue}
-            rows={[
-              { k: "Абонементы", v: <span className="text-slate-200">{money(subsTotal)}</span> },
-              { k: "Выступления", v: <span className="text-slate-200">{money(perfTotal)}</span> },
-              { k: "Товары", v: <span className="text-slate-200">{money(prodTotal)}</span> },
-            ]} />
+          <StreamCard label="Выручка от абонементов" value={money(subsTotal)} color={STREAM_COLORS.subs}
+            momPct={m.revenue.momPct} yoyPct={m.revenue.yoyPct} series={subsSeries} onClick={openRevenue} />
+          <StreamCard label="Выручка от выступлений" value={money(perfTotal)} color={STREAM_COLORS.perf}
+            momPct={streamRev.perf?.revenue?.momPct ?? null} yoyPct={streamRev.perf?.revenue?.yoyPct ?? null}
+            series={perfSeries} onClick={() => go("performances")} />
+          <StreamCard label="Выручка от товаров" value={money(prodTotal)} color={STREAM_COLORS.prod}
+            momPct={streamRev.prod?.revenue?.momPct ?? null} yoyPct={streamRev.prod?.revenue?.yoyPct ?? null}
+            series={prodSeries} onClick={() => go("products")} />
+          <StreamCard label="Общая выручка" value={money(subsTotal + perfTotal + prodTotal)} color={STREAM_COLORS.total}
+            momPct={null} yoyPct={null} series={totalSeries} onClick={openTotalRevenue}
+            footer={<>
+              <div className="flex items-center justify-between"><span className="text-[11px] text-slate-500">Абонементы</span><span className="text-xs font-bold text-slate-300">{money(subsTotal)}</span></div>
+              <div className="flex items-center justify-between"><span className="text-[11px] text-slate-500">Выступления</span><span className="text-xs font-bold text-slate-300">{money(perfTotal)}</span></div>
+              <div className="flex items-center justify-between"><span className="text-[11px] text-slate-500">Товары</span><span className="text-xs font-bold text-slate-300">{money(prodTotal)}</span></div>
+            </>} />
+        </div>
+      </CollapsibleSection>
+
+      {/* 3. ГЛАВНЫЕ РИСКИ */}
+      <CollapsibleSection id="risks" icon={AlertTriangle} title="Главные риски" hint="Что требует решения прямо сейчас"
+        locked open={sectionOpen("risks")} onToggle={() => toggleSection("risks")}>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <RiskTile severity="high"
+            title={`Абонементы истекают через 3 дня — ${dr.expiring3d.count}`} detail="Срочно связаться ›"
+            onClick={() => openList({ ids: dr.expiring3d.ids, label: "Абонементы истекают через 3 дня" })} />
+          <RiskTile severity="mid"
+            title={`Абонементы истекают через 7 дней — ${dr.expiring7d.count}`} detail="Запланировать продление ›"
+            onClick={() => openList({ ids: dr.expiring7d.ids, label: "Абонементы истекают через 7 дней" })} />
+          <RiskTile severity="info"
+            title={`Абонементы истекают через 14 дней — ${dr.expiring14d.count}`} detail="Взять на контроль ›"
+            onClick={() => openList({ ids: dr.expiring14d.ids, label: "Абонементы истекают через 14 дней" })} />
+          <RiskTile severity="info"
+            title={`Должники — ${m.debtors.total}`} detail={m.debtors.debtAmount > 0 ? `Сумма: ${money(m.debtors.debtAmount)} ›` : "Сверка оплат ›"}
+            onClick={openDebtors} />
+          <RiskTile severity={dr.unpaidCurrentMonth.count > 0 ? "high" : "low"}
+            title={`Не оплатили текущий месяц — ${dr.unpaidCurrentMonth.count}`} detail="Нет оплаты ›"
+            onClick={() => openList({ ids: dr.unpaidCurrentMonth.ids, label: "Не оплатили текущий месяц" })} />
+          <RiskTile severity={dr.unpaidPrevMonth.count > 0 ? "mid" : "low"}
+            title={`Не оплатили прошлый месяц — ${dr.unpaidPrevMonth.count}`} detail="Задолженность ›"
+            onClick={() => openList({ ids: dr.unpaidPrevMonth.ids, label: "Не оплатили прошлый месяц" })} />
+          <RiskTile severity={m.riskTables.overloadGroups.length > 0 ? "high" : "low"}
+            title={`Перегруженные группы — ${m.riskTables.overloadGroups.length}`} detail="Близко к пределу ›"
+            onClick={openOverload} />
+          <RiskTile severity={dr.retentionDropBranches.count > 0 ? "mid" : "low"}
+            title={`Филиалы с падением удержания — ${dr.retentionDropBranches.count}`} detail="Удержание ниже нормы ›"
+            onClick={() => openList({ ids: dr.retentionDropBranches.studentIds, label: "Филиалы с падением удержания" })} />
         </div>
       </CollapsibleSection>
 
       {/* Выступления + AI-инсайты по продажам и складу */}
       <CollapsibleSection id="opsbiz" icon={Mic2} title="Выступления и склад" hint="Банкеты, продажи, остатки + AI-выводы"
-        open={sectionOpen("opsbiz")} onToggle={() => toggleSection("opsbiz")}>
+        locked open={sectionOpen("opsbiz")} onToggle={() => toggleSection("opsbiz")}>
         <div className="grid gap-3 lg:grid-cols-3">
           <BigKpi label="Выступления в этом месяце" value={perfSummary.monthCount} onClick={() => go("performances")}
             rows={[
@@ -849,8 +882,8 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
       </CollapsibleSection>
 
       {/* 2. ОСНОВНЫЕ ПОКАЗАТЕЛИ */}
-      <CollapsibleSection id="kpi" icon={BarChart3} title="Основные показатели"
-        open={sectionOpen("kpi")} onToggle={() => toggleSection("kpi")}>
+      <CollapsibleSection id="kpi" icon={BarChart3} title="Метрики сети" hint="Заполняемость · удержание · чек · база"
+        locked open={sectionOpen("kpi")} onToggle={() => toggleSection("kpi")}>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <BigKpi label="Выручка" value={money(m.revenue.total)} onClick={openRevenue}
           rows={[
@@ -921,37 +954,9 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
       </div>
       </CollapsibleSection>
 
-      {/* 3. РИСКИ */}
-      <CollapsibleSection id="risks" icon={AlertTriangle} title="Риски" hint="Что требует решения прямо сейчас"
-        open={sectionOpen("risks")} onToggle={() => toggleSection("risks")}>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          <RiskTile severity={dr.unpaidCurrentMonth.count > 0 ? "mid" : "low"}
-            title={`Не оплатили текущий месяц — ${dr.unpaidCurrentMonth.count}`} detail="Открыть список учеников ›"
-            onClick={() => openList({ ids: dr.unpaidCurrentMonth.ids, label: "Не оплатили текущий месяц" })} />
-          <RiskTile severity={dr.unpaidPrevMonth.count > 0 ? "high" : "low"}
-            title={`Не оплатили прошлый месяц — ${dr.unpaidPrevMonth.count}`} detail="Открыть список учеников ›"
-            onClick={() => openList({ ids: dr.unpaidPrevMonth.ids, label: "Не оплатили прошлый месяц" })} />
-          <RiskTile severity={m.riskTables.groupRetention.length > 0 ? "mid" : "low"}
-            title={`Группы с падением удержания — ${m.riskTables.groupRetention.length}`} detail="Группа · педагог · мес→мес ›"
-            onClick={openGroupRetention} />
-          <RiskTile severity={m.riskTables.lowFillGroups.length > 0 ? "mid" : "low"}
-            title={`Низкая заполняемость групп — ${m.riskTables.lowFillGroups.length}`} detail="Группа · педагог · заполняемость ›"
-            onClick={openLowFill} />
-          <RiskTile severity={m.riskTables.teacherLowRetention.length > 0 ? "mid" : "low"}
-            title={`Низкое удержание у педагогов — ${m.riskTables.teacherLowRetention.length}`} detail="Педагог · удержание ›"
-            onClick={openTeacherRetention} />
-          <RiskTile severity={m.riskTables.overloadGroups.length > 0 ? "high" : "low"}
-            title={`Перегруз групп — ${m.riskTables.overloadGroups.length}`} detail="Группа · заполняемость ›"
-            onClick={openOverload} />
-          <RiskTile severity={(streamRev.prod?.lowStock?.length || 0) > 0 ? "high" : "low"}
-            title={`Пора докупить товар — ${streamRev.prod?.lowStock?.length ?? 0}`} detail="Товары ниже минимума ›"
-            onClick={() => go("products")} />
-        </div>
-      </CollapsibleSection>
-
       {/* 4. ВОРОНКА ПРОДАЖ */}
       <CollapsibleSection id="funnel" icon={Filter} title="Воронка продаж"
-        open={sectionOpen("funnel")} onToggle={() => toggleSection("funnel")}>
+        locked open={sectionOpen("funnel")} onToggle={() => toggleSection("funnel")}>
       <div className="grid gap-4 xl:grid-cols-3">
         <FunnelDayCard title="Сегодня" data={m.funnel.today} />
         <FunnelDayCard title="Вчера" data={m.funnel.yesterday} />
@@ -970,7 +975,7 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
 
       {/* 5. ГРАФИКИ */}
       <CollapsibleSection id="charts" icon={LineChart} title="Графики"
-        open={sectionOpen("charts")} onToggle={() => toggleSection("charts")}>
+        locked open={sectionOpen("charts")} onToggle={() => toggleSection("charts")}>
       <div className="grid gap-4 xl:grid-cols-2">
         <ChartCard title="Выручка по месяцам" subtitle="текущий и прошлый год">
           <ResponsiveContainer width="100%" height="100%">
@@ -1024,7 +1029,7 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
 
       {/* 6. AI EXECUTIVE BRIEF */}
       <CollapsibleSection id="brief" icon={Sparkles} title="AI Executive Brief"
-        open={sectionOpen("brief")} onToggle={() => toggleSection("brief")}>
+        locked open={sectionOpen("brief")} onToggle={() => toggleSection("brief")}>
       <section className="rounded-[2rem] border border-[#C5A059]/20 bg-[#C5A059]/10 p-5">
         <div className="flex items-start gap-3">
           <div className="rounded-2xl bg-[#C5A059] p-3 text-black"><Sparkles className="h-5 w-5" /></div>
@@ -1040,7 +1045,7 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
 
       {/* 7 + 8. ТРЕБУЮТ ВНИМАНИЯ + ТОЧКИ РОСТА */}
       <CollapsibleSection id="growth" icon={TrendingUp} title="Точки роста и внимание"
-        open={sectionOpen("growth")} onToggle={() => toggleSection("growth")}>
+        locked open={sectionOpen("growth")} onToggle={() => toggleSection("growth")}>
       <div className="grid gap-4 xl:grid-cols-2">
         <ListPanel icon={AlertTriangle} tone="rose" title="Требуют внимания" items={m.attention} />
         <ListPanel icon={TrendingUp} tone="emerald" title="Точки роста" items={m.growth} />
@@ -1049,7 +1054,7 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
 
       {/* 10. РЕЙТИНГИ */}
       <CollapsibleSection id="ratings" icon={Trophy} title="Рейтинги" hint="Топ-5"
-        open={sectionOpen("ratings")} onToggle={() => toggleSection("ratings")}>
+        locked open={sectionOpen("ratings")} onToggle={() => toggleSection("ratings")}>
       <div className="grid gap-4 xl:grid-cols-3">
         <RatingTabs title="Филиалы" onClick={() => go("branches")} tabs={[
           { label: "Выручка", rows: m.ratings.branches.byRevenue.map((b) => ({ name: b.name, main: money(b.revenue), sub: `удерж. ${b.retention ?? "—"}% · чек ${b.avgCheck ? money(b.avgCheck) : "—"}`, delta: b.growthPct, onClick: () => openBranchDetail(b.id, b.name) })) },
@@ -1073,7 +1078,7 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
 
       {/* 11. AI-АНАЛИЗ МЕСЯЦА */}
       <CollapsibleSection id="aimonth" icon={FileText} title="AI-анализ месяца"
-        open={sectionOpen("aimonth")} onToggle={() => toggleSection("aimonth")}>
+        locked open={sectionOpen("aimonth")} onToggle={() => toggleSection("aimonth")}>
       <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
         <div className="flex items-center justify-between gap-3">
           <SectionTitle icon={FileText} title="AI-анализ месяца" hint="Финансы · продажи · удержание · заполняемость · проблемы · рекомендации" inline />
@@ -1152,9 +1157,22 @@ function SectionTitle({ icon: Icon, title, hint, inline }: { icon: React.Element
 }
 
 // Сворачиваемый блок дашборда: заголовок-переключатель + контент (▼ Развернуть / ▲ Свернуть).
-function CollapsibleSection({ id, icon: Icon, title, hint, open, onToggle, children }: {
-  id: string; icon: React.ElementType; title: string; hint?: string; open: boolean; onToggle: () => void; children: React.ReactNode;
+function CollapsibleSection({ id, icon: Icon, title, hint, open, onToggle, children, locked = false }: {
+  id: string; icon: React.ElementType; title: string; hint?: string; open: boolean; onToggle: () => void; children: React.ReactNode; locked?: boolean;
 }) {
+  // locked — нескладной режим: статичная шапка-заголовок без стрелки, контент всегда развёрнут (как на макете дашборда).
+  if (locked) {
+    return (
+      <section className="space-y-3" data-section={id}>
+        <div className="mt-1 flex w-full items-center gap-2">
+          <Icon className="h-4 w-4 text-[#C5A059]" />
+          <h2 className="text-sm font-black uppercase tracking-wider text-slate-200">{title}</h2>
+          {hint && <span className="hidden text-xs text-slate-500 sm:inline">· {hint}</span>}
+        </div>
+        <div className="space-y-3">{children}</div>
+      </section>
+    );
+  }
   return (
     <section className="space-y-3" data-section={id}>
       <button onClick={onToggle} className="group mt-1 flex w-full items-center gap-2 text-left">
@@ -1255,9 +1273,45 @@ function BigKpi({ label, value, rows, tone = "gold", onClick }: { label: string;
   );
 }
 
-function RiskTile({ severity, title, detail, onClick }: { key?: React.Key; severity: "high" | "mid" | "low"; title: string; detail: string; onClick?: () => void }) {
-  const styles = severity === "high" ? "border-rose-500/30 bg-rose-500/10" : severity === "mid" ? "border-amber-400/30 bg-amber-400/10" : "border-white/10 bg-white/[0.03]";
-  const dot = severity === "high" ? "bg-rose-500" : severity === "mid" ? "bg-amber-400" : "bg-slate-500";
+// Мини-график (спарклайн) из вертикальных баров — как на макете дашборда.
+function Sparkbars({ series, color }: { series: number[]; color: string }) {
+  const data = series && series.length ? series : [0];
+  const max = Math.max(1, ...data);
+  return (
+    <div className="mt-3 flex h-9 items-end gap-[3px]">
+      {data.map((v, i) => (
+        <div key={i} className="flex-1 rounded-t-[3px]"
+          style={{ height: `${Math.max(6, Math.round((v / max) * 100))}%`, backgroundColor: color, opacity: 0.35 + 0.65 * (v / max) }} />
+      ))}
+    </div>
+  );
+}
+
+// Карточка направления выручки с цветной цифрой, двумя дельтами и мини-графиком.
+// Повторяет блок «Основные показатели» из макета (абонементы/выступления/товары/общая).
+function StreamCard({ label, value, momPct, yoyPct, series, color, onClick, footer }: {
+  label: string; value: React.ReactNode; momPct: number | null; yoyPct: number | null;
+  series: number[]; color: string; onClick?: () => void; footer?: React.ReactNode;
+}) {
+  return (
+    <section onClick={onClick} className={`rounded-[1.75rem] border border-white/10 bg-[#141414] p-4 transition hover:border-[#C5A059]/40 ${onClick ? "cursor-pointer" : ""}`}>
+      <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{label}</p>
+      <p className="mt-1.5 text-2xl font-black" style={{ color }}>{value}</p>
+      {(momPct !== null || yoyPct !== null) && (
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+          {momPct !== null && <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">к пред. периоду <DeltaBadge pct={momPct} /></span>}
+          {yoyPct !== null && <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">к прошлому году <DeltaBadge pct={yoyPct} /></span>}
+        </div>
+      )}
+      {footer && <div className="mt-2 space-y-1 border-t border-white/5 pt-2">{footer}</div>}
+      <Sparkbars series={series} color={color} />
+    </section>
+  );
+}
+
+function RiskTile({ severity, title, detail, onClick }: { key?: React.Key; severity: "high" | "mid" | "info" | "low"; title: string; detail: string; onClick?: () => void }) {
+  const styles = severity === "high" ? "border-rose-500/30 bg-rose-500/10" : severity === "mid" ? "border-amber-400/30 bg-amber-400/10" : severity === "info" ? "border-sky-500/30 bg-sky-500/10" : "border-white/10 bg-white/[0.03]";
+  const dot = severity === "high" ? "bg-rose-500" : severity === "mid" ? "bg-amber-400" : severity === "info" ? "bg-sky-500" : "bg-slate-500";
   return (
     <button onClick={onClick} className={`flex items-start gap-3 rounded-2xl border p-4 text-left transition hover:brightness-125 ${styles}`}>
       <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${dot}`} />
@@ -1283,11 +1337,11 @@ function DailyManagerReport({ report, scopeLabel, periodLabel, onOpenList, onGo,
   };
   const stats: { label: string; value: React.ReactNode; tone: string; hint?: string; onClick: () => void }[] = [
     { label: "Выручка сегодня", value: money(report.revenueToday), tone: "gold", hint: `${report.paymentsToday} ${report.paymentsToday === 1 ? "оплата" : "оплат"}`, onClick: onRevenue },
-    { label: "Записи на пробный", value: `${report.trialSignups.today} / ${report.trialSignups.yesterday}`, tone: "gold", hint: "сегодня / вчера", onClick: () => onOpenList({ ids: [...report.trialSignups.todayIds, ...report.trialSignups.yesterdayIds], label: "Записи на пробный (сегодня и вчера)" }) },
-    { label: "Продлили на след. период", value: report.renewedNextPeriod.count, tone: "emerald", hint: "уже купили след. месяц", onClick: () => onOpenList({ ids: report.renewedNextPeriod.ids, label: "Продлили на следующий период" }) },
     { label: "Активные абонементы", value: report.activeSubs, tone: "white", onClick: () => onOpenList({ segment: "active", label: "Активные ученики" }) },
     { label: "Должники", value: report.debtors.count, tone: report.debtors.count > 0 ? "rose" : "emerald", onClick: () => onOpenList({ ids: report.debtors.ids, label: "Должники" }) },
     { label: "Новые ученики", value: report.newStudents.count, tone: "gold", onClick: () => onOpenList({ ids: report.newStudents.ids, label: `Новые ученики · ${periodLabel}` }) },
+    { label: "Записи на будущее", value: report.futureEnrollments.count, tone: "white", onClick: () => onOpenList({ ids: report.futureEnrollments.ids, label: "Записи на будущее" }) },
+    { label: "Истекают через 3 дня", value: report.expiring3d.count, tone: report.expiring3d.count > 0 ? "amber" : "emerald", onClick: () => onOpenList({ ids: report.expiring3d.ids, label: "Истекают через 3 дня" }) },
   ];
 
   return (
@@ -3199,6 +3253,10 @@ function BookkeepingView({ branches }: any) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [addType, setAddType] = useState<"income" | "expense">("expense");
+  const [fPeriod, setFPeriod] = useState("Июнь 2026");
+  const [fBranch, setFBranch] = useState("");
+  const [fAccount, setFAccount] = useState("");
   const [busy, setBusy] = useState(false);
 
   const load = async () => {
@@ -3279,28 +3337,52 @@ function BookkeepingView({ branches }: any) {
 
   return (
     <OwnerScreen title="Бухгалтерия" subtitle="Управленческий учёт сети: счета и кассы, движение денег (ДДС), прибыли и убытки (ОПиУ), платёжный календарь и реестр операций.">
+      {/* Тулбар как в прототипе: слева фильтры (период/филиал/счёт), справа кнопки */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-2">
-          {tabs.map((t) => {
-            const Icon = t.icon;
-            const active = tab === t.id;
-            return (
-              <button key={t.id} onClick={() => setTab(t.id)}
-                className={`inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-bold transition ${active ? "border-[#C5A059]/50 bg-[#C5A059]/15 text-[#C5A059]" : "border-white/10 bg-[#161616] text-slate-400 hover:text-white"}`}>
-                <Icon className="h-4 w-4" /> {t.label}
-                {t.badge ? <span className="ml-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-rose-500 px-1.5 text-[10px] font-black text-white">{t.badge}</span> : null}
-              </button>
-            );
-          })}
+        <div className="flex flex-wrap items-center gap-2">
+          <select value={fPeriod} onChange={(e) => setFPeriod(e.target.value)}
+            className="rounded-xl border border-[#C5A059]/30 bg-[#161616] px-3 py-2 text-xs font-bold text-slate-100 outline-none">
+            {["Июнь 2026", "Май 2026", "Апрель 2026", "2 квартал 2026"].map((p) => <option key={p} value={p}>{p}</option>)}
+          </select>
+          <select value={fBranch} onChange={(e) => setFBranch(e.target.value)}
+            className="rounded-xl border border-white/10 bg-[#161616] px-3 py-2 text-xs font-bold text-slate-100 outline-none">
+            <option value="">Вся сеть</option>
+            {(branches || []).map((b: any, i: number) => <option key={b.branchId || i} value={b.branchName || b.name}>{b.branchName || b.name || "Филиал"}</option>)}
+          </select>
+          <select value={fAccount} onChange={(e) => setFAccount(e.target.value)}
+            className="rounded-xl border border-white/10 bg-[#161616] px-3 py-2 text-xs font-bold text-slate-100 outline-none">
+            <option value="">Все счета</option>
+            {(data?.accounts || []).map((a) => <option key={a.id} value={a.name}>{a.name}</option>)}
+          </select>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={load} className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-[#161616] px-3 py-2 text-xs font-bold text-slate-300 hover:text-white">
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={load} className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-[#161616] px-3 py-2.5 text-xs font-bold text-slate-300 hover:text-white">
             <RefreshCw className="h-4 w-4" /> Обновить
           </button>
-          <button onClick={() => setShowAdd(true)} className="inline-flex items-center gap-2 rounded-2xl bg-[#C5A059] px-4 py-2 text-sm font-bold text-black transition hover:bg-[#d4b06a]">
-            <Plus className="h-4 w-4" /> Операция
+          <button onClick={() => { setAddType("income"); setShowAdd(true); }}
+            className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-white/10">
+            <Plus className="h-4 w-4" /> Поступление
+          </button>
+          <button onClick={() => { setAddType("expense"); setShowAdd(true); }}
+            className="inline-flex items-center gap-2 rounded-full bg-[#C5A059] px-4 py-2.5 text-sm font-bold text-black transition hover:bg-[#d4b06a]">
+            <Plus className="h-4 w-4" /> Расход
           </button>
         </div>
+      </div>
+
+      {/* Вкладки-разделы (vtabs) — ниже тулбара, как в прототипе */}
+      <div className="flex flex-wrap gap-2">
+        {tabs.map((t) => {
+          const Icon = t.icon;
+          const active = tab === t.id;
+          return (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              className={`inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-bold transition ${active ? "border-[#C5A059]/50 bg-[#C5A059]/15 text-[#C5A059]" : "border-white/10 bg-[#161616] text-slate-400 hover:text-white"}`}>
+              <Icon className="h-4 w-4" /> {t.label}
+              {t.badge ? <span className="ml-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-rose-500 px-1.5 text-[10px] font-black text-white">{t.badge}</span> : null}
+            </button>
+          );
+        })}
       </div>
 
       {error && tab !== "reconcile" && tab !== "taxes" && <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-200">{error}</div>}
@@ -3308,11 +3390,11 @@ function BookkeepingView({ branches }: any) {
 
       {data && (
         <>
-          {tab === "overview" && <AcctOverviewTab data={data} branches={branches} />}
+          {tab === "overview" && <AcctOverviewTab data={data} branches={branches} requests={requests} />}
           {tab === "cashflow" && <AcctCashflowTab data={data} />}
           {tab === "pnl" && <AcctPnlTab data={data} />}
           {tab === "calendar" && <AcctCalendarTab data={data} />}
-          {tab === "ops" && <AcctOpsTab data={data} ops={ops} onDelete={deleteOp} busy={busy} />}
+          {tab === "ops" && <AcctOpsTab data={data} ops={ops} onDelete={deleteOp} busy={busy} period={fPeriod} />}
           {tab === "requests" && <AcctRequestsTab data={data} requests={requests} onDecide={decideRequest} busy={busy} />}
         </>
       )}
@@ -3322,21 +3404,24 @@ function BookkeepingView({ branches }: any) {
       {tab === "taxes" && <AcctTaxesTab />}
 
       {showAdd && data && (
-        <AcctAddOperation categories={data.categories} accounts={data.accounts} busy={busy}
+        <AcctAddOperation categories={data.categories} accounts={data.accounts} busy={busy} defaultType={addType}
           onClose={() => setShowAdd(false)} onSubmit={createOp} />
       )}
     </OwnerScreen>
   );
 }
 
+// Общие демо-данные сверки CRM ↔ факт (используются и в «Обзоре», и во вкладке «Сверка»).
+const ACCT_RECON = [
+  { dir: "Абонементы — наличные", crm: 120_000, fact: 120_000 },
+  { dir: "Абонементы — Kaspi Pay", crm: 380_000, fact: 360_000 },
+  { dir: "Товары", crm: 45_000, fact: 45_000 },
+  { dir: "Выступления", crm: 200_000, fact: 150_000 },
+].map((r) => ({ ...r, diff: r.crm - r.fact }));
+
 // Сверка CRM ↔ факт: «Сводка за 10 секунд» + таблица сверки направлений.
 function AcctReconcileTab() {
-  const rows = [
-    { dir: "Абонементы — наличные", crm: 120_000, fact: 120_000 },
-    { dir: "Абонементы — Kaspi Pay", crm: 380_000, fact: 360_000 },
-    { dir: "Товары", crm: 45_000, fact: 45_000 },
-    { dir: "Выступления", crm: 200_000, fact: 150_000 },
-  ].map((r) => ({ ...r, diff: r.crm - r.fact }));
+  const rows = ACCT_RECON;
   const totalDiff = rows.reduce((s, r) => s + r.diff, 0);
   const matched = rows.filter((r) => r.diff === 0).length;
   return (
@@ -3429,53 +3514,106 @@ function AcctTaxesTab() {
   );
 }
 
-function AcctOverviewTab({ data, branches }: { data: AcctOverview; branches: any[] }) {
+function AcctOverviewTab({ data, branches, requests = [] }: { data: AcctOverview; branches: any[]; requests?: any[] }) {
   const { totals, cashflow } = data;
   const maxNet = Math.max(1, ...cashflow.netByMonth.map((v) => Math.abs(v)));
   const margin = totals.income > 0 ? (totals.profit / totals.income) * 100 : 0;
+
+  // Данные для «Сводки за 10 секунд» (сверка + заявки).
+  const recon = ACCT_RECON;
+  const reconMatched = recon.filter((r) => r.diff === 0).length;
+  const reconDiff = recon.reduce((s, r) => s + r.diff, 0);
+  const abonCrm = recon.filter((r) => r.dir.includes("Абонементы")).reduce((s, r) => s + r.crm, 0);
+  const abonFact = recon.filter((r) => r.dir.includes("Абонементы")).reduce((s, r) => s + r.fact, 0);
+  const pending = (requests || []).filter((r) => r.status === "pending");
+  const pendingSum = pending.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  const potentialPct = totals.income > 0 ? (reconDiff / (totals.income + reconDiff)) * 100 : 0;
+  const today = new Date().toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+
+  const DigestCard = ({ label, value, note, tone }: { label: string; value: string; note: React.ReactNode; tone: "rose" | "emerald" | "gold" }) => (
+    <div className="rounded-2xl border border-white/10 bg-[#121212] p-4">
+      <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{label}</p>
+      <p className={`mt-2 text-xl font-black ${tone === "rose" ? "text-rose-400" : tone === "emerald" ? "text-emerald-400" : "text-[#C5A059]"}`}>{value}</p>
+      <p className="mt-1.5 text-[11px] leading-relaxed text-slate-400">{note}</p>
+    </div>
+  );
+
   return (
     <div className="space-y-5">
-      <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
-        <OwnerKpi label="Остаток на счетах" value={money(totals.balanceTotal)} detail="все кассы и банки" tone="gold" icon={Wallet} />
-        <OwnerKpi label="Выручка (факт)" value={money(totals.income)} detail="за вычетом возвратов" tone="emerald" icon={ArrowUpRight} />
-        <OwnerKpi label="Расходы (факт)" value={money(totals.expense)} detail="проведённые, по периоду" tone="rose" icon={ArrowDownRight} />
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <OwnerKpi label="Выручка" value={money(totals.income)} detail="за вычетом возвратов" tone="emerald" icon={ArrowUpRight} />
+        <OwnerKpi label="Расходы" value={money(totals.expense)} detail="проведённые, по периоду" tone="rose" icon={ArrowDownRight} />
         <OwnerKpi label="Чистая прибыль" value={money(totals.profit)} detail="выручка − расходы" tone={totals.profit >= 0 ? "emerald" : "rose"} icon={TrendingUp} />
         <OwnerKpi label="Рентабельность" value={`${margin.toFixed(1)}%`} detail="прибыль / выручка" tone={margin >= 0 ? "gold" : "rose"} icon={BarChart3} />
       </div>
 
-      {/* AI-сводка «за 10 секунд» — как в прототипе бухгалтерии */}
+      {/* AI-сводка «за 10 секунд» — 4 подкарточки + разбор, как в прототипе */}
       <section className="rounded-[2rem] border border-[#C5A059]/25 bg-[#C5A059]/[0.06] p-5">
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-[#C5A059]" />
           <h3 className="text-sm font-black uppercase tracking-wider text-[#C5A059]">Сводка за 10 секунд</h3>
+          <span className="ml-auto text-[11px] font-bold text-slate-500">на {today}</span>
         </div>
-        <p className="mt-3 text-sm leading-relaxed text-slate-200">
-          За период выручка составила <b className="text-white">{money(totals.income)}</b>, расходы — <b className="text-white">{money(totals.expense)}</b>.
-          Чистая прибыль <b className={totals.profit >= 0 ? "text-emerald-400" : "text-rose-400"}>{money(totals.profit)}</b> при рентабельности <b className="text-white">{margin.toFixed(1)}%</b>.
-          {" "}{totals.profit >= 0 ? "Период прибыльный — деньги работают в плюс." : "Период убыточный: расходы превышают выручку, стоит пересмотреть крупные статьи."}
-          {" "}Остаток на счетах: <b className="text-white">{money(totals.balanceTotal)}</b>.
-        </p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <DigestCard label="Сверка CRM ↔ факт" value={`${reconMatched}/${recon.length} сошлось`} tone="rose"
+            note={reconDiff > 0 ? <>расхождение {money(reconDiff)} (Kaspi Pay, Выступления)</> : "всё сошлось"} />
+          <DigestCard label="Абонементы: CRM → факт" value={money(abonFact)} tone="rose"
+            note={<>в CRM {money(abonCrm)} · <span className="text-rose-400">недополучено {money(abonCrm - abonFact)}</span></>} />
+          <DigestCard label="Заявки на расходы" value={`${pending.length} ждут`} tone="rose"
+            note={pending.length > 0 ? <>на {money(pendingSum)} — нужно решение</> : "новых заявок нет"} />
+          <DigestCard label="Чистая прибыль" value={money(totals.profit)} tone="emerald"
+            note={`рентабельность ${margin.toFixed(1)}%`} />
+        </div>
+        <div className="mt-4 border-t border-[#C5A059]/20 pt-4 text-sm leading-relaxed text-slate-200">
+          <p><b className="text-white">Чистая прибыль</b> за период: {money(totals.profit)} при рентабельности {margin.toFixed(1)}%.</p>
+          <ul className="mt-2 space-y-1.5 text-slate-300">
+            <li>• Расхождение CRM↔факт <b className="text-white">{money(reconDiff)}</b>: недополучено по Kaspi (20 000 ₸) и выступлениям (50 000 ₸). Проверить поступления.</li>
+            <li>• Рекомендация: закрыть расхождение по выступлениям — это {potentialPct.toFixed(1)}% потенциальной выручки месяца.</li>
+          </ul>
+        </div>
       </section>
 
-      <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
-        <h3 className="font-black text-white">Счета и кассы</h3>
-        <div className="mt-4 grid gap-3 md:grid-cols-3">
-          {data.accounts.map((a) => {
-            const Icon = accountIcon(a.kind);
-            return (
-              <div key={a.id} className="rounded-2xl border border-white/10 bg-[#161616] p-4">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-bold text-slate-400">{a.name}</p>
-                  <Icon className="h-4 w-4 text-[#C5A059]" />
+      {/* Сверка ↔ Счета — двухколоночный грид на главном экране, как в прототипе */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <section className="overflow-hidden rounded-[2rem] border border-white/10 bg-[#121212]">
+          <div className="px-5 pt-5"><h3 className="font-black text-white">Сверка CRM ↔ фактические поступления</h3></div>
+          <table className="mt-4 w-full text-left text-sm">
+            <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-5 py-2 font-bold">Направление</th><th className="px-5 py-2 text-right font-bold">В CRM</th><th className="px-5 py-2 text-right font-bold">Факт</th><th className="px-5 py-2 text-right font-bold">Расхожд.</th><th className="px-5 py-2 text-right font-bold">Статус</th></tr></thead>
+            <tbody>
+              {recon.map((r, i) => (
+                <tr key={i} className="border-t border-white/5">
+                  <td className="px-5 py-3 font-bold text-white">{r.dir}</td>
+                  <td className="px-5 py-3 text-right text-slate-300">{money(r.crm)}</td>
+                  <td className="px-5 py-3 text-right text-slate-300">{money(r.fact)}</td>
+                  <td className={`px-5 py-3 text-right font-bold ${r.diff === 0 ? "text-slate-500" : "text-rose-300"}`}>{r.diff === 0 ? "0 ₸" : money(r.diff)}</td>
+                  <td className="px-5 py-3 text-right"><span className={`rounded-lg px-2 py-1 text-[11px] font-bold ${r.diff === 0 ? "bg-emerald-500/15 text-emerald-300" : "bg-rose-500/15 text-rose-300"}`}>{r.diff === 0 ? "Сошлось" : "Расхождение"}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+
+        <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+          <h3 className="font-black text-white">Счета</h3>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {data.accounts.map((a) => {
+              const Icon = accountIcon(a.kind);
+              const flow = a.balance - a.openingBalance;
+              return (
+                <div key={a.id} className="rounded-2xl border border-white/10 bg-[#161616] p-4">
+                  <div className="flex items-center gap-2">
+                    <Icon className="h-4 w-4 text-[#C5A059]" />
+                    <p className="text-xs font-bold text-white">{a.name}</p>
+                  </div>
+                  <p className="mt-2 text-xl font-black text-white">{money(a.balance)}</p>
+                  <p className="mt-1 text-[11px] text-slate-500">старт {money(a.openingBalance)} · <span className={flow >= 0 ? "text-emerald-400" : "text-rose-400"}>{flow >= 0 ? "+" : ""}{money(flow)}</span></p>
                 </div>
-                <p className="mt-2 text-xl font-black text-white">{money(a.balance)}</p>
-                <p className="mt-1 text-[11px] text-slate-500">старт: {money(a.openingBalance)} · {a.currency}</p>
-              </div>
-            );
-          })}
-          {data.accounts.length === 0 && <p className="text-sm text-slate-500">Счета не заведены.</p>}
-        </div>
-      </section>
+              );
+            })}
+            {data.accounts.length === 0 && <p className="text-sm text-slate-500">Счета не заведены.</p>}
+          </div>
+        </section>
+      </div>
 
       <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
         <h3 className="font-black text-white">Чистый денежный поток по месяцам</h3>
@@ -3627,56 +3765,114 @@ function AcctCalendarTab({ data }: { data: AcctOverview }) {
   );
 }
 
-function AcctOpsTab({ data, ops, onDelete, busy }: { data: AcctOverview; ops: AcctOp[]; onDelete: (id: string) => void; busy: boolean }) {
-  const [filter, setFilter] = useState<"all" | "actual" | "planned">("all");
+function AcctOpsTab({ data, ops, onDelete, busy, period = "" }: { data: AcctOverview; ops: AcctOp[]; onDelete: (id: string) => void; busy: boolean; period?: string }) {
+  const [q, setQ] = useState("");
+  const [fType, setFType] = useState("");
+  const [fAcc, setFAcc] = useState("");
+  const [fStatus, setFStatus] = useState("");
   const catName = (id: string | null) => data.categories.find((c) => c.id === id)?.name || "Без статьи";
   const accName = (id: string | null) => data.accounts.find((a) => a.id === id)?.name || "—";
-  const rows = ops.filter((o) => filter === "all" || o.status === filter);
+  const isReturn = (o: AcctOp) => o.type === "return" || o.type === "refund";
+
+  const rows = ops.filter((o) => {
+    if (fType === "inc" && o.type !== "income") return false;
+    if (fType === "exp" && o.type !== "expense") return false;
+    if (fType === "ret" && !isReturn(o)) return false;
+    if (fAcc && o.accountId !== fAcc) return false;
+    if (fStatus && o.status !== fStatus) return false;
+    if (q) {
+      const hay = `${money(o.amount)} ${catName(o.categoryId)} ${accName(o.accountId)} ${o.counterparty || ""} ${o.description || ""}`.toLowerCase();
+      if (!hay.includes(q.toLowerCase().trim())) return false;
+    }
+    return true;
+  });
+
+  const income = rows.filter((o) => o.type === "income").reduce((s, o) => s + o.amount, 0);
+  const returns = rows.filter(isReturn).reduce((s, o) => s + o.amount, 0);
+  const expense = rows.filter((o) => o.type === "expense").reduce((s, o) => s + o.amount, 0);
+  const balance = income - returns - expense;
+  const reset = () => { setQ(""); setFType(""); setFAcc(""); setFStatus(""); };
+  const statusLabel = (o: AcctOp) => isReturn(o) ? "Возврат" : o.status === "planned" ? "Черновик" : o.type === "income" ? "Поступило" : "Проведён";
+  const selCls = "rounded-xl border border-white/10 bg-[#161616] px-3 py-2 text-xs font-bold text-slate-100 outline-none";
+
   return (
-    <section className="overflow-x-auto rounded-[2rem] border border-white/10 bg-[#121212] p-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h3 className="font-black text-white">Реестр операций</h3>
-        <div className="flex gap-2">
-          {(["all", "actual", "planned"] as const).map((f) => (
-            <button key={f} onClick={() => setFilter(f)}
-              className={`rounded-xl border px-3 py-1.5 text-xs font-bold transition ${filter === f ? "border-[#C5A059]/50 bg-[#C5A059]/15 text-[#C5A059]" : "border-white/10 text-slate-400 hover:text-white"}`}>
-              {f === "all" ? "Все" : f === "actual" ? "Факт" : "План"}
-            </button>
-          ))}
-        </div>
+    <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="font-black text-white">Расходы и поступления{period ? ` · ${period}` : ""}</h3>
+        <span className="text-xs text-slate-500">в расчёт идут только «Проведён»</span>
       </div>
-      <table className="mt-4 w-full min-w-[680px] border-collapse">
-        <thead>
-          <tr className="text-left text-[11px] uppercase tracking-wider text-slate-500">
-            <th className="p-3">Дата</th>
-            <th className="p-3">Статья</th>
-            <th className="p-3">Счёт</th>
-            <th className="p-3">Контрагент</th>
-            <th className="p-3 text-right">Сумма</th>
-            <th className="p-3"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((o) => (
-            <tr key={o.id} className="border-t border-white/5">
-              <td className="p-3 text-sm text-slate-300">
-                {new Date(o.date).toLocaleDateString("ru-RU")}
-                {o.status === "planned" && <span className="ml-2 rounded bg-amber-400/15 px-1.5 py-0.5 text-[10px] font-bold text-amber-300">план</span>}
-              </td>
-              <td className="p-3 text-sm text-white">{catName(o.categoryId)}{o.description ? <span className="block text-[11px] text-slate-500">{o.description}</span> : null}</td>
-              <td className="p-3 text-sm text-slate-400">{accName(o.accountId)}</td>
-              <td className="p-3 text-sm text-slate-400">{o.counterparty || "—"}</td>
-              <td className={`p-3 text-right text-sm font-black ${o.type === "income" ? "text-emerald-400" : "text-rose-400"}`}>{o.type === "income" ? "+" : "−"}{money(o.amount)}</td>
-              <td className="p-3 text-right">
-                <button disabled={busy} onClick={() => onDelete(o.id)} className="rounded-lg p-1.5 text-slate-500 transition hover:bg-rose-500/10 hover:text-rose-400" title="Удалить">
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </td>
+
+      {/* Поиск + фильтры */}
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <div className="flex min-w-[220px] flex-1 items-center gap-2 rounded-xl border border-white/10 bg-[#161616] px-3 py-2">
+          <Search className="h-4 w-4 shrink-0 text-slate-500" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Поиск по сумме, комментарию, категории, счёту…"
+            className="min-w-0 flex-1 border-none bg-transparent p-0 text-sm text-white outline-none placeholder:text-slate-500 focus:ring-0" />
+        </div>
+        <select value={fType} onChange={(e) => setFType(e.target.value)} className={selCls}>
+          <option value="">Все типы</option><option value="inc">Доходы</option><option value="exp">Расходы</option><option value="ret">Возвраты</option>
+        </select>
+        <select value={fAcc} onChange={(e) => setFAcc(e.target.value)} className={selCls}>
+          <option value="">Все счета</option>
+          {data.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </select>
+        <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className={selCls}>
+          <option value="">Любой статус</option><option value="actual">Проведён</option><option value="planned">Черновик</option>
+        </select>
+        <button onClick={reset} className="rounded-xl border border-white/10 bg-[#161616] px-3 py-2 text-xs font-bold text-slate-300 hover:text-white">Сбросить</button>
+      </div>
+
+      {/* Итоговая строка */}
+      <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 rounded-xl border border-white/5 bg-white/[0.02] px-4 py-2.5 text-xs">
+        <span className="text-slate-400">Найдено: <b className="text-white">{rows.length}</b></span>
+        <span className="text-slate-400">Доходы: <b className="text-emerald-400">+{money(income)}</b></span>
+        <span className="text-slate-400">Возвраты: <b className="text-rose-300">−{money(returns)}</b></span>
+        <span className="text-slate-400">Расходы: <b className="text-rose-400">−{money(expense)}</b></span>
+        <span className="text-slate-400">Сальдо: <b className="text-white">{money(balance)}</b></span>
+      </div>
+
+      <div className="mt-3 overflow-x-auto">
+        <table className="w-full min-w-[760px] border-collapse">
+          <thead>
+            <tr className="text-left text-[11px] uppercase tracking-wider text-slate-500">
+              <th className="p-3">Дата оплаты</th>
+              <th className="p-3">Период</th>
+              <th className="p-3">Тип / категория</th>
+              <th className="p-3">Счёт</th>
+              <th className="p-3">Контрагент</th>
+              <th className="p-3 text-right">Сумма</th>
+              <th className="p-3">Статус</th>
+              <th className="p-3"></th>
             </tr>
-          ))}
-          {rows.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-sm text-slate-500">Операций нет.</td></tr>}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((o) => {
+              const ret = isReturn(o);
+              const tone = ret ? "text-slate-300" : o.type === "income" ? "text-emerald-400" : "text-rose-400";
+              const rowBg = ret ? "" : o.type === "income" ? "bg-emerald-500/[0.03]" : "bg-rose-500/[0.03]";
+              return (
+                <tr key={o.id} className={`border-t border-white/5 ${rowBg}`}>
+                  <td className="p-3 text-sm text-slate-300">{new Date(o.date).toLocaleDateString("ru-RU")}</td>
+                  <td className="p-3 text-sm text-slate-400">{period || monthLabel(String(o.date).slice(0, 7))}</td>
+                  <td className="p-3 text-sm text-white">{ret ? "Возврат" : o.type === "income" ? "Доход" : "Расход"} · {catName(o.categoryId)}{o.description ? <span className="block text-[11px] text-slate-500">{o.description}</span> : null}</td>
+                  <td className="p-3 text-sm text-slate-400">{accName(o.accountId)}</td>
+                  <td className="p-3 text-sm text-slate-400">{o.counterparty || "—"}</td>
+                  <td className={`p-3 text-right text-sm font-black ${tone}`}>{ret || o.type === "expense" ? "−" : "+"}{money(o.amount)}</td>
+                  <td className="p-3">
+                    <span className={`rounded-lg px-2 py-1 text-[11px] font-bold ${ret ? "bg-slate-500/15 text-slate-300" : o.status === "planned" ? "bg-amber-400/15 text-amber-300" : "bg-emerald-500/15 text-emerald-300"}`}>{statusLabel(o)}</span>
+                  </td>
+                  <td className="p-3 text-right">
+                    <button disabled={busy} onClick={() => onDelete(o.id)} className="rounded-lg p-1.5 text-slate-500 transition hover:bg-rose-500/10 hover:text-rose-400" title="Удалить">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+            {rows.length === 0 && <tr><td colSpan={8} className="p-6 text-center text-sm text-slate-500">Операций не найдено.</td></tr>}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }
@@ -3766,11 +3962,11 @@ function AcctRequestsTab({ data, requests, onDecide, busy }: {
   );
 }
 
-function AcctAddOperation({ categories, accounts, busy, onClose, onSubmit }: {
-  categories: AcctOverview["categories"]; accounts: AcctOverview["accounts"]; busy: boolean;
+function AcctAddOperation({ categories, accounts, busy, defaultType = "expense", onClose, onSubmit }: {
+  categories: AcctOverview["categories"]; accounts: AcctOverview["accounts"]; busy: boolean; defaultType?: "income" | "expense";
   onClose: () => void; onSubmit: (p: any) => void;
 }) {
-  const [type, setType] = useState<"income" | "expense">("expense");
+  const [type, setType] = useState<"income" | "expense">(defaultType);
   const [status, setStatus] = useState<"actual" | "planned">("actual");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [amount, setAmount] = useState("");

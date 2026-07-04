@@ -3598,9 +3598,14 @@ export function registerMvpApi(app: express.Express) {
       const bal = Math.max(0, stockBalance(pr.id, sales, receipts, writeoffs));
       stockUnits += bal; stockValue += bal * pr.costPrice; retailValue += bal * pr.salePrice;
     }
+    // График выручки по месяцам (последние 6 месяцев включительно) — для мини-спарклайна на дашборде.
+    const months: string[] = [];
+    const md = new Date(); md.setDate(1);
+    for (let i = 5; i >= 0; i--) { const d = new Date(md.getFullYear(), md.getMonth() - i, 1); months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`); }
+    const byMonth = months.map((mo) => ({ month: mo, amount: sales.filter((s) => String(s.date).slice(0, 7) === mo).reduce((acc, s) => acc + s.amount, 0) }));
     res.json({
       revenue: { total: curRev, momPct: pctDelta(curRev, prevRev), yoyPct: pctDelta(curRev, yoyRev) },
-      unitsSold, avgCheck, grossProfit, margin, lowStock, top,
+      unitsSold, avgCheck, grossProfit, margin, lowStock, top, byMonth,
       stockUnits, stockValue, retailValue,
     });
   }));

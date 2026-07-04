@@ -1401,9 +1401,204 @@ async function runCouncil(
   return { question, turns, synthesis };
 }
 
+// ─────────────────── AI-панель: приоритеты / аномалии / отчёты ───────────────────
+//
+// Движок «AI-панели» роли (ТЗ). Собирает компактный срез данных CRM (сигналы),
+// прогоняет через Claude и получает структурированный брифинг: ТОП-приоритеты,
+// аномалии и конкретные предложения. Тот же срез используется для отчётов
+// день/неделя/месяц (по кнопке). Фундамент — для владельца; переиспользуется
+// для остальных ролей с их набором сигналов.
+
+// Компактный срез сигналов владельца (числа, а не сырые строки — дёшево и точно).
+async function collectOwnerSignals(session: MagomedSession) {
+  const safe = async <T>(p: Promise<T>): Promise<T | null> => p.catch(() => null);
+
+  const [today, week, month, students, finance, funnel] = await Promise.all([
+    safe(toolGetSalesSummary({ period: "today" }, session)),
+    safe(toolGetSalesSummary({ period: "week" }, session)),
+    safe(toolGetSalesSummary({ period: "month" }, session)),
+    safe(toolGetStudentsSummary({}, session)),
+    safe(toolGetFinanceOverview({}, session)),
+    safe(toolGetMarketingFunnel({}, session)),
+  ]);
+
+  // Операционные хвосты: заявки на расходы (pending) и открытые задачи.
+  let pendingExpenses: number | null = null;
+  let openTasks: number | null = null;
+  if (supabaseEnabled) {
+    const org = `organization_id=eq.${session.organizationId}`;
+    const exp = await safe(
+      supabaseFetch<any[]>("finance_expense_requests", `select=id&${org}&status=eq.pending&limit=500`)
+    );
+    pendingExpenses = exp ? exp.length : null;
+    const branch = branchClause(session);
+    const tk = await safe(
+      supabaseFetch<any[]>("tasks", `select=status${branch}&limit=1000`)
+    );
+    openTasks = tk
+      ? tk.filter((t) => !["done", "completed", "closed", "cancelled"].includes(String(t.status))).length
+      : null;
+  }
+
+  return {
+    scope: session.dbBranchId ? "филиал" : "вся сеть",
+    revenue: {
+      today: (today as any)?.totalAmount ?? null,
+      week: (week as any)?.totalAmount ?? null,
+      month: (month as any)?.totalAmount ?? null,
+      paymentsToday: (today as any)?.paymentsCount ?? null,
+    },
+    students: (students as any)?.byStatus ?? null,
+    studentsTotal: (students as any)?.total ?? null,
+    finance: (finance as any)?.totals ?? null,
+    financeMonthly: (finance as any)?.monthlyPnl ?? null,
+    topExpenses: (finance as any)?.topExpenseCategories ?? null,
+    funnel: funnel && !(funnel as any).error ? funnel : null,
+    pendingExpenseRequests: pendingExpenses,
+    openTasks,
+  };
+}
+
+// Достаём первый JSON-объект из ответа модели (на случай ```-обёрток и префиксов).
+function extractJson(text: string): any | null {
+  if (!text) return null;
+  const cleaned = text.replace(/```json/gi, "").replace(/```/g, "");
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  if (start === -1 || end === -1 || end <= start) return null;
+  try {
+    return JSON.parse(cleaned.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+}
+
+const num2 = (v: any) => (v === null || v === undefined ? "—" : Number(v).toLocaleString("ru-RU"));
+
+// Текстовое описание сигналов для модели (компактно, читаемо).
+function signalsToText(s: any): string {
+  const lines: string[] = [];
+  lines.push(`Скоуп: ${s.scope}.`);
+  lines.push(
+    `Выручка: сегодня ${num2(s.revenue?.today)} ₸ (${num2(s.revenue?.paymentsToday)} оплат), за неделю ${num2(s.revenue?.week)} ₸, за месяц ${num2(s.revenue?.month)} ₸.`
+  );
+  if (s.students) {
+    const byStatus = Object.entries(s.students).map(([k, v]) => `${k}: ${v}`).join(", ");
+    lines.push(`Ученики (всего ${num2(s.studentsTotal)}): ${byStatus}.`);
+  }
+  if (s.finance) {
+    lines.push(
+      `Финансы: доход ${num2(s.finance.income)} ₸, расход ${num2(s.finance.expense)} ₸, прибыль ${num2(s.finance.profit)} ₸, маржа ${s.finance.margin ?? "—"}%, остаток на счетах ${num2(s.finance.balanceTotal)} ₸.`
+    );
+  }
+  if (Array.isArray(s.financeMonthly) && s.financeMonthly.length) {
+    lines.push(
+      "Помесячно (прибыль): " + s.financeMonthly.map((m: any) => `${m.month}: ${num2(m.profit)} ₸ (${m.margin}%)`).join("; ") + "."
+    );
+  }
+  if (Array.isArray(s.topExpenses) && s.topExpenses.length) {
+    lines.push("Топ расходов: " + s.topExpenses.map((c: any) => `${c.category} ${num2(c.amount)} ₸`).join(", ") + ".");
+  }
+  if (s.funnel) {
+    lines.push(
+      `Воронка: всего ${num2(s.funnel.totalStudents)}, новых за месяц ${num2(s.funnel.newStudentsThisMonth)}, конверсия лид→актив ${s.funnel.leadToActiveConversion ?? "—"}%.`
+    );
+    if (Array.isArray(s.funnel.bySource) && s.funnel.bySource.length) {
+      lines.push(
+        "Источники: " + s.funnel.bySource.slice(0, 5).map((x: any) => `${x.source} (${x.total}, конв. ${x.conversion}%)`).join(", ") + "."
+      );
+    }
+  }
+  if (s.pendingExpenseRequests !== null) lines.push(`Заявок на расход в ожидании: ${s.pendingExpenseRequests}.`);
+  if (s.openTasks !== null) lines.push(`Открытых задач: ${s.openTasks}.`);
+  return lines.join("\n");
+}
+
+const BRIEFING_SYSTEM = `Ты — главный AI-аналитик владельца сети школ кавказского танца «Эхо Гор».
+Тебе дают срез реальных данных CRM. Проанализируй его и верни СТРОГО JSON (без пояснений вокруг) по схеме:
+{
+  "summary": "1–2 предложения: общая картина дня простым языком",
+  "priorities": [ { "title": "коротко", "reason": "почему важно (по цифрам)", "action": "что сделать" } ],
+  "anomalies": [ { "title": "коротко", "detail": "в чём отклонение по данным", "severity": "high|medium|low" } ],
+  "suggestions": [ { "title": "коротко", "detail": "конкретное действие для роста прибыли/удержания" } ]
+}
+Правила: priorities — максимум 5, самое важное сверху. Только по данным среза, без выдумок. Если данных мало — так и скажи в summary и дай что можешь. Числа — с разрядами и ₸. Пиши по-русски, кратко и по делу.`;
+
+async function buildBriefing(session: MagomedSession) {
+  const signals = await collectOwnerSignals(session);
+  const data = await anthropicChat(
+    [{ role: "user", content: `Срез данных CRM на сегодня:\n\n${signalsToText(signals)}\n\nСформируй JSON-брифинг.` }],
+    BRIEFING_SYSTEM,
+    1600,
+    []
+  );
+  const content: any[] = Array.isArray(data?.content) ? data.content : [];
+  const text = content.filter((b) => b?.type === "text").map((b) => b.text).join("").trim();
+  const parsed = extractJson(text) || {};
+  return {
+    generatedAt: new Date().toISOString(),
+    summary: typeof parsed.summary === "string" ? parsed.summary : "",
+    priorities: Array.isArray(parsed.priorities) ? parsed.priorities.slice(0, 5) : [],
+    anomalies: Array.isArray(parsed.anomalies) ? parsed.anomalies : [],
+    suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions : [],
+    signals,
+  };
+}
+
+const PERIOD_RU: Record<string, string> = { day: "день", week: "неделю", month: "месяц" };
+
+async function buildReport(session: MagomedSession, period: string) {
+  const p = PERIOD_RU[period] ? period : "day";
+  const signals = await collectOwnerSignals(session);
+  const system =
+    `Ты — главный AI-аналитик владельца сети «Эхо Гор». Составь понятный отчёт за ${PERIOD_RU[p]} ` +
+    `по срезу данных CRM: краткое резюме, ключевые цифры, что хорошо, что просело, риски и 3–5 ` +
+    `рекомендаций. Структурно, на русском, ключевое выделяй **жирным**, суммы с разрядами и ₸. Без выдумок.`;
+  const { reply } = await runAgentLoop(
+    [{ role: "user", content: `Данные CRM:\n\n${signalsToText(signals)}\n\nСформируй отчёт за ${PERIOD_RU[p]}.` }],
+    session,
+    "",
+    system,
+    AGENT_MAX_TOKENS,
+    READ_TOOLS
+  );
+  return { period: p, generatedAt: new Date().toISOString(), report: reply };
+}
+
 // ───────────────────────────── HTTP-эндпоинт ─────────────────────────────
 
 export function registerMagomedApi(app: express.Express) {
+  // ── AI-панель: брифинг (приоритеты/аномалии/предложения) ──
+  app.post("/api/gemini/ai-briefing", async (req, res) => {
+    if (!apiKey) return res.status(503).json({ error: "ANTHROPIC_API_KEY is not configured" });
+    const session = getSession(req);
+    try {
+      const result = await buildBriefing(session);
+      res.json(result);
+    } catch (e: any) {
+      if (e?.status === 429 || e?.status === 529) {
+        return res.status(429).json({ error: "rate_limited" });
+      }
+      res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
+
+  // ── AI-панель: отчёт за период (по кнопке) ──
+  app.post("/api/gemini/ai-report", async (req, res) => {
+    if (!apiKey) return res.status(503).json({ error: "ANTHROPIC_API_KEY is not configured" });
+    const session = getSession(req);
+    const period = String(req.body?.period || "day");
+    try {
+      const result = await buildReport(session, period);
+      res.json(result);
+    } catch (e: any) {
+      if (e?.status === 429 || e?.status === 529) {
+        return res.status(429).json({ error: "rate_limited" });
+      }
+      res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
+
   // ── AI HUB: совет агентов (round-table) ──
   app.post("/api/gemini/ai-hub-council", async (req, res) => {
     if (!apiKey) {
