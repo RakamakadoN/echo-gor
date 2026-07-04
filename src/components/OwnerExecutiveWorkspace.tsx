@@ -2284,6 +2284,7 @@ function StudentsNetworkView({ students, branches, groups, teachers, onCreateStu
   return (
     <OwnerScreen title="Ученики сети" subtitle="Вся база учеников: продления, долги, LTV-сегменты, коммуникации и массовые действия. Владелец видит все филиалы.">
       <StudentsRegistry
+        roleHeader="owner"
         students={students}
         groups={groups}
         branches={branches}

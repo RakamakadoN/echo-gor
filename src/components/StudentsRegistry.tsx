@@ -119,6 +119,8 @@ export interface StudentsRegistryProps {
   onCreateLeadSource?: (data: { name: string }) => Promise<boolean>;
   onUpdateLeadSource?: (id: string, data: { name?: string; status?: string }) => Promise<boolean>;
   onDeleteLeadSource?: (id: string) => Promise<boolean>;
+  /** Роль текущего кабинета для API входа ученика (owner | branch_manager | admin). */
+  roleHeader?: string;
 }
 
 /* ---------- helpers ---------- */
@@ -250,6 +252,7 @@ export default function StudentsRegistry({
   onCreateLeadSource,
   onUpdateLeadSource,
   onDeleteLeadSource,
+  roleHeader = "owner",
 }: StudentsRegistryProps) {
   const now = useMemo(() => new Date(), []);
   const canManage = Boolean(onCreateStudent || onUpdateStudent);
@@ -1020,6 +1023,8 @@ export default function StudentsRegistry({
                 onTransfer={onUpdateStudent ? (payload) => onUpdateStudent(openStudent.id, payload) : undefined}
                 onAddToWaitlist={onAddToWaitlist}
                 inWaitlist={waitlistStudentIds.has(openStudent.id)}
+                canGrantAccess={canManage}
+                roleHeader={roleHeader}
               />
             </div>
           </div>

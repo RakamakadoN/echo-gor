@@ -446,6 +446,7 @@ function DashboardView({ branches, groups, students, teachers, todayRevenue, mon
 function VisitorsView({ students, groups, branches, teachers, adminBranchId, onCreateStudent, onUpdateStudent, onDeleteStudent, onArchiveStudent, onOpenPayment, onSellSubscription, plans, leadSources, waitlist, onAddToWaitlist, onRemoveFromWaitlist, onCreateLeadSource, onUpdateLeadSource, onDeleteLeadSource }: any) {
   return (
     <StudentsRegistry
+      roleHeader="admin"
       students={students}
       groups={groups}
       branches={branches}

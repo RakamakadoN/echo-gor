@@ -31,11 +31,49 @@ import {
 type MvpSession = {
   userId: string;
   organizationId: string;
-  role: "owner" | "branch_manager" | "admin" | "teacher";
+  role: "owner" | "branch_manager" | "admin" | "teacher" | "student";
   branchId: string | null;   // mock-data branch key (see src/dataMock.ts)
   dbBranchId: string | null; // real Supabase branch UUID (see db/seed_mvp_demo.sql)
   fullName: string;
+  studentId?: string;                 // задан только для сессии ученика (вход по токену)
+  accessLevel?: "junior" | "senior";  // уровень прав кабинета ученика
 };
+
+// Возраст (включительно), до которого ученик по умолчанию считается «маленькой»
+// группой (junior). Старше — «взрослая» (senior). Владелец может переопределить
+// уровень вручную (students.access_level). См. миграцию 032.
+const JUNIOR_MAX_AGE = 10;
+
+// Вкладки кабинета, доступные каждому уровню (совпадает с фронтом StudentArtistCabinet).
+const JUNIOR_TABS = ["Главная", "Наклейки", "Достижения"];
+const SENIOR_TABS = ["Главная", "Наклейки", "Достижения", "Мой путь", "Паспорт", "Сообщество", "Магазин", "Выступления", "Видео"];
+
+// Кто может выдавать/отзывать вход ученику.
+const accessGrantStaff = ["owner", "branch_manager", "admin"];
+
+// Эффективный уровень: ручное переопределение приоритетнее авто-расчёта по возрасту.
+// Возраст неизвестен (null/undefined/некорректный) → безопасный минимум «junior»
+// («маленькая» группа), персонал при желании переопределит вручную.
+function effectiveAccessLevel(manual: string | null | undefined, age: number | null | undefined): "junior" | "senior" {
+  if (manual === "junior" || manual === "senior") return manual;
+  if (age === null || age === undefined) return "junior";
+  const a = Number(age);
+  if (!Number.isFinite(a) || a <= 0) return "junior";
+  return a <= JUNIOR_MAX_AGE ? "junior" : "senior";
+}
+
+function tabsForLevel(level: "junior" | "senior") {
+  return level === "junior" ? JUNIOR_TABS : SENIOR_TABS;
+}
+
+// Хранилище токенов доступа учеников. В mock-режиме — единственный источник;
+// в Supabase-режиме — кэш (наполняется при выдаче и при входе), чтобы getSession
+// оставался синхронным. token -> { studentId, level, branchId }.
+const studentAccessTokens = new Map<string, { studentId: string; level: "junior" | "senior"; branchId: string | null }>();
+function newAccessToken() {
+  const rnd = () => (globalThis.crypto?.randomUUID?.() || `${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`);
+  return `st_${rnd()}${rnd()}`.replace(/-/g, "");
+}
 
 // Organization UUID — MUST match the organizations row seeded in db/seed_mvp_demo.sql.
 const orgId = "00000000-0000-0000-0000-000000000001";
@@ -63,6 +101,25 @@ const isPlaceholder = (value?: string) => {
 const supabaseEnabled = Boolean(supabaseUrl && supabaseKey && !isPlaceholder(supabaseKey));
 
 function getSession(req: express.Request): MvpSession {
+  // Сессия ученика: вход по токену из ссылки/QR (x-student-token).
+  // Разрешается только по уже известному токену (наполняется при выдаче доступа
+  // персоналом и при /student-auth), поэтому getSession остаётся синхронным.
+  const studentToken = String(req.headers["x-student-token"] || "");
+  if (studentToken) {
+    const rec = studentAccessTokens.get(studentToken);
+    if (rec) {
+      return {
+        userId: `student-${rec.studentId}`,
+        organizationId: orgId,
+        role: "student",
+        branchId: rec.branchId,
+        dbBranchId: rec.branchId,
+        fullName: "Ученик",
+        studentId: rec.studentId,
+        accessLevel: rec.level,
+      };
+    }
+  }
   const roleHeader = String(req.headers["x-demo-role"] || "owner");
   const userHeader = String(req.headers["x-demo-user-id"] || "");
   const byUser = demoUsers.find((user) => user.userId === userHeader);
@@ -3359,6 +3416,136 @@ export function registerMvpApi(app: express.Express) {
   }));
 
   // ======================================================================
+  // ВХОД УЧЕНИКА ПО ССЫЛКЕ / QR (миграция 032).
+  // Доступ выдают только владелец / руководитель филиала / администратор.
+  // Ученик входит по секретному токену; уровень (junior «маленькая» /
+  // senior «взрослая») задаёт набор доступных вкладок кабинета.
+  // ======================================================================
+  // mock-хранилище состояния доступа: studentId -> { token, level(ручной|null), enabled, by, at }
+  const mockStudentAccess: Record<string, { token: string; level: "junior" | "senior" | null; enabled: boolean; by: string | null; at: string }> = {};
+
+  const ageFromBirthday = (b?: string | null): number | null => {
+    if (!b) return null;
+    const d = new Date(b);
+    if (isNaN(d.getTime())) return null;
+    const t = new Date();
+    let a = t.getFullYear() - d.getFullYear();
+    const m = t.getMonth() - d.getMonth();
+    if (m < 0 || (m === 0 && t.getDate() < d.getDate())) a--;
+    return a;
+  };
+
+  // Единый вид ученика для роутов доступа (mock + supabase).
+  const loadStudentAccess = async (session: MvpSession, studentId: string): Promise<null | {
+    id: string; name: string; age: number | null; branchId: string | null;
+    levelManual: "junior" | "senior" | null; token: string | null; enabled: boolean;
+  }> => {
+    if (!supabaseEnabled) {
+      const s: any = initialStudents.find((x: any) => x.id === studentId);
+      if (!s) return null;
+      const rec = mockStudentAccess[studentId];
+      return { id: s.id, name: s.name, age: s.age ?? ageFromBirthday(s.birthday), branchId: s.branchId ?? null,
+        levelManual: rec?.level ?? null, token: rec?.token ?? null, enabled: !!rec?.enabled };
+    }
+    const rows = await supabaseFetch<any[]>("students", `select=id,first_name,last_name,full_name,birthday,branch_id,access_level,access_token,access_enabled&id=eq.${studentId}&organization_id=eq.${session.organizationId}&limit=1`);
+    const r = rows[0];
+    if (!r) return null;
+    return { id: r.id, name: [r.first_name, r.last_name].filter(Boolean).join(" ") || r.full_name || "Ученик",
+      age: ageFromBirthday(r.birthday), branchId: r.branch_id ?? null,
+      levelManual: (r.access_level === "junior" || r.access_level === "senior") ? r.access_level : null,
+      token: r.access_token ?? null, enabled: !!r.access_enabled };
+  };
+
+  const accessStatusOut = (st: { levelManual: "junior" | "senior" | null; age: number | null; token: string | null; enabled: boolean }) => {
+    const level = effectiveAccessLevel(st.levelManual, st.age);
+    return { enabled: st.enabled, level, levelManual: st.levelManual, autoLevel: effectiveAccessLevel(null, st.age),
+      token: st.enabled ? st.token : null, tabs: tabsForLevel(level) };
+  };
+
+  // Текущее состояние доступа ученика.
+  app.get("/api/mvp/students/:id/access", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!accessGrantStaff.includes(session.role)) return res.status(403).json({ error: "Недостаточно прав" });
+    const st = await loadStudentAccess(session, String(req.params.id));
+    if (!st) return res.status(404).json({ error: "Ученик не найден" });
+    if (!canSeeBranch(session, st.branchId)) return res.status(403).json({ error: "Ученик другого филиала" });
+    res.json(accessStatusOut(st));
+  }));
+
+  // Выдать / обновить доступ. body.level: 'auto' | 'junior' | 'senior'.
+  app.post("/api/mvp/students/:id/access", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!accessGrantStaff.includes(session.role)) return res.status(403).json({ error: "Недостаточно прав" });
+    const st = await loadStudentAccess(session, String(req.params.id));
+    if (!st) return res.status(404).json({ error: "Ученик не найден" });
+    if (!canSeeBranch(session, st.branchId)) return res.status(403).json({ error: "Ученик другого филиала" });
+
+    const rawLevel = String((req.body || {}).level || "auto");
+    const manual: "junior" | "senior" | null = rawLevel === "junior" || rawLevel === "senior" ? rawLevel : null;
+    const token = st.token || newAccessToken();
+    const level = effectiveAccessLevel(manual, st.age);
+    const nowIso = new Date().toISOString();
+
+    if (supabaseEnabled) {
+      await supabaseFetch("students", `id=eq.${st.id}&organization_id=eq.${session.organizationId}`, {
+        method: "PATCH", headers: { Prefer: "return=minimal" },
+        body: JSON.stringify({ access_token: token, access_level: manual, access_enabled: true, access_granted_by: session.fullName || null, access_granted_at: nowIso }),
+      });
+    } else {
+      mockStudentAccess[st.id] = { token, level: manual, enabled: true, by: session.fullName || null, at: nowIso };
+    }
+    // наполнить резолвер сессий (для обоих режимов)
+    studentAccessTokens.set(token, { studentId: st.id, level, branchId: st.branchId });
+
+    res.json({ ...accessStatusOut({ levelManual: manual, age: st.age, token, enabled: true }), grantedBy: session.fullName || null, grantedAt: nowIso });
+  }));
+
+  // Отозвать доступ.
+  app.delete("/api/mvp/students/:id/access", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!accessGrantStaff.includes(session.role)) return res.status(403).json({ error: "Недостаточно прав" });
+    const st = await loadStudentAccess(session, String(req.params.id));
+    if (!st) return res.status(404).json({ error: "Ученик не найден" });
+    if (!canSeeBranch(session, st.branchId)) return res.status(403).json({ error: "Ученик другого филиала" });
+    if (st.token) studentAccessTokens.delete(st.token);
+    if (supabaseEnabled) {
+      await supabaseFetch("students", `id=eq.${st.id}&organization_id=eq.${session.organizationId}`, {
+        method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ access_enabled: false, access_token: null }),
+      });
+    } else if (mockStudentAccess[st.id]) {
+      mockStudentAccess[st.id].enabled = false;
+      mockStudentAccess[st.id].token = "";
+    }
+    res.json({ ok: true });
+  }));
+
+  // Вход ученика: обмен токена (из ссылки/QR) на профиль + уровень + вкладки.
+  app.post("/api/mvp/student-auth", ah(async (req, res) => {
+    const token = String((req.body || {}).token || "").trim();
+    if (!token) return res.status(400).json({ error: "Не указан код доступа" });
+
+    if (!supabaseEnabled) {
+      const entry = Object.entries(mockStudentAccess).find(([, v]) => v.enabled && v.token === token);
+      const cached = studentAccessTokens.get(token);
+      const studentId = entry?.[0] || cached?.studentId;
+      if (!studentId) return res.status(401).json({ error: "Ссылка недействительна или доступ отозван" });
+      const s: any = initialStudents.find((x: any) => x.id === studentId);
+      if (!s) return res.status(404).json({ error: "Ученик не найден" });
+      const level = effectiveAccessLevel(entry?.[1].level ?? null, s.age ?? ageFromBirthday(s.birthday));
+      studentAccessTokens.set(token, { studentId, level, branchId: s.branchId ?? null });
+      return res.json({ studentId, name: s.name, level, tabs: tabsForLevel(level) });
+    }
+
+    const rows = await supabaseFetch<any[]>("students", `select=id,first_name,last_name,full_name,birthday,branch_id,access_level,access_enabled&access_token=eq.${token}&access_enabled=is.true&limit=1`);
+    const r = rows[0];
+    if (!r) return res.status(401).json({ error: "Ссылка недействительна или доступ отозван" });
+    const name = [r.first_name, r.last_name].filter(Boolean).join(" ") || r.full_name || "Ученик";
+    const level = effectiveAccessLevel(r.access_level, ageFromBirthday(r.birthday));
+    studentAccessTokens.set(token, { studentId: r.id, level, branchId: r.branch_id ?? null });
+    res.json({ studentId: r.id, name, level, tabs: tabsForLevel(level) });
+  }));
+
+  // ======================================================================
   // ЭХОБАКСЫ — магазин наград/товаров за внутреннюю валюту (роадмап §2).
   // Кошелёк ученика (students.echo_balance) + история (echo_transactions).
   // Персонал (владелец/управляющий/админ/преподаватель) начисляет и списывает,
@@ -3417,6 +3604,10 @@ export function registerMvpApi(app: express.Express) {
     const session = getSession(req);
     const studentId = String((req.query as any).studentId || "");
     if (!studentId) return res.status(400).json({ error: "Не указан ученик" });
+    // Ученик видит только свой кошелёк; персонал — любой.
+    if (session.role === "student" && session.studentId !== studentId) {
+      return res.status(403).json({ error: "Нет доступа к чужому кошельку" });
+    }
     if (!supabaseEnabled) {
       return res.json({ balance: mockEchoBalances[studentId] ?? 0, transactions: mockEchoTx.filter((t) => t.studentId === studentId).slice(0, 50).map(echoTxOut) });
     }
@@ -3467,6 +3658,10 @@ export function registerMvpApi(app: express.Express) {
     const studentId = String(b.studentId || "");
     const productId = String(b.productId || "");
     if (!studentId || !productId) return res.status(400).json({ error: "Не указан ученик или товар" });
+    // Ученик покупает только за свой кошелёк.
+    if (session.role === "student" && session.studentId !== studentId) {
+      return res.status(403).json({ error: "Нельзя покупать за чужой счёт" });
+    }
     // Цена и активность товара.
     let prod: { name: string; echoPrice: number; active: boolean } | null = null;
     if (!supabaseEnabled) {

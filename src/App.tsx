@@ -120,7 +120,6 @@ export default function App() {
 
   // Roles list
   const roles = [
-    { id: "chart", name: "Анимация графика", icon: TrendingUp, badge: "5 Bars" },
     { id: "owner", name: "Владелец сети", icon: Shield, badge: "Network Owner" },
     { id: "branch", name: "Руководитель филиала", icon: Building2, badge: "Branch Manager" },
     { id: "admin", name: "Администратор", icon: UserCheck, badge: "Registrar" },
@@ -290,6 +289,9 @@ export default function App() {
   const [annSubTab, setAnnSubTab] = useState<"feed" | "dispatch">("feed");
   const [pieBranchFilter, setPieBranchFilter] = useState<string>("all");
   const [isPlayingPromo, setIsPlayingPromo] = useState<boolean>(true);
+  // Вход ученика по ссылке/QR (?student=<token>). Уровень задаёт набор вкладок кабинета.
+  const [studentAccessLevel, setStudentAccessLevel] = useState<"junior" | "senior" | null>(null);
+  const [studentAccessToken, setStudentAccessToken] = useState<string>("");
   const [mvpDataMode, setMvpDataMode] = useState<"mock" | "supabase">("mock");
   const [mvpDataError, setMvpDataError] = useState<string | null>(null);
 
@@ -453,6 +455,33 @@ export default function App() {
   useEffect(() => {
     loadMvpBootstrap(activeRole);
   }, [activeRole]);
+
+  // Вход ученика по ссылке/QR: ?student=<token>. Обмениваем токен на профиль,
+  // включаем кабинет ученика с нужным уровнем прав и убираем токен из адреса.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const token = new URLSearchParams(window.location.search).get("student");
+    if (!token) return;
+    (async () => {
+      try {
+        const resp = await fetch("/api/mvp/student-auth", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token }),
+        });
+        if (!resp.ok) return; // недействительная/отозванная ссылка — оставляем обычный вход
+        const data = await resp.json();
+        setStudentAccessToken(token);
+        setStudentAccessLevel(data.level === "junior" ? "junior" : "senior");
+        if (data.studentId) setSelectedStudentId(data.studentId);
+        setActiveRole("student");
+        setIsPlayingPromo(false);
+        window.history.replaceState({}, "", window.location.pathname);
+      } catch {
+        /* сеть недоступна — показываем обычный экран входа */
+      }
+    })();
+  }, []);
 
   // Executive metrics calculations
   const [metricsSummary, setMetricsSummary] = useState<ExecutiveSummary>(() =>
@@ -3359,7 +3388,8 @@ export default function App() {
                     groups={groups}
                     branches={branches}
                     teachers={teachers}
-                    readOnlyPreview
+                    accessLevel={studentAccessLevel ?? undefined}
+                    readOnlyPreview={!studentAccessLevel}
                   />
                 );
               })()}

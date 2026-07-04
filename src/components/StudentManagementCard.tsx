@@ -28,7 +28,12 @@ import {
   TrendingUp,
   Award,
   Megaphone,
+  QrCode,
+  Copy,
+  Check,
+  KeyRound,
 } from "lucide-react";
+import QRCode from "qrcode";
 import { Branch, Group, LeadSource, Student, Subscription, SubscriptionPlan, Teacher } from "../types";
 import { getEnrollmentMonths, formatDuration, getLtvSegment, LTV_BADGE } from "../studentSegments";
 
@@ -78,6 +83,10 @@ export interface StudentManagementCardProps {
   onAddToWaitlist?: (payload: { studentId: string; branchId?: string | null; groupId?: string | null; comment?: string | null }) => Promise<boolean> | boolean;
   /** true — ученик уже состоит в активном листе ожидания (кнопка становится неактивной). */
   inWaitlist?: boolean;
+  /** Показывать блок «Вход ученика» (QR/ссылка). Только для владельца/руководителя/админа. */
+  canGrantAccess?: boolean;
+  /** Значение заголовка x-demo-role для API доступа (owner | branch_manager | admin). */
+  roleHeader?: string;
 }
 
 type TabId =
@@ -135,9 +144,11 @@ export default function StudentManagementCard({
   onTransfer,
   onAddToWaitlist,
   inWaitlist = false,
+  canGrantAccess = false,
+  roleHeader = "owner",
 }: StudentManagementCardProps) {
   const [tab, setTab] = useState<TabId>("general");
-  const [panel, setPanel] = useState<null | "trial" | "transfer" | "sell">(null);
+  const [panel, setPanel] = useState<null | "trial" | "transfer" | "sell" | "access">(null);
   const [openSub, setOpenSub] = useState<Subscription | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);
@@ -204,9 +215,88 @@ export default function StudentManagementCard({
     else if (onOpenPayment) onOpenPayment();
   };
 
-  const togglePanel = (next: "trial" | "transfer" | "sell") => {
+  const togglePanel = (next: "trial" | "transfer" | "sell" | "access") => {
     setDone(null);
     setPanel((prev) => (prev === next ? null : next));
+  };
+
+  // ——— Вход ученика по ссылке/QR (владелец/руководитель/админ) ———
+  const [accessBusy, setAccessBusy] = useState(false);
+  const [accessErr, setAccessErr] = useState<string | null>(null);
+  const [accessStatus, setAccessStatus] = useState<null | { enabled: boolean; level: "junior" | "senior"; levelManual: "junior" | "senior" | null; autoLevel: "junior" | "senior"; token: string | null }>(null);
+  const [accessLevelPick, setAccessLevelPick] = useState<"auto" | "junior" | "senior">("auto");
+  const [accessQr, setAccessQr] = useState<string>("");
+  const [accessCopied, setAccessCopied] = useState(false);
+
+  const accessUrl = accessStatus?.token ? `${window.location.origin}/?student=${accessStatus.token}` : "";
+  const accessHeaders = () => ({ "Content-Type": "application/json", "x-demo-role": roleHeader });
+
+  // Подтянуть текущее состояние доступа при открытии панели / смене ученика.
+  useEffect(() => {
+    if (panel !== "access" || !canGrantAccess) return;
+    let alive = true;
+    setAccessErr(null); setAccessQr(""); setAccessCopied(false);
+    (async () => {
+      try {
+        const r = await fetch(`/api/mvp/students/${student.id}/access`, { headers: { "x-demo-role": roleHeader } });
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Не удалось загрузить статус");
+        const d = await r.json();
+        if (!alive) return;
+        setAccessStatus(d);
+        setAccessLevelPick(d.levelManual ?? "auto");
+      } catch (e: any) {
+        if (alive) setAccessErr(e?.message || "Ошибка загрузки");
+      }
+    })();
+    return () => { alive = false; };
+  }, [panel, student.id, canGrantAccess, roleHeader]);
+
+  // Сгенерировать QR по текущей ссылке.
+  useEffect(() => {
+    if (!accessUrl) { setAccessQr(""); return; }
+    let alive = true;
+    QRCode.toDataURL(accessUrl, { width: 220, margin: 1 })
+      .then((url) => { if (alive) setAccessQr(url); })
+      .catch(() => { if (alive) setAccessQr(""); });
+    return () => { alive = false; };
+  }, [accessUrl]);
+
+  const grantAccess = async () => {
+    setAccessBusy(true); setAccessErr(null); setAccessCopied(false);
+    try {
+      const r = await fetch(`/api/mvp/students/${student.id}/access`, {
+        method: "POST", headers: accessHeaders(), body: JSON.stringify({ level: accessLevelPick }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Не удалось выдать доступ");
+      const d = await r.json();
+      setAccessStatus(d);
+      setAccessLevelPick(d.levelManual ?? "auto");
+      setDone(d.enabled ? "Доступ выдан — ссылка и QR готовы" : "Готово");
+    } catch (e: any) {
+      setAccessErr(e?.message || "Ошибка");
+    } finally {
+      setAccessBusy(false);
+    }
+  };
+
+  const revokeAccess = async () => {
+    setAccessBusy(true); setAccessErr(null);
+    try {
+      const r = await fetch(`/api/mvp/students/${student.id}/access`, { method: "DELETE", headers: accessHeaders() });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Не удалось отозвать");
+      setAccessStatus((s) => (s ? { ...s, enabled: false, token: null } : s));
+      setAccessQr("");
+      setDone("Доступ отозван");
+    } catch (e: any) {
+      setAccessErr(e?.message || "Ошибка");
+    } finally {
+      setAccessBusy(false);
+    }
+  };
+
+  const copyAccessUrl = async () => {
+    if (!accessUrl) return;
+    try { await navigator.clipboard.writeText(accessUrl); setAccessCopied(true); setTimeout(() => setAccessCopied(false), 1800); } catch { /* clipboard недоступен */ }
   };
 
   const submitTrial = async () => {
@@ -444,6 +534,18 @@ export default function StudentManagementCard({
               <ArrowLeftRight className="h-4 w-4 text-slate-400" /> Перевести
             </button>
           )}
+          {canGrantAccess && (
+            <button
+              onClick={() => togglePanel("access")}
+              className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-bold transition ${
+                panel === "access"
+                  ? "border-[#C5A059] bg-[#C5A059]/10 text-[#8a6d2f]"
+                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              <QrCode className="h-4 w-4 text-[#C5A059]" /> Вход ученика
+            </button>
+          )}
           {onEdit && (
             <button
               onClick={onEdit}
@@ -644,6 +746,83 @@ export default function StudentManagementCard({
                 Отмена
               </button>
             </div>
+          </div>
+        )}
+
+        {/* Панель: вход ученика по ссылке/QR (владелец/руководитель/админ) */}
+        {panel === "access" && canGrantAccess && (
+          <div className="mt-3 rounded-2xl border border-[#C5A059]/40 bg-[#FBF7EE] p-4">
+            <div className="mb-1 flex items-center gap-2">
+              <KeyRound className="h-4 w-4 text-[#C5A059]" />
+              <p className="text-sm font-bold text-slate-800">Вход ученика по ссылке / QR</p>
+            </div>
+            <p className="mb-3 text-xs text-slate-500">
+              «Маленькая» группа видит только Главную, Наклейки и Достижения. «Взрослая» — все разделы кабинета.
+              Уровень по умолчанию — по возрасту{typeof student.age === "number" ? ` (сейчас ${student.age} лет → «${accessStatus?.autoLevel === "junior" ? "маленькая" : "взрослая"}»)` : ""}.
+            </p>
+
+            {/* Выбор уровня прав */}
+            <div className="mb-3 grid grid-cols-3 gap-2">
+              {([
+                { key: "auto", label: "По возрасту" },
+                { key: "junior", label: "Маленькая" },
+                { key: "senior", label: "Взрослая" },
+              ] as const).map((opt) => (
+                <button
+                  key={opt.key}
+                  onClick={() => setAccessLevelPick(opt.key)}
+                  className={`rounded-xl border px-3 py-2 text-xs font-bold transition ${
+                    accessLevelPick === opt.key
+                      ? "border-[#C5A059] bg-[#C5A059] text-white"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            {accessErr && (
+              <div className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-600">{accessErr}</div>
+            )}
+
+            {/* Активная ссылка + QR */}
+            {accessStatus?.enabled && accessUrl ? (
+              <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-start">
+                  {accessQr ? (
+                    <img src={accessQr} alt="QR-код входа ученика" className="h-40 w-40 flex-shrink-0 rounded-xl border border-slate-100" />
+                  ) : (
+                    <div className="flex h-40 w-40 flex-shrink-0 items-center justify-center rounded-xl border border-slate-100 text-xs text-slate-400">QR…</div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                      Уровень: {accessStatus.level === "junior" ? "Маленькая" : "Взрослая"}
+                    </p>
+                    <p className="mt-1 break-all rounded-lg bg-slate-50 px-2 py-1.5 text-xs text-slate-600">{accessUrl}</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button onClick={copyAccessUrl} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50">
+                        {accessCopied ? <><Check className="h-3.5 w-3.5 text-emerald-500" /> Скопировано</> : <><Copy className="h-3.5 w-3.5 text-slate-400" /> Копировать ссылку</>}
+                      </button>
+                      <button onClick={grantAccess} disabled={accessBusy} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-40">
+                        {accessBusy ? "…" : "Обновить уровень"}
+                      </button>
+                      <button onClick={revokeAccess} disabled={accessBusy} className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-500 transition hover:bg-rose-50 disabled:opacity-40">
+                        Отозвать доступ
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={grantAccess}
+                disabled={accessBusy}
+                className="inline-flex items-center gap-2 rounded-xl bg-[#C5A059] px-4 py-2.5 text-sm font-bold text-white transition hover:bg-[#b3914c] disabled:opacity-40"
+              >
+                <QrCode className="h-4 w-4" /> {accessBusy ? "Генерируем…" : "Выдать доступ и создать ссылку"}
+              </button>
+            )}
           </div>
         )}
 

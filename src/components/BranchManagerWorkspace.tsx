@@ -388,6 +388,7 @@ function StudentsView({ students, groups, teachers = [], branches = [], branchId
   return (
     <Screen title="Ученики филиала" subtitle="Продления, долги, LTV-сегменты, коммуникации и массовые действия по вашему филиалу.">
       <StudentsRegistry
+        roleHeader="branch_manager"
         students={students}
         groups={groups}
         branches={branches}

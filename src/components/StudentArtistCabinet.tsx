@@ -35,7 +35,15 @@ interface StudentArtistCabinetProps {
   branches?: Branch[];
   teachers?: Teacher[];
   readOnlyPreview?: boolean;
+  /** Уровень прав кабинета: 'junior' («маленькая» группа) видит только
+   *  Главную / Наклейки / Достижения; 'senior' («взрослая») — все вкладки.
+   *  Не задан — показываем всё (обратная совместимость с preview). */
+  accessLevel?: "junior" | "senior";
 }
+
+// Вкладки, доступные «маленькой» группе (junior). Держать в синхроне с сервером
+// (JUNIOR_TABS в server/mvpApi.ts).
+const JUNIOR_TABS: readonly string[] = ["Главная", "Наклейки", "Достижения"];
 
 // Награды за наклейки (педагог ставит наклейку после занятия) — пороги как в прототипе.
 const STICKER_REWARDS = [
@@ -171,8 +179,17 @@ const achievementLibrary = [
 const CABINET_TABS = ["Главная", "Наклейки", "Достижения", "Мой путь", "Паспорт", "Сообщество", "Магазин", "Выступления", "Видео"] as const;
 type CabinetTab = (typeof CABINET_TABS)[number];
 
-export function StudentArtistCabinet({ student, group, allStudents = [], groups = [], branches = [], teachers = [], readOnlyPreview = false }: StudentArtistCabinetProps) {
+export function StudentArtistCabinet({ student, group, allStudents = [], groups = [], branches = [], teachers = [], readOnlyPreview = false, accessLevel }: StudentArtistCabinetProps) {
   const [activeTab, setActiveTab] = useState<CabinetTab>("Главная");
+  // Набор доступных вкладок по уровню прав ученика.
+  const visibleTabs = useMemo<readonly CabinetTab[]>(
+    () => (accessLevel === "junior" ? CABINET_TABS.filter((t) => JUNIOR_TABS.includes(t)) : CABINET_TABS),
+    [accessLevel]
+  );
+  // Если активная вкладка стала недоступной (сменился уровень) — вернуть на Главную.
+  useEffect(() => {
+    if (!visibleTabs.includes(activeTab)) setActiveTab("Главная");
+  }, [visibleTabs, activeTab]);
   const [commMetric, setCommMetric] = useState<string>("visits");
 
   const stickers = stickersOf(student);
@@ -239,8 +256,8 @@ export function StudentArtistCabinet({ student, group, allStudents = [], groups 
         </section>
       )}
 
-      <nav className="grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-9">
-        {CABINET_TABS.map((tab) => (
+      <nav className={`grid grid-cols-3 gap-2 sm:grid-cols-5 ${visibleTabs.length > 5 ? "lg:grid-cols-9" : "lg:grid-cols-3"}`}>
+        {visibleTabs.map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -287,7 +304,7 @@ export function StudentArtistCabinet({ student, group, allStudents = [], groups 
           </div>
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            {dashTiles.map((t) => (
+            {dashTiles.filter((t) => visibleTabs.includes(t.tab)).map((t) => (
               <button key={t.name} onClick={() => setActiveTab(t.tab)}
                 className="group relative rounded-2xl border border-white/10 bg-[#121212] p-4 text-left transition hover:border-[#C5A059]/40">
                 <span className="absolute right-3 top-3 text-slate-600 transition group-hover:text-[#C5A059]">→</span>
