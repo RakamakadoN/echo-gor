@@ -3348,17 +3348,21 @@ export default function App() {
             />
           ) : (
             <>
-              {activeRole === "student" && (
-                <StudentArtistCabinet
-                  student={students.find((std) => std.id === selectedStudentId) || students[0]}
-                  group={groups.find((group) => group.id === (students.find((std) => std.id === selectedStudentId) || students[0])?.groupId)}
-                  allStudents={students}
-                  groups={groups}
-                  branches={branches}
-                  teachers={teachers}
-                  readOnlyPreview
-                />
-              )}
+              {activeRole === "student" && (() => {
+                const currentStudent = students.find((std) => std.id === selectedStudentId) || students[0];
+                if (!currentStudent) return null;
+                return (
+                  <StudentArtistCabinet
+                    student={currentStudent}
+                    group={groups.find((group) => group.id === currentStudent.groupId)}
+                    allStudents={students}
+                    groups={groups}
+                    branches={branches}
+                    teachers={teachers}
+                    readOnlyPreview
+                  />
+                );
+              })()}
 
               {/* Metric Bar (For Admin/Branch/Owner views) */}
               {(activeRole === "owner" || activeRole === "branch" || activeRole === "admin") && (

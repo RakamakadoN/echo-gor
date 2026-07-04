@@ -34,6 +34,8 @@ import {
   ChevronDown,
   Calendar,
   UserX,
+  UserMinus,
+  HelpCircle,
   CheckCircle2,
 } from "lucide-react";
 import { Branch, Group, LeadSource, Student, SubscriptionPlan, Teacher, WaitlistEntry } from "../types";
@@ -147,13 +149,13 @@ const ALL_COLUMNS: { key: ColKey; label: string; defaultOn: boolean }[] = [
   { key: "branch", label: "Филиал", defaultOn: true },
   { key: "group", label: "Группа", defaultOn: true },
   { key: "source", label: "Источник", defaultOn: false },
-  { key: "duration", label: "Продолжительность обучения", defaultOn: true },
+  { key: "duration", label: "Продолжительность обучения", defaultOn: false },
   { key: "subEnd", label: "Дата окончания абонемента", defaultOn: true },
   { key: "debt", label: "Долг", defaultOn: true },
-  { key: "ltv", label: "LTV", defaultOn: true },
+  { key: "ltv", label: "LTV", defaultOn: false },
   { key: "status", label: "Статус", defaultOn: true },
 ];
-const COLS_STORAGE_KEY = "echogor-students-columns-v1";
+const COLS_STORAGE_KEY = "echogor-students-columns-v2";
 
 const loadColumnPrefs = (): Record<ColKey, boolean> => {
   const base = Object.fromEntries(ALL_COLUMNS.map((c) => [c.key, c.defaultOn])) as Record<ColKey, boolean>;
@@ -167,17 +169,64 @@ const loadColumnPrefs = (): Record<ColKey, boolean> => {
   return base;
 };
 
-// Этапы воронки продаж — сопоставлены со статусами getStudentState (studentSegments).
+/* ============================ Дизайн-токены прототипа ============================ */
+/* Палитра светлой темы crm-system-eta-nine (снята с прототипа один-в-один). */
+const CLR = {
+  border: "#DCE2E8",
+  fill: "#F1F4F7",
+  text: "#222B33",
+  strong: "#11171D",
+  muted: "#6B7682",
+  second: "#46505B",
+  gold: "#947C51",
+};
+
+// Цветовые схемы иконок KPI (снято с прототипа).
+const KPI_ICON: Record<string, { bg: string; color: string }> = {
+  gray: { bg: "#EDF1F5", color: "#5C6772" },
+  green: { bg: "#E9F0E6", color: "#4F8A63" },
+  orange: { bg: "#F2EDE2", color: "#947C51" },
+  red: { bg: "#F6E9E9", color: "#B14545" },
+  blue: { bg: "#EAF0F3", color: "#5E8194" },
+  purple: { bg: "#F2EDE2", color: "#947C51" },
+};
+
+// Пилюли статусов по тону — сопоставлены с палитрой прототипа (pill-*).
+const PILL_TONE: Record<string, string> = {
+  red: "bg-[#F6E9E9] text-[#B14545]",
+  yellow: "bg-[#FFFBEB] text-[#92400E]",
+  green: "bg-[#E9F0E6] text-[#166534]",
+  blue: "bg-[#EAF0F3] text-[#1E40AF]",
+  purple: "bg-[#F2EDE2] text-[#7E6840]",
+  gray: "bg-[#EDF1F5] text-[#5C6772]",
+  neutral: "bg-[#EDF1F5] text-[#5C6772]",
+};
+
+// Этапы воронки продаж — снято с прототипа (порядок, названия, подсказки, цвета).
 const FUNNEL_STAGES: {
-  key: string; label: string; hint?: string;
-  icon: React.ElementType; tone: string; bg: string; border: string;
+  key: string; label: string; hint?: string; icon: React.ElementType;
+  bg: string; border: string; icon_c: string; val: string; hint_c: string;
 }[] = [
-  { key: "lead", label: "Новые лиды", hint: "оставили заявку", icon: UserPlus, tone: "text-sky-600", bg: "bg-sky-50", border: "border-sky-200" },
-  { key: "trial", label: "Записаны на пробный", icon: Calendar, tone: "text-indigo-600", bg: "bg-indigo-50", border: "border-indigo-200" },
-  { key: "trial_missed", label: "Не пришли на пробный", hint: "перезаписать", icon: UserX, tone: "text-rose-600", bg: "bg-rose-50", border: "border-rose-200" },
-  { key: "trial_rebooked", label: "Перезаписаны", icon: RefreshCw, tone: "text-amber-600", bg: "bg-amber-50", border: "border-amber-200" },
-  { key: "trial_lost", label: "Были, не купили", hint: "дожать", icon: AlertTriangle, tone: "text-orange-600", bg: "bg-orange-50", border: "border-orange-200" },
-  { key: "visitor_new", label: "Купили абонемент", hint: "новый посетитель", icon: CheckCircle2, tone: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-200" },
+  { key: "lead", label: "Без статуса", hint: "нет целевых действий", icon: UserPlus, bg: "#F8F6FF", border: "#DDD6FE", icon_c: "#8B5CF6", val: "#5B21B6", hint_c: "#7C3AED" },
+  { key: "trial", label: "Записаны на пробный", hint: "ожидают занятия", icon: Calendar, bg: "#EFF6FF", border: "#BFDBFE", icon_c: "#3B82F6", val: "#1E40AF", hint_c: "#2563EB" },
+  { key: "trial_missed", label: "Не пришли на пробный", hint: "перезаписать", icon: UserX, bg: "#FFF5F5", border: "#FECACA", icon_c: "#EF4444", val: "#B91C1C", hint_c: "#DC2626" },
+  { key: "trial_rebooked", label: "Перезаписаны", hint: "ждут занятия", icon: RefreshCw, bg: "#FFFBEB", border: "#FDE68A", icon_c: "#F59E0B", val: "#B45309", hint_c: "#D97706" },
+  { key: "trial_lost", label: "Были, не купили", hint: "дожать", icon: AlertTriangle, bg: "#FFF7ED", border: "#FED7AA", icon_c: "#F97316", val: "#C2410C", hint_c: "#EA580C" },
+  { key: "visitor_new", label: "Купили абонемент", hint: "новый посетитель", icon: CheckCircle2, bg: "#F0FDF4", border: "#BBF7D0", icon_c: "#22C55E", val: "#15803D", hint_c: "#16A34A" },
+];
+
+// Быстрые сегменты (чипы) — снято с прототипа: порядок и подписи.
+const SEG_CHIPS: { id: string; label: string }[] = [
+  { id: "all", label: "Все" },
+  { id: "active", label: "Активные" },
+  { id: "renewal", label: "Требуют продления" },
+  { id: "debtors", label: "Должники" },
+  { id: "nostatus", label: "Без статуса" },
+  { id: "trial", label: "Записаны на пробный" },
+  { id: "next_month", label: "Купили следующий" },
+  { id: "waitlist", label: "Лист ожидания" },
+  { id: "vacation", label: "Каникулы" },
+  { id: "left", label: "Ушедшие" },
 ];
 
 export default function StudentsRegistry({
@@ -317,6 +366,9 @@ export default function StudentsRegistry({
       }
       const seg = SEGMENTS.find((x) => x.id === segment);
       if (seg && !seg.match(s, now)) return false;
+      // Спец-чипы прототипа (нет прямого SegmentId): по авто-статусу воронки.
+      if (segment === "nostatus" && getStudentState(s, now).statusKey !== "lead") return false;
+      if (segment === "trial" && getStudentState(s, now).statusKey !== "trial") return false;
       if (!matchStatusFilter(s, statusFilter, now)) return false;
       if (branchFilter !== "all" && s.branchId !== branchFilter) return false;
       if (groupFilter !== "all" && studentGroupId(s) !== groupFilter) return false;
@@ -339,16 +391,24 @@ export default function StudentsRegistry({
 
   /* ---------- KPI ---------- */
   const kpis = useMemo(() => {
-    const active = data.filter((s) => !isLeft(s));
     const count = (id: SegmentId) =>
       data.filter((s) => SEGMENTS.find((x) => x.id === id)!.match(s, now)).length;
+    const noStatus = data.filter((s) => !isLeft(s) && getStudentState(s, now).statusKey === "lead").length;
+    const leftThisMonth = data.filter((s) => {
+      if (!isLeft(s)) return false;
+      const raw = (s as any).leftAt || (s as any).archivedAt || (s as any).left_at || (s as any).archived_at;
+      if (!raw) return false;
+      const dt = new Date(raw);
+      return !isNaN(dt.getTime()) && dt.getFullYear() === now.getFullYear() && dt.getMonth() === now.getMonth();
+    }).length;
     return [
-      { label: "Всего учеников", value: data.length, icon: Users, tone: "text-slate-700", bg: "bg-slate-100" },
-      { label: "Активные", value: active.filter((s) => s.status === "active").length, icon: UserCheck, tone: "text-emerald-600", bg: "bg-emerald-50" },
-      { label: "Требуют продления", value: count("renewal"), icon: RefreshCw, tone: "text-amber-600", bg: "bg-amber-50" },
-      { label: "Должники", value: count("debtors"), icon: AlertTriangle, tone: "text-rose-600", bg: "bg-rose-50" },
-      { label: "Новые", value: count("new"), icon: Sparkles, tone: "text-sky-600", bg: "bg-sky-50" },
-      { label: "Лист ожидания", value: activeWaitlist.length, icon: Clock, tone: "text-violet-600", bg: "bg-violet-50" },
+      { label: "Всего учеников", value: data.length, icon: Users, color: "gray" },
+      { label: "Активные", value: data.filter((s) => !isLeft(s) && s.status === "active").length, icon: UserCheck, color: "green" },
+      { label: "Требуют продления", value: count("renewal"), icon: RefreshCw, color: "orange" },
+      { label: "Должники", value: count("debtors"), icon: AlertTriangle, color: "red" },
+      { label: "Без статуса", value: noStatus, icon: HelpCircle, color: "blue" },
+      { label: "Лист ожидания", value: activeWaitlist.length, icon: Clock, color: "purple" },
+      { label: "Ушли в этом месяце", value: leftThisMonth, icon: UserMinus, color: "red" },
     ];
   }, [data, now, activeWaitlist.length]);
 
@@ -435,6 +495,16 @@ export default function StudentsRegistry({
       await onUpdateStudent(s.id, { groupId });
     }
     setMassNote(`${selectedStudents.length} учеников переведены в «${groupName(groupId)}»`);
+    clearSelection();
+  };
+
+  const massTransferBranch = async (branchId: string) => {
+    if (!branchId || !onUpdateStudent) return;
+    for (const s of selectedStudents) {
+      applyOverride(s.id, { branchId });
+      await onUpdateStudent(s.id, { branchId });
+    }
+    setMassNote(`${selectedStudents.length} учеников переведены в филиал «${branchName(branchId)}»`);
     clearSelection();
   };
 
@@ -600,113 +670,78 @@ export default function StudentsRegistry({
     <div className="space-y-5 text-slate-900">
       {/* Заголовок */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.18em] text-rose-500">
-            <span className="inline-block h-1.5 w-1.5 rounded-full bg-rose-500" /> Ученики
-          </p>
-          <h1 className="mt-1 text-2xl font-black tracking-tight">Клиентская база студии</h1>
-          <p className="text-sm text-slate-400">Продления, долги, LTV-сегменты, коммуникации, лист ожидания и массовые действия.</p>
-        </div>
+        <h1 className="text-[28px] font-black leading-tight tracking-tight" style={{ color: CLR.strong }}>Клиентская база студии</h1>
         {canManage && (
-          <button onClick={openCreate} className="inline-flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-black text-white shadow-sm transition hover:bg-amber-600">
+          <button onClick={openCreate} className="inline-flex items-center gap-2 rounded-xl px-[18px] py-2.5 text-sm font-bold text-white shadow-sm transition hover:brightness-95" style={{ background: CLR.gold }}>
             <UserPlus className="h-4 w-4" /> Добавить ученика
           </button>
         )}
       </div>
 
-      {/* Переключатель: Реестр / Лист ожидания */}
-      <div className="flex w-fit gap-1 rounded-xl bg-slate-100 p-1">
-        {([["registry", "Реестр", data.length], ["waitlist", "Лист ожидания", activeWaitlist.length]] as const).map(([id, label, cnt]) => (
-          <button
-            key={id}
-            onClick={() => setView(id)}
-            className={`inline-flex items-center gap-2 rounded-lg px-4 py-1.5 text-sm font-bold transition ${
-              view === id ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            {label}
-            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${view === id ? "bg-amber-100 text-amber-700" : "bg-slate-200 text-slate-500"}`}>{cnt}</span>
-          </button>
-        ))}
+      {/* Переключатель: Реестр / Лист ожидания — пилюли прототипа */}
+      <div className="flex flex-wrap gap-2">
+        {([["registry", "Реестр", data.length], ["waitlist", "Лист ожидания", activeWaitlist.length]] as const).map(([id, label, cnt]) => {
+          const on = view === id;
+          return (
+            <button
+              key={id}
+              onClick={() => setView(id)}
+              className="inline-flex items-center gap-2 rounded-full px-3.5 py-[7px] text-[13px] font-semibold transition"
+              style={on
+                ? { background: CLR.gold, border: `1.5px solid ${CLR.gold}`, color: "#fff" }
+                : { background: CLR.fill, border: `1.5px solid ${CLR.border}`, color: CLR.second }}
+            >
+              {label}
+              <span className="rounded-full px-[7px] py-px text-[11px] font-semibold" style={on ? { background: "rgba(0,0,0,.15)", color: "#fff" } : { background: "rgba(0,0,0,.08)", color: CLR.muted }}>{cnt}</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* ───── Основные показатели ───── */}
       <div>
-        <p className="mb-2 text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Основные показатели</p>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          {kpis.map((k) => (
-            <div key={k.label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className={`mb-2 inline-flex h-8 w-8 items-center justify-center rounded-xl ${k.bg}`}>
-                <k.icon className={`h-4 w-4 ${k.tone}`} />
+        <p className="mb-3 text-[11px] font-bold uppercase" style={{ letterSpacing: "0.88px", color: CLR.muted }}>Основные показатели</p>
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
+          {kpis.map((k) => {
+            const ic = KPI_ICON[k.color] || KPI_ICON.gray;
+            return (
+              <div key={k.label} className="rounded-[14px] bg-white px-4 py-3.5 shadow-sm" style={{ border: `1px solid ${CLR.border}` }}>
+                <div className="mb-2 inline-flex h-9 w-9 items-center justify-center rounded-[10px]" style={{ background: ic.bg, color: ic.color }}>
+                  <k.icon className="h-[18px] w-[18px]" />
+                </div>
+                <p className="text-[28px] font-extrabold leading-none" style={{ color: CLR.strong }}>{k.value}</p>
+                <p className="mt-1.5 text-[11px] font-semibold uppercase" style={{ letterSpacing: "0.55px", color: CLR.muted }}>{k.label}</p>
               </div>
-              <p className="text-2xl font-black">{k.value}</p>
-              <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">{k.label}</p>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
       {/* ───── Воронка продаж ───── */}
       <div>
-        <p className="mb-2 text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Воронка продаж</p>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <p className="mb-3 text-[11px] font-bold uppercase" style={{ letterSpacing: "0.88px", color: CLR.muted }}>Воронка продаж</p>
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
           {FUNNEL_STAGES.map((st, i) => {
             const ids = funnel[st.key] || [];
             return (
               <button
                 key={st.key}
                 onClick={() => openFunnel(st.key, st.label)}
-                className={`group relative flex flex-col items-start rounded-2xl border ${st.border} ${st.bg} p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md`}
+                className="group relative flex flex-col items-start rounded-[14px] px-4 py-3.5 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                style={{ background: st.bg, border: `1px solid ${st.border}` }}
               >
                 <div className="flex w-full items-center justify-between">
-                  <st.icon className={`h-4 w-4 ${st.tone}`} />
-                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-300">{i + 1}</span>
+                  <st.icon className="h-[18px] w-[18px]" style={{ color: st.icon_c }} />
+                  <span className="text-[11px] font-bold" style={{ color: CLR.muted }}>{i + 1}</span>
                 </div>
-                <p className="mt-2 text-2xl font-black text-slate-800">{ids.length}</p>
-                <p className="text-[11px] font-bold leading-tight text-slate-600">{st.label}</p>
-                {st.hint && <p className={`mt-1 text-[10px] font-bold ${st.tone}`}>{st.hint}</p>}
+                <p className="mt-1.5 text-[26px] font-extrabold leading-none" style={{ color: st.val }}>{ids.length}</p>
+                <p className="mt-1 text-[12px] font-semibold leading-tight" style={{ color: CLR.text }}>{st.label}</p>
+                {st.hint && <p className="mt-1 text-[11px] font-semibold" style={{ color: st.hint_c }}>{st.hint}</p>}
               </button>
             );
           })}
         </div>
       </div>
-
-      {/* ───── Рекомендации Магомеда ───── */}
-      {(recommendations.lost.length > 0 || recommendations.missed.length > 0) && (
-        <div className="overflow-hidden rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 to-amber-50 shadow-sm">
-          <div className="flex items-center gap-2 border-b border-violet-100 px-4 py-2.5">
-            <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-violet-500 text-white">
-              <Sparkles className="h-4 w-4" />
-            </span>
-            <div>
-              <p className="text-sm font-black text-slate-800">Рекомендации Магомеда</p>
-              <p className="text-[11px] text-slate-500">Кого дожать и кого перезаписать по итогам пробных уроков</p>
-            </div>
-          </div>
-          <div className="grid gap-3 p-4 sm:grid-cols-2">
-            <RecoBlock
-              tone="amber"
-              title="Дожать продажу"
-              subtitle="Были на пробном, абонемент не купили"
-              students={recommendations.lost}
-              phoneOf={studentPhone}
-              groupOf={(s) => groupName(studentGroupId(s))}
-              onOpen={(id) => setOpenId(id)}
-              actionLabel="предложить абонемент"
-            />
-            <RecoBlock
-              tone="rose"
-              title="Перезаписать на пробный"
-              subtitle="Не пришли на пробный урок"
-              students={recommendations.missed}
-              phoneOf={studentPhone}
-              groupOf={(s) => groupName(studentGroupId(s))}
-              onOpen={(id) => setOpenId(id)}
-              actionLabel="перезаписать"
-            />
-          </div>
-        </div>
-      )}
 
       {view === "waitlist" ? (
         <WaitlistTable
@@ -737,16 +772,17 @@ export default function StudentsRegistry({
           )}
 
           {/* Быстрые сегменты */}
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {SEGMENTS.map((seg) => {
+          <div className="flex flex-wrap gap-2 pb-1">
+            {SEG_CHIPS.map((seg) => {
               const active = !presetIds && segment === seg.id;
               return (
                 <button
                   key={seg.id}
-                  onClick={() => { clearPreset(); setSegment(seg.id); }}
-                  className={`whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-bold transition ${
-                    active ? "bg-slate-900 text-white" : "bg-white text-slate-500 ring-1 ring-slate-200 hover:bg-slate-50"
-                  }`}
+                  onClick={() => { clearPreset(); setSegment(seg.id as any); }}
+                  className="whitespace-nowrap rounded-full px-3.5 py-[7px] text-[13px] font-semibold transition"
+                  style={active
+                    ? { background: CLR.gold, border: `1px solid ${CLR.gold}`, color: "#fff" }
+                    : { background: CLR.fill, border: `1px solid ${CLR.border}`, color: CLR.second }}
                 >
                   {seg.label}
                 </button>
@@ -755,37 +791,37 @@ export default function StudentsRegistry({
           </div>
 
           {/* Фильтры + поиск + настройка таблицы */}
-          <div className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm lg:grid-cols-[1fr_auto_auto_auto_auto_auto_auto]">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Поиск: имя, телефон, родитель, группа" className="w-full rounded-xl border border-slate-200 py-2 pl-10 pr-3 text-sm outline-none focus:border-amber-400" />
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="relative min-w-[220px] flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: CLR.muted }} />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Поиск по имени, телефону…" className="w-full rounded-[10px] py-2 pl-9 pr-3 text-[13px] outline-none" style={{ background: CLR.fill, border: `1px solid ${CLR.border}`, color: CLR.text }} />
             </div>
             <FilterSelect value={presetIds ? "all" : statusFilter} onChange={(v) => { clearPreset(); setStatusFilter(v); }} options={STATUS_FILTER_OPTIONS} />
             <FilterSelect value={branchFilter} onChange={(v) => { clearPreset(); setBranchFilter(v); }} options={[{ value: "all", label: "Все филиалы" }, ...branches.map((b) => ({ value: b.id, label: b.name || b.city }))]} />
             <FilterSelect value={presetIds ? "all" : groupFilter} onChange={(v) => { clearPreset(); setGroupFilter(v); }} options={[{ value: "all", label: "Все группы" }, ...visibleGroups.map((g) => ({ value: g.id, label: g.name }))]} />
             <FilterSelect value={presetIds ? "all" : ltvFilter} onChange={(v) => { clearPreset(); setLtvFilter(v); }} options={[{ value: "all", label: "Все LTV" }, ...LTV_SEGMENTS.map((s) => ({ value: s, label: s }))]} />
             <FilterSelect value={archiveFilter} onChange={(v) => { clearPreset(); setArchiveFilter(v as any); }} options={[{ value: "active", label: "Активные" }, { value: "archive", label: "Архив" }, { value: "all", label: "Все" }]} />
-            <button onClick={() => setShowColumnConfig((v) => !v)} className={`inline-flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold transition ${showColumnConfig ? "border-amber-400 bg-amber-50 text-amber-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+            <button onClick={() => setShowColumnConfig((v) => !v)} className="inline-flex items-center justify-center gap-2 rounded-[10px] px-3.5 py-2 text-[13px] font-semibold transition" style={showColumnConfig ? { background: "#F2EDE2", border: `1px solid ${CLR.gold}`, color: CLR.gold } : { background: CLR.fill, border: `1px solid ${CLR.border}`, color: CLR.second }}>
               <SlidersHorizontal className="h-4 w-4" /> Настроить таблицу
             </button>
           </div>
 
           {/* Конфигуратор столбцов */}
           {showColumnConfig && (
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="rounded-[14px] bg-white p-4 shadow-sm" style={{ border: `1px solid ${CLR.border}` }}>
               <div className="mb-3 flex items-center justify-between">
-                <p className="text-sm font-black">Отображаемые столбцы</p>
-                <button onClick={() => setShowColumnConfig(false)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"><X className="h-4 w-4" /></button>
+                <p className="text-sm font-bold" style={{ color: CLR.strong }}>Включите нужные столбцы</p>
+                <button onClick={() => setShowColumnConfig(false)} className="rounded-lg p-1 hover:bg-[#F1F4F7]" style={{ color: CLR.muted }}><X className="h-4 w-4" /></button>
               </div>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
                 {ALL_COLUMNS.map((c) => (
-                  <label key={c.key} className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-100 px-3 py-2 text-sm hover:bg-slate-50">
-                    <input type="checkbox" checked={colOn(c.key)} onChange={() => toggleCol(c.key)} className="h-4 w-4 accent-amber-500" />
-                    <span className="font-semibold text-slate-600">{c.label}</span>
+                  <label key={c.key} className="flex cursor-pointer items-center gap-2 rounded-[10px] px-3 py-2 text-sm hover:bg-[#F7F9FB]" style={{ border: `1px solid ${CLR.border}` }}>
+                    <input type="checkbox" checked={colOn(c.key)} onChange={() => toggleCol(c.key)} className="h-4 w-4" style={{ accentColor: CLR.gold }} />
+                    <span className="font-medium" style={{ color: CLR.second }}>{c.label}</span>
                   </label>
                 ))}
               </div>
-              <p className="mt-3 text-xs text-slate-400">Имя и фамилия, № и действия отображаются всегда. Выбор сохраняется на этом устройстве.</p>
+              <p className="mt-3 text-xs" style={{ color: CLR.muted }}>Имя и фамилия, № и действия отображаются всегда. Выбор сохраняется на этом устройстве.</p>
             </div>
           )}
 
@@ -799,88 +835,89 @@ export default function StudentsRegistry({
 
           {/* Панель массовых действий */}
           {selected.size > 0 && (
-            <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm">
-              <span className="font-black text-amber-700">Выбрано: {selected.size}</span>
-              <span className="text-slate-300">|</span>
-              <select onChange={(e) => { massSetStatus(e.target.value); e.target.value = ""; }} defaultValue="" className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold">
-                <option value="" disabled>Изменить статус…</option>
+            <div className="flex flex-wrap items-center gap-2 rounded-[14px] p-3 text-sm" style={{ background: "#F2EDE2", border: `1px solid ${CLR.gold}` }}>
+              <span className="font-bold" style={{ color: CLR.gold }}>Выбрано: {selected.size}</span>
+              <span style={{ color: CLR.border }}>|</span>
+              {onUpdateStudent && (
+                <select onChange={(e) => { massTransferGroup(e.target.value); e.target.value = ""; }} defaultValue="" className="rounded-[10px] px-3 py-1.5 text-[12px] font-semibold" style={{ background: "#fff", border: `1px solid ${CLR.border}`, color: CLR.second }}>
+                  <option value="" disabled>Группа…</option>
+                  {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
+              )}
+              {onUpdateStudent && (
+                <select onChange={(e) => { massTransferBranch(e.target.value); e.target.value = ""; }} defaultValue="" className="rounded-[10px] px-3 py-1.5 text-[12px] font-semibold" style={{ background: "#fff", border: `1px solid ${CLR.border}`, color: CLR.second }}>
+                  <option value="" disabled>Филиал…</option>
+                  {branches.map((b) => <option key={b.id} value={b.id}>{b.name || b.city}</option>)}
+                </select>
+              )}
+              <select onChange={(e) => { massSetStatus(e.target.value); e.target.value = ""; }} defaultValue="" className="rounded-[10px] px-3 py-1.5 text-[12px] font-semibold" style={{ background: "#fff", border: `1px solid ${CLR.border}`, color: CLR.second }}>
+                <option value="" disabled>Статус…</option>
                 <option value="active">Активный</option>
                 <option value="paused">Заморозить абонемент</option>
                 {DEFAULT_MANUAL_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
-              {onUpdateStudent && (
-                <select onChange={(e) => { massTransferGroup(e.target.value); e.target.value = ""; }} defaultValue="" className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold">
-                  <option value="" disabled>Перевести в группу…</option>
-                  {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-                </select>
-              )}
               <MassBtn icon={MessageCircle} label="WhatsApp" onClick={massWhatsApp} />
               <MassBtn icon={Download} label="Excel" onClick={() => exportCsv(selectedStudents)} />
               {onArchiveStudent && <MassBtn icon={Archive} label="В архив" tone="rose" onClick={massArchive} />}
-              <button onClick={clearSelection} className="ml-auto rounded-xl px-3 py-1.5 text-xs font-bold text-slate-500 hover:bg-white">Снять выделение</button>
+              <button onClick={clearSelection} className="ml-auto rounded-[10px] px-3 py-1.5 text-[12px] font-semibold hover:bg-white" style={{ color: CLR.muted }}>Снять выделение</button>
             </div>
           )}
 
           {/* Таблица */}
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="overflow-hidden rounded-[16px] bg-white shadow-sm" style={{ border: `1px solid ${CLR.border}` }}>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px] text-left text-sm">
-                <thead className="border-b border-slate-100 bg-slate-50 text-[10px] uppercase tracking-wider text-slate-400">
-                  <tr>
-                    <th className="w-10 p-3"><input type="checkbox" checked={allOnPageSelected} onChange={toggleAll} className="h-4 w-4 accent-amber-500" /></th>
-                    <th className="p-3 font-black">№</th>
-                    <th className="p-3 font-black">Имя и фамилия</th>
-                    {colOn("phone") && <th className="p-3 font-black">Телефон</th>}
-                    {colOn("gender") && <th className="p-3 font-black">Пол</th>}
-                    {colOn("age") && <th className="p-3 font-black">Возраст</th>}
-                    {colOn("branch") && <th className="p-3 font-black">Филиал</th>}
-                    {colOn("group") && <th className="p-3 font-black">Группа</th>}
-                    {colOn("source") && <th className="p-3 font-black">Источник</th>}
-                    {colOn("duration") && <th className="p-3 font-black">Продолжительность</th>}
-                    {colOn("subEnd") && <th className="p-3 font-black">Окончание абон.</th>}
-                    {colOn("debt") && <th className="p-3 font-black">Долг</th>}
-                    {colOn("ltv") && <th className="p-3 font-black">LTV-сегмент</th>}
-                    {colOn("status") && <th className="p-3 font-black">Статус</th>}
-                    <th className="p-3 font-black">Действия</th>
+              <table className="w-full min-w-[900px] text-left">
+                <thead style={{ background: CLR.fill }}>
+                  <tr style={{ borderBottom: `1px solid ${CLR.border}` }}>
+                    {[
+                      <input key="chk" type="checkbox" checked={allOnPageSelected} onChange={toggleAll} className="h-4 w-4" style={{ accentColor: CLR.gold }} />,
+                      "№", "Имя и фамилия",
+                      colOn("phone") && "Телефон", colOn("gender") && "Пол", colOn("age") && "Возраст",
+                      colOn("branch") && "Филиал", colOn("group") && "Группа", colOn("source") && "Источник",
+                      colOn("duration") && "Продолжительность", colOn("subEnd") && "Окончание",
+                      colOn("debt") && "Долг", colOn("ltv") && "LTV-сегмент", colOn("status") && "Статус", "Действия",
+                    ].filter((v) => v !== false).map((label, idx) => (
+                      <th key={idx} className={`px-3.5 py-3 text-[11px] font-bold uppercase ${idx === 0 ? "w-10" : ""}`} style={{ letterSpacing: "0.55px", color: CLR.muted }}>{label}</th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
                   {pageRows.length === 0 && (
-                    <tr><td colSpan={colCount} className="p-10 text-center text-sm text-slate-400">Ученики не найдены</td></tr>
+                    <tr><td colSpan={colCount} className="px-4 py-12 text-center text-[14px]" style={{ color: CLR.muted }}>Никого не найдено по текущим фильтрам</td></tr>
                   )}
                   {pageRows.map((s, i) => {
                     const st = getStudentState(s, now);
                     const phone = studentPhone(s) || "—";
                     return (
-                      <tr key={s.id} className={`border-b border-slate-100 text-slate-700 transition ${ROW_TONE_CLASS[st.tone]} ${openId === s.id ? "ring-2 ring-inset ring-amber-400" : ""}`}>
-                        <td className="p-3"><input type="checkbox" checked={selected.has(s.id)} onChange={() => toggleOne(s.id)} className="h-4 w-4 accent-amber-500" /></td>
-                        <td className="p-3 text-slate-400">{page * pageSize + i + 1}</td>
-                        <td className="p-3">
+                      <tr key={s.id} className={`transition hover:bg-[#F7F9FB] ${openId === s.id ? "ring-2 ring-inset" : ""}`} style={{ borderBottom: "1px solid #EEF1F4", ...(openId === s.id ? { boxShadow: `inset 0 0 0 2px ${CLR.gold}` } : {}) }}>
+                        <td className="px-3.5 py-3"><input type="checkbox" checked={selected.has(s.id)} onChange={() => toggleOne(s.id)} className="h-4 w-4" style={{ accentColor: CLR.gold }} /></td>
+                        <td className="px-3.5 py-3 text-[13px]" style={{ color: CLR.muted }}>{page * pageSize + i + 1}</td>
+                        <td className="px-3.5 py-3">
                           <div className="flex items-center gap-2">
-                            <button onClick={() => setOpenId(s.id)} className="text-left font-bold text-slate-900 hover:text-amber-600">{s.name}</button>
+                            <button onClick={() => setOpenId(s.id)} className="text-left text-[13px] font-semibold hover:underline" style={{ color: CLR.text }}>{s.name}</button>
                             {waitlistStudentIds.has(s.id) && (
                               <span title="В листе ожидания" className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold text-violet-600"><Clock className="h-3 w-3" /></span>
                             )}
                           </div>
                         </td>
-                        {colOn("phone") && <td className="p-3 text-slate-500">{phone}</td>}
-                        {colOn("gender") && <td className="p-3 text-slate-500">{genderLabel(s.gender)}</td>}
-                        {colOn("age") && <td className="p-3 text-slate-500">{formatAge(s)}</td>}
-                        {colOn("branch") && <td className="p-3 text-slate-500">{branchName(s.branchId)}</td>}
-                        {colOn("group") && <td className="p-3 text-slate-500">{groupName(studentGroupId(s))}</td>}
-                        {colOn("source") && <td className="p-3 text-slate-500">{sourceName(s.sourceId)}</td>}
-                        {colOn("duration") && <td className="p-3 text-slate-500">{st.durationLabel}</td>}
-                        {colOn("subEnd") && <td className="p-3 text-slate-500">{st.subscriptionEndLabel}</td>}
-                        {colOn("debt") && <td className={`p-3 font-bold ${st.debt > 0 ? "text-rose-600" : "text-slate-400"}`}>{st.debt > 0 ? money(st.debt) : "0 ₸"}</td>}
-                        {colOn("ltv") && <td className="p-3"><span className={`inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-bold ${LTV_BADGE[st.ltv]}`}>{st.ltv}</span></td>}
+                        {colOn("phone") && <td className="px-3.5 py-3 text-[13px]" style={{ color: CLR.second }}>{phone}</td>}
+                        {colOn("gender") && <td className="px-3.5 py-3 text-[13px]" style={{ color: CLR.second }}>{genderLabel(s.gender)}</td>}
+                        {colOn("age") && <td className="px-3.5 py-3 text-[13px]" style={{ color: CLR.second }}>{formatAge(s)}</td>}
+                        {colOn("branch") && <td className="px-3.5 py-3 text-[13px]" style={{ color: CLR.second }}>{branchName(s.branchId)}</td>}
+                        {colOn("group") && <td className="px-3.5 py-3 text-[13px]" style={{ color: CLR.second }}>{groupName(studentGroupId(s))}</td>}
+                        {colOn("source") && <td className="px-3.5 py-3 text-[13px]" style={{ color: CLR.second }}>{sourceName(s.sourceId)}</td>}
+                        {colOn("duration") && <td className="px-3.5 py-3 text-[13px]" style={{ color: CLR.second }}>{st.durationLabel}</td>}
+                        {colOn("subEnd") && <td className="px-3.5 py-3 text-[13px]" style={{ color: CLR.second }}>{st.subscriptionEndLabel}</td>}
+                        {colOn("debt") && <td className="px-3.5 py-3 text-[13px] font-semibold" style={{ color: st.debt > 0 ? "#B14545" : CLR.muted }}>{st.debt > 0 ? money(st.debt) : "—"}</td>}
+                        {colOn("ltv") && <td className="px-3.5 py-3"><span className={`inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${LTV_BADGE[st.ltv]}`}>{st.ltv}</span></td>}
                         {colOn("status") && (
-                          <td className="p-3">
+                          <td className="px-3.5 py-3">
                             <div className="flex flex-wrap items-center gap-1">
-                              <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-bold ${STATUS_BADGE_CLASS[st.tone]}`}>{st.statusLabel}</span>
+                              <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[12px] font-semibold ${PILL_TONE[st.tone] || PILL_TONE.gray}`}>{st.statusLabel}</span>
                               {st.trialCount > 0 && (
                                 <span
                                   title={st.trialOverLimit ? "Превышен регламент: более 2 пробных уроков" : "Количество пробных уроков"}
-                                  className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-black ${st.trialOverLimit ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-500"}`}
+                                  className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-bold ${st.trialOverLimit ? "bg-[#F6E9E9] text-[#B14545]" : "bg-[#EDF1F5] text-[#5C6772]"}`}
                                 >
                                   ПУ ×{st.trialCount}
                                 </span>
@@ -888,12 +925,11 @@ export default function StudentsRegistry({
                             </div>
                           </td>
                         )}
-                        <td className="p-3">
+                        <td className="px-3.5 py-3">
                           <div className="flex items-center gap-1">
-                            <IconLink icon={MessageCircle} title="WhatsApp" href={waHref(phone)} tone="text-emerald-600 hover:bg-emerald-50" />
                             <IconLink icon={Phone} title="Позвонить" href={telHref(phone)} tone="text-slate-500 hover:bg-slate-100" />
+                            <IconLink icon={MessageCircle} title="WhatsApp" href={waHref(phone)} tone="text-emerald-600 hover:bg-emerald-50" />
                             <IconLink icon={Send} title="Telegram" href={tgHref(phone)} tone="text-sky-600 hover:bg-sky-50" />
-                            <IconBtn icon={MessageSquare} title="Комментарий" onClick={() => setOpenId(s.id)} tone="text-violet-600 hover:bg-violet-50" />
                             <IconBtn icon={Eye} title="Открыть карточку" onClick={() => setOpenId(s.id)} tone="text-slate-500 hover:bg-slate-100" />
                           </div>
                         </td>
@@ -905,52 +941,24 @@ export default function StudentsRegistry({
             </div>
 
             {/* Пагинация */}
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 text-sm">
-              <p className="text-slate-400">
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-[13px]" style={{ borderTop: `1px solid ${CLR.border}` }}>
+              <p style={{ color: CLR.muted }}>
                 Показано {filtered.length === 0 ? 0 : page * pageSize + 1}–{Math.min(filtered.length, (page + 1) * pageSize)} из {filtered.length}
               </p>
               <div className="flex items-center gap-2">
-                <button onClick={() => exportCsv(filtered)} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50">
+                <button onClick={() => exportCsv(filtered)} className="inline-flex items-center gap-1.5 rounded-[10px] px-3 py-1.5 text-[12px] font-semibold" style={{ background: CLR.fill, border: `1px solid ${CLR.border}`, color: CLR.second }}>
                   <Download className="h-3.5 w-3.5" /> Экспорт
                 </button>
-                <button disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))} className="rounded-lg border border-slate-200 p-1.5 text-slate-500 disabled:opacity-30 hover:bg-slate-50"><ChevronLeft className="h-4 w-4" /></button>
-                <span className="text-xs font-bold text-slate-600">{page + 1} / {totalPages}</span>
-                <button disabled={page >= totalPages - 1} onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))} className="rounded-lg border border-slate-200 p-1.5 text-slate-500 disabled:opacity-30 hover:bg-slate-50"><ChevronRight className="h-4 w-4" /></button>
-                <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs font-semibold">
+                <button disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))} className="rounded-[10px] p-1.5 disabled:opacity-30" style={{ background: CLR.fill, border: `1px solid ${CLR.border}`, color: CLR.second }}><ChevronLeft className="h-4 w-4" /></button>
+                <span className="text-[12px] font-semibold" style={{ color: CLR.second }}>{page + 1} / {totalPages}</span>
+                <button disabled={page >= totalPages - 1} onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))} className="rounded-[10px] p-1.5 disabled:opacity-30" style={{ background: CLR.fill, border: `1px solid ${CLR.border}`, color: CLR.second }}><ChevronRight className="h-4 w-4" /></button>
+                <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} className="rounded-[10px] px-2 py-1.5 text-[12px] font-semibold" style={{ background: CLR.fill, border: `1px solid ${CLR.border}`, color: CLR.second }}>
                   {PAGE_SIZES.map((n) => <option key={n} value={n}>{n} / стр</option>)}
                 </select>
               </div>
             </div>
           </div>
 
-          {/* Легенда + статусы */}
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <p className="mb-3 text-sm font-black">Цветовые обозначения</p>
-              <ul className="grid gap-2">
-                {COLOR_LEGEND.map((l) => (
-                  <li key={l.tone} className="flex items-center gap-2.5 text-sm text-slate-600">
-                    <span className={`h-2.5 w-2.5 rounded-full ${l.dot}`} /> {l.text}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <p className="mb-3 text-sm font-black">Статусы</p>
-              <div className="grid gap-4 sm:grid-cols-2">
-                {AUTO_STATUS_GROUPS.map((g) => (
-                  <div key={g.title}>
-                    <p className="mb-1.5 text-[11px] font-black uppercase tracking-wide text-slate-400">{g.title}</p>
-                    <ul className="space-y-1 text-xs text-slate-600">{g.items.map((i) => <li key={i}>· {i}</li>)}</ul>
-                  </div>
-                ))}
-                <div>
-                  <p className="mb-1.5 text-[11px] font-black uppercase tracking-wide text-slate-400">Ручные статусы</p>
-                  <ul className="space-y-1 text-xs text-slate-600">{DEFAULT_MANUAL_STATUSES.map((i) => <li key={i}>· {i}</li>)}</ul>
-                </div>
-              </div>
-            </div>
-          </div>
         </>
       )}
 
@@ -1414,11 +1422,12 @@ function FilterSelect({ value, onChange, options }: { value: string; onChange: (
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full min-w-[8.5rem] cursor-pointer appearance-none rounded-xl border border-slate-200 bg-white py-2 pl-3 pr-9 text-sm font-semibold text-slate-700 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+        className="w-full min-w-[8rem] cursor-pointer appearance-none rounded-[10px] py-2 pl-3 pr-9 text-[13px] font-medium outline-none transition"
+        style={{ background: CLR.fill, border: `1px solid ${CLR.border}`, color: CLR.second }}
       >
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
-      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: CLR.muted }} />
     </div>
   );
 }
