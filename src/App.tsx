@@ -2258,18 +2258,15 @@ export default function App() {
   };
 
   const startLoginVideo = (target: "desktop" | "mobile") => {
-    setLoginVideoTarget(target);
-    setIsLoginVideoPlaying(true);
+    // Видео при входе отключено — сразу переходим в приложение.
     setLoginVideoNeedsTap(false);
+    setIsLoginVideoPlaying(false);
+    setLoginVideoTarget(null);
 
-    const video = loginVideoRef.current;
-    if (video) {
-      video.currentTime = 0;
-      video.muted = false;
-      video.volume = 1;
-      video.play().catch(() => {
-        setLoginVideoNeedsTap(true);
-      });
+    if (target === "desktop") {
+      setIsPlayingPromo(false);
+    } else if (target === "mobile") {
+      setMobileAuthStep("main");
     }
   };
 
