@@ -18,6 +18,7 @@ import logoImg from "./assets/images/echogor_logo_1780297382250.png";
 import trainerLoginImg from "./assets/images/new_trainer_login_bg_1780308409116.png";
 // @ts-ignore
 import desktopLoginBg from "./assets/images/login_dancers_bg.png";
+import echoLogo from "./assets/images/logo_main.png";
 // @ts-ignore
 import mobileLoginBg from "./assets/images/login_dancers_bg.png";
 // @ts-ignore
@@ -2323,17 +2324,27 @@ export default function App() {
     <div className={`flex flex-col h-screen w-screen overflow-hidden bg-[#0A0A0A] text-slate-200 font-sans ${themeMode === "day" ? "day-theme-app" : themeMode === "iman" ? "iman-theme-app" : ""}`}>
       
       {/* Desktop login uses the supplied image as the visible UI, with real controls as transparent hotspots. */}
+      {/* ═══ Экран входа «Эхогор» — фон-фото + логотип/тэглайн живой вёрсткой ═══
+          Логика входа НЕ менялась: handleDesktopLogin, телефон +7, пароль,
+          desktopEmail/Password/RememberMe/ShowPassword, primeLoginVideoAudio,
+          кнопка мобильного симулятора — всё как было.
+          Изменена только оформительская обёртка: чистое фото фоном, мягкое
+          затемнение вместо жёсткой колонки 42%, логотип и тэглайн вынесены
+          в разметку (раньше были вшиты в картинку). */}
       {isPlayingPromo && (
         <div className="login-auth-screen fixed inset-0 z-[9999] bg-[#0A0D14] overflow-hidden select-none animate-fade-in font-sans text-slate-200">
           {/* Базовый тёмный фон — всегда виден, даже если фото не подгрузилось. */}
           <div className="absolute inset-0" style={{ background: "radial-gradient(120% 120% at 15% 10%, #1a2536 0%, #0B1018 45%, #05070C 100%)" }} />
-          {/* Фоновая фотография (танцоры + горы) поверх подложки. */}
+
+          {/* Фоновая фотография (чистая, без вшитого логотипа). Одна на все экраны;
+              object-position смещён влево, чтобы танцоры не обрезались на узких экранах. */}
           <img
             src={desktopLoginBg}
             alt=""
             aria-hidden="true"
             onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
             className="absolute inset-0 hidden h-full w-full object-cover opacity-95 md:block"
+            style={{ objectPosition: "30% center" }}
             referrerPolicy="no-referrer"
           />
           <img
@@ -2342,17 +2353,34 @@ export default function App() {
             aria-hidden="true"
             onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
             className="absolute inset-0 block h-full w-full object-cover opacity-95 md:hidden"
+            style={{ objectPosition: "30% center" }}
             referrerPolicy="no-referrer"
           />
-          {/* Затемнение фона для контраста формы (inline-градиент в sRGB — без oklab-артефактов Tailwind v4). */}
-          <div className="absolute inset-0" style={{ background: "linear-gradient(to right, rgba(5,7,12,0.35), rgba(5,7,12,0.10) 40%, rgba(5,7,12,0.55))" }} />
-          {/* Плотная правая колонка — полностью скрывает «вшитую» в картинку форму. */}
-          <div className="absolute inset-y-0 right-0 hidden w-[42%] md:block" style={{ background: "#06090F" }} />
-          <div className="absolute inset-y-0 right-[42%] hidden w-[10%] md:block" style={{ background: "linear-gradient(to left, #06090F, rgba(6,9,15,0))" }} />
+
+          {/* Затемнение: снизу сильнее (под мобильную карточку), справа сильнее (под десктопную).
+              Мягкие градиенты в sRGB — без oklab-артефактов Tailwind v4, тянутся под любую ширину. */}
+          <div className="absolute inset-0" style={{ background: "linear-gradient(180deg, rgba(5,7,12,0.45) 0%, rgba(5,7,12,0.22) 38%, rgba(5,7,12,0.90) 100%)" }} />
+          <div className="absolute inset-0 hidden md:block" style={{ background: "radial-gradient(120% 90% at 100% 50%, rgba(5,7,12,0.90), rgba(5,7,12,0) 60%)" }} />
+
+          {/* Логотип «ЭХОГОР» — живой вёрсткой: по центру сверху на мобильном, слева на десктопе. */}
+          <img
+            src={echoLogo}
+            alt="ЭХОГОР — студия кавказского танца"
+            className="pointer-events-none absolute z-[5] left-1/2 top-[clamp(20px,4vw,44px)] w-[clamp(190px,52vw,300px)] -translate-x-1/2 drop-shadow-[0_6px_24px_rgba(0,0,0,0.5)] md:left-[clamp(28px,4vw,56px)] md:translate-x-0"
+          />
+
+          {/* Тэглайн «Сила | Честь | Традиции» — живой вёрсткой: снизу по центру / слева на десктопе. */}
+          <div className="pointer-events-none absolute z-[5] bottom-[clamp(20px,4vw,44px)] left-1/2 flex -translate-x-1/2 items-center gap-[0.55rem] whitespace-nowrap text-[clamp(14px,3.3vw,18px)] font-extrabold uppercase tracking-[0.14em] drop-shadow-[0_2px_10px_rgba(0,0,0,0.6)] md:left-[clamp(28px,4vw,56px)] md:translate-x-0">
+            <span className="text-[#8FB4C9]">Сила</span>
+            <span className="font-medium text-white/35">|</span>
+            <span className="text-[#C5A059]">Честь</span>
+            <span className="font-medium text-white/35">|</span>
+            <span className="text-white">Традиции</span>
+          </div>
 
           {/* Настоящая форма входа — адаптив: по центру на узких экранах, справа на десктопе;
-              вертикальная прокрутка, чтобы форма не обрезалась на низких окнах. */}
-          <div className="absolute inset-0 z-10 flex items-center justify-center overflow-y-auto px-4 py-6 sm:px-5 sm:py-8 md:justify-end md:pr-[clamp(24px,6vw,96px)]">
+              на мобильном добавлены отступы сверху/снизу, чтобы карточка не наезжала на логотип и тэглайн. */}
+          <div className="absolute inset-0 z-10 flex items-center justify-center overflow-y-auto px-4 pt-[120px] pb-[84px] sm:px-5 md:justify-end md:pr-[clamp(24px,6vw,96px)] md:pt-8 md:pb-8">
             <form
               onSubmit={handleDesktopLogin}
               noValidate
@@ -2374,7 +2402,6 @@ export default function App() {
                   placeholder="(___) ___-__-__"
                   value={desktopEmail}
                   onChange={(e) => {
-                    // оставляем только цифры, максимум 10 (без кода страны)
                     const digits = e.target.value.replace(/\D/g, "").slice(0, 10);
                     setDesktopEmail(digits);
                     setActiveHotspot(null);
@@ -2467,7 +2494,6 @@ export default function App() {
 
         </div>
       )}
-
       {/* Видео-переход при входе полностью удалён. */}
 
       {/* Old assembled login screen kept disabled while the supplied mockup drives the visible UI. */}
