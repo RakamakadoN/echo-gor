@@ -7,7 +7,7 @@
  * настраиваемая колонками таблица, LTV-сегментация, коммуникации,
  * массовые действия, поиск, пагинация, окно «Новый ученик», лист ожидания.
  */
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ArchiveReasonModal } from "./ArchiveReasonModal";
 import {
   Search,
@@ -405,13 +405,13 @@ export default function StudentsRegistry({
       return !isNaN(dt.getTime()) && dt.getFullYear() === now.getFullYear() && dt.getMonth() === now.getMonth();
     }).length;
     return [
-      { label: "Всего учеников", value: data.length, icon: Users, color: "gray" },
-      { label: "Активные", value: data.filter((s) => !isLeft(s) && s.status === "active").length, icon: UserCheck, color: "green" },
-      { label: "Требуют продления", value: count("renewal"), icon: RefreshCw, color: "orange" },
-      { label: "Должники", value: count("debtors"), icon: AlertTriangle, color: "red" },
-      { label: "Без статуса", value: noStatus, icon: HelpCircle, color: "blue" },
-      { label: "Лист ожидания", value: activeWaitlist.length, icon: Clock, color: "purple" },
-      { label: "Ушли в этом месяце", value: leftThisMonth, icon: UserMinus, color: "red" },
+      { kpiKey: "total", label: "Всего учеников", value: data.length, icon: Users, color: "gray" },
+      { kpiKey: "active", label: "Активные", value: data.filter((s) => !isLeft(s) && s.status === "active").length, icon: UserCheck, color: "green" },
+      { kpiKey: "renewal", label: "Требуют продления", value: count("renewal"), icon: RefreshCw, color: "orange" },
+      { kpiKey: "debtors", label: "Должники", value: count("debtors"), icon: AlertTriangle, color: "red" },
+      { kpiKey: "nostatus", label: "Без статуса", value: noStatus, icon: HelpCircle, color: "blue" },
+      { kpiKey: "waitlist", label: "Лист ожидания", value: activeWaitlist.length, icon: Clock, color: "purple" },
+      { kpiKey: "left", label: "Ушли в этом месяце", value: leftThisMonth, icon: UserMinus, color: "red" },
     ];
   }, [data, now, activeWaitlist.length]);
 
@@ -436,6 +436,54 @@ export default function StudentsRegistry({
     setPresetIds(new Set(ids));
     setPresetLabel(`Воронка продаж · ${label}`);
     setPage(0);
+  };
+
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const scrollToList = () => {
+    requestAnimationFrame(() =>
+      listRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
+    );
+  };
+
+  const openKpi = (key: string, label: string) => {
+    if (key === "waitlist") {
+      setView("waitlist");
+      scrollToList();
+      return;
+    }
+    setView("registry");
+    setSegment("all");
+    setStatusFilter("all");
+    setBranchFilter("all");
+    setGroupFilter("all");
+    setLtvFilter("all");
+    setSearch("");
+    if (key === "total") {
+      clearPreset();
+      setArchiveFilter("all");
+    } else {
+      const ids = data
+        .filter((s) => {
+          if (key === "active") return !isLeft(s) && s.status === "active";
+          if (key === "renewal") return SEGMENTS.find((x) => x.id === "renewal")!.match(s, now);
+          if (key === "debtors") return SEGMENTS.find((x) => x.id === "debtors")!.match(s, now);
+          if (key === "nostatus") return !isLeft(s) && getStudentState(s, now).statusKey === "lead";
+          if (key === "left") {
+            if (!isLeft(s)) return false;
+            const raw = (s as any).leftAt || (s as any).archivedAt || (s as any).left_at || (s as any).archived_at;
+            if (!raw) return false;
+            const dt = new Date(raw);
+            return !isNaN(dt.getTime()) && dt.getFullYear() === now.getFullYear() && dt.getMonth() === now.getMonth();
+          }
+          return false;
+        })
+        .map((s) => s.id);
+      setArchiveFilter("all");
+      setPresetIds(new Set(ids));
+      setPresetLabel("Показатель · " + label);
+    }
+    setPage(0);
+    scrollToList();
   };
 
   // Рекомендации «Магомеда»: кого дожать (был на пробном, не купил) и кого перезаписать (не пришёл).
@@ -708,7 +756,7 @@ export default function StudentsRegistry({
           {kpis.map((k) => {
             const ic = KPI_ICON[k.color] || KPI_ICON.gray;
             return (
-              <div key={k.label} className="rounded-[14px] bg-white px-4 py-3.5 shadow-sm" style={{ border: `1px solid ${CLR.border}` }}>
+              <div key={k.label} onClick={() => openKpi(k.kpiKey, k.label)} role="button" tabIndex={0} className="cursor-pointer rounded-[14px] bg-white px-4 py-3.5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md" style={{ border: `1px solid ${CLR.border}` }}>
                 <div className="mb-2 inline-flex h-9 w-9 items-center justify-center rounded-[10px]" style={{ background: ic.bg, color: ic.color }}>
                   <k.icon className="h-[18px] w-[18px]" />
                 </div>
@@ -745,6 +793,8 @@ export default function StudentsRegistry({
           })}
         </div>
       </div>
+
+      <div ref={listRef} />
 
       {view === "waitlist" ? (
         <WaitlistTable
