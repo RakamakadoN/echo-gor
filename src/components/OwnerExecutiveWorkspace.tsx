@@ -2539,8 +2539,9 @@ const TN_RET_BONUS: Record<number, number> = { 1: 0.20, 2: 0.20, 3: 0.30 };
 const TN_TOM_BONUS = 20000;
 const TN_MONTHS = ["Январь 2026", "Февраль 2026", "Март 2026", "Апрель 2026", "Май 2026", "Июнь 2026"];
 
-type TnMonth = { ret: number; funnel: number; rev: number; std: number; students: number; newCnt: number; regCnt: number; regCont: number; left: number };
-type TnFine = { date: string; reason: string; sum: number };
+type TnGroupBreak = { name: string; newCnt: number; regCnt: number; contCnt: number };
+type TnMonth = { ret: number; funnel: number; rev: number; std: number; students: number; newCnt: number; regCnt: number; regCont: number; left: number; groups?: TnGroupBreak[] };
+type TnFine = { date: string; reason: string; sum: number; comment?: string; by?: string };
 type TnSeed = { cat: number; status: string; spec: string; branch: string; phone: string; byMonth: Record<string, TnMonth | null>; fines: Record<string, TnFine[]> };
 
 // Реальные педагоги сети — точные месячные данные (совпадают с прототипом-эталоном).
@@ -2553,9 +2554,13 @@ const TN_SEED: Record<string, TnSeed> = {
       "Март 2026": { ret: 66, funnel: 60, rev: 4.7, std: 95, students: 29, newCnt: 4, regCnt: 25, regCont: 10, left: 2 },
       "Апрель 2026": { ret: 67, funnel: 62, rev: 4.8, std: 96, students: 30, newCnt: 5, regCnt: 25, regCont: 11, left: 1 },
       "Май 2026": { ret: 67.7, funnel: 64, rev: 4.8, std: 98, students: 31, newCnt: 6, regCnt: 25, regCont: 12, left: 2 },
-      "Июнь 2026": { ret: 69, funnel: 66, rev: 4.9, std: 100, students: 31, newCnt: 6, regCnt: 25, regCont: 12, left: 1 },
+      "Июнь 2026": { ret: 69, funnel: 66, rev: 4.9, std: 100, students: 31, newCnt: 6, regCnt: 25, regCont: 12, left: 1, groups: [
+        { name: "Лезгинка · взрослые (вечер)", newCnt: 2, regCnt: 12, contCnt: 0 },
+        { name: "Ансамбль «Эхо»", newCnt: 0, regCnt: 0, contCnt: 12 },
+        { name: "Лезгинка · дети 8–11", newCnt: 4, regCnt: 1, contCnt: 0 },
+      ] },
     },
-    fines: { "Май 2026": [{ date: "14.05.2026", reason: "Опоздание", sum: 2000 }] },
+    fines: { "Май 2026": [{ date: "14.05.2026", reason: "Опоздание", sum: 2000, comment: "Опоздание на групповое занятие", by: "Владелец" }] },
   },
   "хамит муратович": {
     cat: 1, status: "Стажер", spec: "High Heels", branch: "Сатпаева 210/1", phone: "+7 (702) 123 46 58",
@@ -2563,7 +2568,7 @@ const TN_SEED: Record<string, TnSeed> = {
       "Январь 2026": null, "Февраль 2026": null, "Март 2026": null, "Апрель 2026": null, "Май 2026": null,
       "Июнь 2026": { ret: 0, funnel: 20, rev: 0, std: 40, students: 1, newCnt: 1, regCnt: 0, regCont: 0, left: 0 },
     },
-    fines: { "Июнь 2026": [{ date: "12.06.2026", reason: "Незакрытый журнал", sum: 5000 }] },
+    fines: { "Июнь 2026": [{ date: "12.06.2026", reason: "Незакрытый журнал", sum: 5000, comment: "Журнал не закрыт 2 дня подряд", by: "Владелец" }] },
   },
 };
 
@@ -2672,7 +2677,13 @@ function TeachersNetworkView({ teachers, metrics, branches, students = [], group
   const [tnStatus, setTnStatus] = useState("");
   const [winnerId, setWinnerId] = useState<string | null>(null);
   const [showColMenu, setShowColMenu] = useState(false);
-  const [extraCols, setExtraCols] = useState<Record<string, boolean>>({ students: false, funnel: false, rev: false, std: false, phone: false });
+  const [showSalary, setShowSalary] = useState(false);
+  // Видимость колонок таблицы. По умолчанию — как в референсе: основные включены,
+  // расширенные (ученики/воронка/отзывы/стандарты/телефон) выключены.
+  const [extraCols, setExtraCols] = useState<Record<string, boolean>>({
+    spec: true, branch: true, cat: true, ret: true, kpi: true, fines: true, sal: true, role: true,
+    students: false, funnel: false, rev: false, std: false, phone: false,
+  });
 
   const tnBranchName = (t: Teacher, seedBranch: string) => seedBranch || branchName(t.branchId);
   const enriched = useMemo(
@@ -2729,8 +2740,8 @@ function TeachersNetworkView({ teachers, metrics, branches, students = [], group
     { id: "phone", label: "Телефон", cell: (e) => <span className="text-slate-300">{e.phone || "—"}</span> },
     { id: "role", label: "Права", cell: (e) => <span className="rounded-full bg-[#C5A059]/12 px-2.5 py-1 text-xs font-black text-[#C5A059]">{ROLE_LABELS[e.teacher.role || "teacher"]}</span> },
   ];
-  const alwaysOn = new Set(["spec", "branch", "cat", "ret", "kpi", "fines", "sal", "role"]);
-  const visibleCols = TN_COLS.filter((c) => alwaysOn.has(c.id) || extraCols[c.id]);
+  // Преподаватель и Действия закреплены всегда; остальные колонки — по переключателям.
+  const visibleCols = TN_COLS.filter((c) => extraCols[c.id]);
 
   const startAdd = () => { setEditingId(null); setForm(empty); setAdding(true); };
   const startEdit = (t: Teacher) => {
@@ -2868,14 +2879,23 @@ function TeachersNetworkView({ teachers, metrics, branches, students = [], group
               <Filter className="h-4 w-4" /> Показатели
             </button>
             {showColMenu && (
-              <div className="absolute right-0 top-12 z-30 w-56 rounded-2xl border border-white/10 bg-[#121212] p-2 shadow-xl">
+              <div className="absolute right-0 top-12 z-30 w-60 rounded-2xl border border-white/10 bg-[#121212] p-2 shadow-xl">
                 <p className="px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-slate-500">Колонки таблицы</p>
-                {[["students", "Ученики"], ["funnel", "Воронка ПУ"], ["rev", "Отзывы (оценка)"], ["std", "Стандарты"], ["phone", "Телефон"]].map(([id, label]) => (
-                  <label key={id} className="flex cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold text-slate-200 hover:bg-white/[0.04]">
-                    <input type="checkbox" checked={!!extraCols[id]} onChange={(ev) => setExtraCols((c) => ({ ...c, [id]: ev.target.checked }))} className="h-4 w-4 accent-[#C5A059]" />
-                    {label}
+                {/* Закреплённая колонка — всегда видна */}
+                <label className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold text-slate-500">
+                  <input type="checkbox" checked disabled className="h-4 w-4 accent-[#C5A059] opacity-60" />
+                  Преподаватель
+                </label>
+                {TN_COLS.map((c) => (
+                  <label key={c.id} className="flex cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold text-slate-200 hover:bg-white/[0.04]">
+                    <input type="checkbox" checked={!!extraCols[c.id]} onChange={(ev) => setExtraCols((s) => ({ ...s, [c.id]: ev.target.checked }))} className="h-4 w-4 accent-[#C5A059]" />
+                    {c.label}
                   </label>
                 ))}
+                <label className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold text-slate-500">
+                  <input type="checkbox" checked disabled className="h-4 w-4 accent-[#C5A059] opacity-60" />
+                  Действия
+                </label>
               </div>
             )}
           </div>
@@ -2884,7 +2904,7 @@ function TeachersNetworkView({ teachers, metrics, branches, students = [], group
               <button onClick={() => setShowPenaltyJournal(true)} className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-[#121212] px-4 py-2.5 text-sm font-bold text-slate-200 transition hover:border-rose-400/50 hover:text-rose-300">
                 <AlertTriangle className="h-4 w-4 text-rose-400" /> Штрафы{penalties.length > 0 ? ` · ${penalties.length}` : ""}
               </button>
-              <button onClick={() => setShowChargePenalty(true)} className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-[#121212] px-4 py-2.5 text-sm font-bold text-slate-200 transition hover:border-[#C5A059]/50 hover:text-[#C5A059]">
+              <button onClick={() => setShowSalary(true)} className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-[#121212] px-4 py-2.5 text-sm font-bold text-slate-200 transition hover:border-[#C5A059]/50 hover:text-[#C5A059]">
                 <Coins className="h-4 w-4" /> Рассчитать ЗП
               </button>
               <button onClick={startAdd} className="inline-flex items-center gap-2 rounded-full bg-[#C5A059] px-5 py-2.5 text-sm font-black text-black shadow-[0_6px_16px_rgba(197,160,89,0.35)] transition hover:brightness-105">
@@ -2895,8 +2915,14 @@ function TeachersNetworkView({ teachers, metrics, branches, students = [], group
         </div>
       </div>
 
+      {showSalary && (
+        <SalaryCalcModal teachers={teachers} metricFor={metricFor} penalties={penalties} months={TN_MONTHS}
+          month={tnMonth} effectiveWinnerId={effectiveWinnerId}
+          onClose={() => setShowSalary(false)}
+          onCharge={() => { setShowSalary(false); setShowChargePenalty(true); }} />
+      )}
       {showPenaltyJournal && (
-        <PenaltyJournalModal penalties={penalties} total={penaltyTotal} onClose={() => setShowPenaltyJournal(false)}
+        <PenaltyJournalModal penalties={penalties} teachers={teachers} months={TN_MONTHS} month={tnMonth} onClose={() => setShowPenaltyJournal(false)}
           onCharge={() => { setShowPenaltyJournal(false); setShowChargePenalty(true); }} onRemove={removePenalty} />
       )}
       {showChargePenalty && (
@@ -7627,42 +7653,242 @@ function ReportsHistoryTab({ cur, prev, yoy, comment, setComment, onSaveComment,
 // ===================== ШТРАФЫ ПРЕПОДАВАТЕЛЕЙ =====================
 const PENALTY_REASONS = ["Опоздание", "Незакрытый журнал", "Нет плана работы", "Нет фото прихода", "Нарушение дисциплины", "Другое"];
 
-function PenaltyJournalModal({ penalties, total, onClose, onCharge, onRemove }: any) {
+// «тг» как в референсе Эхо Гор (в остальном приложении money() использует ₸).
+const tg = (n: number) => `${Math.round(n).toLocaleString("ru-RU")} тг`;
+
+// ── Расчёт зарплаты: автоматически из учеников групп по системе оплаты Эхо Гор ──
+function SalaryCalcModal({ teachers, metricFor, penalties, months, month, effectiveWinnerId, onClose, onCharge }: any) {
+  const seeded = teachers.filter((t: Teacher) => TN_SEED[t.name.trim().toLowerCase()]);
+  const list: Teacher[] = seeded.length ? seeded : teachers;
+  const [tid, setTid] = useState<string>(list[0]?.id || "");
+  const [mo, setMo] = useState<string>(month);
+  const [done, setDone] = useState(false);
+
+  const teacher = teachers.find((t: Teacher) => t.id === tid) || list[0];
+  const row = teacher ? tnEnrich(teacher, metricFor(teacher.id), mo, penalties) : null;
+  const m = row?.m || null;
+  const isWinner = effectiveWinnerId === teacher?.id;
+  const sal = tnSalary(m, row?.cat || 1, isWinner, row?.finesSum || 0);
+
+  const cat = row?.cat || 1;
+  const newRate = TN_RATES.new[cat] || 0;
+  const regRate = TN_RATES.reg[cat] || 0;
+  const contRate = TN_RATES.regCont[cat] || 0;
+  const newCnt = m?.newCnt || 0;
+  const contCnt = cat === 3 ? (m?.regCont || 0) : 0;
+  const plainReg = Math.max(0, (m?.regCnt || 0) - contCnt);
+  const newSum = newCnt * newRate, regSum = plainReg * regRate, contSum = contCnt * contRate;
+
+  // Детализация по группам: из seed, иначе одна сводная строка из месячных итогов.
+  const groups: TnGroupBreak[] = m?.groups?.length
+    ? m.groups
+    : m ? [{ name: row?.spec || "Все группы", newCnt, regCnt: plainReg, contCnt }] : [];
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-md" onClick={onClose}>
-      <div className="w-full max-w-2xl rounded-[1.75rem] border border-white/10 bg-[#0f0f0f] p-6 max-h-[92vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between">
+      <div className="w-full max-w-2xl rounded-[1.75rem] border border-white/10 bg-[#0f0f0f] max-h-[92vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        {/* Шапка */}
+        <div className="flex items-start justify-between gap-4 border-b border-white/10 px-7 py-6">
           <div>
-            <h3 className="text-lg font-black text-white">Журнал штрафов</h3>
-            <p className="text-xs text-slate-500">Все штрафы по сети · вычитаются из ЗП автоматически</p>
+            <h3 className="text-2xl font-black text-white">Расчёт зарплаты</h3>
+            <p className="mt-1 text-sm text-slate-500">Автоматически из учеников групп · по системе оплаты Эхо Гор</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-white"><X className="h-5 w-5" /></button>
         </div>
-        <div className="mt-4 flex items-center justify-between rounded-2xl border border-rose-400/25 bg-rose-500/[0.06] px-4 py-3">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Итого штрафов</span>
-          <span className="text-lg font-black text-rose-300">{money(total)}</span>
+
+        <div className="px-7 py-6">
+          {/* Селекторы */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="flex flex-col gap-1.5 text-[11px] font-black uppercase tracking-wider text-slate-500">Преподаватель
+              <select value={tid} onChange={(e) => { setTid(e.target.value); setDone(false); }}
+                className="rounded-2xl border border-white/10 bg-[#121212] px-4 py-3 text-sm font-bold text-slate-200 outline-none focus:border-[#C5A059]/50">
+                {list.map((t: Teacher) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select></label>
+            <label className="flex flex-col gap-1.5 text-[11px] font-black uppercase tracking-wider text-slate-500">Месяц
+              <select value={mo} onChange={(e) => { setMo(e.target.value); setDone(false); }}
+                className="rounded-2xl border border-white/10 bg-[#121212] px-4 py-3 text-sm font-bold text-slate-200 outline-none focus:border-[#C5A059]/50">
+                {months.map((x: string) => <option key={x} value={x}>{x}</option>)}
+              </select></label>
+          </div>
+
+          {/* Итоговое число */}
+          <div className="mt-5 rounded-[1.5rem] border border-[#C5A059]/30 bg-[#C5A059]/12 px-6 py-7 text-center">
+            <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">ЗП к начислению · {mo.toUpperCase()}</p>
+            <p className="mt-2 text-5xl font-black text-white">{sal ? tg(sal.total) : "—"}</p>
+            <p className="mt-2 text-sm text-slate-500">{teacher?.name} · {tnCatName(cat)}</p>
+          </div>
+
+          {!m ? (
+            <p className="mt-6 rounded-2xl border border-white/10 bg-[#121212] px-4 py-6 text-center text-sm text-slate-500">Нет данных за выбранный месяц.</p>
+          ) : (
+            <>
+              {/* Детализация по группам */}
+              <p className="mt-7 text-[12px] font-black uppercase tracking-wider text-slate-500">Детализация по группам</p>
+              <div className="mt-3 overflow-x-auto rounded-2xl border border-white/10">
+                <table className="w-full min-w-[520px] border-collapse text-sm">
+                  <thead>
+                    <tr>
+                      <th className="px-5 py-3 text-left text-[11px] font-black uppercase tracking-wider text-slate-500">Группа</th>
+                      <th className="px-5 py-3 text-right text-[11px] font-black uppercase tracking-wider text-slate-500">Новенькие</th>
+                      <th className="px-5 py-3 text-right text-[11px] font-black uppercase tracking-wider text-slate-500">Постоянные</th>
+                      <th className="px-5 py-3 text-right text-[11px] font-black uppercase tracking-wider text-slate-500">Продолж.</th>
+                      <th className="px-5 py-3 text-right text-[11px] font-black uppercase tracking-wider text-slate-500">Сумма</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {groups.map((g, i) => {
+                      const gsum = g.newCnt * newRate + g.regCnt * regRate + g.contCnt * contRate;
+                      return (
+                        <tr key={i} className="border-t border-white/5">
+                          <td className="px-5 py-3.5 text-slate-300">{g.name}</td>
+                          <td className="px-5 py-3.5 text-right text-slate-400">{g.newCnt}×{newRate.toLocaleString("ru-RU")}</td>
+                          <td className="px-5 py-3.5 text-right text-slate-400">{g.regCnt}×{regRate.toLocaleString("ru-RU")}</td>
+                          <td className="px-5 py-3.5 text-right text-slate-400">{g.contCnt}×{(contRate || 3500).toLocaleString("ru-RU")}</td>
+                          <td className="px-5 py-3.5 text-right font-black text-white">{tg(gsum)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Итоговый расчёт */}
+              <p className="mt-7 text-[12px] font-black uppercase tracking-wider text-slate-500">Итоговый расчёт</p>
+              <div className="mt-2 space-y-0.5">
+                <SalaryRow label={`Новенькие · ${newCnt} × ${newRate.toLocaleString("ru-RU")} тг`} value={tg(newSum)} />
+                <SalaryRow label={`Постоянные · ${plainReg} × ${regRate.toLocaleString("ru-RU")} тг`} value={tg(regSum)} />
+                {contCnt > 0 && <SalaryRow label={`Постоянные, продолжающая · ${contCnt} × ${contRate.toLocaleString("ru-RU")} тг`} value={tg(contSum)} />}
+                <SalaryRow label="Базовая часть" value={tg(sal!.base)} strong />
+                {sal!.retBonus > 0 && <SalaryRow label={`Бонус удержания (+${Math.round(TN_RET_BONUS[cat] * 100)}%)`} value={`+ ${tg(sal!.retBonus)}`} tone="emerald" />}
+                {sal!.tomBonus > 0 && <SalaryRow label="Бонус «Педагог месяца»" value={`+ ${tg(sal!.tomBonus)}`} tone="emerald" />}
+                <SalaryRow label={sal!.finesSum > 0 ? "Штрафы итого" : "Штрафы итого (нет)"} value={sal!.finesSum > 0 ? `− ${tg(sal!.finesSum)}` : "0 тг"} tone="rose" />
+                <div className="mt-1 flex items-center justify-between border-t border-white/10 pt-4">
+                  <span className="text-base font-black text-white">Итого к выплате</span>
+                  <span className="text-base font-black text-white">{tg(sal!.total)}</span>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Действия */}
+          <div className="mt-6 flex flex-wrap gap-3">
+            <button disabled={!m || done} onClick={() => setDone(true)}
+              className="rounded-full bg-[#C5A059] px-6 py-3 text-sm font-black text-black shadow-[0_6px_16px_rgba(197,160,89,0.35)] transition hover:brightness-105 disabled:opacity-50">
+              {done ? "Начислено ✓" : "Начислить и провести"}
+            </button>
+            <button onClick={onCharge}
+              className="rounded-full border border-white/10 bg-[#121212] px-6 py-3 text-sm font-bold text-slate-200 transition hover:border-rose-400/50 hover:text-rose-300">
+              Начислить штраф
+            </button>
+          </div>
+          <p className="mt-4 text-[12px] text-slate-500">Считается автоматически из учеников групп. По системе оплаты Эхо Гор 2025–2026.</p>
         </div>
-        <div className="mt-4 overflow-hidden rounded-2xl border border-white/10">
-          <table className="w-full text-left text-sm">
-            <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-3 py-2 font-bold">Преподаватель</th><th className="px-3 py-2 font-bold">Причина</th><th className="px-3 py-2 text-right font-bold">Сумма</th><th className="px-3 py-2 font-bold">Месяц</th><th className="px-3 py-2 font-bold">Кто</th><th className="px-2 py-2"></th></tr></thead>
-            <tbody>
-              {penalties.length === 0 && <tr><td colSpan={6} className="px-3 py-6 text-center text-slate-500">Штрафов нет.</td></tr>}
-              {penalties.map((p: any) => (
-                <tr key={p.id} className="border-t border-white/5">
-                  <td className="px-3 py-2 font-bold text-white">{p.teacherName}</td>
-                  <td className="px-3 py-2 text-slate-300">{p.reason}{p.comment ? <span className="block text-[11px] text-slate-500">{p.comment}</span> : null}</td>
-                  <td className="px-3 py-2 text-right font-bold text-rose-300">{money(p.amount)}</td>
-                  <td className="px-3 py-2 text-slate-400">{p.period_month}</td>
-                  <td className="px-3 py-2 text-slate-400">{p.created_by}</td>
-                  <td className="px-2 py-2"><button onClick={() => onRemove(p.id)} className="text-slate-500 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      </div>
+    </div>
+  );
+}
+
+function SalaryRow({ label, value, strong, tone = "default" }: { label: string; value: string; strong?: boolean; tone?: "default" | "emerald" | "rose" }) {
+  const color = tone === "emerald" ? "text-emerald-400" : tone === "rose" ? "text-rose-400" : "text-white";
+  return (
+    <div className="flex items-center justify-between border-b border-white/5 py-3.5">
+      <span className={`text-sm ${strong ? "font-black text-white" : "text-slate-300"}`}>{label}</span>
+      <span className={`text-sm ${strong ? "font-black" : "font-bold"} ${color}`}>{value}</span>
+    </div>
+  );
+}
+
+// ── Журнал штрафов: все штрафы по сети, фильтр по месяцу и педагогу ──
+function PenaltyJournalModal({ penalties, teachers, months, month, onClose, onCharge, onRemove }: any) {
+  const [fMonth, setFMonth] = useState<string>(month || "");
+  const [fTeacher, setFTeacher] = useState<string>("");
+
+  // Собираем штрафы из seed-профилей педагогов и из базы (реальные начисления).
+  const all = useMemo(() => {
+    const rows: any[] = [];
+    (teachers || []).forEach((t: Teacher) => {
+      const seed = TN_SEED[t.name.trim().toLowerCase()];
+      if (!seed) return;
+      Object.entries(seed.fines).forEach(([mo, arr]) => {
+        (arr as TnFine[]).forEach((f, i) => rows.push({
+          id: `seed-${t.id}-${mo}-${i}`, source: "seed",
+          teacherId: t.id, teacherName: t.name, cat: seed.cat,
+          reason: f.reason, amount: f.sum, month: mo, date: f.date, comment: f.comment, by: f.by || "Владелец",
+        }));
+      });
+    });
+    (penalties || []).forEach((p: any) => {
+      const t = (teachers || []).find((x: Teacher) => x.id === p.teacherId);
+      const seed = t ? TN_SEED[t.name.trim().toLowerCase()] : null;
+      rows.push({
+        id: p.id, source: "db",
+        teacherId: p.teacherId, teacherName: p.teacherName, cat: seed?.cat,
+        reason: p.reason, amount: p.amount, month: p.period_month, date: p.date || p.created_at, comment: p.comment, by: p.created_by || "Владелец",
+      });
+    });
+    return rows;
+  }, [teachers, penalties]);
+
+  const teacherNames = useMemo(() => Array.from(new Set(all.map((r) => r.teacherName))), [all]);
+  const filtered = all.filter((r) => (!fMonth || r.month === fMonth) && (!fTeacher || r.teacherName === fTeacher));
+  const total = filtered.reduce((s, r) => s + (r.amount || 0), 0);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-md" onClick={onClose}>
+      <div className="w-full max-w-2xl rounded-[1.75rem] border border-white/10 bg-[#0f0f0f] max-h-[92vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-4 border-b border-white/10 px-7 py-6">
+          <div>
+            <h3 className="text-2xl font-black text-white">Журнал штрафов</h3>
+            <p className="mt-1 text-sm text-slate-500">Все штрафы по сети · вычитаются из ЗП автоматически</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-white"><X className="h-5 w-5" /></button>
         </div>
-        <div className="mt-5 flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-xl border border-white/10 px-4 py-2 text-xs font-bold text-slate-300">Закрыть</button>
-          <button onClick={onCharge} className="rounded-xl bg-rose-500/90 px-4 py-2 text-xs font-black text-white hover:bg-rose-500">Начислить штраф</button>
+
+        <div className="px-7 py-6">
+          {/* Фильтры */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="flex flex-col gap-1.5 text-[11px] font-black uppercase tracking-wider text-slate-500">Месяц
+              <select value={fMonth} onChange={(e) => setFMonth(e.target.value)}
+                className="rounded-2xl border border-white/10 bg-[#121212] px-4 py-3 text-sm font-bold text-slate-200 outline-none focus:border-[#C5A059]/50">
+                <option value="">Все месяцы</option>
+                {months.map((x: string) => <option key={x} value={x}>{x}</option>)}
+              </select></label>
+            <label className="flex flex-col gap-1.5 text-[11px] font-black uppercase tracking-wider text-slate-500">Преподаватель
+              <select value={fTeacher} onChange={(e) => setFTeacher(e.target.value)}
+                className="rounded-2xl border border-white/10 bg-[#121212] px-4 py-3 text-sm font-bold text-slate-200 outline-none focus:border-[#C5A059]/50">
+                <option value="">Все преподаватели</option>
+                {teacherNames.map((n) => <option key={n} value={n}>{n}</option>)}
+              </select></label>
+          </div>
+
+          {/* Сумма по фильтру */}
+          <div className="mt-5 rounded-[1.5rem] border border-white/10 bg-[#121212] px-6 py-7 text-center">
+            <p className="text-4xl font-black text-white">{tg(total)}</p>
+            <p className="mt-2 text-sm text-slate-500">Сумма штрафов по фильтру · {filtered.length} шт.</p>
+          </div>
+
+          <button onClick={onCharge}
+            className="mt-4 rounded-full border border-white/10 bg-[#121212] px-5 py-2.5 text-sm font-bold text-slate-200 transition hover:border-[#C5A059]/50 hover:text-[#C5A059]">
+            + Начислить новый штраф
+          </button>
+
+          {/* Список */}
+          <div className="mt-6 space-y-5">
+            {filtered.length === 0 && <p className="py-6 text-center text-sm text-slate-500">Штрафов по фильтру нет.</p>}
+            {filtered.map((r) => (
+              <div key={r.id} className="group flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[15px] font-black text-rose-400">{r.teacherName} · {r.reason} · {tg(r.amount)}</p>
+                  <p className="mt-1 text-[13px] text-slate-500">
+                    {[r.cat ? tnCatName(r.cat) : null, r.month, r.date, r.comment, `начислил: ${r.by}`].filter(Boolean).join(" · ")}
+                  </p>
+                </div>
+                {r.source === "db" && (
+                  <button onClick={() => onRemove(r.id)} className="mt-1 shrink-0 text-slate-500 opacity-0 transition hover:text-rose-400 group-hover:opacity-100"><Trash2 className="h-4 w-4" /></button>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>

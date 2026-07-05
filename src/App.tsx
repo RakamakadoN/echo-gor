@@ -2270,25 +2270,42 @@ export default function App() {
   // Видео при входе удалено — звук больше не воспроизводится.
   const primeLoginVideoAudio = () => {};
 
-  const handleDesktopLogin = (e?: React.FormEvent) => {
+  const handleDesktopLogin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    
-    // Auto-detect role from email input, default to owner
-    let targetedRole = "owner";
-    const emailLower = (desktopEmail || "").toLowerCase();
-    
-    if (emailLower.includes("teacher") || emailLower.includes("ustaz")) {
-      targetedRole = "teacher";
-    } else if (emailLower.includes("student") || emailLower.includes("solist")) {
-      targetedRole = "student";
-    } else if (emailLower.includes("admin") || emailLower.includes("registrar")) {
-      targetedRole = "admin";
-    } else if (emailLower.includes("branch")) {
-      targetedRole = "branch";
+
+    const phone = (desktopEmail || "").replace(/\D/g, "");
+
+    // 1) Вход ученика: номер телефона + стандартный пароль (12345).
+    if (phone.length >= 10 && desktopPassword) {
+      setStudentLoginBusy(true);
+      try {
+        const resp = await fetch("/api/mvp/student-auth", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone, password: desktopPassword }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (resp.ok) {
+          addAuditLog("Авторизация ученика", `Вход по телефону +7${phone}. Права: ${data?.level === "junior" ? "маленькая" : "взрослая"} группа`);
+          applyStudentAuth(data);
+          return;
+        }
+        // Телефон совпал с учеником, но пароль неверный — не пускаем дальше.
+        if (resp.status === 401) {
+          setDesktopLoginError(data?.error || "Неверный пароль");
+          return;
+        }
+        // 404 — телефон не принадлежит ученику: пробуем как персонал (демо).
+      } catch {
+        // нет связи с сервером — падаем в демо-вход персонала
+      } finally {
+        setStudentLoginBusy(false);
+      }
     }
-    
-    setActiveRole(targetedRole);
-    addAuditLog("Авторизация CRM (Десктоп)", `Вход ученика/директора: ${desktopEmail || "Владелец (По умолчанию)"}. Права: ${targetedRole}`);
+
+    // 2) Персонал (демо): по умолчанию — Владелец сети.
+    setActiveRole("owner");
+    addAuditLog("Авторизация CRM (Десктоп)", `Вход персонала: ${phone ? "+7" + phone : "Владелец (по умолчанию)"}`);
     startLoginVideo("desktop");
   };
 
@@ -2447,64 +2464,6 @@ export default function App() {
             <span>Запустить мобильный кабинет</span>
           </button>
 
-          {/* Вход ученика: видимая кнопка «Я ученик» поверх экрана входа. */}
-          <button
-            type="button"
-            onClick={() => { setShowStudentLogin(true); setStudentLoginError(null); setStudentCodeInput(""); }}
-            className="absolute bottom-6 left-1/2 z-20 inline-flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/30 bg-black/45 px-6 py-3 text-sm font-black text-white shadow-xl backdrop-blur-md transition hover:bg-black/65 active:scale-95"
-          >
-            <Flame className="h-4 w-4 text-[#C5A059]" /> Я ученик — вход по коду
-          </button>
-
-          {/* Оверлей ввода короткого кода. */}
-          {showStudentLogin && (
-            <div
-              className="absolute inset-0 z-30 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-fade-in"
-              onClick={() => setShowStudentLogin(false)}
-            >
-              <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-                <div className="mb-1 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <KeyRound className="h-5 w-5 text-[#C5A059]" />
-                    <h2 className="text-lg font-black text-slate-800">Вход ученика</h2>
-                  </div>
-                  <button
-                    type="button"
-                    aria-label="Закрыть"
-                    onClick={() => setShowStudentLogin(false)}
-                    className="rounded-full p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
-                </div>
-                <p className="mb-4 text-sm text-slate-500">Введите код, который выдал педагог или администратор.</p>
-                <form onSubmit={submitStudentCode}>
-                  <input
-                    autoFocus
-                    value={studentCodeInput}
-                    onChange={(e) => { setStudentCodeInput(e.target.value.toUpperCase()); setStudentLoginError(null); }}
-                    placeholder="ABC234"
-                    maxLength={12}
-                    autoCapitalize="characters"
-                    autoCorrect="off"
-                    spellCheck={false}
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-center font-mono text-2xl font-black tracking-[0.3em] text-slate-800 outline-none transition placeholder:text-slate-300 focus:border-[#C5A059] focus:ring-2 focus:ring-[#C5A059]/30"
-                  />
-                  {studentLoginError && (
-                    <p className="mt-2 text-sm font-semibold text-rose-500">{studentLoginError}</p>
-                  )}
-                  <button
-                    type="submit"
-                    disabled={studentLoginBusy}
-                    className="mt-4 w-full rounded-2xl bg-[#C5A059] px-4 py-3 text-base font-black text-white transition hover:bg-[#b3914c] disabled:opacity-50"
-                  >
-                    {studentLoginBusy ? "Входим…" : "Войти"}
-                  </button>
-                </form>
-                <p className="mt-3 text-center text-xs text-slate-400">Нет кода? Попроси его у педагога или администратора.</p>
-              </div>
-            </div>
-          )}
         </div>
       )}
 
