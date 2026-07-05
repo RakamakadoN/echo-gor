@@ -17,9 +17,9 @@ import logoImg from "./assets/images/echogor_logo_1780297382250.png";
 // @ts-ignore
 import trainerLoginImg from "./assets/images/new_trainer_login_bg_1780308409116.png";
 // @ts-ignore
-import desktopLoginBg from "./assets/images/login_desktop_bg.png";
+import desktopLoginBg from "./assets/images/login_dancers_bg.png";
 // @ts-ignore
-import mobileLoginBg from "./assets/images/login_mobile_bg.png";
+import mobileLoginBg from "./assets/images/login_dancers_bg.png";
 // @ts-ignore
 import studentArtistCard from "./assets/images/student_artist_card.png";
 // @ts-ignore
@@ -79,7 +79,6 @@ import {
   PieChart,
   Pie,
   Cell,
-  ResponsiveContainer,
   Tooltip,
   Legend,
   BarChart,
@@ -88,6 +87,7 @@ import {
   YAxis,
   CartesianGrid
 } from "recharts";
+import { ResponsiveContainer } from "./components/SafeResponsiveContainer";
 
 import {
   ArtistLevel,
@@ -2308,117 +2308,128 @@ export default function App() {
       {/* Desktop login uses the supplied image as the visible UI, with real controls as transparent hotspots. */}
       {isPlayingPromo && (
         <div className="login-auth-screen fixed inset-0 z-[9999] bg-[#0A0D14] overflow-hidden select-none animate-fade-in font-sans text-slate-200">
+          {/* Базовый тёмный фон — всегда виден, даже если фото не подгрузилось. */}
+          <div className="absolute inset-0 bg-[radial-gradient(120%_120%_at_15%_10%,#1a2536_0%,#0B1018_45%,#05070C_100%)]" />
+          {/* Фоновая фотография (танцоры + горы) поверх подложки. */}
           <img
             src={desktopLoginBg}
-            alt="Экран входа Эхогор"
-            className="absolute inset-0 hidden h-full w-full object-cover md:block"
+            alt=""
+            aria-hidden="true"
+            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+            className="absolute inset-0 hidden h-full w-full object-cover opacity-90 md:block"
             referrerPolicy="no-referrer"
           />
           <img
             src={mobileLoginBg}
-            alt="Мобильный экран входа Эхогор"
-            className="absolute inset-0 block h-full w-full object-cover md:hidden"
+            alt=""
+            aria-hidden="true"
+            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+            className="absolute inset-0 block h-full w-full object-cover opacity-90 md:hidden"
             referrerPolicy="no-referrer"
           />
+          {/* Затемнение фона для контраста формы. */}
+          <div className="absolute inset-0 bg-gradient-to-r from-black/40 via-black/45 to-black/80 md:from-transparent md:via-black/20 md:to-[#05070C]" />
+          <div className="absolute inset-y-0 right-0 hidden w-[52%] bg-gradient-to-l from-[#05070C] via-[#05070C]/85 to-transparent md:block" />
 
-          {/* Mobile login controls — transparent hotspots positioned over the portrait mockup */}
-          <div className="absolute inset-0 z-10 md:hidden">
-            <button
-              type="button"
-              aria-label="Войти"
-              onPointerDown={primeLoginVideoAudio}
-              onClick={() => handleDesktopLogin()}
-              className="absolute left-[8.2%] top-[77.6%] h-[5.1%] w-[83.6%] rounded-[24px] appearance-none bg-transparent border-0 outline-none focus:ring-2 focus:ring-white/80 active:bg-white/5"
-            />
-            <button
-              type="button"
-              aria-label="Регистрация"
-              onClick={() => {
-                alert("Регистрация студийных аккаунтов доступна внутри CRM в разделе «Ученики». Для демо нажмите «Войти».");
-              }}
-              className="absolute left-[8.2%] top-[83.7%] h-[5.0%] w-[83.6%] rounded-[22px] appearance-none bg-transparent border-0 outline-none focus:ring-2 focus:ring-[#C5A059]/80 active:bg-white/5"
-            />
-            <button
-              type="button"
-              aria-label="Войти через Google"
-              onClick={() => {
-                setIsLoggingInWithGoogle(true);
-              }}
-              className="absolute left-[8.2%] top-[92.5%] h-[5.0%] w-[83.6%] rounded-[22px] appearance-none bg-transparent border-0 outline-none focus:ring-2 focus:ring-white/80 active:bg-white/5"
-            />
-          </div>
-
-          <form onSubmit={handleDesktopLogin} noValidate className="absolute inset-0 z-10 hidden md:block">
-            <input
-              type="email"
-              aria-label="Электронная почта"
-              value={desktopEmail}
-              onChange={(e) => {
-                setDesktopEmail(e.target.value);
-                setActiveHotspot(null);
-                setDesktopLoginError(null);
-              }}
-              className="absolute left-[56.2%] top-[28.5%] h-[7.2%] w-[36.5%] rounded-xl bg-transparent text-transparent caret-white outline-none focus:ring-2 focus:ring-[#C5A059]/70"
-            />
-            <input
-              type={desktopShowPassword ? "text" : "password"}
-              aria-label="Пароль"
-              value={desktopPassword}
-              onChange={(e) => {
-                setDesktopPassword(e.target.value);
-                setActiveHotspot(null);
-                setDesktopLoginError(null);
-              }}
-              className="absolute left-[56.2%] top-[38.4%] h-[7.3%] w-[36.5%] rounded-xl bg-transparent text-transparent caret-white outline-none focus:ring-2 focus:ring-[#C5A059]/70"
-            />
-            <button
-              type="button"
-              aria-label={desktopShowPassword ? "Скрыть пароль" : "Показать пароль"}
-              onClick={() => setDesktopShowPassword(!desktopShowPassword)}
-              className="absolute left-[88.6%] top-[41.2%] h-[3%] w-[3.5%] rounded-full outline-none focus:ring-2 focus:ring-[#C5A059]/70"
-            />
-            <label
-              aria-label="Запомнить меня"
-              className="absolute left-[56.2%] top-[49.2%] h-[4.4%] w-[18%] rounded-md cursor-pointer outline-none focus-within:ring-2 focus-within:ring-[#C5A059]/70"
+          {/* Настоящая форма входа */}
+          <div className="absolute inset-0 z-10 flex items-center justify-center px-5 md:justify-end md:pr-[6vw]">
+            <form
+              onSubmit={handleDesktopLogin}
+              noValidate
+              className="w-full max-w-[400px] rounded-[28px] border border-white/10 bg-[#0E1420]/90 p-7 shadow-[0_30px_80px_-20px_rgba(0,0,0,0.85)] backdrop-blur-xl sm:p-8"
             >
-              <input
-                type="checkbox"
-                checked={desktopRememberMe}
-                onChange={() => setDesktopRememberMe(!desktopRememberMe)}
-                className="h-full w-full cursor-pointer opacity-0"
-              />
-            </label>
-            <button
-              type="button"
-              aria-label="Забыли пароль"
-              onClick={() => {
-                alert("Для демо-входа можно нажать «Войти» без заполнения данных. Если в email указать teacher, parent, student, admin или branch, откроется соответствующая роль.");
-              }}
-              className="absolute left-[82.6%] top-[49.2%] h-[4.4%] w-[10.4%] rounded-md outline-none focus:ring-2 focus:ring-[#C5A059]/70"
-            />
-            <button
-              type="submit"
-              aria-label="Войти"
-              onPointerDown={primeLoginVideoAudio}
-              className="absolute left-[56.2%] top-[55.7%] h-[7.1%] w-[36.6%] rounded-xl outline-none focus:ring-2 focus:ring-white/80 active:bg-white/5"
-            />
-            <button
-              type="button"
-              aria-label="Регистрация"
-              onClick={() => {
-                alert("Регистрация студийных аккаунтов доступна внутри CRM в разделе «Ученики». Для демо нажмите «Войти».");
-              }}
-              className="absolute left-[56.2%] top-[65.0%] h-[6.8%] w-[36.6%] rounded-xl outline-none focus:ring-2 focus:ring-[#C5A059]/70 active:bg-white/5"
-            />
-            <button
-              type="button"
-              aria-label="Войти через Google"
-              onClick={() => {
-                setIsLoggingInWithGoogle(true);
-              }}
-              className="absolute left-[56.2%] top-[78.7%] h-[6.8%] w-[36.6%] rounded-xl outline-none focus:ring-2 focus:ring-white/80 active:bg-white/5"
-            />
-          </form>
+              <div className="mb-6 text-center">
+                <h2 className="text-[26px] font-black tracking-tight text-white sm:text-[28px]">Добро пожаловать!</h2>
+                <p className="mt-1.5 text-sm text-slate-400">Войдите по номеру телефона, чтобы продолжить</p>
+              </div>
+
+              {/* Телефон +7 */}
+              <label className="mb-3 flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3.5 transition focus-within:border-[#C5A059]/70 focus-within:bg-white/[0.06]">
+                <Phone className="h-5 w-5 shrink-0 text-slate-400" />
+                <span className="text-[15px] font-semibold text-slate-300 select-none">+7</span>
+                <input
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  placeholder="(___) ___-__-__"
+                  value={desktopEmail}
+                  onChange={(e) => {
+                    // оставляем только цифры, максимум 10 (без кода страны)
+                    const digits = e.target.value.replace(/\D/g, "").slice(0, 10);
+                    setDesktopEmail(digits);
+                    setActiveHotspot(null);
+                    setDesktopLoginError(null);
+                  }}
+                  className="w-full bg-transparent text-[15px] tracking-wide text-white outline-none placeholder:text-slate-500"
+                />
+              </label>
+
+              {/* Пароль */}
+              <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3.5 transition focus-within:border-[#C5A059]/70 focus-within:bg-white/[0.06]">
+                <Lock className="h-5 w-5 shrink-0 text-slate-400" />
+                <input
+                  type={desktopShowPassword ? "text" : "password"}
+                  autoComplete="current-password"
+                  placeholder="Пароль"
+                  value={desktopPassword}
+                  onChange={(e) => {
+                    setDesktopPassword(e.target.value);
+                    setActiveHotspot(null);
+                    setDesktopLoginError(null);
+                  }}
+                  className="w-full bg-transparent text-[15px] text-white outline-none placeholder:text-slate-500"
+                />
+                <button
+                  type="button"
+                  aria-label={desktopShowPassword ? "Скрыть пароль" : "Показать пароль"}
+                  onClick={() => setDesktopShowPassword(!desktopShowPassword)}
+                  className="shrink-0 text-slate-400 transition hover:text-white"
+                >
+                  {desktopShowPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                </button>
+              </label>
+
+              {/* Запомнить / Забыли пароль */}
+              <div className="mt-4 flex items-center justify-between">
+                <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-300 select-none">
+                  <input
+                    type="checkbox"
+                    checked={desktopRememberMe}
+                    onChange={() => setDesktopRememberMe(!desktopRememberMe)}
+                    className="h-4 w-4 rounded border-white/20 bg-white/10 accent-[#C5A059]"
+                  />
+                  Запомнить меня
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    alert("Доступ выдаёт студия при добавлении ученика/сотрудника: номер телефона +7 и пароль. Забыли пароль — обратитесь к администратору.");
+                  }}
+                  className="text-sm font-semibold text-[#C5A059] transition hover:text-[#d8b877]"
+                >
+                  Забыли пароль?
+                </button>
+              </div>
+
+              {desktopLoginError && (
+                <p className="mt-3 text-sm font-semibold text-rose-400">{desktopLoginError}</p>
+              )}
+
+              {/* Войти */}
+              <button
+                type="submit"
+                onPointerDown={primeLoginVideoAudio}
+                className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#C5A059] to-[#B3894A] px-4 py-3.5 text-base font-black text-[#1a1206] shadow-lg shadow-[#C5A059]/20 transition hover:brightness-110 active:scale-[0.99]"
+              >
+                Войти
+                <ArrowRight className="h-5 w-5" />
+              </button>
+
+              <p className="mt-4 text-center text-xs text-slate-500">
+                Доступ выдаёт студия при добавлении ученика или сотрудника
+              </p>
+            </form>
+          </div>
 
           <button
             type="button"
@@ -2433,31 +2444,6 @@ export default function App() {
             <Smartphone className="w-3.5 h-3.5 text-[#C5A059]" />
             <span>Запустить мобильный кабинет</span>
           </button>
-
-          {/* Быстрый выбор роли: плитки поверх экрана входа. */}
-          <div className="absolute bottom-24 left-1/2 z-20 w-full max-w-3xl -translate-x-1/2 px-4">
-            <p className="mb-3 text-center text-[11px] font-black uppercase tracking-[0.35em] text-white/70 drop-shadow-[0_1px_6px_rgba(0,0,0,0.8)]">
-              Выберите роль для входа
-            </p>
-            <div className="flex flex-wrap items-stretch justify-center gap-2.5">
-              {roles.map((r) => {
-                const RoleIcon = r.icon;
-                return (
-                  <button
-                    key={r.id}
-                    type="button"
-                    onClick={() => handleRoleLogin(r.id)}
-                    className="group flex min-w-[120px] flex-1 basis-[120px] flex-col items-center gap-1.5 rounded-2xl border border-white/25 bg-black/45 px-4 py-3 text-center shadow-xl backdrop-blur-md transition hover:border-[#C5A059]/70 hover:bg-black/65 active:scale-95"
-                  >
-                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#C5A059]/20 text-[#C5A059] transition group-hover:bg-[#C5A059]/30">
-                      <RoleIcon className="h-5 w-5" />
-                    </span>
-                    <span className="text-sm font-black leading-tight text-white">{r.id === "teacher" ? "Педагог" : r.name}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
 
           {/* Вход ученика: видимая кнопка «Я ученик» поверх экрана входа. */}
           <button

@@ -5191,11 +5191,11 @@ export function registerMvpApi(app: express.Express) {
       fact: planningFactByDirection[r.direction] ?? Math.round(r.planned * 0.73),
     }));
 
-    // Выполнение плана по уровням групп.
+    // Выполнение плана по форматам занятий (родитель «Доходы» + подуровни).
     const levels = [
-      { level: "Начинающие", plan: 8_000_000, fact: 6_000_000 },
-      { level: "Продолжающие", plan: 12_000_000, fact: 9_400_000 },
-      { level: "Ансамбль", plan: 10_000_000, fact: 6_500_000 },
+      { level: "Групповые", plan: 8_628_449, fact: 8_474_882 },
+      { level: "Мини-группы", plan: 882_486, fact: 810_500 },
+      { level: "Индивидуальные", plan: 551_500, fact: 554_125 },
     ].map((l) => ({ ...l, deviation: l.fact - l.plan, done: Math.round((l.fact / l.plan) * 100) }));
 
     // Воронка: сколько действий нужно для плана (демо-конверсии).

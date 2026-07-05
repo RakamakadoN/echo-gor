@@ -1,22 +1,6 @@
 @import "tailwindcss";
 
-.login-auth-screen input,
-.login-auth-screen button,
-.login-auth-screen label {
-  background: transparent !important;
-  background-color: transparent !important;
-  border-color: transparent !important;
-  box-shadow: none !important;
-}
-
-.login-auth-screen input {
-  color: transparent !important;
-  caret-color: #ffffff !important;
-}
-
-.login-auth-screen input::placeholder {
-  color: transparent !important;
-}
+/* Экран входа переведён на настоящую форму — легаси-правила прозрачности удалены. */
 
 :root.day-theme {
   color-scheme: light;
@@ -33,12 +17,13 @@
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
 }
 
-/* Reference typography — Oswald for section headings, tightened tracking. */
+/* Reference typography — Inter for headings too (matches prototype: wide, bold,
+   non-condensed). Was Oswald (condensed); switched to unify with body font. */
 :root.day-theme .day-theme-app h1,
 :root.day-theme .day-theme-app h2,
 :root.day-theme .day-theme-app h3 {
-  font-family: 'Oswald', 'Inter', system-ui, sans-serif;
-  letter-spacing: -0.01em;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  letter-spacing: -0.02em;
   color: #11171D !important;
 }
 

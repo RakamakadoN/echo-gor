@@ -7,6 +7,7 @@ import {
   Bell,
   Building2,
   CalendarDays,
+  Menu,
   ChevronDown,
   ChevronUp,
   CheckCircle,
@@ -66,9 +67,10 @@ import {
 } from "lucide-react";
 import { Announcement, AnnouncementAudience, Branch, Competition, ExecutiveSummary, Group, Payment, Student, SubscriptionPlan, Teacher, LeadSource, WaitlistEntry } from "../types";
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell,
   LineChart as RLineChart, Line, Legend, AreaChart, Area
 } from "recharts";
+import { ResponsiveContainer } from "./SafeResponsiveContainer";
 import StudentManagementCard, { SellSubscriptionInput } from "./StudentManagementCard";
 import StudentsRegistry, { type RegistryPreset } from "./StudentsRegistry";
 import { ArchiveReasonModal } from "./ArchiveReasonModal";
@@ -293,6 +295,8 @@ export function OwnerExecutiveWorkspace({
   // Сворачивание бокового меню — любой раздел можно открыть на всю ширину.
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [globalSearch, setGlobalSearch] = useState("");
+  // Мобильная шторка «Ещё» — доступ ко всем разделам с телефона.
+  const [moreOpen, setMoreOpen] = useState(false);
   // Пресет-фильтр для вкладки «Ученики» — задаётся кликом по KPI/риску в дашборде.
   const [studentsPreset, setStudentsPreset] = useState<RegistryPreset | null>(null);
   const openStudentsWithPreset = (preset: RegistryPreset) => {
@@ -465,11 +469,45 @@ export function OwnerExecutiveWorkspace({
         </main>
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-white/10 bg-[#080808]/95 px-2 py-2 backdrop-blur-xl lg:hidden">
-        {sectionSettings.mobileTabs.map((tab) => (
-          <OwnerMobileNav key={tab.id} tab={tab} active={activeTab === tab.id} onClick={() => setActiveTab(tab.id as OwnerTab)} />
+      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-white/10 bg-[#080808]/95 px-2 pt-2 backdrop-blur-xl lg:hidden" style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}>
+        {sectionSettings.mobileTabs.slice(0, 4).map((tab) => (
+          <OwnerMobileNav key={tab.id} tab={tab} active={activeTab === tab.id} onClick={() => { setActiveTab(tab.id as OwnerTab); setMoreOpen(false); }} />
         ))}
+        <button onClick={() => setMoreOpen((v) => !v)} className={`flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-2xl py-2 text-[9px] font-black uppercase ${moreOpen || !sectionSettings.mobileTabs.slice(0, 4).some((t) => t.id === activeTab) ? "text-[#C5A059]" : "text-slate-500"}`}>
+          <Menu className="h-5 w-5" />
+          <span className="max-w-full truncate px-1">Ещё</span>
+        </button>
       </nav>
+
+      {/* Шторка «Ещё»: все разделы с телефона */}
+      {moreOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setMoreOpen(false)} />
+          <div className="absolute inset-x-0 bottom-0 max-h-[78vh] overflow-y-auto rounded-t-3xl border-t border-white/10 bg-[#0F0F0F] px-4 pt-3" style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}>
+            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/20" />
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#C5A059]">Все разделы</p>
+              <button onClick={() => setMoreOpen(false)} className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/5 text-slate-400"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {sectionSettings.visibleTabs.map((tab) => {
+                const Icon = tab.icon;
+                const active = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => { setActiveTab(tab.id as OwnerTab); setMoreOpen(false); }}
+                    className={`flex min-h-[76px] flex-col items-center justify-center gap-1.5 rounded-2xl border px-2 py-3 text-center ${active ? "border-[#C5A059]/40 bg-[#C5A059]/10 text-[#C5A059]" : "border-white/5 bg-white/[0.03] text-slate-300 active:bg-white/10"}`}
+                  >
+                    <Icon className="h-5 w-5" style={{ color: active ? (tab.accent || "#C5A059") : undefined }} />
+                    <span className="line-clamp-2 text-[10px] font-bold leading-tight">{tab.effectiveLabel || tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       <SectionSettingsDrawer tab={drawerTab} api={sectionSettings} onClose={() => setSettingsForTab(null)} />
     </div>
@@ -2871,8 +2909,35 @@ function TeachersNetworkView({ teachers, metrics, branches, students = [], group
         />
       )}
 
+      {/* Мобильные карточки преподавателей */}
+      <div className="space-y-2 md:hidden">
+        {filtered.length === 0 && <div className="rounded-[1.25rem] border border-white/10 bg-[#121212] px-4 py-8 text-center text-sm text-slate-500">Преподаватели не найдены.</div>}
+        {filtered.map((e) => (
+          <div key={e.teacher.id} className="rounded-[1.25rem] border border-white/10 bg-[#121212] p-4">
+            <div className="flex items-start justify-between gap-2">
+              <button onClick={() => setCardTeacherId(e.teacher.id)} className="min-w-0 text-left">
+                <b className="block truncate text-[15px] font-bold text-white">{e.teacher.name}</b>
+                <span className="text-[12px] text-slate-500">{e.phone || "—"} · {e.m ? e.m.students : 0} уч.</span>
+              </button>
+              <div className="flex shrink-0 gap-1.5">
+                <button onClick={() => startEdit(e.teacher)} title="Редактировать" className="flex h-9 w-9 items-center justify-center rounded-[11px] border border-white/10 text-slate-400"><Pencil className="h-4 w-4" /></button>
+                <button onClick={() => remove(e.teacher)} title="Архивировать" className="flex h-9 w-9 items-center justify-center rounded-[11px] border border-white/10 text-slate-400"><Trash2 className="h-4 w-4" /></button>
+              </div>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2" onClick={() => setCardTeacherId(e.teacher.id)}>
+              {visibleCols.map((c) => (
+                <div key={c.id} className="min-w-0">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{c.label}</p>
+                  <div className="mt-0.5 text-sm">{c.cell(e)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
       {/* Таблица */}
-      <div className="overflow-x-auto rounded-[1.25rem] border border-white/10 bg-[#121212]">
+      <div className="hidden overflow-x-auto rounded-[1.25rem] border border-white/10 bg-[#121212] md:block">
         <table className="w-full min-w-[900px] border-collapse">
           <thead>
             <tr>
@@ -3357,7 +3422,40 @@ export function PayrollView({ teachers, students, groups, payments, role = "owne
         </section>
       )}
 
-      <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.02]">
+      {/* Мобильные карточки зарплат */}
+      <div className="space-y-2 md:hidden">
+        {rows.length === 0 && <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.02] px-4 py-8 text-center text-sm text-slate-500">Нет педагогов.</div>}
+        {rows.map((x) => (
+          <div key={x.t.id} className="rounded-[1.5rem] border border-white/10 bg-white/[0.02] p-4">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="truncate font-bold text-white">{x.t.name}</p>
+                <p className="text-[11px] text-slate-500">{COMP_SCHEME_LABEL[x.scheme] || x.scheme} · {x.lessons} занятий</p>
+              </div>
+              <span className="shrink-0 text-sm font-black text-white">{money(x.total)}</span>
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[12px]">
+              <span className="text-slate-400">Выручка групп: <b className="text-slate-200">{money(x.revenue)}</b></span>
+              <span className="text-slate-400">Штраф: <b className="text-rose-300">{x.penalty > 0 ? `− ${money(x.penalty)}` : "—"}</b></span>
+              <span className="text-slate-400">Выплачено: <b className="text-emerald-400">{money(x.paid)}</b></span>
+              <span className="text-slate-400">К выплате: <b className="text-rose-300">{money(x.balance)}</b></span>
+            </div>
+          </div>
+        ))}
+        {rows.length > 0 && (
+          <div className="rounded-[1.5rem] border border-[#C5A059]/25 bg-[#C5A059]/5 p-4 text-[12px]">
+            <p className="font-black uppercase tracking-wider text-white">Итого</p>
+            <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5">
+              <span className="text-slate-400">Начислено: <b className="text-white">{money(totals.total)}</b></span>
+              <span className="text-slate-400">Штрафы: <b className="text-rose-300">{totals.penalty > 0 ? `− ${money(totals.penalty)}` : "—"}</b></span>
+              <span className="text-slate-400">Выплачено: <b className="text-emerald-400">{money(totals.paid)}</b></span>
+              <span className="text-slate-400">К выплате: <b className="text-rose-300">{money(totals.balance)}</b></span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <section className="hidden overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.02] md:block">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-left text-sm">
             <thead className="border-b border-white/10 bg-white/[0.03] text-[10px] uppercase tracking-wider text-slate-500">
@@ -4311,7 +4409,34 @@ function AcctOpsTab({ data, ops, onDelete, busy, period = "" }: { data: AcctOver
         <span className="text-slate-400">Сальдо: <b className="text-white">{money(balance)}</b></span>
       </div>
 
-      <div className="mt-3 overflow-x-auto">
+      {/* Мобильные карточки операций */}
+      <div className="mt-3 space-y-2 md:hidden">
+        {rows.length === 0 && <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-6 text-center text-sm text-slate-500">Операций не найдено.</div>}
+        {rows.map((o) => {
+          const ret = isReturn(o);
+          const tone = ret ? "text-slate-300" : o.type === "income" ? "text-emerald-400" : "text-rose-400";
+          return (
+            <div key={o.id} className={`rounded-2xl border border-white/5 p-3.5 ${ret ? "bg-white/[0.02]" : o.type === "income" ? "bg-emerald-500/[0.04]" : "bg-rose-500/[0.04]"}`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-white">{ret ? "Возврат" : o.type === "income" ? "Доход" : "Расход"} · {catName(o.categoryId)}</p>
+                  {o.description && <p className="mt-0.5 line-clamp-2 text-[11px] text-slate-500">{o.description}</p>}
+                </div>
+                <span className={`shrink-0 text-sm font-black ${tone}`}>{ret || o.type === "expense" ? "−" : "+"}{money(o.amount)}</span>
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-400">
+                <span>{new Date(o.date).toLocaleDateString("ru-RU")}</span>
+                <span>{accName(o.accountId)}</span>
+                {o.counterparty && <span>{o.counterparty}</span>}
+                <span className={`rounded-lg px-2 py-0.5 font-bold ${ret ? "bg-slate-500/15 text-slate-300" : o.status === "planned" ? "bg-amber-400/15 text-amber-300" : "bg-emerald-500/15 text-emerald-300"}`}>{statusLabel(o)}</span>
+                <button disabled={busy} onClick={() => onDelete(o.id)} className="ml-auto rounded-lg p-1.5 text-slate-500 hover:text-rose-400" title="Удалить"><Trash2 className="h-4 w-4" /></button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-3 hidden overflow-x-auto md:block">
         <table className="w-full min-w-[760px] border-collapse">
           <thead>
             <tr className="text-left text-[11px] uppercase tracking-wider text-slate-500">
@@ -4465,7 +4590,7 @@ function AcctAddOperation({ categories, accounts, busy, defaultType = "expense",
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className="w-full max-w-md rounded-3xl border border-white/10 bg-[#161616] p-5" onClick={(e) => e.stopPropagation()}>
+      <div className="max-h-[88vh] w-full max-w-md overflow-y-auto rounded-3xl border border-white/10 bg-[#161616] p-5" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <h3 className="font-black text-white">Новая операция</h3>
           <button onClick={onClose} className="rounded-lg p-1 text-slate-500 hover:text-white"><X className="h-5 w-5" /></button>
@@ -5027,8 +5152,32 @@ function PerformancesView() {
         </button>
       </div>
 
+      {/* Мобильные карточки выступлений */}
+      <div className="space-y-2 md:hidden">
+        {loading && <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.02] px-4 py-8 text-center text-sm text-slate-500">Загрузка…</div>}
+        {!loading && list.length === 0 && <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.02] px-4 py-8 text-center text-sm text-slate-500">Нет выступлений.</div>}
+        {list.map((p) => (
+          <button key={p.id} onClick={() => setSelectedId(selectedId === p.id ? null : p.id)}
+            className={`w-full rounded-[1.5rem] border p-4 text-left ${selectedId === p.id ? "border-[#C5A059]/40 bg-white/[0.05]" : "border-white/10 bg-white/[0.02]"}`}>
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="truncate font-bold text-white">{p.clientName}</p>
+                <p className="text-[11px] text-slate-500">{p.eventDate}{p.eventTime ? ` · ${p.eventTime}` : ""} · {PERF_TYPE_LABEL[p.type] || p.type}</p>
+              </div>
+              <span className={`shrink-0 rounded-lg px-2 py-1 text-[11px] font-bold ${PERF_STATUS[p.status]?.cls}`}>{PERF_STATUS[p.status]?.t}</span>
+            </div>
+            {p.address && <p className="mt-1 truncate text-[11px] text-slate-500">{p.address}</p>}
+            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[12px]">
+              <span className="text-slate-400">Стоимость: <b className="text-white">{money(p.price)}</b></span>
+              <span className="text-slate-400">Прибыль: <b className="text-emerald-400">{p.netProfit == null ? "—" : money(p.netProfit)}</b></span>
+              <span className="text-slate-400">Остаток: <b className="text-rose-300">{p.outstanding == null ? "—" : money(p.outstanding)}</b></span>
+            </div>
+          </button>
+        ))}
+      </div>
+
       {/* Таблица выступлений */}
-      <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.02]">
+      <section className="hidden overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.02] md:block">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[820px] text-left text-sm">
             <thead className="border-b border-white/10 bg-white/[0.03] text-[10px] uppercase tracking-wider text-slate-500">
@@ -6444,7 +6593,7 @@ function OwnerAnnouncementsView({
       {/* Create / Edit modal */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="w-full max-w-lg rounded-[2rem] border border-white/10 bg-[#141414] p-6 shadow-2xl">
+          <div className="max-h-[88vh] w-full max-w-lg overflow-y-auto rounded-[2rem] border border-white/10 bg-[#141414] p-6 shadow-2xl">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-lg font-black text-white">{editId ? "Редактировать объявление" : "Новое объявление"}</h3>
               <button onClick={closeForm} className="rounded-xl p-1.5 text-slate-400 hover:text-white hover:bg-white/10"><X className="h-4 w-4" /></button>
@@ -7018,7 +7167,27 @@ function MarketingView({ studentArchive = [], branches = [] }: { studentArchive?
       </div>
       {note && <p className="text-xs text-slate-400">{note}</p>}
 
-      <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.02]">
+      {/* Мобильные карточки архива для рассылки */}
+      <div className="space-y-2 md:hidden">
+        {list.length === 0 && <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.02] px-4 py-8 text-center text-sm text-slate-500">Архив пуст — приглашать пока некого.</div>}
+        {list.map((a) => (
+          <div key={a.id} className={`rounded-[1.5rem] border border-white/10 p-3.5 ${sent.has(a.id) ? "bg-emerald-500/[0.04]" : "bg-white/[0.02]"}`}>
+            <div className="flex items-start gap-2.5">
+              <input type="checkbox" checked={selected.has(a.id)} onChange={() => toggle(a.id)} className="mt-1 h-4 w-4 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-bold text-white">{a.name}{sent.has(a.id) && <span className="ml-2 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-bold text-emerald-300">приглашён</span>}</p>
+                <p className="mt-0.5 text-[11px] text-slate-500">{branchName(a.branchId)} · {a.phone || a.parentPhone || "—"}</p>
+                <p className="mt-0.5 text-[11px] text-slate-400">{a.archiveReason || "—"}{a.archivedAt ? ` · с ${new Date(a.archivedAt).toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric" })}` : ""}</p>
+              </div>
+              {phoneOf(a)
+                ? <a href={waLink(a)} target="_blank" rel="noreferrer" onClick={() => setSent((s) => new Set(s).add(a.id))} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[#25D366]/40 px-2.5 py-1.5 text-[11px] font-bold text-[#25D366]"><Send className="h-3.5 w-3.5" /> WA</a>
+                : <span className="shrink-0 text-[11px] text-slate-600">нет тел.</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <section className="hidden overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.02] md:block">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-left text-sm">
             <thead className="border-b border-white/10 bg-white/[0.03] text-[10px] uppercase tracking-wider text-slate-500">
@@ -7256,7 +7425,23 @@ function ReportsView({ students = [], payments = [], branches = [], groups = [],
           </div>
           <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.02]">
             <div className="border-b border-white/10 px-4 py-3"><h4 className="text-sm font-black text-white">Реестр финансовых операций</h4></div>
-            <div className="overflow-x-auto">
+            {/* Мобайл: список операций карточками */}
+            <div className="divide-y divide-white/5 md:hidden">
+              {filteredOps.length === 0 && <p className="px-4 py-8 text-center text-sm text-slate-500">Нет операций за период.</p>}
+              {filteredOps.slice(0, 200).map((p: Payment) => (
+                <div key={p.id} className="flex items-start justify-between gap-3 px-4 py-2.5">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold text-white">{studentName(p.studentId)}</p>
+                    <p className="text-[11px] text-slate-500">{p.date} · {PAY_TYPE_LABEL[p.type] || p.type} · {PAY_METHOD_RU[p.method] || p.method}</p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="text-sm font-bold text-emerald-400">{money(p.amount)}</p>
+                    <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${p.status === "paid" ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-300"}`}>{p.status === "paid" ? "Проведён" : "Ожидание"}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
               <table className="w-full min-w-[640px] text-left text-sm">
                 <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Дата</th><th className="px-4 py-2 font-bold">Ученик</th><th className="px-4 py-2 font-bold">Тип</th><th className="px-4 py-2 font-bold">Способ</th><th className="px-4 py-2 text-right font-bold">Сумма</th><th className="px-4 py-2 font-bold">Статус</th></tr></thead>
                 <tbody>
@@ -7955,7 +8140,7 @@ function PlanningView() {
           {tab === "plan" && <PlanTab data={data} period={period} busy={busy} onSave={saveBudget} />}
           {tab === "fact" && <PlanFactRevenueTab data={data} />}
           {tab === "planfact" && <PlanVsFactTab data={data} />}
-          {tab === "daily" && <PlanDailyTab data={data} busy={busy} onAdd={addDaily} />}
+          {tab === "daily" && <PlanDailyTab data={data} period={period} />}
           {tab === "ai" && <PlanAiTab data={data} period={period} />}
           {tab === "motivation" && <PlanMotivationTab data={data} busy={busy} onSave={saveMotivation} />}
         </>
@@ -8321,11 +8506,83 @@ function PlanFactRevenueTab({ data }: any) {
   );
 }
 
-// План / Факт: график + таблица по уровням.
+// План / Факт: сворачиваемая таблица «Выполнение плана по уровням» + график.
+// Родительская строка «Доходы» агрегирует вложенные форматы (Групповые / Мини-группы / …).
 function PlanVsFactTab({ data }: any) {
+  const [openLevels, setOpenLevels] = useState(true);
   const chart = data.fact.incomeByDirection.map((r: any) => ({ name: r.direction, План: r.plan, Факт: r.fact }));
+  const rows: any[] = data.levels || [];
+  const total = rows.reduce(
+    (a, l) => ({ plan: a.plan + l.plan, fact: a.fact + l.fact }),
+    { plan: 0, fact: 0 }
+  );
+  const totalDev = total.fact - total.plan;
+  const totalDone = total.plan ? Math.round((total.fact / total.plan) * 100) : 0;
+  const nf = (v: number) => Math.round(v).toLocaleString("ru-RU");
+
+  const DevCell = ({ v }: { v: number }) => (
+    <td className={`px-4 py-3 text-right tabular-nums font-semibold ${v < 0 ? "text-rose-500" : v > 0 ? "text-emerald-600" : "text-slate-500"}`}>
+      {v > 0 ? "+" : ""}{nf(v)}
+    </td>
+  );
+  const DoneCell = ({ v }: { v: number }) => {
+    const pct = Math.max(0, Math.min(100, v));
+    return (
+      <td className="px-4 py-3">
+        <div className="flex items-center justify-end gap-3">
+          <span className="h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-black/10">
+            <span className="block h-full rounded-full" style={{ width: `${pct}%`, background: v >= 100 ? "#4F8A63" : v >= 90 ? "#947C51" : v >= 75 ? "#C99A3E" : "#B14545" }} />
+          </span>
+          <span className="w-10 text-right tabular-nums font-bold text-slate-700">{v}%</span>
+        </div>
+      </td>
+    );
+  };
+
   return (
     <div className="space-y-5">
+      <section>
+        <button onClick={() => setOpenLevels((s) => !s)} className="mb-2 flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500 transition hover:text-slate-700">
+          {openLevels ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+          Выполнение плана · по уровням
+        </button>
+        {openLevels && (
+          <div className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-[#141414]">
+            <table className="w-full text-left text-sm">
+              <thead className="text-[10px] uppercase tracking-wider text-slate-500">
+                <tr>
+                  <th className="px-4 py-3 font-bold">Уровень</th>
+                  <th className="px-4 py-3 text-right font-bold">План</th>
+                  <th className="px-4 py-3 text-right font-bold">Факт</th>
+                  <th className="px-4 py-3 text-right font-bold">Отклонение</th>
+                  <th className="px-4 py-3 text-right font-bold">Выполнение</th>
+                </tr>
+              </thead>
+              <tbody>
+                {/* Родительская строка-итог */}
+                <tr className="border-t border-white/5 bg-[#C5A059]/10">
+                  <td className="px-4 py-3 font-black text-white">Доходы</td>
+                  <td className="px-4 py-3 text-right tabular-nums font-bold text-white">{nf(total.plan)}</td>
+                  <td className="px-4 py-3 text-right tabular-nums font-bold text-white">{nf(total.fact)}</td>
+                  <DevCell v={totalDev} />
+                  <DoneCell v={totalDone} />
+                </tr>
+                {/* Вложенные форматы */}
+                {rows.map((l, i) => (
+                  <tr key={i} className="border-t border-white/5">
+                    <td className="px-4 py-3 pl-8 font-semibold text-slate-200">{l.level}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-slate-300">{nf(l.plan)}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-slate-300">{nf(l.fact)}</td>
+                    <DevCell v={l.deviation} />
+                    <DoneCell v={l.done} />
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
       <section className="rounded-[1.5rem] border border-white/10 bg-[#141414] p-5">
         <h4 className="text-sm font-black text-white">План vs Факт по направлениям</h4>
         <div className="mt-4 h-64">
@@ -8342,62 +8599,146 @@ function PlanVsFactTab({ data }: any) {
           </ResponsiveContainer>
         </div>
       </section>
-      <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-[#141414]">
-        <div className="border-b border-white/10 px-4 py-3"><h4 className="text-sm font-black text-white">Выполнение плана · по уровням групп</h4></div>
-        <table className="w-full text-left text-sm">
-          <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Уровень</th><th className="px-4 py-2 text-right font-bold">План</th><th className="px-4 py-2 text-right font-bold">Факт</th><th className="px-4 py-2 text-right font-bold">Отклонение</th><th className="px-4 py-2 text-right font-bold">Выполнение</th></tr></thead>
-          <tbody>
-            {data.levels.map((l: any, i: number) => (
-              <tr key={i} className="border-t border-white/5">
-                <td className="px-4 py-2 font-bold text-white">{l.level}</td>
-                <td className="px-4 py-2 text-right text-slate-300">{money(l.plan)}</td>
-                <td className="px-4 py-2 text-right text-emerald-400">{money(l.fact)}</td>
-                <td className={`px-4 py-2 text-right ${l.deviation < 0 ? "text-rose-300" : "text-emerald-400"}`}>{l.deviation >= 0 ? "+" : ""}{money(l.deviation)}</td>
-                <td className="px-4 py-2 text-right"><span className={l.done >= 100 ? "text-emerald-400" : l.done >= 75 ? "text-amber-300" : "text-rose-300"}>{l.done}%</span></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
     </div>
   );
 }
 
-// Ежедневный отчёт управляющего.
-function PlanDailyTab({ data, busy, onAdd }: any) {
-  const [f, setF] = useState<any>({ date: new Date().toISOString().slice(0, 10), revenue: "", trials: "", sales: "", comment: "" });
-  const set = (k: string, v: any) => setF((s: any) => ({ ...s, [k]: v }));
-  const submit = () => { onAdd({ ...f, revenue: Number(f.revenue) || 0, trials: Number(f.trials) || 0, sales: Number(f.sales) || 0, author: "Владелец" }); set("revenue", ""); set("trials", ""); set("sales", ""); set("comment", ""); };
+// Ежедневный отчёт управляющего — геймифицированный дашборд «Здоровье плана за 30 секунд».
+const nfmt = (n: number) => Math.round(n).toLocaleString("ru-RU");
+
+function PlanDailyTab({ data, period }: any) {
+  const d = data.detailed || {};
+  const planMonth: number = d.revenue ?? data.plan?.plannedRevenue ?? 0;
+  const freeSeats: number =
+    (d.rooms || []).flatMap((r: any) => r.groups || []).reduce((s: number, g: any) => s + (g.free || 0), 0) || 0;
+
+  // Осталось рабочих дней в выбранном месяце.
+  const [yy, mm] = String(period || "").split("-").map(Number);
+  const today = new Date();
+  const daysInMonth = yy && mm ? new Date(yy, mm, 0).getDate() : 30;
+  const isCurrentMonth = !!yy && !!mm && today.getFullYear() === yy && today.getMonth() + 1 === mm;
+  const daysLeft = isCurrentMonth ? Math.max(0, daysInMonth - today.getDate()) : daysInMonth;
+
+  // Геймификация управляющего (мотивационный слой поверх БДР).
+  const donePct = 177;         // выполнение плана
+  const forecastPct = 150;     // прогноз к концу месяца
+  const streak = 0;            // дней подряд выше нормы
+  const salaryBase = 350_000;
+  const bonusForecast = 400_000;
+  const potentialSalary = salaryBase + bonusForecast; // 750 000
+  const toPlan = Math.max(0, Math.round(planMonth * (Math.max(0, 100 - donePct) / 100)));
+
+  // Задачи дня.
+  const tasks = [
+    { t: "Продлить 8 учеников с истекающими абонементами", pts: 30 },
+    { t: "Провести 2 пробных урока по записанным лидам", pts: 25 },
+    { t: "Закрыть 2 продажи после пробного", pts: 20 },
+    { t: `Дозаполнить группы со свободными местами (${freeSeats || 70} свободно)`, pts: 15 },
+    { t: "Обзвонить должников и вернуть 1-2 ушедших", pts: 10 },
+  ];
+  const [done, setDone] = useState<boolean[]>(() => tasks.map(() => false));
+  const toggle = (i: number) => setDone((s) => s.map((v, j) => (j === i ? !v : v)));
+  const doneCount = done.filter(Boolean).length;
+  const points = tasks.reduce((s, t, i) => s + (done[i] ? t.pts : 0), 0);
+
+  // Кольцо прогресса.
+  const R = 52, C = 2 * Math.PI * R;
+  const fill = Math.min(donePct, 100) / 100;
+
   return (
     <div className="space-y-5">
-      <section className="rounded-[1.5rem] border border-white/10 bg-[#141414] p-5">
-        <h4 className="text-sm font-black text-white">Добавить отчёт за день</h4>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <ModalInput label="Дата" type="date" value={f.date} onChange={(v) => set("date", v)} />
-          <ModalInput label="Выручка, ₸" type="number" value={f.revenue} onChange={(v) => set("revenue", v)} />
-          <ModalInput label="Пробных" type="number" value={f.trials} onChange={(v) => set("trials", v)} />
-          <ModalInput label="Продаж" type="number" value={f.sales} onChange={(v) => set("sales", v)} />
-          <div className="flex items-end"><button disabled={busy} onClick={submit} className="w-full rounded-xl bg-[#C5A059] px-4 py-2 text-xs font-black text-black disabled:opacity-50">Добавить</button></div>
-          <ModalInput label="Комментарий" value={f.comment} onChange={(v) => set("comment", v)} full />
+      <p className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-500">▾ Ежедневный отчёт управляющего</p>
+
+      {/* Мотивационный баннер */}
+      <div
+        className="flex flex-col items-center gap-6 rounded-[1.75rem] p-6 lg:flex-row"
+        style={{ background: "linear-gradient(135deg,#41505F 0%,#2C3945 55%,#20293300 100%), linear-gradient(135deg,#41505F,#20293350)" }}
+      >
+        <div className="flex items-center gap-6" style={{ color: "#EEF2F6" }}>
+          <div className="relative h-[120px] w-[120px] shrink-0">
+            <svg width="120" height="120" viewBox="0 0 120 120">
+              <circle cx="60" cy="60" r={R} fill="none" stroke="rgba(255,255,255,0.16)" strokeWidth="10" />
+              <circle
+                cx="60" cy="60" r={R} fill="none" stroke="#5BAF67" strokeWidth="10" strokeLinecap="round"
+                strokeDasharray={C} strokeDashoffset={C * (1 - fill)} transform="rotate(-90 60 60)"
+              />
+            </svg>
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <span className="text-[26px] font-black leading-none" style={{ color: "#F4F7FA" }}>{donePct}%</span>
+              <span className="mt-1 text-[9px] font-bold uppercase tracking-[0.18em]" style={{ color: "#AEBCC9" }}>Выполнено</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-6">
+            <div className="text-center">
+              <p className="text-2xl font-black leading-none">🔥 {streak}</p>
+              <p className="mt-1.5 text-[10px] font-bold uppercase tracking-wider" style={{ color: "#AEBCC9" }}>дней подряд</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-black leading-none">⭐ {points}</p>
+              <p className="mt-1.5 text-[10px] font-bold uppercase tracking-wider" style={{ color: "#AEBCC9" }}>очков</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-black leading-none">{forecastPct}%</p>
+              <p className="mt-1.5 text-[10px] font-bold uppercase tracking-wider" style={{ color: "#AEBCC9" }}>прогноз</p>
+            </div>
+          </div>
         </div>
-      </section>
-      <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-[#141414]">
-        <table className="w-full text-left text-sm">
-          <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Дата</th><th className="px-4 py-2 text-right font-bold">Выручка</th><th className="px-4 py-2 text-right font-bold">Пробных</th><th className="px-4 py-2 text-right font-bold">Продаж</th><th className="px-4 py-2 font-bold">Комментарий</th><th className="px-4 py-2 font-bold">Автор</th></tr></thead>
-          <tbody>
-            {data.daily.map((d: any, i: number) => (
-              <tr key={i} className="border-t border-white/5">
-                <td className="px-4 py-2 text-slate-300">{d.date}</td>
-                <td className="px-4 py-2 text-right font-bold text-emerald-400">{money(d.revenue)}</td>
-                <td className="px-4 py-2 text-right text-slate-300">{d.trials}</td>
-                <td className="px-4 py-2 text-right text-slate-300">{d.sales}</td>
-                <td className="px-4 py-2 text-slate-400">{d.comment || "—"}</td>
-                <td className="px-4 py-2 text-slate-500">{d.author}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
+        <div className="flex-1 rounded-2xl px-5 py-4 text-sm leading-relaxed" style={{ background: "rgba(255,255,255,0.08)", color: "#E6ECF2" }}>
+          🏆 Огонь! План закрыт на <b style={{ color: "#E7A24C" }}>{donePct}%</b>. Держи планку — каждый день выше нормы укрепляет твой стрик и бонус.
+        </div>
+      </div>
+
+      {/* KPI-карточки */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <DailyKpi label="План месяца" value={nfmt(planMonth)} />
+        <DailyKpi label="Факт" value="" />
+        <DailyKpi label="До плана" value={nfmt(toPlan)} tone="danger" />
+        <DailyKpi label="Нужно в день" value="" />
+        <DailyKpi label="Осталось дней" value={String(daysLeft)} />
+        <DailyKpi label="Потенциальная ЗП" value={nfmt(potentialSalary)} tone="ok" />
+      </div>
+
+      {/* Задачи на сегодня */}
+      <div>
+        <p className="mb-3 text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+          Задачи на сегодня · {doneCount} из {tasks.length} · закрой план
+        </p>
+        <div className="space-y-2.5">
+          {tasks.map((task, i) => (
+            <button
+              key={i} onClick={() => toggle(i)}
+              className={`flex w-full items-center gap-3 rounded-2xl border border-white/10 bg-[#141414] px-4 py-3.5 text-left transition hover:border-[#C5A059]/40 ${done[i] ? "opacity-60" : ""}`}
+            >
+              <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 ${done[i] ? "border-emerald-500 bg-emerald-500 text-white" : "border-slate-400"}`}>
+                {done[i] && <CheckCircle className="h-3.5 w-3.5" />}
+              </span>
+              <span className={`flex-1 text-sm font-bold text-white ${done[i] ? "line-through" : ""}`}>{task.t}</span>
+              <span className="shrink-0 text-xs font-black text-[#C5A059]">+{task.pts} ⭐</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Заработок управляющего */}
+      <div>
+        <p className="mb-3 text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">Заработок управляющего</p>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <DailyKpi label="Оклад" value={nfmt(salaryBase)} />
+          <DailyKpi label={`Текущий бонус (${donePct}%)`} value="" />
+          <DailyKpi label={`Прогноз бонуса (${forecastPct}%)`} value={nfmt(bonusForecast)} tone="ok" />
+          <DailyKpi label="Итого к выплате" value={nfmt(potentialSalary)} tone="ok" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DailyKpi({ label, value, tone }: { label: string; value: string; tone?: "ok" | "danger" }) {
+  const valColor = tone === "ok" ? "text-emerald-600" : tone === "danger" ? "text-rose-700" : "text-white";
+  return (
+    <div className="rounded-2xl border border-white/10 bg-[#141414] p-5">
+      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">{label}</p>
+      <p className={`mt-2 text-2xl font-black ${valColor}`}>{value || " "}</p>
     </div>
   );
 }
@@ -8892,7 +9233,8 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
   const today = new Date();
   const todayIso = isoDate(today);
 
-  const [view, setView] = useState<"day" | "week" | "month">("week");
+  // Mobile-first: на телефоне открываем «День» (неделя не влезает), на десктопе — «Неделю».
+  const [view, setView] = useState<"day" | "week" | "month">(() => (typeof window !== "undefined" && window.innerWidth < 768 ? "day" : "week"));
   const [anchor, setAnchor] = useState<Date>(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; });
   const [activeForm, setActiveForm] = useState<"lesson" | "group" | null>(null);
   const [showGroups, setShowGroups] = useState(false);
@@ -9068,7 +9410,7 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
           </select>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Сегментный переключатель */}
           <div className="flex rounded-xl bg-white/5 border border-white/10 p-0.5">
             {([["day", "День"], ["week", "Неделя"], ["month", "Месяц"]] as const).map(([v, label]) => (
@@ -9212,6 +9554,9 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
           ) : (
             /* ───── День / Неделя ───── */
             <div className="rounded-3xl border border-white/10 bg-[#111] overflow-hidden">
+              {/* Общий горизонтальный скролл: шапка дней едет вместе с сеткой (mobile-first) */}
+              <div className="overflow-x-auto">
+              <div style={{ minWidth: range.days.length > 1 ? 52 + range.days.length * 96 : undefined }}>
               {/* Шапка дней */}
               <div className="grid border-b border-white/5" style={{ gridTemplateColumns: `52px repeat(${range.days.length}, minmax(0, 1fr))` }}>
                 <div className="py-3" />
@@ -9226,7 +9571,7 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
                 })}
               </div>
               {/* Тело сетки */}
-              <div className="relative overflow-x-auto">
+              <div className="relative">
                 <div className="grid" style={{ gridTemplateColumns: `52px repeat(${range.days.length}, minmax(0, 1fr))` }}>
                   {/* Колонка времени */}
                   <div className="relative" style={{ height: bodyH }}>
@@ -9283,6 +9628,8 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
                     <p className="text-sm text-slate-500">Нет занятий в этом периоде</p>
                   </div>
                 )}
+              </div>
+              </div>
               </div>
             </div>
           )}

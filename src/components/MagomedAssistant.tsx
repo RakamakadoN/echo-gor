@@ -279,7 +279,7 @@ export function MagomedAssistant({ roleHeader, roleLabel }: Props) {
         <button
           onClick={() => setOpen(true)}
           aria-label="Открыть помощника Магомеда"
-          className="fixed bottom-5 right-5 z-[900] flex items-center gap-2 rounded-full bg-gradient-to-br from-[#C5A059] to-[#9C784D] px-4 py-3 text-black shadow-[0_8px_30px_rgba(197,160,89,0.4)] transition hover:scale-105 active:scale-95 cursor-pointer"
+          className="fixed bottom-24 right-4 z-[35] flex items-center gap-2 rounded-full bg-gradient-to-br from-[#C5A059] to-[#9C784D] px-4 py-3 text-black shadow-[0_8px_30px_rgba(197,160,89,0.4)] transition hover:scale-105 active:scale-95 cursor-pointer lg:bottom-5 lg:right-5 lg:z-[900]"
         >
           <MessageCircle size={20} strokeWidth={2.2} />
           <span className="hidden sm:block text-sm font-bold">Магомед</span>

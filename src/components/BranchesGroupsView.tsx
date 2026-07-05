@@ -300,7 +300,35 @@ function BranchesTab({ data, avgSubPrice, canManage, onCreate, onUpdate, onDelet
         )}
       </div>
 
-      <div className="overflow-x-auto rounded-[2rem] border border-white/10 bg-[#0F0F0F]">
+      {/* Мобильные карточки филиалов */}
+      <div className="space-y-2 md:hidden">
+        {data.length === 0 && <div className="rounded-[1.25rem] border border-white/10 bg-[#0F0F0F] p-8 text-center text-sm text-slate-500">Филиалов пока нет.</div>}
+        {data.map((d: any) => (
+          <div key={d.raw.id} className="rounded-[1.25rem] border border-white/10 bg-[#0F0F0F] p-4">
+            <div className="flex items-start justify-between gap-2">
+              <button onClick={() => setDetailId(d.raw.id)} className="min-w-0 text-left">
+                <p className="truncate font-bold text-white">{d.raw.name}</p>
+                <p className="truncate text-xs text-slate-500">{d.raw.city} · {d.raw.managerName}</p>
+              </button>
+              <AiBadge rating={d.rating} />
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-sm text-slate-300">
+              <div><p className="text-[10px] uppercase tracking-wider text-slate-500">Ученики</p><p className="font-bold text-white">{d.active} <span className="text-xs font-normal text-slate-500">· своб. {d.freeSeats} из {d.capacity}</span></p></div>
+              <div><p className="text-[10px] uppercase tracking-wider text-slate-500">Удержание</p><p><span className="font-bold text-white">{round(d.retention)}%</span> <Delta value={d.retentionDelta} /></p></div>
+              <div><p className="text-[10px] uppercase tracking-wider text-slate-500">Выручка</p><p className="font-bold text-white">{money(d.revenue)}</p></div>
+              <div><p className="text-[10px] uppercase tracking-wider text-slate-500">Потенциал</p><p className="text-slate-400">{money(d.potential)}</p></div>
+            </div>
+            <div className="mt-2.5"><FillBar pct={d.fill} /></div>
+            <div className="mt-2.5 flex items-center justify-end gap-1 border-t border-white/5 pt-2">
+              <IconBtn title="Просмотр" onClick={() => setDetailId(d.raw.id)}><Eye className="h-4 w-4" /></IconBtn>
+              {canManage && <IconBtn title="Редактировать" onClick={() => setModal({ mode: "edit", id: d.raw.id })}><Pencil className="h-4 w-4" /></IconBtn>}
+              {canManage && onDelete && <IconBtn title="Архивировать" danger onClick={async () => { if (window.confirm(`Архивировать филиал «${d.raw.name}»? Ученики и группы сохранятся.`)) await onDelete(d.raw.id); }}><Trash2 className="h-4 w-4" /></IconBtn>}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="hidden overflow-x-auto rounded-[2rem] border border-white/10 bg-[#0F0F0F] md:block">
         <table className="w-full min-w-[1100px] text-left text-sm">
           <thead className="border-b border-white/10 text-[10px] uppercase tracking-wider text-slate-500">
             <tr>
@@ -535,7 +563,36 @@ function GroupsTab({ groupData, canManage, rawBranches, teachers, halls, student
         <FilterSelect value={fFill} onChange={setFFill} all="Любая заполненность" options={[{ v: "free", l: "Есть места" }, { v: "full", l: "Заполнена" }, { v: "low", l: "Низкая (<50%)" }]} />
       </div>
 
-      <div className="overflow-x-auto rounded-[2rem] border border-white/10 bg-[#0F0F0F]">
+      {/* Мобильные карточки групп */}
+      <div className="space-y-2 md:hidden">
+        {filtered.length === 0 && <div className="rounded-[1.25rem] border border-white/10 bg-[#0F0F0F] p-8 text-center text-sm text-slate-500">Группы не найдены.</div>}
+        {filtered.map(({ g, active, capacity, freeSeats, fill }: any) => (
+          <div key={g.id} className="rounded-[1.25rem] border border-white/10 bg-[#0F0F0F] p-4">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="truncate font-bold text-white">{g.name}</p>
+                <p className="truncate text-xs text-slate-500">{branchName(g.branchId)} · {teacherName(g.teacherId)}</p>
+              </div>
+              <span className="shrink-0 rounded-lg bg-white/5 px-2 py-1 text-[11px] font-bold text-slate-300">{active}{capacity ? `/${capacity}` : ""} уч.</span>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-400">
+              {g.level && <span>{g.level}</span>}
+              {g.ageGroup && <span>{g.ageGroup}</span>}
+              {hallName(g.hallId) !== "—" && <span>{hallName(g.hallId)}</span>}
+              <span>{(g.days || []).join(", ")} {g.time || ""}</span>
+              <span>своб. {freeSeats}</span>
+            </div>
+            <div className="mt-2.5"><FillBar pct={fill} /></div>
+            <div className="mt-2.5 flex items-center justify-end gap-1 border-t border-white/5 pt-2">
+              <IconBtn title="Ученики группы" onClick={() => setStudentsOf(g.id)}><Users className="h-4 w-4" /></IconBtn>
+              {canManage && <IconBtn title="Редактировать" onClick={() => setModal({ mode: "edit", id: g.id })}><Pencil className="h-4 w-4" /></IconBtn>}
+              {canManage && onDelete && <IconBtn title="Архивировать" danger onClick={async () => { if (window.confirm(`Архивировать группу «${g.name}»? Ученики сохранятся.`)) await onDelete(g.id); }}><Trash2 className="h-4 w-4" /></IconBtn>}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="hidden overflow-x-auto rounded-[2rem] border border-white/10 bg-[#0F0F0F] md:block">
         <table className="w-full min-w-[1200px] text-left text-sm">
           <thead className="border-b border-white/10 text-[10px] uppercase tracking-wider text-slate-500">
             <tr>
@@ -744,7 +801,32 @@ function HallsTab({ halls, rawBranches, groups, canManage, onCreate, onUpdate, o
         )}
       </div>
 
-      <div className="overflow-x-auto rounded-[2rem] border border-white/10 bg-[#0F0F0F]">
+      {/* Мобильные карточки залов */}
+      <div className="space-y-2 md:hidden">
+        {halls.length === 0 && <div className="rounded-[1.25rem] border border-white/10 bg-[#0F0F0F] p-8 text-center text-sm text-slate-500">Залов пока нет.</div>}
+        {halls.map((h: any) => (
+          <div key={h.id} className="rounded-[1.25rem] border border-white/10 bg-[#0F0F0F] p-4">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="truncate font-bold text-white">{h.name}</p>
+                <p className="truncate text-xs text-slate-500">{branchName(h.branchId)} · вмест. {h.capacity} · групп: {groupsInHall(h.id)}</p>
+              </div>
+              {String(h.status || "active") === "active"
+                ? <span className="shrink-0 rounded-lg bg-emerald-500/15 px-2 py-1 text-xs font-bold text-emerald-400">Активен</span>
+                : <span className="shrink-0 rounded-lg bg-slate-500/15 px-2 py-1 text-xs font-bold text-slate-400">Архив</span>}
+            </div>
+            {h.description && <p className="mt-1.5 line-clamp-2 text-xs text-slate-400">{h.description}</p>}
+            {canManage && (
+              <div className="mt-2.5 flex items-center justify-end gap-1 border-t border-white/5 pt-2">
+                <IconBtn title="Редактировать" onClick={() => setModal({ mode: "edit", id: h.id })}><Pencil className="h-4 w-4" /></IconBtn>
+                {onDelete && <IconBtn title="Архивировать" danger onClick={async () => { if (window.confirm(`Архивировать зал «${h.name}»?`)) await onDelete(h.id); }}><Trash2 className="h-4 w-4" /></IconBtn>}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div className="hidden overflow-x-auto rounded-[2rem] border border-white/10 bg-[#0F0F0F] md:block">
         <table className="w-full min-w-[760px] text-left text-sm">
           <thead className="border-b border-white/10 text-[10px] uppercase tracking-wider text-slate-500">
             <tr>
