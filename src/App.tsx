@@ -2309,14 +2309,14 @@ export default function App() {
       {isPlayingPromo && (
         <div className="login-auth-screen fixed inset-0 z-[9999] bg-[#0A0D14] overflow-hidden select-none animate-fade-in font-sans text-slate-200">
           {/* Базовый тёмный фон — всегда виден, даже если фото не подгрузилось. */}
-          <div className="absolute inset-0 bg-[radial-gradient(120%_120%_at_15%_10%,#1a2536_0%,#0B1018_45%,#05070C_100%)]" />
+          <div className="absolute inset-0" style={{ background: "radial-gradient(120% 120% at 15% 10%, #1a2536 0%, #0B1018 45%, #05070C 100%)" }} />
           {/* Фоновая фотография (танцоры + горы) поверх подложки. */}
           <img
             src={desktopLoginBg}
             alt=""
             aria-hidden="true"
             onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
-            className="absolute inset-0 hidden h-full w-full object-cover opacity-90 md:block"
+            className="absolute inset-0 hidden h-full w-full object-cover opacity-95 md:block"
             referrerPolicy="no-referrer"
           />
           <img
@@ -2324,12 +2324,14 @@ export default function App() {
             alt=""
             aria-hidden="true"
             onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
-            className="absolute inset-0 block h-full w-full object-cover opacity-90 md:hidden"
+            className="absolute inset-0 block h-full w-full object-cover opacity-95 md:hidden"
             referrerPolicy="no-referrer"
           />
-          {/* Затемнение фона для контраста формы. */}
-          <div className="absolute inset-0 bg-gradient-to-r from-black/40 via-black/45 to-black/80 md:from-transparent md:via-black/20 md:to-[#05070C]" />
-          <div className="absolute inset-y-0 right-0 hidden w-[52%] bg-gradient-to-l from-[#05070C] via-[#05070C]/85 to-transparent md:block" />
+          {/* Затемнение фона для контраста формы (inline-градиент в sRGB — без oklab-артефактов Tailwind v4). */}
+          <div className="absolute inset-0" style={{ background: "linear-gradient(to right, rgba(5,7,12,0.35), rgba(5,7,12,0.10) 40%, rgba(5,7,12,0.55))" }} />
+          {/* Плотная правая колонка — полностью скрывает «вшитую» в картинку форму. */}
+          <div className="absolute inset-y-0 right-0 hidden w-[42%] md:block" style={{ background: "#06090F" }} />
+          <div className="absolute inset-y-0 right-[42%] hidden w-[10%] md:block" style={{ background: "linear-gradient(to left, #06090F, rgba(6,9,15,0))" }} />
 
           {/* Настоящая форма входа */}
           <div className="absolute inset-0 z-10 flex items-center justify-center px-5 md:justify-end md:pr-[6vw]">

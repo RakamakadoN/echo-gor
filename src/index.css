@@ -378,3 +378,39 @@
     overflow-x: hidden;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────
+   Экран входа (.login-auth-screen) остаётся тёмным независимо от
+   day-theme. Более высокая специфичность (+ .login-auth-screen)
+   перебивает светлые !important-правила выше. Порядок text-*: сначала
+   slate, в конце text-white — чтобы у полей ввода (класс содержит и
+   text-white, и placeholder:text-slate-500) победил белый цвет текста.
+   ───────────────────────────────────────────────────────────── */
+:root.day-theme .day-theme-app .login-auth-screen [class*="text-slate-300"] { color: #cbd5e1 !important; }
+:root.day-theme .day-theme-app .login-auth-screen [class*="text-slate-400"] { color: #94a3b8 !important; }
+:root.day-theme .day-theme-app .login-auth-screen [class*="text-slate-500"] { color: #94a3b8 !important; }
+:root.day-theme .day-theme-app .login-auth-screen h1,
+:root.day-theme .day-theme-app .login-auth-screen h2,
+:root.day-theme .day-theme-app .login-auth-screen h3,
+:root.day-theme .day-theme-app .login-auth-screen [class*="text-white"] { color: #ffffff !important; }
+:root.day-theme .day-theme-app .login-auth-screen input { color: #ffffff !important; }
+:root.day-theme .day-theme-app .login-auth-screen input::placeholder { color: #64748b !important; }
+:root.day-theme .day-theme-app .login-auth-screen [class*="text-[#C5A059]"] { color: #C5A059 !important; }
+
+:root.day-theme .day-theme-app .login-auth-screen [class*="bg-white/"] { background-color: rgba(255,255,255,0.05) !important; }
+:root.day-theme .day-theme-app .login-auth-screen [class*="border-white/"] { border-color: rgba(255,255,255,0.10) !important; }
+
+/* Карточка формы — тёмное стекло */
+:root.day-theme .day-theme-app .login-auth-screen form {
+  background-color: rgba(14,20,32,0.90) !important;
+  border-color: rgba(255,255,255,0.10) !important;
+  box-shadow: 0 30px 80px -20px rgba(0,0,0,0.85) !important;
+}
+
+/* Золотая кнопка «Войти» — восстановить градиент (day-theme делал его белым) */
+:root.day-theme .day-theme-app .login-auth-screen [class*="from-[#C5A059]"] {
+  background-image: linear-gradient(to right, #C5A059, #B3894A) !important;
+  --tw-gradient-from: #C5A059 !important;
+  --tw-gradient-to: #B3894A !important;
+  color: #1a1206 !important;
+}
