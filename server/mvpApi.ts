@@ -603,6 +603,73 @@ function mapDbRecalc(row: any, studentName?: string) {
 }
 
 export function registerMvpApi(app: express.Express) {
+  // ── Безопасность: запрос обязан объявить, кто он. ──────────────────────────
+  // Раньше запрос БЕЗ каких-либо заголовков идентификации по умолчанию получал
+  // роль owner (см. getSession) — аноним становился владельцем сети.
+  // Теперь: нет x-demo-role и нет x-student-token → 401. Публичные исключения —
+  // только эндпоинты входа (список демо-пользователей, демо-логин, вход ученика).
+  // Это НЕ настоящая аутентификация (заголовку по-прежнему верим — блокер №1
+  // аудита закрывается полноценным auth), но убирает самый грубый провал:
+  // «пустой» запрос больше не владелец.
+  const PUBLIC_MVP_PATHS = new Set([
+    "/session/demo-users",
+    "/session/demo-login",
+    "/student-auth",
+  ]);
+  app.use("/api/mvp", (req, res, next) => {
+    if (PUBLIC_MVP_PATHS.has(req.path)) return next();
+    const hasRole = Boolean(req.headers["x-demo-role"]);
+    const hasStudentToken = Boolean(req.headers["x-student-token"]);
+    if (!hasRole && !hasStudentToken) {
+      return res.status(401).json({ error: "Не авторизовано: укажите роль или войдите как ученик" });
+    }
+    return next();
+  });
+
+  // ── Аудит-лог: фиксируем каждую мутацию (все не-GET запросы). ───────────────
+  // Пишем после ответа (res.on("finish")), чтобы не замедлять обработку.
+  // В Supabase-режиме — в таблицу audit_logs (см. миграцию 001); в mock-режиме —
+  // в консоль сервера. actor_id/branch_id намеренно null: демо-идентификаторы
+  // могут отсутствовать в users/branches и уронят FK; сведения о пользователе
+  // кладём в after_data. При появлении настоящей auth сюда встанет реальный actor_id.
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  app.use("/api/mvp", (req, res, next) => {
+    if (req.method === "GET") return next();
+    res.on("finish", () => {
+      try {
+        const session = getSession(req);
+        const parts = req.path.split("/").filter(Boolean); // напр. ["students","<id>"]
+        const entityType = parts[0] || "unknown";
+        const maybeId = parts.find((p) => UUID_RE.test(p)) || null;
+        const record = {
+          actor_id: null as string | null,
+          branch_id: null as string | null,
+          entity_type: entityType,
+          entity_id: maybeId,
+          action: req.method,
+          after_data: {
+            path: req.originalUrl,
+            status: res.statusCode,
+            role: session.role,
+            user: session.fullName || null,
+            body: req.body && Object.keys(req.body).length ? JSON.stringify(req.body).slice(0, 1000) : null,
+          },
+          ip_address: req.ip || null,
+          user_agent: String(req.headers["user-agent"] || "").slice(0, 300) || null,
+        };
+        if (supabaseEnabled) {
+          supabaseFetch("audit_logs", "", { method: "POST", body: JSON.stringify(record) })
+            .catch((e: any) => console.warn("[audit] не записан:", e?.message || e));
+        } else {
+          console.log(`[audit] ${record.action} ${record.after_data.path} · ${record.after_data.role} · HTTP ${record.after_data.status}`);
+        }
+      } catch (e: any) {
+        console.warn("[audit] ошибка формирования записи:", e?.message || e);
+      }
+    });
+    return next();
+  });
+
   // Оборачивает async-обработчик: при отклонённом промисе всегда отправляет JSON-ответ,
   // а не оставляет запрос висеть. Express 4 не ловит rejection из async-хендлеров
   // автоматически — без этого ошибка Supabase подвешивала бы фронт (кнопка «Сохранение...»).
@@ -3041,6 +3108,9 @@ export function registerMvpApi(app: express.Express) {
     if (session.role !== "owner") return res.status(403).json({ error: "Создавать может только владелец" });
     const p = req.body || {};
     if (!String(p.clientName || "").trim()) return res.status(400).json({ error: "Укажите клиента" });
+    // Дата: принимаем и eventDate, и date (раньше p.date молча игнорировался,
+    // и выступление создавалось «на сегодня» — опасная тихая подмена).
+    const eventDate = p.eventDate || p.date || todayStr();
     // Тип выступления теперь свободный (настраивается в «Настройках»); enum оставлен для совместимости.
     const type = p.type ? String(p.type) : "basic";
     const price = Number(p.price) || 0;
@@ -3049,9 +3119,9 @@ export function registerMvpApi(app: express.Express) {
     const paymentMethod = p.paymentMethod || null;
     const markPaid = p.status === "paid"; // владелец сразу отметил «Оплачено»
     if (!supabaseEnabled) {
-      const payments = markPaid && price > 0 ? [{ id: uid(), amount: price, paidDate: p.eventDate || todayStr(), method: paymentMethod || "cash", comment: null }] : [];
+      const payments = markPaid && price > 0 ? [{ id: uid(), amount: price, paidDate: eventDate, method: paymentMethod || "cash", comment: null }] : [];
       const rec = { id: uid(), clientName: String(p.clientName).trim(), clientPhone: p.clientPhone || null, address: p.address || null,
-        eventDate: p.eventDate || todayStr(), eventTime: p.eventTime || null, type, typeLabel: p.typeLabel || null, price, expense,
+        eventDate: eventDate, eventTime: p.eventTime || null, type, typeLabel: p.typeLabel || null, price, expense,
         performersCount, paymentMethod, status: "planned", comment: p.comment || null, branchId: p.branchId || session.dbBranchId || demoBranchAlmaty, payments };
       mockPerformances.unshift(rec);
       return res.status(201).json({ performance: perfOut(rec, payments) });
@@ -3061,7 +3131,7 @@ export function registerMvpApi(app: express.Express) {
       body: JSON.stringify({
         organization_id: session.organizationId, branch_id: p.branchId || session.dbBranchId || null,
         client_name: String(p.clientName).trim(), client_phone: p.clientPhone || null, address: p.address || null,
-        event_date: p.eventDate || todayStr(), event_time: p.eventTime || null, type, type_label: p.typeLabel || null,
+        event_date: eventDate, event_time: p.eventTime || null, type, type_label: p.typeLabel || null,
         price, expense, performers_count: performersCount, payment_method: paymentMethod,
         status: "planned", comment: p.comment || null,
       }),
@@ -3071,7 +3141,7 @@ export function registerMvpApi(app: express.Express) {
     if (markPaid && price > 0 && inserted[0]) {
       await supabaseFetch("performance_payments", "", {
         method: "POST",
-        body: JSON.stringify({ organization_id: session.organizationId, performance_id: inserted[0].id, amount: price, paid_date: p.eventDate || todayStr(), method: paymentMethod || "cash", comment: "Оплата при создании" }),
+        body: JSON.stringify({ organization_id: session.organizationId, performance_id: inserted[0].id, amount: price, paid_date: eventDate, method: paymentMethod || "cash", comment: "Оплата при создании" }),
       });
       pays = await supabaseFetch<any[]>("performance_payments", `select=*&performance_id=eq.${inserted[0].id}`);
     }
