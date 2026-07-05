@@ -66,6 +66,74 @@ function isFullAccess(session: MagomedSession): boolean {
   return session.dbBranchId === null;
 }
 
+// ───────────────────── Память чатов Магомеда (7 дней) ─────────────────────
+// История диалога хранится в magomed_messages (миграция 034) и живёт 7 дней.
+// Ключ ветки — устройство (clientId из localStorage, заголовок x-magomed-thread)
+// + роль: каждый человек/браузер держит свою историю на каждую роль.
+const MEMORY_DAYS = 7;
+const MEMORY_MAX = 200; // максимум сообщений, которые отдаём при восстановлении
+
+function memorySinceIso(): string {
+  return new Date(Date.now() - MEMORY_DAYS * 24 * 60 * 60 * 1000).toISOString();
+}
+
+// clientId чистим до [a-zA-Z0-9_-], чтобы безопасно класть в PostgREST-фильтр.
+function threadKeyOf(req: express.Request, session: MagomedSession): string {
+  const raw = String(req.headers["x-magomed-thread"] || "")
+    .replace(/[^a-zA-Z0-9_-]/g, "")
+    .slice(0, 64);
+  return `${raw || "anon"}:${session.role}`;
+}
+
+async function loadMagomedHistory(
+  orgId: string,
+  key: string
+): Promise<Array<{ role: "user" | "assistant"; content: string }>> {
+  if (!supabaseEnabled) return [];
+  const enc = encodeURIComponent(key);
+  const rows = await supabaseFetch<any[]>(
+    "magomed_messages",
+    `select=role,content&organization_id=eq.${orgId}&thread_key=eq.${enc}` +
+      `&created_at=gte.${memorySinceIso()}&order=created_at.asc&limit=${MEMORY_MAX}`
+  ).catch(() => []);
+  return rows.map((r) => ({
+    role: r.role === "assistant" ? "assistant" : "user",
+    content: String(r.content || ""),
+  }));
+}
+
+// Сохраняем последний ход (сообщение пользователя + ответ Магомеда). Клиент
+// присылает всю историю, поэтому пишем только НОВЫЙ ход, без дублей. Best-effort:
+// ошибки записи не ломают ответ. Заодно чистим строки старше 7 дней по ветке.
+async function saveMagomedTurn(
+  orgId: string,
+  key: string,
+  userText: string,
+  assistantText: string
+): Promise<void> {
+  if (!supabaseEnabled) return;
+  const rows: any[] = [];
+  if (userText && userText.trim()) {
+    rows.push({ organization_id: orgId, thread_key: key, role: "user", content: userText.slice(0, 4000) });
+  }
+  if (assistantText && assistantText.trim()) {
+    rows.push({ organization_id: orgId, thread_key: key, role: "assistant", content: assistantText.slice(0, 8000) });
+  }
+  if (rows.length === 0) return;
+  await supabaseFetch("magomed_messages", "", {
+    method: "POST",
+    headers: { Prefer: "return=minimal" },
+    body: JSON.stringify(rows),
+  }).catch(() => {});
+  // Чистим устаревшее (>7 дней) по этой ветке — держим память компактной.
+  const enc = encodeURIComponent(key);
+  await supabaseFetch(
+    "magomed_messages",
+    `organization_id=eq.${orgId}&thread_key=eq.${enc}&created_at=lt.${memorySinceIso()}`,
+    { method: "DELETE", headers: { Prefer: "return=minimal" } }
+  ).catch(() => {});
+}
+
 async function supabaseFetch<T>(
   table: string,
   query = "select=*",
@@ -1770,11 +1838,15 @@ export function registerMagomedApi(app: express.Express) {
       (m) => m && m.role !== "assistant" && typeof m.content === "string"
     )?.content || "";
 
+    const threadKey = threadKeyOf(req, session);
+
     try {
       // До 6 шагов tool-loop: поиск → детали → ответ (промпт и лимит Магомеда по умолчанию).
       const result = await runAgentLoop(messages, session, lastUserText, SYSTEM_PROMPT, MAX_TOKENS);
       const reply = result.reply ||
         "Извините, не удалось сформировать ответ. Попробуйте переформулировать запрос.";
+      // Память 7 дней: сохраняем новый ход диалога (best-effort, не блокирует ответ при сбое).
+      await saveMagomedTurn(session.organizationId, threadKey, lastUserText, reply);
       res.json({ reply });
     } catch (e: any) {
       // 429/529 — лимит запросов / перегрузка: отдаём понятный сигнал, чтобы
@@ -1786,6 +1858,20 @@ export function registerMagomedApi(app: express.Express) {
         });
       }
       res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
+
+  // Память 7 дней: восстановление истории чата при открытии виджета.
+  // Ключ ветки — устройство (x-magomed-thread) + роль (x-demo-role).
+  app.get("/api/gemini/magomed-history", async (req, res) => {
+    const session = getSession(req);
+    const threadKey = threadKeyOf(req, session);
+    try {
+      const messages = await loadMagomedHistory(session.organizationId, threadKey);
+      res.json({ messages });
+    } catch {
+      // История — не критична: при сбое отдаём пусто, чат работает как обычно.
+      res.json({ messages: [] });
     }
   });
 }

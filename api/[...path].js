@@ -1210,6 +1210,34 @@ async function supabaseUpsert(events) {
 }
 
 // server/mvpApi.ts
+var JUNIOR_MAX_AGE = 10;
+var JUNIOR_TABS = ["\u0413\u043B\u0430\u0432\u043D\u0430\u044F", "\u041D\u0430\u043A\u043B\u0435\u0439\u043A\u0438", "\u0414\u043E\u0441\u0442\u0438\u0436\u0435\u043D\u0438\u044F"];
+var SENIOR_TABS = ["\u0413\u043B\u0430\u0432\u043D\u0430\u044F", "\u041D\u0430\u043A\u043B\u0435\u0439\u043A\u0438", "\u0414\u043E\u0441\u0442\u0438\u0436\u0435\u043D\u0438\u044F", "\u041C\u043E\u0439 \u043F\u0443\u0442\u044C", "\u041F\u0430\u0441\u043F\u043E\u0440\u0442", "\u0421\u043E\u043E\u0431\u0449\u0435\u0441\u0442\u0432\u043E", "\u041C\u0430\u0433\u0430\u0437\u0438\u043D", "\u0412\u044B\u0441\u0442\u0443\u043F\u043B\u0435\u043D\u0438\u044F", "\u0412\u0438\u0434\u0435\u043E"];
+var accessGrantStaff = ["owner", "branch_manager", "admin"];
+function effectiveAccessLevel(manual, age) {
+  if (manual === "junior" || manual === "senior") return manual;
+  if (age === null || age === void 0) return "junior";
+  const a = Number(age);
+  if (!Number.isFinite(a) || a <= 0) return "junior";
+  return a <= JUNIOR_MAX_AGE ? "junior" : "senior";
+}
+function tabsForLevel(level) {
+  return level === "junior" ? JUNIOR_TABS : SENIOR_TABS;
+}
+var studentAccessTokens = /* @__PURE__ */ new Map();
+function newAccessToken() {
+  const rnd = () => globalThis.crypto?.randomUUID?.() || `${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+  return `st_${rnd()}${rnd()}`.replace(/-/g, "");
+}
+var ACCESS_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+function newAccessCode() {
+  let s = "";
+  for (let i = 0; i < 6; i++) s += ACCESS_CODE_ALPHABET[Math.floor(Math.random() * ACCESS_CODE_ALPHABET.length)];
+  return s;
+}
+function normalizeAccessCode(raw) {
+  return String(raw || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12);
+}
 var orgId2 = "00000000-0000-0000-0000-000000000001";
 var demoBranchAlmaty = "00000000-0000-0000-0000-000000000101";
 var demoUsers = [
@@ -1228,6 +1256,22 @@ var isPlaceholder = (value) => {
 };
 var supabaseEnabled = Boolean(supabaseUrl && supabaseKey && !isPlaceholder(supabaseKey));
 function getSession(req) {
+  const studentToken = String(req.headers["x-student-token"] || "");
+  if (studentToken) {
+    const rec = studentAccessTokens.get(studentToken);
+    if (rec) {
+      return {
+        userId: `student-${rec.studentId}`,
+        organizationId: orgId2,
+        role: "student",
+        branchId: rec.branchId,
+        dbBranchId: rec.branchId,
+        fullName: "\u0423\u0447\u0435\u043D\u0438\u043A",
+        studentId: rec.studentId,
+        accessLevel: rec.level
+      };
+    }
+  }
   const roleHeader = String(req.headers["x-demo-role"] || "owner");
   const userHeader = String(req.headers["x-demo-user-id"] || "");
   const byUser = demoUsers.find((user) => user.userId === userHeader);
@@ -1791,7 +1835,7 @@ function registerMvpApi(app2) {
       });
       res.json({ ok: true, written: rows.length, periodMonth });
     } catch (error) {
-      res.status(503).json({ error: error.message });
+      res.json({ ok: false, skipped: true, error: error?.message });
     }
   });
   app2.get("/api/mvp/video/templates", (_req, res) => {
@@ -4318,6 +4362,152 @@ function registerMvpApi(app2) {
     await supabaseFetch("product_orders", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(patch) });
     res.json({ ok: true, status, fulfilled });
   }));
+  const mockStudentAccess = {};
+  const ageFromBirthday = (b) => {
+    if (!b) return null;
+    const d = new Date(b);
+    if (isNaN(d.getTime())) return null;
+    const t = /* @__PURE__ */ new Date();
+    let a = t.getFullYear() - d.getFullYear();
+    const m = t.getMonth() - d.getMonth();
+    if (m < 0 || m === 0 && t.getDate() < d.getDate()) a--;
+    return a;
+  };
+  const loadStudentAccess = async (session, studentId) => {
+    if (!supabaseEnabled) {
+      const s = initialStudents.find((x) => x.id === studentId);
+      if (!s) return null;
+      const rec = mockStudentAccess[studentId];
+      return {
+        id: s.id,
+        name: s.name,
+        age: s.age ?? ageFromBirthday(s.birthday),
+        branchId: s.branchId ?? null,
+        levelManual: rec?.level ?? null,
+        token: rec?.token ?? null,
+        code: rec?.code ?? null,
+        enabled: !!rec?.enabled
+      };
+    }
+    const rows = await supabaseFetch("students", `select=id,first_name,last_name,birthday,branch_id,access_level,access_token,access_code,access_enabled&id=eq.${studentId}&organization_id=eq.${session.organizationId}&limit=1`);
+    const r = rows[0];
+    if (!r) return null;
+    return {
+      id: r.id,
+      name: [r.first_name, r.last_name].filter(Boolean).join(" ") || r.full_name || "\u0423\u0447\u0435\u043D\u0438\u043A",
+      age: ageFromBirthday(r.birthday),
+      branchId: r.branch_id ?? null,
+      levelManual: r.access_level === "junior" || r.access_level === "senior" ? r.access_level : null,
+      token: r.access_token ?? null,
+      code: r.access_code ?? null,
+      enabled: !!r.access_enabled
+    };
+  };
+  const accessStatusOut = (st) => {
+    const level = effectiveAccessLevel(st.levelManual, st.age);
+    return {
+      enabled: st.enabled,
+      level,
+      levelManual: st.levelManual,
+      autoLevel: effectiveAccessLevel(null, st.age),
+      token: st.enabled ? st.token : null,
+      code: st.enabled ? st.code : null,
+      tabs: tabsForLevel(level)
+    };
+  };
+  app2.get("/api/mvp/students/:id/access", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!accessGrantStaff.includes(session.role)) return res.status(403).json({ error: "\u041D\u0435\u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E \u043F\u0440\u0430\u0432" });
+    const st = await loadStudentAccess(session, String(req.params.id));
+    if (!st) return res.status(404).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+    if (!canSeeBranch(session, st.branchId)) return res.status(403).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u0434\u0440\u0443\u0433\u043E\u0433\u043E \u0444\u0438\u043B\u0438\u0430\u043B\u0430" });
+    res.json(accessStatusOut(st));
+  }));
+  app2.post("/api/mvp/students/:id/access", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!accessGrantStaff.includes(session.role)) return res.status(403).json({ error: "\u041D\u0435\u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E \u043F\u0440\u0430\u0432" });
+    const st = await loadStudentAccess(session, String(req.params.id));
+    if (!st) return res.status(404).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+    if (!canSeeBranch(session, st.branchId)) return res.status(403).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u0434\u0440\u0443\u0433\u043E\u0433\u043E \u0444\u0438\u043B\u0438\u0430\u043B\u0430" });
+    const rawLevel = String((req.body || {}).level || "auto");
+    const manual = rawLevel === "junior" || rawLevel === "senior" ? rawLevel : null;
+    const token = st.token || newAccessToken();
+    const uniqueAccessCode = async () => {
+      for (let i = 0; i < 6; i++) {
+        const c = newAccessCode();
+        if (!supabaseEnabled) {
+          if (!Object.values(mockStudentAccess).some((v) => v.code === c)) return c;
+        } else {
+          const ex = await supabaseFetch("students", `select=id&access_code=eq.${c}&limit=1`).catch(() => []);
+          if (!ex[0]) return c;
+        }
+      }
+      return newAccessCode();
+    };
+    const code = st.code || await uniqueAccessCode();
+    const level = effectiveAccessLevel(manual, st.age);
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    if (supabaseEnabled) {
+      await supabaseFetch("students", `id=eq.${st.id}&organization_id=eq.${session.organizationId}`, {
+        method: "PATCH",
+        headers: { Prefer: "return=minimal" },
+        body: JSON.stringify({ access_token: token, access_code: code, access_level: manual, access_enabled: true, access_granted_by: session.fullName || null, access_granted_at: nowIso })
+      });
+    } else {
+      mockStudentAccess[st.id] = { token, code, level: manual, enabled: true, by: session.fullName || null, at: nowIso };
+    }
+    studentAccessTokens.set(token, { studentId: st.id, level, branchId: st.branchId });
+    res.json({ ...accessStatusOut({ levelManual: manual, age: st.age, token, code, enabled: true }), grantedBy: session.fullName || null, grantedAt: nowIso });
+  }));
+  app2.delete("/api/mvp/students/:id/access", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!accessGrantStaff.includes(session.role)) return res.status(403).json({ error: "\u041D\u0435\u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E \u043F\u0440\u0430\u0432" });
+    const st = await loadStudentAccess(session, String(req.params.id));
+    if (!st) return res.status(404).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+    if (!canSeeBranch(session, st.branchId)) return res.status(403).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u0434\u0440\u0443\u0433\u043E\u0433\u043E \u0444\u0438\u043B\u0438\u0430\u043B\u0430" });
+    if (st.token) studentAccessTokens.delete(st.token);
+    if (supabaseEnabled) {
+      await supabaseFetch("students", `id=eq.${st.id}&organization_id=eq.${session.organizationId}`, {
+        method: "PATCH",
+        headers: { Prefer: "return=minimal" },
+        body: JSON.stringify({ access_enabled: false, access_token: null, access_code: null })
+      });
+    } else if (mockStudentAccess[st.id]) {
+      mockStudentAccess[st.id].enabled = false;
+      mockStudentAccess[st.id].token = "";
+      mockStudentAccess[st.id].code = "";
+    }
+    res.json({ ok: true });
+  }));
+  app2.post("/api/mvp/student-auth", ah(async (req, res) => {
+    const body = req.body || {};
+    const token = String(body.token || "").trim();
+    const code = normalizeAccessCode(body.code || "");
+    if (!token && !code) return res.status(400).json({ error: "\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u043A\u043E\u0434 \u0438\u043B\u0438 \u043E\u0442\u043A\u0440\u043E\u0439\u0442\u0435 \u0441\u0441\u044B\u043B\u043A\u0443" });
+    const badCred = () => res.status(401).json({ error: "\u041A\u043E\u0434 \u043D\u0435\u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0442\u0435\u043B\u0435\u043D \u0438\u043B\u0438 \u0434\u043E\u0441\u0442\u0443\u043F \u043E\u0442\u043E\u0437\u0432\u0430\u043D" });
+    if (!supabaseEnabled) {
+      const entry = Object.entries(mockStudentAccess).find(([, v]) => v.enabled && (token && v.token === token || code && v.code === code));
+      const cached = !entry && token ? studentAccessTokens.get(token) : void 0;
+      const studentId = entry?.[0] || cached?.studentId;
+      if (!studentId) return badCred();
+      const s = initialStudents.find((x) => x.id === studentId);
+      if (!s) return res.status(404).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+      const rec = mockStudentAccess[studentId];
+      const level2 = effectiveAccessLevel(rec?.level ?? null, s.age ?? ageFromBirthday(s.birthday));
+      const outToken2 = rec?.token || token || "";
+      if (outToken2) studentAccessTokens.set(outToken2, { studentId, level: level2, branchId: s.branchId ?? null });
+      return res.json({ studentId, name: s.name, level: level2, token: outToken2 || null, tabs: tabsForLevel(level2) });
+    }
+    const filter = token ? `access_token=eq.${token}` : `access_code=eq.${code}`;
+    const rows = await supabaseFetch("students", `select=id,first_name,last_name,birthday,branch_id,access_level,access_token,access_enabled&${filter}&access_enabled=is.true&limit=1`);
+    const r = rows[0];
+    if (!r) return badCred();
+    const name = [r.first_name, r.last_name].filter(Boolean).join(" ") || r.full_name || "\u0423\u0447\u0435\u043D\u0438\u043A";
+    const level = effectiveAccessLevel(r.access_level, ageFromBirthday(r.birthday));
+    const outToken = r.access_token || token || "";
+    if (outToken) studentAccessTokens.set(outToken, { studentId: r.id, level, branchId: r.branch_id ?? null });
+    res.json({ studentId: r.id, name, level, token: outToken || null, tabs: tabsForLevel(level) });
+  }));
   const echoStaff = ["owner", "branch_manager", "admin", "teacher"];
   const mockEchoBalances = {};
   const mockEchoTx = [];
@@ -4365,6 +4555,9 @@ function registerMvpApi(app2) {
     const session = getSession(req);
     const studentId = String(req.query.studentId || "");
     if (!studentId) return res.status(400).json({ error: "\u041D\u0435 \u0443\u043A\u0430\u0437\u0430\u043D \u0443\u0447\u0435\u043D\u0438\u043A" });
+    if (session.role === "student" && session.studentId !== studentId) {
+      return res.status(403).json({ error: "\u041D\u0435\u0442 \u0434\u043E\u0441\u0442\u0443\u043F\u0430 \u043A \u0447\u0443\u0436\u043E\u043C\u0443 \u043A\u043E\u0448\u0435\u043B\u044C\u043A\u0443" });
+    }
     if (!supabaseEnabled) {
       return res.json({ balance: mockEchoBalances[studentId] ?? 0, transactions: mockEchoTx.filter((t) => t.studentId === studentId).slice(0, 50).map(echoTxOut) });
     }
@@ -4380,7 +4573,7 @@ function registerMvpApi(app2) {
       const list = initialStudents.filter((s) => session.role === "owner" || canSeeBranch(session, s.branchId)).map((s) => ({ id: s.id, name: s.name, balance: mockEchoBalances[s.id] ?? 0 }));
       return res.json({ students: list });
     }
-    const rows = await supabaseFetch("students", `select=id,first_name,last_name,full_name,echo_balance,branch_id&organization_id=eq.${session.organizationId}&status=neq.archived&order=first_name.asc`);
+    const rows = await supabaseFetch("students", `select=id,first_name,last_name,echo_balance,branch_id&organization_id=eq.${session.organizationId}&status=neq.archived&order=first_name.asc`);
     const scoped = rows.filter((r) => canSeeBranch(session, r.branch_id));
     res.json({ students: scoped.map((r) => ({ id: r.id, name: [r.first_name, r.last_name].filter(Boolean).join(" ") || r.full_name || "\u0423\u0447\u0435\u043D\u0438\u043A", balance: Number(r.echo_balance) || 0 })) });
   }));
@@ -4407,6 +4600,9 @@ function registerMvpApi(app2) {
     const studentId = String(b.studentId || "");
     const productId = String(b.productId || "");
     if (!studentId || !productId) return res.status(400).json({ error: "\u041D\u0435 \u0443\u043A\u0430\u0437\u0430\u043D \u0443\u0447\u0435\u043D\u0438\u043A \u0438\u043B\u0438 \u0442\u043E\u0432\u0430\u0440" });
+    if (session.role === "student" && session.studentId !== studentId) {
+      return res.status(403).json({ error: "\u041D\u0435\u043B\u044C\u0437\u044F \u043F\u043E\u043A\u0443\u043F\u0430\u0442\u044C \u0437\u0430 \u0447\u0443\u0436\u043E\u0439 \u0441\u0447\u0451\u0442" });
+    }
     let prod = null;
     if (!supabaseEnabled) {
       const p = mockProducts.find((x) => x.id === productId);
@@ -4527,6 +4723,14 @@ function registerMvpApi(app2) {
       stockValue += bal * pr.costPrice;
       retailValue += bal * pr.salePrice;
     }
+    const months = [];
+    const md = /* @__PURE__ */ new Date();
+    md.setDate(1);
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(md.getFullYear(), md.getMonth() - i, 1);
+      months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+    }
+    const byMonth = months.map((mo) => ({ month: mo, amount: sales.filter((s) => String(s.date).slice(0, 7) === mo).reduce((acc, s) => acc + s.amount, 0) }));
     res.json({
       revenue: { total: curRev, momPct: pctDelta(curRev, prevRev), yoyPct: pctDelta(curRev, yoyRev) },
       unitsSold,
@@ -4535,6 +4739,7 @@ function registerMvpApi(app2) {
       margin,
       lowStock,
       top,
+      byMonth,
       stockUnits,
       stockValue,
       retailValue
@@ -4924,7 +5129,7 @@ function registerMvpApi(app2) {
           "groups",
           `select=id&teacher_id=eq.${session.userId}`
         ).catch(() => []);
-        teacherGroupIds = new Set(myGroups.map((g) => g.id));
+        teacherGroupIds = new Set(myGroups.map((g2) => g2.id));
       }
       const lessonsRaw = await supabaseFetch("schedule_lessons", lessonFilters.join("&"));
       const lessons = teacherGroupIds ? lessonsRaw.filter((l) => teacherGroupIds.has(l.group_id)) : lessonsRaw;
@@ -4950,7 +5155,7 @@ function registerMvpApi(app2) {
         subsByStudent.set(s.student_id, arr);
       });
       const studentName = new Map(students.map((s) => [s.id, s.name]));
-      const groupById = new Map(groups.map((g) => [g.id, g]));
+      const groupById = new Map(groups.map((g2) => [g2.id, g2]));
       const userName = new Map(
         users.map((u) => [u.id, u.full_name || u.name || [u.first_name, u.last_name].filter(Boolean).join(" ") || "\u041F\u0435\u0434\u0430\u0433\u043E\u0433"])
       );
@@ -4995,14 +5200,14 @@ function registerMvpApi(app2) {
         const total = groupStudentCount.get(l.group_id) || 0;
         const marked = markedByLesson.get(l.id) || 0;
         const unmarkedCount = Math.max(0, total - marked);
-        const g = groupById.get(l.group_id);
+        const g2 = groupById.get(l.group_id);
         const fmt = (iso) => new Date(iso).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
         return {
           lessonId: l.id,
           groupId: l.group_id,
-          groupName: g?.name || "\u0413\u0440\u0443\u043F\u043F\u0430",
-          teacherId: l.teacher_id || g?.teacher_id || null,
-          teacherName: userName.get(l.teacher_id || g?.teacher_id) || "\u041F\u0435\u0434\u0430\u0433\u043E\u0433",
+          groupName: g2?.name || "\u0413\u0440\u0443\u043F\u043F\u0430",
+          teacherId: l.teacher_id || g2?.teacher_id || null,
+          teacherName: userName.get(l.teacher_id || g2?.teacher_id) || "\u041F\u0435\u0434\u0430\u0433\u043E\u0433",
           branchId: l.branch_id || null,
           startsAt: l.starts_at,
           endsAt: l.ends_at,
@@ -5590,6 +5795,181 @@ function registerMvpApi(app2) {
     "\u0412\u044B\u0441\u0442\u0443\u043F\u043B\u0435\u043D\u0438\u044F": 1e6,
     "\u0422\u043E\u0432\u0430\u0440\u044B / \u0444\u043E\u0440\u043C\u0430": 6e5
   };
+  const g = (name, teacher, check, perm, nw, free, factPrev, recommended, planned) => ({ name, teacher, check, permanent: perm, new: nw, total: perm + nw, free, factPrev, recommended, planned });
+  const planDetailedMock = () => {
+    const rooms = [
+      { name: "\u0417\u0430\u043B \u21162", groupsCount: 4, studentsCount: 51, total: 991330, groups: [
+        g("\u0410\u043D\u0441\u0430\u043C\u0431\u043B\u044C", "\u2014", 17176, 17, 0, 1, 292904, 282310, 291992),
+        g("\u041C\u0443\u0436\u0441\u043A\u0430\u044F \u0432\u0437\u0440\u043E\u0441\u043B\u0430\u044F 17:00", "\u2014", 21900, 10, 0, 12, 209310, 309557, 219e3),
+        g("\u041C\u0443\u0436\u0441\u043A\u0430\u044F \u0432\u0437\u0440\u043E\u0441\u043B\u0430\u044F 18:30", "\u2014", 20143, 7, 0, 15, 143220, 261188, 141001),
+        g("\u041C\u043B\u0430\u0434\u0448\u0438\u0439 \u0430\u043D\u0441\u0430\u043C\u0431\u043B\u044C", "\u2014", 19961, 17, 0, 4, 351547, 359084, 339337)
+      ] },
+      { name: "\u0417\u0430\u043B \u21161", groupsCount: 17, studentsCount: 340, total: 6648051, groups: [
+        g("\u041C\u0443\u0436\u0441\u043A\u0430\u044F \u0441\u0442\u0443\u0434\u0438\u044F \u0421\u0431 \u0412\u0441 (\u0425\u0430\u043C\u0438\u0442)", "\u0425\u0430\u043C\u0438\u0442", 18914, 28, 0, 0, 516272, 492261, 529592),
+        g("\u041C\u0443\u0436\u0441\u043A\u0430\u044F \u043D\u0430\u0447\u0430\u043B\u044C\u043D\u044B\u0439 \u0412\u0442 \u0427\u0442 (\u0422\u0438\u043C\u0443\u0440)", "\u0422\u0438\u043C\u0443\u0440", 18338, 19, 1, 3, 347843, 370275, 366760),
+        g("\u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0430\u044E\u0449\u0430\u044F \u0433\u0440\u0443\u043F\u043F\u0430 \u0421\u0431 \u0412\u0441 (\u0422\u0438\u043C\u0443\u0440)", "\u0422\u0438\u043C\u0443\u0440", 20444, 27, 0, 0, 509733, 505424, 551988),
+        g("\u0412\u0437\u0440\u043E\u0441\u043B\u0430\u044F \u043F\u0440\u043E\u0434\u043E\u043B\u0436\u0430\u044E\u0449\u0430\u044F \u0421\u0431 \u0412\u0441 (\u0414\u044D\u0439\u0441\u0438)", "\u0414\u044D\u0439\u0441\u0438", 19089, 15, 0, 5, 287619, 318897, 286335),
+        g("\u0414\u0435\u0432\u0438\u0447\u044C\u044F \u0421\u0440 \u041F\u0442 (\u0414\u044D\u0439\u0441\u0438)", "\u0414\u044D\u0439\u0441\u0438", 19550, 12, 3, 0, 278193, 280223, 293250),
+        g("\u0414\u0435\u0432\u0438\u0447\u044C\u044F 10:15 \u0441\u0431/\u0432\u0441 (\u0414\u044D\u0439\u0441\u0438)", "\u0414\u044D\u0439\u0441\u0438", 20130, 27, 0, 0, 557220, 518002, 543510),
+        g("\u0412\u0437\u0440\u043E\u0441\u043B\u0430\u044F \u043D\u0430\u0447\u0430\u043B\u044C\u043D\u0430\u044F \u0421\u0431 \u0412\u0441 (\u041C\u0435\u0440\u0435\u0439)", "\u041C\u0435\u0440\u0435\u0439", 20174, 23, 0, 0, 475489, 464581, 464002),
+        g("\u0412\u0437\u0440\u043E\u0441\u043B\u0430\u044F \u043F\u0440\u043E\u0434\u043E\u043B\u0436\u0430\u044E\u0449\u0430\u044F \u0421\u0431 \u0412\u0441 (\u041C\u0435\u0440\u0435\u0439)", "\u041C\u0435\u0440\u0435\u0439", 19684, 19, 0, 3, 360619, 372559, 373996),
+        g("\u0414\u0435\u0432\u0438\u0447\u044C\u044F 10:00 (\u0410\u043D\u0436\u0435\u043B\u0430)", "\u0410\u043D\u0436\u0435\u043B\u0430", 18572, 22, 0, 3, 426740, 425060, 408584),
+        g("\u0416\u0435\u043D\u0441\u043A\u0430\u044F \u043F\u0440\u043E\u0434\u043E\u043B\u0436\u0430\u044E\u0449\u0430\u044F \u0410\u043D\u0436\u0435\u043B\u0430", "\u2014", 19851, 37, 0, 0, 684583, 670438, 734487),
+        g("\u0414\u0435\u0432\u0438\u0447\u044C\u044F 3-4 \u0433\u043E\u0434\u0430 (\u0410\u043D\u0436\u0435\u043B\u0430)", "\u0410\u043D\u0436\u0435\u043B\u0430", 20273, 11, 0, 11, 229731, 311612, 223003),
+        g("\u0416\u0435\u043D\u0441\u043A\u0430\u044F \u0441\u0442\u0443\u0434\u0438\u044F \u0410\u043D\u0436\u0435\u043B\u0430", "\u2014", 18357, 14, 0, 3, 263404, 279937, 256998),
+        g("\u0416\u0435\u043D\u0441\u043A\u0430\u044F \u0432\u0437\u0440\u043E\u0441\u043B\u0430\u044F \u0410\u043D\u0436\u0435\u043B\u0430 19:30", "\u2014", 18559, 16, 1, 5, 312256, 353559, 315503),
+        g("\u0413\u0440\u0443\u0437\u0438\u043D\u0441\u043A\u0430\u044F \u0433\u0440\u0443\u043F\u043F\u0430", "\u2014", 19709, 11, 0, 0, 210123, 208831, 216799),
+        g("\u0414\u0435\u0432\u0438\u0447\u044C\u044F \u043F\u0440\u043E\u0434\u043E\u043B\u0436\u0430\u044E\u0449\u0430\u044F \u0432\u0442/\u0447\u0442 (\u0410\u043D\u0436\u0435\u043B\u0430)", "\u0410\u043D\u0436\u0435\u043B\u0430", 19420, 22, 0, 0, 439126, 426047, 427240),
+        g("\u041C\u0443\u0436\u0441\u043A\u0430\u044F 10:00 (\u0418\u0441\u043B\u0430\u043C)", "\u0418\u0441\u043B\u0430\u043C", 20700, 20, 0, 2, 427257, 429080, 414e3),
+        g("\u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0430\u044E\u0449\u0430\u044F (\u0418\u0441\u043B\u0430\u043C)", "\u0418\u0441\u043B\u0430\u043C", 20167, 12, 0, 0, 244809, 229663, 242004)
+      ] },
+      { name: "\u0417\u0430\u043B \u21163", groupsCount: 10, studentsCount: 55, total: 1364626, groups: [
+        g("\u041C\u0438\u043D\u0438 \u0433\u0440\u0443\u043F\u043F\u0430 \u0432\u0437\u0440\u043E\u0441\u043B\u0430\u044F \u0421\u0440 \u041F\u0442 (\u041C\u0435\u0434\u0438\u043D\u0430)", "\u041C\u0435\u0434\u0438\u043D\u0430", 16375, 7, 4, 0, 171051, 168429, 180125),
+        g("\u041C\u0438\u043D\u0438-\u0433\u0440\u0443\u043F\u043F\u0430 \u0432\u0437\u0440\u043E\u0441\u043B\u0430\u044F \u041F\u041D \u0421\u0440 (\u0425\u0430\u043C\u0438\u0442)", "\u0425\u0430\u043C\u0438\u0442", 20389, 6, 3, 1, 170724, 177248, 183501),
+        g("\u0418\u043D\u0434\u0438\u0432\u0438\u0434\u0443\u0430\u043B\u044C\u043D\u044B\u0435 \u0425\u0430\u043C\u0438\u0442", "\u2014", 47e3, 6, 1, 0, 306999, 304661, 329e3),
+        g("\u041C\u0438\u043D\u0438-\u0433\u0440\u0443\u043F\u043F\u0430 \u0434\u0435\u0442\u0441\u043A\u0430\u044F \u041F\u043D \u0421\u0440 (\u0425\u0430\u043C\u0438\u0442)", "\u0425\u0430\u043C\u0438\u0442", 18750, 8, 1, 0, 169195, 163157, 168750),
+        g("\u041C\u0438\u043D\u0438 \u0433\u0440\u0443\u043F\u043F\u0430 \u0434\u0435\u0442\u0441\u043A\u0430\u044F \u0412\u0442 \u0427\u0442 (\u0422\u0438\u043C\u0443\u0440)", "\u0422\u0438\u043C\u0443\u0440", 24219, 4, 0, 2, 93787, 110315, 96876),
+        g("\u041C\u0438\u043D\u0438-\u0433\u0440\u0443\u043F\u043F\u0430 \u0432\u0437\u0440\u043E\u0441\u043B\u0430\u044F \u0412\u0442 \u0427\u0442 (\u0414\u044D\u0439\u0441\u0438)", "\u0414\u044D\u0439\u0441\u0438", 22656, 8, 0, 0, 173038, 178152, 181248),
+        g("\u0418\u043D\u0434\u0438\u0432\u0438\u0434\u0443\u0430\u043B\u044C\u043D\u044B\u0435 \u0414\u044D\u0439\u0441\u0438", "\u2014", 22500, 2, 0, 0, 45191, 44314, 45e3),
+        g("\u0418\u043D\u0434\u0438\u0432\u0438\u0434\u0443\u0430\u043B\u044C\u043D\u044B\u0439 \u0422\u0438\u043C\u0443\u0440", "\u2014", 36750, 1, 0, 0, 34627, 35359, 36750),
+        g("\u0418\u043D\u0434\u0438\u0432\u0438\u0434\u0443\u0430\u043B\u044C\u043D\u044B\u0435 \u041C\u0435\u0434\u0438\u043D\u0430", "\u2014", 44063, 1, 1, 0, 82947, 82590, 88126),
+        g("\u0418\u043D\u0434\u0438\u0432\u0438\u0434\u0443\u0430\u043B\u044C\u043D\u044B\u0439 \u0418\u0441\u043B\u0430\u043C", "\u2014", 27625, 2, 0, 0, 52e3, 54e3, 55250)
+      ] }
+    ];
+    const expenses = [
+      { key: "rent", label: "\u0410\u0440\u0435\u043D\u0434\u0430", planned: 1080450, mode: "auto" },
+      { key: "utilities", label: "\u041A\u043E\u043C. \u0443\u0441\u043B\u0443\u0433\u0438", planned: 55e3, mode: "auto" },
+      { key: "salaries", label: "\u0417\u0430\u0440\u043F\u043B\u0430\u0442\u044B", planned: 2619025, mode: "auto", children: [
+        { label: "\u041F\u0435\u0434\u0430\u0433\u043E\u0433 \xB7 \u0425\u0430\u043C\u0438\u0442", planned: 42e4 },
+        { label: "\u041F\u0435\u0434\u0430\u0433\u043E\u0433 \xB7 \u0422\u0438\u043C\u0443\u0440", planned: 48e4 },
+        { label: "\u041F\u0435\u0434\u0430\u0433\u043E\u0433 \xB7 \u0414\u044D\u0439\u0441\u0438", planned: 39e4 },
+        { label: "\u0423\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0438\u0439 \xB7 \u0410\u043D\u0435\u043B\u044C", planned: 35e4 },
+        { label: "\u0410\u0434\u043C\u0438\u043D\u0438\u0441\u0442\u0440\u0430\u0442\u043E\u0440", planned: 25e4 },
+        { label: "\u041F\u0440\u043E\u0447\u0438\u0439 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u043B", planned: 729025 }
+      ] },
+      { key: "bonuses", label: "\u0411\u043E\u043D\u0443\u0441\u044B", planned: 333700, mode: "auto", children: [
+        { label: "\u0411\u043E\u043D\u0443\u0441 \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0435\u0433\u043E", planned: 18e4 },
+        { label: "\u0411\u043E\u043D\u0443\u0441\u044B \u043F\u0435\u0434\u0430\u0433\u043E\u0433\u043E\u0432", planned: 153700 }
+      ] },
+      { key: "household", label: "\u0425\u043E\u0437. \u0442\u043E\u0432\u0430\u0440\u044B", planned: 14e4, mode: "manual" },
+      { key: "marketing", label: "\u041C\u0430\u0440\u043A\u0435\u0442\u0438\u043D\u0433", planned: 34e4, mode: "auto" },
+      { key: "comms", label: "\u0421\u043E\u0442\u043E\u0432\u0430\u044F \u0441\u0432\u044F\u0437\u044C \u0438 \u043F\u043E\u0434\u043F\u0438\u0441\u043A\u0438", planned: 147230, mode: "manual" }
+    ];
+    return { rooms, expenses };
+  };
+  const buildDetailedPlan = async (session, period, _branchId) => {
+    const mock = planDetailedMock();
+    let rooms = mock.rooms;
+    let expenses = mock.expenses;
+    let branchName = "\u0410\u0441\u0442\u0430\u043D\u0430 203";
+    const branches = [{ id: "astana203", name: "\u0410\u0441\u0442\u0430\u043D\u0430 203" }];
+    if (supabaseEnabled) {
+      try {
+        const orgFilter = `organization_id=eq.${session.organizationId}`;
+        const monthStart = `${period}-01`;
+        const [branchesRaw, hallsRaw, groupsRaw, usersRaw, studentsRaw, subsRaw, compRaw] = await Promise.all([
+          supabaseFetch("branches", `select=*&${orgFilter}&status=neq.archived`),
+          supabaseFetch("halls", `select=*`).catch(() => []),
+          supabaseFetch("groups", `select=*&${orgFilter}`).catch(() => []),
+          supabaseFetch("users", `select=*&${orgFilter}`).catch(() => []),
+          supabaseFetch("students", `select=*&${orgFilter}&status=eq.active`).catch(() => []),
+          supabaseFetch("student_subscriptions", `select=*`).catch(() => []),
+          supabaseFetch("teacher_compensation", `select=*&${orgFilter}`).catch(() => [])
+        ]);
+        if (Array.isArray(groupsRaw) && groupsRaw.length) {
+          const branch = (branchesRaw || [])[0];
+          if (branch) {
+            branchName = branch.name;
+            branches[0] = { id: branch.id, name: branch.name };
+          }
+          const teacherName = new Map((usersRaw || []).map((u) => [u.id, (u.full_name || "").split(" ")[0] || "\u2014"]));
+          const hallName = new Map((hallsRaw || []).map((h) => [h.id, h.name]));
+          const subsByGroup = /* @__PURE__ */ new Map();
+          (subsRaw || []).forEach((s) => {
+            if (s.status !== "active" || !s.group_id) return;
+            const list = subsByGroup.get(s.group_id) || [];
+            list.push(s);
+            subsByGroup.set(s.group_id, list);
+          });
+          const studentsByGroup = /* @__PURE__ */ new Map();
+          (studentsRaw || []).forEach((s) => {
+            if (!s.group_id) return;
+            const list = studentsByGroup.get(s.group_id) || [];
+            list.push(s);
+            studentsByGroup.set(s.group_id, list);
+          });
+          const roomMap = /* @__PURE__ */ new Map();
+          for (const grp of groupsRaw) {
+            const subs = subsByGroup.get(grp.id) || [];
+            const students = studentsByGroup.get(grp.id) || [];
+            const check = subs.length ? Math.round(subs.reduce((a, b) => a + Number(b.price || 0), 0) / subs.length) : 0;
+            const total = students.length;
+            const isNew = (s) => s.created_at && s.created_at >= monthStart;
+            const nw = students.filter(isNew).length;
+            const perm = Math.max(0, total - nw);
+            const capacity = Number(grp.capacity || 0);
+            const free = Math.max(0, capacity - total);
+            const factPrev = subs.reduce((a, b) => a + Number(b.price || 0), 0);
+            const planned = check * total;
+            const recommended = Math.round(check * Math.max(total, Math.round(capacity * 0.9)));
+            const row = { name: grp.name, teacher: teacherName.get(grp.teacher_id) || "\u2014", check, permanent: perm, new: nw, total, free, factPrev, recommended, planned };
+            const rn = hallName.get(grp.hall_id) || "\u0411\u0435\u0437 \u0437\u0430\u043B\u0430";
+            const room = roomMap.get(rn) || { name: rn, groupsCount: 0, studentsCount: 0, total: 0, groups: [] };
+            room.groups.push(row);
+            room.groupsCount++;
+            room.studentsCount += total;
+            room.total += planned;
+            roomMap.set(rn, room);
+          }
+          if (roomMap.size) rooms = Array.from(roomMap.values());
+          const salaryChildren = (compRaw || []).map((c) => ({ label: `\u041F\u0435\u0434\u0430\u0433\u043E\u0433 \xB7 ${teacherName.get(c.teacher_id) || "\u2014"}`, planned: Number(c.base_salary || 0) })).filter((x) => x.planned > 0);
+          if (salaryChildren.length) {
+            const salTotal = salaryChildren.reduce((a, b) => a + b.planned, 0);
+            expenses = expenses.map((e) => e.key === "salaries" ? { ...e, planned: salTotal, children: salaryChildren } : e);
+          }
+        }
+      } catch (e) {
+        console.warn("[planning] detailed real-data compute failed, using mock:", e?.message || e);
+      }
+    }
+    const allGroups = rooms.flatMap((r) => r.groups);
+    const revenue = rooms.reduce((s, r) => s + r.total, 0);
+    const studentsCount = rooms.reduce((s, r) => s + r.studentsCount, 0);
+    const groupsCount = rooms.reduce((s, r) => s + r.groupsCount, 0);
+    const capacityTotal = allGroups.reduce((s, r) => s + r.total + r.free, 0);
+    const fillPct = capacityTotal ? Math.round(studentsCount / capacityTotal * 100) : 0;
+    const expense = expenses.reduce((s, e) => s + e.planned, 0);
+    const profit = revenue - expense;
+    const margin = revenue ? Math.round(profit / revenue * 100) : 0;
+    const isIndividual = (n) => /индивид/i.test(n);
+    const isMini = (n) => /мини/i.test(n);
+    const individual = allGroups.filter((x) => isIndividual(x.name)).reduce((s, x) => s + x.planned, 0);
+    const mini = allGroups.filter((x) => !isIndividual(x.name) && isMini(x.name)).reduce((s, x) => s + x.planned, 0);
+    const group = revenue - individual - mini;
+    const newRevenue = allGroups.reduce((s, x) => s + x.check * x.new, 0);
+    const permRevenue = revenue - newRevenue;
+    const neededSales = 20;
+    const trialConv = 0.5, recordConv = 0.7, leadConv = 0.55;
+    const trials = Math.ceil(neededSales / trialConv);
+    const records = Math.ceil(trials / recordConv);
+    const leads = Math.ceil(records / leadConv);
+    return {
+      branchName,
+      branches,
+      groupsCount,
+      studentsCount,
+      fillPct,
+      revenue,
+      expense,
+      profit,
+      margin,
+      byType: { group, mini, individual },
+      byAudience: { permanent: permRevenue, new: newRevenue },
+      rooms,
+      expenses,
+      funnel: { neededSales, trialConv, trials, recordConv, records, leadConv, leads }
+    };
+  };
   const buildPlanningOverview = (session, period, branchId) => {
     const key = `${session.organizationId}:${period}`;
     const budget = planningStore[key] || planningDefaults(period);
@@ -5654,7 +6034,9 @@ function registerMvpApi(app2) {
     if (session.role !== "owner") return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \xAB\u041F\u043B\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435\xBB \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
     const period = String(req.query.period || (/* @__PURE__ */ new Date()).toISOString().slice(0, 7));
     const branchId = req.query.branch && req.query.branch !== "all" ? String(req.query.branch) : null;
-    res.json(buildPlanningOverview(session, period, branchId));
+    const base = buildPlanningOverview(session, period, branchId);
+    const detailed = await buildDetailedPlan(session, period, branchId);
+    res.json({ ...base, detailed });
   }));
   app2.post("/api/mvp/planning/budget", ah(async (req, res) => {
     const session = getSession(req);
@@ -5940,6 +6322,51 @@ function getSession2(req) {
 }
 function isFullAccess(session) {
   return session.dbBranchId === null;
+}
+var MEMORY_DAYS = 7;
+var MEMORY_MAX = 200;
+function memorySinceIso() {
+  return new Date(Date.now() - MEMORY_DAYS * 24 * 60 * 60 * 1e3).toISOString();
+}
+function threadKeyOf(req, session) {
+  const raw = String(req.headers["x-magomed-thread"] || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64);
+  return `${raw || "anon"}:${session.role}`;
+}
+async function loadMagomedHistory(orgId3, key) {
+  if (!supabaseEnabled2) return [];
+  const enc = encodeURIComponent(key);
+  const rows = await supabaseFetch2(
+    "magomed_messages",
+    `select=role,content&organization_id=eq.${orgId3}&thread_key=eq.${enc}&created_at=gte.${memorySinceIso()}&order=created_at.asc&limit=${MEMORY_MAX}`
+  ).catch(() => []);
+  return rows.map((r) => ({
+    role: r.role === "assistant" ? "assistant" : "user",
+    content: String(r.content || "")
+  }));
+}
+async function saveMagomedTurn(orgId3, key, userText, assistantText) {
+  if (!supabaseEnabled2) return;
+  const rows = [];
+  if (userText && userText.trim()) {
+    rows.push({ organization_id: orgId3, thread_key: key, role: "user", content: userText.slice(0, 4e3) });
+  }
+  if (assistantText && assistantText.trim()) {
+    rows.push({ organization_id: orgId3, thread_key: key, role: "assistant", content: assistantText.slice(0, 8e3) });
+  }
+  if (rows.length === 0) return;
+  await supabaseFetch2("magomed_messages", "", {
+    method: "POST",
+    headers: { Prefer: "return=minimal" },
+    body: JSON.stringify(rows)
+  }).catch(() => {
+  });
+  const enc = encodeURIComponent(key);
+  await supabaseFetch2(
+    "magomed_messages",
+    `organization_id=eq.${orgId3}&thread_key=eq.${enc}&created_at=lt.${memorySinceIso()}`,
+    { method: "DELETE", headers: { Prefer: "return=minimal" } }
+  ).catch(() => {
+  });
 }
 async function supabaseFetch2(table, query = "select=*", init = {}) {
   if (!supabaseEnabled2) throw new Error("SUPABASE_NOT_CONFIGURED");
@@ -6984,7 +7411,178 @@ ${transcript}
   }
   return { question, turns, synthesis };
 }
+async function collectOwnerSignals(session) {
+  const safe = async (p) => p.catch(() => null);
+  const [today, week, month, students, finance, funnel] = await Promise.all([
+    safe(toolGetSalesSummary({ period: "today" }, session)),
+    safe(toolGetSalesSummary({ period: "week" }, session)),
+    safe(toolGetSalesSummary({ period: "month" }, session)),
+    safe(toolGetStudentsSummary({}, session)),
+    safe(toolGetFinanceOverview({}, session)),
+    safe(toolGetMarketingFunnel({}, session))
+  ]);
+  let pendingExpenses = null;
+  let openTasks = null;
+  if (supabaseEnabled2) {
+    const org = `organization_id=eq.${session.organizationId}`;
+    const exp = await safe(
+      supabaseFetch2("finance_expense_requests", `select=id&${org}&status=eq.pending&limit=500`)
+    );
+    pendingExpenses = exp ? exp.length : null;
+    const branch = branchClause(session);
+    const tk = await safe(
+      supabaseFetch2("tasks", `select=status${branch}&limit=1000`)
+    );
+    openTasks = tk ? tk.filter((t) => !["done", "completed", "closed", "cancelled"].includes(String(t.status))).length : null;
+  }
+  return {
+    scope: session.dbBranchId ? "\u0444\u0438\u043B\u0438\u0430\u043B" : "\u0432\u0441\u044F \u0441\u0435\u0442\u044C",
+    revenue: {
+      today: today?.totalAmount ?? null,
+      week: week?.totalAmount ?? null,
+      month: month?.totalAmount ?? null,
+      paymentsToday: today?.paymentsCount ?? null
+    },
+    students: students?.byStatus ?? null,
+    studentsTotal: students?.total ?? null,
+    finance: finance?.totals ?? null,
+    financeMonthly: finance?.monthlyPnl ?? null,
+    topExpenses: finance?.topExpenseCategories ?? null,
+    funnel: funnel && !funnel.error ? funnel : null,
+    pendingExpenseRequests: pendingExpenses,
+    openTasks
+  };
+}
+function extractJson(text) {
+  if (!text) return null;
+  const cleaned = text.replace(/```json/gi, "").replace(/```/g, "");
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  if (start === -1 || end === -1 || end <= start) return null;
+  try {
+    return JSON.parse(cleaned.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+}
+var num2 = (v) => v === null || v === void 0 ? "\u2014" : Number(v).toLocaleString("ru-RU");
+function signalsToText(s) {
+  const lines = [];
+  lines.push(`\u0421\u043A\u043E\u0443\u043F: ${s.scope}.`);
+  lines.push(
+    `\u0412\u044B\u0440\u0443\u0447\u043A\u0430: \u0441\u0435\u0433\u043E\u0434\u043D\u044F ${num2(s.revenue?.today)} \u20B8 (${num2(s.revenue?.paymentsToday)} \u043E\u043F\u043B\u0430\u0442), \u0437\u0430 \u043D\u0435\u0434\u0435\u043B\u044E ${num2(s.revenue?.week)} \u20B8, \u0437\u0430 \u043C\u0435\u0441\u044F\u0446 ${num2(s.revenue?.month)} \u20B8.`
+  );
+  if (s.students) {
+    const byStatus = Object.entries(s.students).map(([k, v]) => `${k}: ${v}`).join(", ");
+    lines.push(`\u0423\u0447\u0435\u043D\u0438\u043A\u0438 (\u0432\u0441\u0435\u0433\u043E ${num2(s.studentsTotal)}): ${byStatus}.`);
+  }
+  if (s.finance) {
+    lines.push(
+      `\u0424\u0438\u043D\u0430\u043D\u0441\u044B: \u0434\u043E\u0445\u043E\u0434 ${num2(s.finance.income)} \u20B8, \u0440\u0430\u0441\u0445\u043E\u0434 ${num2(s.finance.expense)} \u20B8, \u043F\u0440\u0438\u0431\u044B\u043B\u044C ${num2(s.finance.profit)} \u20B8, \u043C\u0430\u0440\u0436\u0430 ${s.finance.margin ?? "\u2014"}%, \u043E\u0441\u0442\u0430\u0442\u043E\u043A \u043D\u0430 \u0441\u0447\u0435\u0442\u0430\u0445 ${num2(s.finance.balanceTotal)} \u20B8.`
+    );
+  }
+  if (Array.isArray(s.financeMonthly) && s.financeMonthly.length) {
+    lines.push(
+      "\u041F\u043E\u043C\u0435\u0441\u044F\u0447\u043D\u043E (\u043F\u0440\u0438\u0431\u044B\u043B\u044C): " + s.financeMonthly.map((m) => `${m.month}: ${num2(m.profit)} \u20B8 (${m.margin}%)`).join("; ") + "."
+    );
+  }
+  if (Array.isArray(s.topExpenses) && s.topExpenses.length) {
+    lines.push("\u0422\u043E\u043F \u0440\u0430\u0441\u0445\u043E\u0434\u043E\u0432: " + s.topExpenses.map((c) => `${c.category} ${num2(c.amount)} \u20B8`).join(", ") + ".");
+  }
+  if (s.funnel) {
+    lines.push(
+      `\u0412\u043E\u0440\u043E\u043D\u043A\u0430: \u0432\u0441\u0435\u0433\u043E ${num2(s.funnel.totalStudents)}, \u043D\u043E\u0432\u044B\u0445 \u0437\u0430 \u043C\u0435\u0441\u044F\u0446 ${num2(s.funnel.newStudentsThisMonth)}, \u043A\u043E\u043D\u0432\u0435\u0440\u0441\u0438\u044F \u043B\u0438\u0434\u2192\u0430\u043A\u0442\u0438\u0432 ${s.funnel.leadToActiveConversion ?? "\u2014"}%.`
+    );
+    if (Array.isArray(s.funnel.bySource) && s.funnel.bySource.length) {
+      lines.push(
+        "\u0418\u0441\u0442\u043E\u0447\u043D\u0438\u043A\u0438: " + s.funnel.bySource.slice(0, 5).map((x) => `${x.source} (${x.total}, \u043A\u043E\u043D\u0432. ${x.conversion}%)`).join(", ") + "."
+      );
+    }
+  }
+  if (s.pendingExpenseRequests !== null) lines.push(`\u0417\u0430\u044F\u0432\u043E\u043A \u043D\u0430 \u0440\u0430\u0441\u0445\u043E\u0434 \u0432 \u043E\u0436\u0438\u0434\u0430\u043D\u0438\u0438: ${s.pendingExpenseRequests}.`);
+  if (s.openTasks !== null) lines.push(`\u041E\u0442\u043A\u0440\u044B\u0442\u044B\u0445 \u0437\u0430\u0434\u0430\u0447: ${s.openTasks}.`);
+  return lines.join("\n");
+}
+var BRIEFING_SYSTEM = `\u0422\u044B \u2014 \u0433\u043B\u0430\u0432\u043D\u044B\u0439 AI-\u0430\u043D\u0430\u043B\u0438\u0442\u0438\u043A \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0430 \u0441\u0435\u0442\u0438 \u0448\u043A\u043E\u043B \u043A\u0430\u0432\u043A\u0430\u0437\u0441\u043A\u043E\u0433\u043E \u0442\u0430\u043D\u0446\u0430 \xAB\u042D\u0445\u043E \u0413\u043E\u0440\xBB.
+\u0422\u0435\u0431\u0435 \u0434\u0430\u044E\u0442 \u0441\u0440\u0435\u0437 \u0440\u0435\u0430\u043B\u044C\u043D\u044B\u0445 \u0434\u0430\u043D\u043D\u044B\u0445 CRM. \u041F\u0440\u043E\u0430\u043D\u0430\u043B\u0438\u0437\u0438\u0440\u0443\u0439 \u0435\u0433\u043E \u0438 \u0432\u0435\u0440\u043D\u0438 \u0421\u0422\u0420\u041E\u0413\u041E JSON (\u0431\u0435\u0437 \u043F\u043E\u044F\u0441\u043D\u0435\u043D\u0438\u0439 \u0432\u043E\u043A\u0440\u0443\u0433) \u043F\u043E \u0441\u0445\u0435\u043C\u0435:
+{
+  "summary": "1\u20132 \u043F\u0440\u0435\u0434\u043B\u043E\u0436\u0435\u043D\u0438\u044F: \u043E\u0431\u0449\u0430\u044F \u043A\u0430\u0440\u0442\u0438\u043D\u0430 \u0434\u043D\u044F \u043F\u0440\u043E\u0441\u0442\u044B\u043C \u044F\u0437\u044B\u043A\u043E\u043C",
+  "priorities": [ { "title": "\u043A\u043E\u0440\u043E\u0442\u043A\u043E", "reason": "\u043F\u043E\u0447\u0435\u043C\u0443 \u0432\u0430\u0436\u043D\u043E (\u043F\u043E \u0446\u0438\u0444\u0440\u0430\u043C)", "action": "\u0447\u0442\u043E \u0441\u0434\u0435\u043B\u0430\u0442\u044C" } ],
+  "anomalies": [ { "title": "\u043A\u043E\u0440\u043E\u0442\u043A\u043E", "detail": "\u0432 \u0447\u0451\u043C \u043E\u0442\u043A\u043B\u043E\u043D\u0435\u043D\u0438\u0435 \u043F\u043E \u0434\u0430\u043D\u043D\u044B\u043C", "severity": "high|medium|low" } ],
+  "suggestions": [ { "title": "\u043A\u043E\u0440\u043E\u0442\u043A\u043E", "detail": "\u043A\u043E\u043D\u043A\u0440\u0435\u0442\u043D\u043E\u0435 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0435 \u0434\u043B\u044F \u0440\u043E\u0441\u0442\u0430 \u043F\u0440\u0438\u0431\u044B\u043B\u0438/\u0443\u0434\u0435\u0440\u0436\u0430\u043D\u0438\u044F" } ]
+}
+\u041F\u0440\u0430\u0432\u0438\u043B\u0430: priorities \u2014 \u043C\u0430\u043A\u0441\u0438\u043C\u0443\u043C 5, \u0441\u0430\u043C\u043E\u0435 \u0432\u0430\u0436\u043D\u043E\u0435 \u0441\u0432\u0435\u0440\u0445\u0443. \u0422\u043E\u043B\u044C\u043A\u043E \u043F\u043E \u0434\u0430\u043D\u043D\u044B\u043C \u0441\u0440\u0435\u0437\u0430, \u0431\u0435\u0437 \u0432\u044B\u0434\u0443\u043C\u043E\u043A. \u0415\u0441\u043B\u0438 \u0434\u0430\u043D\u043D\u044B\u0445 \u043C\u0430\u043B\u043E \u2014 \u0442\u0430\u043A \u0438 \u0441\u043A\u0430\u0436\u0438 \u0432 summary \u0438 \u0434\u0430\u0439 \u0447\u0442\u043E \u043C\u043E\u0436\u0435\u0448\u044C. \u0427\u0438\u0441\u043B\u0430 \u2014 \u0441 \u0440\u0430\u0437\u0440\u044F\u0434\u0430\u043C\u0438 \u0438 \u20B8. \u041F\u0438\u0448\u0438 \u043F\u043E-\u0440\u0443\u0441\u0441\u043A\u0438, \u043A\u0440\u0430\u0442\u043A\u043E \u0438 \u043F\u043E \u0434\u0435\u043B\u0443.`;
+async function buildBriefing(session) {
+  const signals = await collectOwnerSignals(session);
+  const data = await anthropicChat(
+    [{ role: "user", content: `\u0421\u0440\u0435\u0437 \u0434\u0430\u043D\u043D\u044B\u0445 CRM \u043D\u0430 \u0441\u0435\u0433\u043E\u0434\u043D\u044F:
+
+${signalsToText(signals)}
+
+\u0421\u0444\u043E\u0440\u043C\u0438\u0440\u0443\u0439 JSON-\u0431\u0440\u0438\u0444\u0438\u043D\u0433.` }],
+    BRIEFING_SYSTEM,
+    1600,
+    []
+  );
+  const content = Array.isArray(data?.content) ? data.content : [];
+  const text = content.filter((b) => b?.type === "text").map((b) => b.text).join("").trim();
+  const parsed = extractJson(text) || {};
+  return {
+    generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    summary: typeof parsed.summary === "string" ? parsed.summary : "",
+    priorities: Array.isArray(parsed.priorities) ? parsed.priorities.slice(0, 5) : [],
+    anomalies: Array.isArray(parsed.anomalies) ? parsed.anomalies : [],
+    suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions : [],
+    signals
+  };
+}
+var PERIOD_RU = { day: "\u0434\u0435\u043D\u044C", week: "\u043D\u0435\u0434\u0435\u043B\u044E", month: "\u043C\u0435\u0441\u044F\u0446" };
+async function buildReport(session, period) {
+  const p = PERIOD_RU[period] ? period : "day";
+  const signals = await collectOwnerSignals(session);
+  const system = `\u0422\u044B \u2014 \u0433\u043B\u0430\u0432\u043D\u044B\u0439 AI-\u0430\u043D\u0430\u043B\u0438\u0442\u0438\u043A \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0430 \u0441\u0435\u0442\u0438 \xAB\u042D\u0445\u043E \u0413\u043E\u0440\xBB. \u0421\u043E\u0441\u0442\u0430\u0432\u044C \u043F\u043E\u043D\u044F\u0442\u043D\u044B\u0439 \u043E\u0442\u0447\u0451\u0442 \u0437\u0430 ${PERIOD_RU[p]} \u043F\u043E \u0441\u0440\u0435\u0437\u0443 \u0434\u0430\u043D\u043D\u044B\u0445 CRM: \u043A\u0440\u0430\u0442\u043A\u043E\u0435 \u0440\u0435\u0437\u044E\u043C\u0435, \u043A\u043B\u044E\u0447\u0435\u0432\u044B\u0435 \u0446\u0438\u0444\u0440\u044B, \u0447\u0442\u043E \u0445\u043E\u0440\u043E\u0448\u043E, \u0447\u0442\u043E \u043F\u0440\u043E\u0441\u0435\u043B\u043E, \u0440\u0438\u0441\u043A\u0438 \u0438 3\u20135 \u0440\u0435\u043A\u043E\u043C\u0435\u043D\u0434\u0430\u0446\u0438\u0439. \u0421\u0442\u0440\u0443\u043A\u0442\u0443\u0440\u043D\u043E, \u043D\u0430 \u0440\u0443\u0441\u0441\u043A\u043E\u043C, \u043A\u043B\u044E\u0447\u0435\u0432\u043E\u0435 \u0432\u044B\u0434\u0435\u043B\u044F\u0439 **\u0436\u0438\u0440\u043D\u044B\u043C**, \u0441\u0443\u043C\u043C\u044B \u0441 \u0440\u0430\u0437\u0440\u044F\u0434\u0430\u043C\u0438 \u0438 \u20B8. \u0411\u0435\u0437 \u0432\u044B\u0434\u0443\u043C\u043E\u043A.`;
+  const { reply } = await runAgentLoop(
+    [{ role: "user", content: `\u0414\u0430\u043D\u043D\u044B\u0435 CRM:
+
+${signalsToText(signals)}
+
+\u0421\u0444\u043E\u0440\u043C\u0438\u0440\u0443\u0439 \u043E\u0442\u0447\u0451\u0442 \u0437\u0430 ${PERIOD_RU[p]}.` }],
+    session,
+    "",
+    system,
+    AGENT_MAX_TOKENS,
+    READ_TOOLS
+  );
+  return { period: p, generatedAt: (/* @__PURE__ */ new Date()).toISOString(), report: reply };
+}
 function registerMagomedApi(app2) {
+  app2.post("/api/gemini/ai-briefing", async (req, res) => {
+    if (!apiKey2) return res.status(503).json({ error: "ANTHROPIC_API_KEY is not configured" });
+    const session = getSession2(req);
+    try {
+      const result = await buildBriefing(session);
+      res.json(result);
+    } catch (e) {
+      if (e?.status === 429 || e?.status === 529) {
+        return res.status(429).json({ error: "rate_limited" });
+      }
+      res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
+  app2.post("/api/gemini/ai-report", async (req, res) => {
+    if (!apiKey2) return res.status(503).json({ error: "ANTHROPIC_API_KEY is not configured" });
+    const session = getSession2(req);
+    const period = String(req.body?.period || "day");
+    try {
+      const result = await buildReport(session, period);
+      res.json(result);
+    } catch (e) {
+      if (e?.status === 429 || e?.status === 529) {
+        return res.status(429).json({ error: "rate_limited" });
+      }
+      res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
   app2.post("/api/gemini/ai-hub-council", async (req, res) => {
     if (!apiKey2) {
       return res.status(503).json({ error: "ANTHROPIC_API_KEY is not configured" });
@@ -7129,9 +7727,11 @@ data: ${JSON.stringify(data)}
     const lastUserText = [...history].reverse().find(
       (m) => m && m.role !== "assistant" && typeof m.content === "string"
     )?.content || "";
+    const threadKey = threadKeyOf(req, session);
     try {
       const result = await runAgentLoop(messages, session, lastUserText, SYSTEM_PROMPT, MAX_TOKENS);
       const reply = result.reply || "\u0418\u0437\u0432\u0438\u043D\u0438\u0442\u0435, \u043D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u0444\u043E\u0440\u043C\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u043E\u0442\u0432\u0435\u0442. \u041F\u043E\u043F\u0440\u043E\u0431\u0443\u0439\u0442\u0435 \u043F\u0435\u0440\u0435\u0444\u043E\u0440\u043C\u0443\u043B\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0437\u0430\u043F\u0440\u043E\u0441.";
+      await saveMagomedTurn(session.organizationId, threadKey, lastUserText, reply);
       res.json({ reply });
     } catch (e) {
       if (e?.status === 429 || e?.status === 529) {
@@ -7141,6 +7741,16 @@ data: ${JSON.stringify(data)}
         });
       }
       res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
+  app2.get("/api/gemini/magomed-history", async (req, res) => {
+    const session = getSession2(req);
+    const threadKey = threadKeyOf(req, session);
+    try {
+      const messages = await loadMagomedHistory(session.organizationId, threadKey);
+      res.json({ messages });
+    } catch {
+      res.json({ messages: [] });
     }
   });
 }

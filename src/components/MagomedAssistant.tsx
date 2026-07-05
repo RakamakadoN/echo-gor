@@ -53,6 +53,24 @@ function renderText(text: string) {
   ));
 }
 
+// Стабильный id устройства для памяти чатов (7 дней). Живёт в localStorage,
+// уходит на сервер в заголовке x-magomed-thread — вместе с ролью образует ключ
+// ветки истории. Если localStorage недоступен — "anon" (память не сохранится).
+function getClientId(): string {
+  try {
+    let id = localStorage.getItem("magomed_client_id");
+    if (!id) {
+      id =
+        (crypto as any)?.randomUUID?.() ||
+        `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      localStorage.setItem("magomed_client_id", id);
+    }
+    return id;
+  } catch {
+    return "anon";
+  }
+}
+
 export function MagomedAssistant({ roleHeader, roleLabel }: Props) {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
@@ -67,6 +85,9 @@ export function MagomedAssistant({ roleHeader, roleLabel }: Props) {
   const recRef = useRef<any>(null);
   // Текст в поле до старта записи — к нему дописываем распознанное.
   const baseRef = useRef<string>("");
+  // id устройства для памяти + флаг, что историю уже подгрузили.
+  const clientIdRef = useRef<string>("");
+  const historyLoadedRef = useRef(false);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -77,6 +98,33 @@ export function MagomedAssistant({ roleHeader, roleLabel }: Props) {
   useEffect(() => {
     if (open) inputRef.current?.focus();
   }, [open]);
+
+  // Память 7 дней: при первом открытии подтягиваем историю чата с сервера
+  // (ключ = устройство + роль). Восстановленная лента добавляется после приветствия.
+  useEffect(() => {
+    if (!open || historyLoadedRef.current) return;
+    historyLoadedRef.current = true;
+    if (!clientIdRef.current) clientIdRef.current = getClientId();
+    (async () => {
+      try {
+        const res = await fetch("/api/gemini/magomed-history", {
+          headers: { "x-demo-role": roleHeader, "x-magomed-thread": clientIdRef.current },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const past: ChatMessage[] = Array.isArray(data?.messages)
+          ? data.messages
+              .filter((m: any) => (m?.role === "user" || m?.role === "assistant") && m?.content)
+              .map((m: any) => ({ role: m.role, content: String(m.content) }))
+          : [];
+        if (past.length > 0) {
+          setMessages([{ role: "assistant", content: GREETING }, ...past]);
+        }
+      } catch {
+        // История не критична — молча продолжаем с приветствием.
+      }
+    })();
+  }, [open, roleHeader]);
 
   // Остановить запись при размонтировании / сворачивании панели.
   useEffect(() => {
@@ -159,9 +207,14 @@ export function MagomedAssistant({ roleHeader, roleLabel }: Props) {
     setLoading(true);
 
     try {
+      if (!clientIdRef.current) clientIdRef.current = getClientId();
       const response = await fetch("/api/gemini/magomed-chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-demo-role": roleHeader },
+        headers: {
+          "Content-Type": "application/json",
+          "x-demo-role": roleHeader,
+          "x-magomed-thread": clientIdRef.current,
+        },
         // Шлём только реальный диалог (без вступительного приветствия).
         body: JSON.stringify({
           role: roleHeader,
