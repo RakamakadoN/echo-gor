@@ -20,6 +20,7 @@ import trainerLoginImg from "./assets/images/new_trainer_login_bg_1780308409116.
 import desktopLoginBg from "./assets/images/login_dancers_bg.png";
 // @ts-ignore
 import mobileLoginBg from "./assets/images/login_dancers_bg.png";
+import echogorLogo from "./assets/images/echogor_logo_1780297382250.png";
 // @ts-ignore
 import studentArtistCard from "./assets/images/student_artist_card.png";
 // @ts-ignore
@@ -2349,6 +2350,8 @@ export default function App() {
           {/* Плотная правая колонка — полностью скрывает «вшитую» в картинку форму. */}
           <div className="absolute inset-y-0 right-0 hidden w-[42%] md:block" style={{ background: "#06090F" }} />
           <div className="absolute inset-y-0 right-[42%] hidden w-[10%] md:block" style={{ background: "linear-gradient(to left, #06090F, rgba(6,9,15,0))" }} />
+          <img src={echogorLogo} alt="Эхогор — студия кавказского танца" className="pointer-events-none absolute z-10 left-[clamp(28px,5vw,80px)] top-[clamp(28px,5vw,64px)] h-auto w-[clamp(120px,16vw,300px)] select-none drop-shadow-[0_4px_20px_rgba(0,0,0,0.6)]" />
+          <div className="pointer-events-none absolute z-10 left-[clamp(28px,5vw,80px)] bottom-[clamp(28px,5vw,60px)] flex items-center gap-[.6em] whitespace-nowrap text-[clamp(13px,2vw,22px)] font-black uppercase tracking-[0.12em] text-white select-none drop-shadow-[0_2px_12px_rgba(0,0,0,0.7)]">Сила <span className="text-[#C5A059]">|</span> Честь <span className="text-[#C5A059]">|</span> Традиции</div>
 
           {/* Настоящая форма входа — адаптив: по центру на узких экранах, справа на десктопе;
               вертикальная прокрутка, чтобы форма не обрезалась на низких окнах. */}
