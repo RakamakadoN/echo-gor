@@ -46,6 +46,9 @@ import {
   CalendarClock,
   ChevronLeft,
   Clock,
+  History,
+  PieChart,
+  Lock,
   LayoutGrid,
   Plus,
   Pencil,
@@ -72,6 +75,7 @@ import { ArchiveReasonModal } from "./ArchiveReasonModal";
 import AttendanceJournalView from "./AttendanceJournalView";
 import { BranchesGroupsView } from "./BranchesGroupsView";
 import AiHubView from "./AiHubView";
+import { useOwnerSectionSettings, SectionSettingsDrawer, SectionGearButton, type ResolvedTab } from "./OwnerSectionSettings";
 import { computeOwnerDashboard, type DashFilters, type PeriodKey, type LevelKey, type DashExtras, type Delta, type DailyReport } from "../ownerDashboardAnalytics";
 
 // Память состояния свёрнутых блоков дашборда — отдельно для каждого пользователя (по роли).
@@ -281,6 +285,11 @@ export function OwnerExecutiveWorkspace({
   onJournalTask,
 }: OwnerExecutiveWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<OwnerTab>("dashboard");
+  // Настройки разделов от Владельца (переименование/видимость/порядок/акцент/роли/описание).
+  const sectionSettings = useOwnerSectionSettings(ownerTabs);
+  const [settingsForTab, setSettingsForTab] = useState<OwnerTab | null>(null);
+  const activeResolved = sectionSettings.resolvedTabs.find((t) => t.id === activeTab);
+  const drawerTab = settingsForTab ? sectionSettings.resolvedTabs.find((t) => t.id === settingsForTab) || null : null;
   // Сворачивание бокового меню — любой раздел можно открыть на всю ширину.
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [globalSearch, setGlobalSearch] = useState("");
@@ -333,8 +342,14 @@ export function OwnerExecutiveWorkspace({
           </div>
           {/* Навигация (референс .nav) — прокручиваемая */}
           <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
-            {ownerTabs.map((tab) => (
-              <OwnerNavButton key={tab.id} tab={tab} active={activeTab === tab.id} onClick={() => setActiveTab(tab.id)} />
+            {sectionSettings.visibleTabs.map((tab) => (
+              <OwnerNavButton
+                key={tab.id}
+                tab={tab}
+                active={activeTab === tab.id}
+                onClick={() => setActiveTab(tab.id as OwnerTab)}
+                onOpenSettings={() => setSettingsForTab(tab.id as OwnerTab)}
+              />
             ))}
           </nav>
           {/* Ценности (референс .eg-values) */}
@@ -361,14 +376,23 @@ export function OwnerExecutiveWorkspace({
                 className="min-w-0 flex-1 border-none bg-transparent p-0 text-sm text-white outline-none placeholder:text-slate-500 focus:ring-0"
               />
             </div>
+            <button
+              onClick={() => setSettingsForTab(activeTab)}
+              title={`Настройки раздела «${activeResolved?.effectiveLabel || ""}»`}
+              className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-xs font-bold text-slate-200 transition hover:border-[#C5A059]/40 hover:text-[#C5A059]"
+            >
+              <Settings className="h-4 w-4" />
+              Настроить раздел
+            </button>
           </div>
           <div className="sticky top-0 z-30 -mx-4 mb-4 border-b border-white/5 bg-[#080808]/90 px-4 py-3 backdrop-blur-xl md:-mx-6 md:px-6 lg:hidden">
             <div className="flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#C5A059] text-black"><Crown className="h-5 w-5" /></div>
-              <div>
+              <div className="min-w-0 flex-1">
                 <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#C5A059]">Владелец сети</p>
-                <h1 className="text-base font-black text-white">CEO Command Center</h1>
+                <h1 className="truncate text-base font-black text-white">{activeResolved?.effectiveLabel || "CEO Command Center"}</h1>
               </div>
+              <SectionGearButton onClick={() => setSettingsForTab(activeTab)} className="h-9 w-9" />
             </div>
           </div>
 
@@ -442,10 +466,12 @@ export function OwnerExecutiveWorkspace({
       </div>
 
       <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-white/10 bg-[#080808]/95 px-2 py-2 backdrop-blur-xl lg:hidden">
-        {ownerTabs.slice(0, 5).map((tab) => (
-          <OwnerMobileNav key={tab.id} tab={tab} active={activeTab === tab.id} onClick={() => setActiveTab(tab.id)} />
+        {sectionSettings.mobileTabs.map((tab) => (
+          <OwnerMobileNav key={tab.id} tab={tab} active={activeTab === tab.id} onClick={() => setActiveTab(tab.id as OwnerTab)} />
         ))}
       </nav>
+
+      <SectionSettingsDrawer tab={drawerTab} api={sectionSettings} onClose={() => setSettingsForTab(null)} />
     </div>
   );
 }
@@ -2464,6 +2490,97 @@ const ROLE_LABELS: Record<string, string> = {
   owner: "Владелец"
 };
 
+// ===================== Преподаватели сети: модель KPI / ЗП (порт light-прототипа) =====================
+const TN_KPI_WEIGHTS = { ret: 35, funnel: 30, reviews: 17.5, standards: 17.5 };
+const TN_RATES = {
+  new: { 1: 1250, 2: 1500, 3: 1500 } as Record<number, number>,
+  reg: { 1: 2500, 2: 3000, 3: 3000 } as Record<number, number>,
+  regCont: { 3: 3500 } as Record<number, number>,
+};
+const TN_RET_BONUS: Record<number, number> = { 1: 0.20, 2: 0.20, 3: 0.30 };
+const TN_TOM_BONUS = 20000;
+const TN_MONTHS = ["Январь 2026", "Февраль 2026", "Март 2026", "Апрель 2026", "Май 2026", "Июнь 2026"];
+
+type TnMonth = { ret: number; funnel: number; rev: number; std: number; students: number; newCnt: number; regCnt: number; regCont: number; left: number };
+type TnFine = { date: string; reason: string; sum: number };
+type TnSeed = { cat: number; status: string; spec: string; branch: string; phone: string; byMonth: Record<string, TnMonth | null>; fines: Record<string, TnFine[]> };
+
+// Реальные педагоги сети — точные месячные данные (совпадают с прототипом-эталоном).
+const TN_SEED: Record<string, TnSeed> = {
+  "аслан плиев": {
+    cat: 3, status: "Активен", spec: "Лезгинка, ансамблевая подготовка", branch: "Эхо Гор Чокина 109/1", phone: "+7 701 441 11 22",
+    byMonth: {
+      "Январь 2026": { ret: 62, funnel: 55, rev: 4.6, std: 90, students: 26, newCnt: 4, regCnt: 22, regCont: 8, left: 1 },
+      "Февраль 2026": { ret: 64, funnel: 58, rev: 4.7, std: 92, students: 28, newCnt: 5, regCnt: 23, regCont: 9, left: 1 },
+      "Март 2026": { ret: 66, funnel: 60, rev: 4.7, std: 95, students: 29, newCnt: 4, regCnt: 25, regCont: 10, left: 2 },
+      "Апрель 2026": { ret: 67, funnel: 62, rev: 4.8, std: 96, students: 30, newCnt: 5, regCnt: 25, regCont: 11, left: 1 },
+      "Май 2026": { ret: 67.7, funnel: 64, rev: 4.8, std: 98, students: 31, newCnt: 6, regCnt: 25, regCont: 12, left: 2 },
+      "Июнь 2026": { ret: 69, funnel: 66, rev: 4.9, std: 100, students: 31, newCnt: 6, regCnt: 25, regCont: 12, left: 1 },
+    },
+    fines: { "Май 2026": [{ date: "14.05.2026", reason: "Опоздание", sum: 2000 }] },
+  },
+  "хамит муратович": {
+    cat: 1, status: "Стажер", spec: "High Heels", branch: "Сатпаева 210/1", phone: "+7 (702) 123 46 58",
+    byMonth: {
+      "Январь 2026": null, "Февраль 2026": null, "Март 2026": null, "Апрель 2026": null, "Май 2026": null,
+      "Июнь 2026": { ret: 0, funnel: 20, rev: 0, std: 40, students: 1, newCnt: 1, regCnt: 0, regCont: 0, left: 0 },
+    },
+    fines: { "Июнь 2026": [{ date: "12.06.2026", reason: "Незакрытый журнал", sum: 5000 }] },
+  },
+};
+
+const tnInitials = (name: string) => name.trim().split(/\s+/).slice(0, 2).map((w) => w[0] || "").join("").toUpperCase();
+const tnCatName = (c: number) => `${c} категория`;
+function tnKpiComponents(m: TnMonth | null) {
+  if (!m) return null;
+  return { ret: Math.min(100, m.ret), funnel: Math.min(100, m.funnel), reviews: Math.round((m.rev / 5) * 100), standards: m.std };
+}
+function tnKpiTotal(c: ReturnType<typeof tnKpiComponents>) {
+  if (!c) return 0;
+  const w = TN_KPI_WEIGHTS;
+  return Math.round(c.ret * w.ret / 100 + c.funnel * w.funnel / 100 + c.reviews * w.reviews / 100 + c.standards * w.standards / 100);
+}
+function tnSalary(m: TnMonth | null, cat: number, isWinner: boolean, finesSum: number) {
+  if (!m) return null;
+  const newSum = m.newCnt * (TN_RATES.new[cat] || 0);
+  const contCnt = cat === 3 ? (m.regCont || 0) : 0;
+  const plainReg = Math.max(0, (m.regCnt || 0) - contCnt);
+  const regSum = plainReg * (TN_RATES.reg[cat] || 0);
+  const contSum = cat === 3 ? contCnt * (TN_RATES.regCont[3] || 0) : 0;
+  const base = newSum + regSum + contSum;
+  const retBonus = m.left <= 2 ? base * TN_RET_BONUS[cat] : 0;
+  const tomBonus = isWinner ? TN_TOM_BONUS : 0;
+  return { base, retBonus, tomBonus, finesSum, total: base + retBonus + tomBonus - finesSum };
+}
+
+// Собирает отображаемый профиль педагога за выбранный месяц (seed-данные или расчёт из живых метрик).
+function tnEnrich(t: Teacher, metric: any, month: string, penalties: any[]) {
+  const seed = TN_SEED[t.name.trim().toLowerCase()];
+  let cat: number, status: string, spec: string, branch: string, phone: string, m: TnMonth | null, finesSum: number;
+  if (seed) {
+    cat = seed.cat; status = seed.status; spec = seed.spec; branch = seed.branch; phone = seed.phone;
+    m = seed.byMonth[month] ?? null;
+    finesSum = (seed.fines[month] || []).reduce((s, f) => s + f.sum, 0);
+  } else {
+    const students = metric?.studentsCount ?? 0;
+    const ret = metric?.retentionRate ?? 0;
+    const att = metric?.averageAttendance ?? 0;
+    cat = (t.experienceYears ?? 0) >= 10 ? 3 : (t.experienceYears ?? 0) >= 3 ? 2 : 1;
+    status = ((t.experienceYears ?? 0) < 1 || students <= 1) ? "Стажер" : "Активен";
+    spec = t.specialties?.[0] || "—";
+    branch = "";
+    phone = t.phone || "";
+    const newCnt = Math.round(students * 0.2);
+    const regCnt = Math.max(0, students - newCnt);
+    m = students > 0 ? { ret, funnel: Math.round(ret * 0.9), rev: att >= 90 ? 4.8 : Math.round((att / 20) * 10) / 10, std: att || 80, students, newCnt, regCnt, regCont: cat === 3 ? Math.round(regCnt * 0.4) : 0, left: 1 } : null;
+    finesSum = penalties.filter((p) => p.teacherId === t.id).reduce((s, p) => s + (p.amount || 0), 0);
+  }
+  const comp = tnKpiComponents(m);
+  const kpi = tnKpiTotal(comp);
+  return { teacher: t, seed: Boolean(seed), cat, status, spec, branch, phone, initials: tnInitials(t.name), m, comp, kpi, finesSum };
+}
+type TnRow = ReturnType<typeof tnEnrich>;
+
 function TeachersNetworkView({ teachers, metrics, branches, students = [], groups = [], payments = [], onCreateTeacher, onUpdateTeacher, onDeleteTeacher }: {
   teachers: Teacher[];
   metrics: ExecutiveSummary;
@@ -2510,6 +2627,73 @@ function TeachersNetworkView({ teachers, metrics, branches, students = [], group
   const metricFor = (id: string) => metrics.teacherPerformance.find((m) => m.teacherId === id);
   const cardTeacher = teachers.find((t) => t.id === cardTeacherId) || null;
 
+  // ── Фильтры и вычисленные профили (референс «Преподаватели сети») ──
+  const [tnMonth, setTnMonth] = useState("Июнь 2026");
+  const [tnBranch, setTnBranch] = useState("");
+  const [tnCat, setTnCat] = useState("");
+  const [tnStatus, setTnStatus] = useState("");
+  const [winnerId, setWinnerId] = useState<string | null>(null);
+  const [showColMenu, setShowColMenu] = useState(false);
+  const [extraCols, setExtraCols] = useState<Record<string, boolean>>({ students: false, funnel: false, rev: false, std: false, phone: false });
+
+  const tnBranchName = (t: Teacher, seedBranch: string) => seedBranch || branchName(t.branchId);
+  const enriched = useMemo(
+    () => teachers.map((t) => tnEnrich(t, metricFor(t.id), tnMonth, penalties)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [teachers, metrics, tnMonth, penalties]
+  );
+  // Кандидат ИИ = максимальный KPI среди работавших в месяце.
+  const aiBest = useMemo(() => {
+    let best: TnRow | null = null;
+    enriched.forEach((e) => { if (e.m && (!best || e.kpi > best.kpi)) best = e; });
+    return best;
+  }, [enriched]);
+  const effectiveWinnerId = winnerId ?? aiBest?.teacher.id ?? null;
+
+  const branchOptions = useMemo(() => {
+    const set = new Set<string>();
+    enriched.forEach((e) => { const b = tnBranchName(e.teacher, e.branch); if (b && b !== "— не назначен —") set.add(b); });
+    return Array.from(set);
+  }, [enriched]);
+
+  const filtered = useMemo(() => enriched.filter((e) =>
+    (!tnBranch || tnBranchName(e.teacher, e.branch) === tnBranch) &&
+    (!tnCat || tnCatName(e.cat) === tnCat) &&
+    (!tnStatus || e.status === tnStatus)
+  ), [enriched, tnBranch, tnCat, tnStatus]);
+
+  const withM = enriched.filter((e) => e.m);
+  const avgRet = withM.length ? withM.reduce((s, e) => s + (e.m!.ret), 0) / withM.length : 0;
+  const avgKpi = withM.length ? Math.round(withM.reduce((s, e) => s + e.kpi, 0) / withM.length) : 0;
+  const activeCount = teachers.filter((t) => tnEnrich(t, metricFor(t.id), tnMonth, penalties).status === "Активен").length;
+  const internCount = teachers.length - activeCount;
+
+  const tnSalaryOf = (e: TnRow) => tnSalary(e.m, e.cat, effectiveWinnerId === e.teacher.id, e.finesSum);
+  const approveTom = () => { if (aiBest) setWinnerId(aiBest.teacher.id); };
+
+  const TN_COLS: { id: string; label: string; cell: (e: TnRow) => React.ReactNode }[] = [
+    { id: "spec", label: "Специализация", cell: (e) => <span className="text-slate-300">{e.spec}</span> },
+    { id: "branch", label: "Филиал", cell: (e) => <span className="text-slate-300">{tnBranchName(e.teacher, e.branch)}</span> },
+    { id: "cat", label: "Категория", cell: (e) => <span className="rounded-full bg-[#C5A059]/12 px-2.5 py-1 text-xs font-black text-[#C5A059]">{tnCatName(e.cat)}</span> },
+    { id: "ret", label: "Удержание", cell: (e) => e.m ? (
+      <div className="min-w-[80px]">
+        <div className="h-[7px] w-20 overflow-hidden rounded bg-white/10"><span className="block h-full rounded" style={{ width: `${e.m.ret}%`, background: e.m.ret >= 60 ? "#4F8A63" : e.m.ret >= 40 ? "#C5A059" : "#B14545" }} /></div>
+        <small className="text-slate-500">{e.m.ret}%</small>
+      </div>
+    ) : <span className="text-slate-500">—</span> },
+    { id: "kpi", label: "KPI", cell: (e) => <b className="text-white">{e.m ? e.kpi : "—"}</b> },
+    { id: "fines", label: "Штрафы", cell: (e) => e.finesSum ? <span className="font-bold text-rose-400">− {money(e.finesSum)}</span> : <span className="text-slate-500">—</span> },
+    { id: "sal", label: "Ожид. ЗП", cell: (e) => { const s = tnSalaryOf(e); return <span className={`font-bold ${s && s.total < 0 ? "text-rose-400" : "text-white"}`}>{s ? money(s.total) : "—"}</span>; } },
+    { id: "students", label: "Ученики", cell: (e) => <span className="text-slate-300">{e.m ? e.m.students : "—"}</span> },
+    { id: "funnel", label: "Воронка ПУ", cell: (e) => <span className="text-slate-300">{e.m ? `${e.m.funnel}%` : "—"}</span> },
+    { id: "rev", label: "Отзывы (оценка)", cell: (e) => <span className="text-slate-300">{e.m && e.m.rev ? `${e.m.rev.toFixed(1)} ★` : "—"}</span> },
+    { id: "std", label: "Стандарты", cell: (e) => <span className="text-slate-300">{e.m ? `${e.m.std}%` : "—"}</span> },
+    { id: "phone", label: "Телефон", cell: (e) => <span className="text-slate-300">{e.phone || "—"}</span> },
+    { id: "role", label: "Права", cell: (e) => <span className="rounded-full bg-[#C5A059]/12 px-2.5 py-1 text-xs font-black text-[#C5A059]">{ROLE_LABELS[e.teacher.role || "teacher"]}</span> },
+  ];
+  const alwaysOn = new Set(["spec", "branch", "cat", "ret", "kpi", "fines", "sal", "role"]);
+  const visibleCols = TN_COLS.filter((c) => alwaysOn.has(c.id) || extraCols[c.id]);
+
   const startAdd = () => { setEditingId(null); setForm(empty); setAdding(true); };
   const startEdit = (t: Teacher) => {
     setAdding(false);
@@ -2540,47 +2724,138 @@ function TeachersNetworkView({ teachers, metrics, branches, students = [], group
   }
 
   return (
-    <OwnerScreen title="Преподаватели сети" subtitle="Статистика и управление персоналом. Владелец может добавлять, редактировать, архивировать сотрудников, назначать филиал и выдавать права (роль). Нажмите на преподавателя, чтобы открыть карточку с KPI, зарплатой и стажировкой.">
-      {/* Performance cards */}
-      <div className="grid gap-4 xl:grid-cols-3">
-        {metrics.teacherPerformance.map((teacherMetric) => {
-          const teacher = teachers.find((item) => item.id === teacherMetric.teacherId);
-          return (
-            <article key={teacherMetric.teacherId} onClick={() => setCardTeacherId(teacherMetric.teacherId)}
-              className="cursor-pointer rounded-[2rem] border border-white/10 bg-[#121212] p-5 transition hover:border-[#C5A059]/40">
-              {teacher && <img src={teacher.photoUrl} alt={teacher.name} className="h-20 w-20 rounded-full border border-[#C5A059]/35 object-cover" />}
-              <h3 className="mt-4 text-lg font-black text-white">{teacherMetric.teacherName}</h3>
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                <MiniMetric label="Ученики" value={teacherMetric.studentsCount} />
-                <MiniMetric label="Удержание" value={`${teacherMetric.retentionRate}%`} />
-                <MiniMetric label="Посещ." value={`${teacherMetric.averageAttendance}%`} />
-                <MiniMetric label="Спасибо" value="57" />
+    <OwnerScreen title="Преподаватели сети" subtitle="Статистика и развитие педагогического состава. Выберите месяц — пересчитаются KPI, удержание и зарплата. Нажмите на показатель или преподавателя, чтобы раскрыть детали.">
+      {/* Фильтры */}
+      <div className="flex flex-wrap gap-2.5">
+        <select value={tnMonth} onChange={(e) => setTnMonth(e.target.value)}
+          className="rounded-full border border-[#C5A059]/40 bg-[#C5A059]/12 px-4 py-2.5 text-sm font-bold text-[#C5A059] outline-none">
+          {TN_MONTHS.map((mo) => <option key={mo} value={mo}>{mo}</option>)}
+        </select>
+        <select value={tnBranch} onChange={(e) => setTnBranch(e.target.value)}
+          className="rounded-full border border-white/10 bg-[#121212] px-4 py-2.5 text-sm font-bold text-slate-200 outline-none focus:border-[#C5A059]/50">
+          <option value="">Вся сеть</option>
+          {branchOptions.map((b) => <option key={b} value={b}>{b}</option>)}
+        </select>
+        <select value={tnCat} onChange={(e) => setTnCat(e.target.value)}
+          className="rounded-full border border-white/10 bg-[#121212] px-4 py-2.5 text-sm font-bold text-slate-200 outline-none focus:border-[#C5A059]/50">
+          <option value="">Все категории</option>
+          <option>1 категория</option><option>2 категория</option><option>3 категория</option>
+        </select>
+        <select value={tnStatus} onChange={(e) => setTnStatus(e.target.value)}
+          className="rounded-full border border-white/10 bg-[#121212] px-4 py-2.5 text-sm font-bold text-slate-200 outline-none focus:border-[#C5A059]/50">
+          <option value="">Любой статус</option>
+          <option>Активен</option><option>Стажер</option>
+        </select>
+      </div>
+
+      {/* Педагог месяца */}
+      {(() => {
+        const winner = enriched.find((e) => e.teacher.id === effectiveWinnerId) || aiBest;
+        return (
+          <section className="rounded-[1.75rem] border border-[#C5A059]/25 bg-gradient-to-r from-[#C5A059]/[0.12] to-transparent p-3.5">
+            <div className="flex flex-wrap items-center gap-5 rounded-[1.4rem] bg-[#121212] px-6 py-5">
+              <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-full bg-[#C5A059] shadow-[0_6px_16px_rgba(197,160,89,0.4)]">
+                <Crown className="h-7 w-7 text-white" />
               </div>
-              <p className="mt-3 text-xs font-bold text-[#C5A059]">Открыть карточку ›</p>
+              <div className="min-w-[200px] flex-1">
+                <p className="text-[11px] font-black uppercase tracking-[0.1em] text-[#C5A059]">Педагог месяца · {tnMonth}</p>
+                {winner ? (
+                  <>
+                    <h3 className="mt-0.5 text-2xl font-black text-white">{winner.teacher.name} · {tnCatName(winner.cat)}</h3>
+                    <p className="mt-1 flex items-center gap-1.5 text-[13px] text-slate-400">
+                      <Sparkles className="h-3.5 w-3.5 text-[#C5A059]" /> ИИ предлагает: <b className="text-slate-200">{aiBest?.teacher.name || "—"}</b> (KPI {aiBest?.kpi ?? 0}). Бонус +20 000 тг
+                    </p>
+                  </>
+                ) : <h3 className="mt-0.5 text-2xl font-black text-white">Нет данных за месяц</h3>}
+              </div>
+              <div className="flex flex-wrap gap-2.5">
+                <button onClick={approveTom} className="rounded-full bg-[#C5A059] px-5 py-2.5 text-sm font-bold text-black transition hover:brightness-105">Утвердить выбор ИИ</button>
+                <button onClick={() => setShowColMenu(false)} className="rounded-full border border-white/10 bg-[#121212] px-5 py-2.5 text-sm font-bold text-slate-200 transition hover:border-[#C5A059]/50 hover:text-[#C5A059]">Сравнить педагогов</button>
+              </div>
+            </div>
+          </section>
+        );
+      })()}
+
+      {/* Плитки */}
+      <div className="grid grid-cols-2 gap-3.5 md:grid-cols-3 xl:grid-cols-5">
+        <TnTile label="Всего" value={teachers.length} sub="в сети →" />
+        <TnTile label="Активные" value={activeCount} sub="работают →" />
+        <TnTile label="Стажёры" value={internCount} sub="статус «Стажер» →" />
+        <TnTile label="Ср. удержание" value={`${avgRet.toFixed(1)}%`} sub="м/м · детально →" />
+        <TnTile label="Ср. KPI" value={avgKpi} sub="из 100 · детально →" />
+      </div>
+
+      {/* Карточки-спотлайт */}
+      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+        {filtered.map((e) => {
+          const sal = tnSalaryOf(e);
+          const win = effectiveWinnerId === e.teacher.id;
+          return (
+            <article key={e.teacher.id} className={`relative rounded-3xl bg-[#121212] p-7 shadow-sm transition hover:-translate-y-0.5 ${win ? "border-2 border-[#C5A059]" : "border border-white/10"}`}>
+              <span className="absolute left-5 top-5 rounded-full bg-[#C5A059]/12 px-3 py-1 text-[11px] font-black text-[#C5A059]">{tnCatName(e.cat)}</span>
+              {win && (
+                <span className="absolute right-5 top-5 inline-flex items-center gap-1 rounded-full bg-[#C5A059] px-3 py-1 text-[11px] font-black text-white">
+                  <Crown className="h-3 w-3" /> Педагог месяца
+                </span>
+              )}
+              <div className="flex flex-col items-center text-center">
+                <div className="mt-4 flex h-24 w-24 items-center justify-center rounded-full bg-white/[0.06] text-3xl font-black text-slate-400">{e.initials}</div>
+                <h3 className="mt-4 text-xl font-black text-white">{e.teacher.name}</h3>
+              </div>
+              <div className="my-6 grid grid-cols-2 gap-3">
+                <TnStat label="Ученики" value={e.m ? e.m.students : "—"} />
+                <TnStat label="Удержание" value={e.m ? `${e.m.ret}%` : "—"} />
+                <TnStat label="KPI" value={e.m ? e.kpi : "—"} />
+                <TnStat label="Ожид. ЗП" value={sal ? money(sal.total) : "—"} small tone={sal && sal.total < 0 ? "rose" : "default"} />
+              </div>
+              {e.finesSum > 0 && (
+                <div className="mb-4 flex items-center justify-between rounded-xl bg-rose-500/10 px-4 py-2.5 text-sm font-bold text-rose-400">
+                  <span>Штрафы за месяц</span><span>− {money(e.finesSum)}</span>
+                </div>
+              )}
+              <button onClick={() => setCardTeacherId(e.teacher.id)} className="text-[15px] font-black text-[#C5A059] hover:underline">Открыть карточку ›</button>
             </article>
           );
         })}
+        {filtered.length === 0 && <p className="text-sm text-slate-500">Преподаватели не найдены.</p>}
       </div>
 
-      {/* Management */}
-      {canManage && (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-slate-400">{teachers.length} преподавателей в сети</p>
-          {!adding && editingId === null && (
-            <div className="flex flex-wrap items-center gap-2">
-              <button onClick={() => setShowPenaltyJournal(true)} className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-bold text-slate-200 transition hover:border-rose-400/40 hover:text-white">
-                <AlertTriangle className="h-4 w-4 text-rose-400" /> Журнал штрафов{penalties.length > 0 ? ` · ${penalties.length}` : ""}
+      {/* Тулбар */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm font-semibold text-slate-400">{filtered.length} преподавателей в сети</p>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="relative">
+            <button onClick={() => setShowColMenu((v) => !v)} className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-[#121212] px-4 py-2.5 text-sm font-bold text-slate-200 transition hover:border-[#C5A059]/50 hover:text-[#C5A059]">
+              <Filter className="h-4 w-4" /> Показатели
+            </button>
+            {showColMenu && (
+              <div className="absolute right-0 top-12 z-30 w-56 rounded-2xl border border-white/10 bg-[#121212] p-2 shadow-xl">
+                <p className="px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-slate-500">Колонки таблицы</p>
+                {[["students", "Ученики"], ["funnel", "Воронка ПУ"], ["rev", "Отзывы (оценка)"], ["std", "Стандарты"], ["phone", "Телефон"]].map(([id, label]) => (
+                  <label key={id} className="flex cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold text-slate-200 hover:bg-white/[0.04]">
+                    <input type="checkbox" checked={!!extraCols[id]} onChange={(ev) => setExtraCols((c) => ({ ...c, [id]: ev.target.checked }))} className="h-4 w-4 accent-[#C5A059]" />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+          {canManage && (
+            <>
+              <button onClick={() => setShowPenaltyJournal(true)} className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-[#121212] px-4 py-2.5 text-sm font-bold text-slate-200 transition hover:border-rose-400/50 hover:text-rose-300">
+                <AlertTriangle className="h-4 w-4 text-rose-400" /> Штрафы{penalties.length > 0 ? ` · ${penalties.length}` : ""}
               </button>
-              <button onClick={() => setShowChargePenalty(true)} className="inline-flex items-center gap-2 rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-2 text-sm font-bold text-rose-200 transition hover:bg-rose-500/15">
-                <Plus className="h-4 w-4" /> Начислить штраф
+              <button onClick={() => setShowChargePenalty(true)} className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-[#121212] px-4 py-2.5 text-sm font-bold text-slate-200 transition hover:border-[#C5A059]/50 hover:text-[#C5A059]">
+                <Coins className="h-4 w-4" /> Рассчитать ЗП
               </button>
-              <button onClick={startAdd} className="inline-flex items-center gap-2 rounded-2xl bg-[#C5A059] px-4 py-2 text-sm font-bold text-black transition hover:bg-[#d4b06a]">
+              <button onClick={startAdd} className="inline-flex items-center gap-2 rounded-full bg-[#C5A059] px-5 py-2.5 text-sm font-black text-black shadow-[0_6px_16px_rgba(197,160,89,0.35)] transition hover:brightness-105">
                 <Plus className="h-4 w-4" /> Добавить преподавателя
               </button>
-            </div>
+            </>
           )}
         </div>
-      )}
+      </div>
 
       {showPenaltyJournal && (
         <PenaltyJournalModal penalties={penalties} total={penaltyTotal} onClose={() => setShowPenaltyJournal(false)}
@@ -2589,53 +2864,65 @@ function TeachersNetworkView({ teachers, metrics, branches, students = [], group
       {showChargePenalty && (
         <ChargePenaltyModal teachers={teachers} busy={busy} onClose={() => setShowChargePenalty(false)} onSubmit={chargePenalty} />
       )}
-
       {(adding || editingId !== null) && (
         <TeacherForm
           title={adding ? "Новый преподаватель" : "Редактирование преподавателя"}
-          form={form}
-          setForm={setForm}
-          branches={branches}
-          busy={busy}
-          onSubmit={submit}
-          onCancel={cancel}
+          form={form} setForm={setForm} branches={branches} busy={busy} onSubmit={submit} onCancel={cancel}
         />
       )}
 
-      <div className="overflow-hidden rounded-[2rem] border border-white/10 bg-[#121212]">
-        <div className="hidden grid-cols-12 gap-2 border-b border-white/5 px-5 py-3 text-[11px] font-bold uppercase tracking-wider text-slate-500 md:grid">
-          <span className="col-span-3">Преподаватель</span>
-          <span className="col-span-3">Специализация</span>
-          <span className="col-span-3">Филиал</span>
-          <span className="col-span-2">Права</span>
-          <span className="col-span-1 text-right">Действия</span>
-        </div>
-        {teachers.map((t) => {
-          const m = metricFor(t.id);
-          return (
-            <div key={t.id} onClick={() => setCardTeacherId(t.id)}
-              className="grid cursor-pointer grid-cols-2 gap-2 border-b border-white/5 px-5 py-3 text-sm transition hover:bg-white/[0.03] md:grid-cols-12 md:items-center">
-              <div className="col-span-3">
-                <p className="font-bold text-white">{t.name}</p>
-                <p className="text-xs text-slate-500">{t.phone || "—"}{m ? ` · ${m.studentsCount} уч.` : ""}</p>
-              </div>
-              <span className="col-span-3 text-slate-300">{t.specialties?.[0] || "—"}</span>
-              <span className="col-span-3 text-slate-300">{branchName(t.branchId)}</span>
-              <span className="col-span-2">
-                <span className="rounded-lg bg-white/5 px-2 py-1 text-xs font-bold text-[#C5A059]">{ROLE_LABELS[t.role || "teacher"]}</span>
-              </span>
-              {canManage && (
-                <div className="col-span-1 flex justify-end gap-1">
-                  <button onClick={(e) => { e.stopPropagation(); startEdit(t); }} title="Редактировать" className="rounded-lg border border-white/10 p-1.5 text-slate-300 transition hover:border-[#C5A059]/40 hover:text-[#C5A059]"><Pencil className="h-4 w-4" /></button>
-                  <button onClick={(e) => { e.stopPropagation(); remove(t); }} title="Архивировать" className="rounded-lg border border-white/10 p-1.5 text-slate-300 transition hover:border-red-500/40 hover:text-red-400"><Trash2 className="h-4 w-4" /></button>
-                </div>
-              )}
-            </div>
-          );
-        })}
-        {teachers.length === 0 && <p className="px-5 py-6 text-center text-sm text-slate-500">Преподаватели не найдены.</p>}
+      {/* Таблица */}
+      <div className="overflow-x-auto rounded-[1.25rem] border border-white/10 bg-[#121212]">
+        <table className="w-full min-w-[900px] border-collapse">
+          <thead>
+            <tr>
+              <th className="px-6 py-4 text-left text-[12px] font-black uppercase tracking-wider text-slate-500">Преподаватель</th>
+              {visibleCols.map((c) => <th key={c.id} className="px-6 py-4 text-left text-[12px] font-black uppercase tracking-wider text-slate-500">{c.label}</th>)}
+              <th className="px-6 py-4 text-right text-[12px] font-black uppercase tracking-wider text-slate-500">Действия</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((e) => (
+              <tr key={e.teacher.id} onClick={() => setCardTeacherId(e.teacher.id)} className="cursor-pointer border-t border-white/5 transition hover:bg-white/[0.03]">
+                <td className="px-6 py-4">
+                  <b className="block text-[15px] font-bold text-white">{e.teacher.name}</b>
+                  <span className="text-[13px] text-slate-500">{e.phone || "—"} · {e.m ? e.m.students : 0} уч.</span>
+                </td>
+                {visibleCols.map((c) => <td key={c.id} className="px-6 py-4 text-sm">{c.cell(e)}</td>)}
+                <td className="px-6 py-4" onClick={(ev) => ev.stopPropagation()}>
+                  <div className="flex justify-end gap-2">
+                    <button onClick={() => startEdit(e.teacher)} title="Редактировать" className="flex h-9 w-9 items-center justify-center rounded-[11px] border border-white/10 bg-[#121212] text-slate-400 transition hover:border-[#C5A059]/50 hover:text-[#C5A059]"><Pencil className="h-4 w-4" /></button>
+                    <button onClick={() => remove(e.teacher)} title="Архивировать" className="flex h-9 w-9 items-center justify-center rounded-[11px] border border-white/10 bg-[#121212] text-slate-400 transition hover:border-rose-400/50 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {filtered.length === 0 && (
+              <tr><td colSpan={visibleCols.length + 2} className="px-6 py-6 text-center text-sm text-slate-500">Преподаватели не найдены.</td></tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </OwnerScreen>
+  );
+}
+
+function TnTile({ label, value, sub }: { label: string; value: React.ReactNode; sub: string }) {
+  return (
+    <div className="cursor-pointer rounded-2xl border border-transparent bg-[#121212] p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-[#C5A059]/50">
+      <p className="text-[12px] font-bold uppercase tracking-wider text-slate-500">{label}</p>
+      <p className="mt-1.5 text-3xl font-black text-white">{value}</p>
+      <p className="mt-0.5 text-[12px] text-slate-500">{sub}</p>
+    </div>
+  );
+}
+
+function TnStat({ label, value, small, tone = "default" }: { label: string; value: React.ReactNode; small?: boolean; tone?: "default" | "rose" }) {
+  return (
+    <div className="rounded-[14px] bg-white/[0.04] px-4 py-3.5">
+      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">{label}</p>
+      <p className={`mt-1 font-black ${small ? "text-[17px]" : "text-[22px]"} ${tone === "rose" ? "text-rose-400" : "text-white"}`}>{value}</p>
+    </div>
   );
 }
 
@@ -3247,7 +3534,7 @@ function accountIcon(kind: string) {
 const ownerHdr = { headers: { "x-demo-role": "owner" } };
 
 function BookkeepingView({ branches }: any) {
-  const [tab, setTab] = useState<"overview" | "cashflow" | "pnl" | "calendar" | "ops" | "requests" | "reconcile" | "taxes">("overview");
+  const [tab, setTab] = useState<"ops" | "requests" | "analytics" | "settings" | "taxes" | "history">("ops");
   const [data, setData] = useState<AcctOverview | null>(null);
   const [ops, setOps] = useState<AcctOp[]>([]);
   const [requests, setRequests] = useState<any[]>([]);
@@ -3326,18 +3613,18 @@ function BookkeepingView({ branches }: any) {
   };
 
   const tabs: { id: typeof tab; label: string; icon: React.ElementType; badge?: number }[] = [
-    { id: "overview", label: "Обзор", icon: WalletCards },
-    { id: "cashflow", label: "ДДС", icon: TrendingUp },
-    { id: "pnl", label: "ОПиУ / P&L", icon: BarChart3 },
-    { id: "calendar", label: "Платёжный календарь", icon: CalendarClock },
-    { id: "reconcile", label: "Сверка CRM ↔ факт", icon: Shield },
     { id: "ops", label: "Операции", icon: Receipt },
-    { id: "requests", label: "Заявки на расход", icon: Send, badge: pendingCount },
+    { id: "requests", label: "Заявки управляющих", icon: Send, badge: pendingCount },
+    { id: "analytics", label: "Аналитика", icon: PieChart },
+    { id: "settings", label: "Настройки", icon: Settings },
     { id: "taxes", label: "Налоги", icon: BadgePercent },
+    { id: "history", label: "История", icon: History },
   ];
 
   return (
-    <OwnerScreen title="Бухгалтерия" subtitle="Управленческий учёт сети: счета и кассы, движение денег (ДДС), прибыли и убытки (ОПиУ), платёжный календарь и реестр операций.">
+    <OwnerScreen eyebrow="Финансы сети" title="Бухгалтерия"
+      badge={<span className="inline-flex items-center gap-1.5 rounded-full border border-[#C5A059]/40 bg-[#C5A059]/10 px-3 py-1 text-[11px] font-bold text-[#C5A059]"><Lock className="h-3 w-3" /> Только владелец</span>}
+      subtitle="Учёт фактического движения денег и сверка с продажами CRM. Прибыль считается по периоду расхода. Управляющие сюда не заходят — только подают заявки.">
       {/* Тулбар как в прототипе: слева фильтры (период/филиал/счёт), справа кнопки */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -3386,22 +3673,24 @@ function BookkeepingView({ branches }: any) {
         })}
       </div>
 
-      {error && tab !== "reconcile" && tab !== "taxes" && <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-200">{error}</div>}
-      {loading && !data && tab !== "reconcile" && tab !== "taxes" && <div className="rounded-3xl border border-white/10 bg-[#121212] p-8 text-center text-sm text-slate-500">Загрузка данных бухгалтерии…</div>}
+      {error && tab !== "taxes" && <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-200">{error}</div>}
+      {loading && !data && tab !== "taxes" && <div className="rounded-3xl border border-white/10 bg-[#121212] p-8 text-center text-sm text-slate-500">Загрузка данных бухгалтерии…</div>}
 
+      {/* Постоянная шапка: KPI + «Сводка за 10 секунд» + Сверка/Счета — всегда видна над вкладками, как на скрине */}
+      {data && <AcctHeaderSummary data={data} ops={ops} branches={branches} requests={requests} period={fPeriod} />}
+
+      {/* Разделённые вкладки под шапкой */}
       {data && (
         <>
-          {tab === "overview" && <AcctOverviewTab data={data} branches={branches} requests={requests} />}
-          {tab === "cashflow" && <AcctCashflowTab data={data} />}
-          {tab === "pnl" && <AcctPnlTab data={data} />}
-          {tab === "calendar" && <AcctCalendarTab data={data} />}
           {tab === "ops" && <AcctOpsTab data={data} ops={ops} onDelete={deleteOp} busy={busy} period={fPeriod} />}
           {tab === "requests" && <AcctRequestsTab data={data} requests={requests} onDecide={decideRequest} busy={busy} />}
+          {tab === "analytics" && <AcctAnalyticsTab data={data} branches={branches} />}
+          {tab === "settings" && <AcctSettingsTab data={data} ops={ops} />}
+          {tab === "history" && <AcctHistoryTab ops={ops} requests={requests} data={data} />}
         </>
       )}
 
-      {/* Сверка CRM↔факт и Налоги — self-contained, видны и в mock-режиме */}
-      {tab === "reconcile" && <AcctReconcileTab />}
+      {/* Налоги — self-contained, видны и в mock-режиме */}
       {tab === "taxes" && <AcctTaxesTab />}
 
       {showAdd && data && (
@@ -3515,10 +3804,18 @@ function AcctTaxesTab() {
   );
 }
 
-function AcctOverviewTab({ data, branches, requests = [] }: { data: AcctOverview; branches: any[]; requests?: any[] }) {
-  const { totals, cashflow } = data;
-  const maxNet = Math.max(1, ...cashflow.netByMonth.map((v) => Math.abs(v)));
+// Постоянная шапка бухгалтерии: KPI + «Сводка за 10 секунд» + Сверка/Счета.
+// Всегда видна над вкладками (Операции/Заявки/Аналитика/…), как на референс-скрине.
+function AcctHeaderSummary({ data, ops = [], branches = [], requests = [], period = "" }: { data: AcctOverview; ops?: AcctOp[]; branches?: any[]; requests?: any[]; period?: string }) {
+  const { totals } = data;
   const margin = totals.income > 0 ? (totals.profit / totals.income) * 100 : 0;
+  const isRet = (o: AcctOp) => o.type === "return" || o.type === "refund";
+  // Приход / расход по каждому счёту из фактических операций (для карточек «Счета»).
+  const accFlow = (id: string) => {
+    const inn = ops.filter((o) => o.accountId === id && o.type === "income").reduce((s, o) => s + o.amount, 0);
+    const out = ops.filter((o) => o.accountId === id && (o.type === "expense" || isRet(o))).reduce((s, o) => s + o.amount, 0);
+    return { inn, out };
+  };
 
   // Данные для «Сводки за 10 секунд» (сверка + заявки).
   const recon = ACCT_RECON;
@@ -3599,7 +3896,7 @@ function AcctOverviewTab({ data, branches, requests = [] }: { data: AcctOverview
           <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {data.accounts.map((a) => {
               const Icon = accountIcon(a.kind);
-              const flow = a.balance - a.openingBalance;
+              const { inn, out } = accFlow(a.id);
               return (
                 <div key={a.id} className="rounded-2xl border border-white/10 bg-[#161616] p-4">
                   <div className="flex items-center gap-2">
@@ -3607,7 +3904,7 @@ function AcctOverviewTab({ data, branches, requests = [] }: { data: AcctOverview
                     <p className="text-xs font-bold text-white">{a.name}</p>
                   </div>
                   <p className="mt-2 text-xl font-black text-white">{money(a.balance)}</p>
-                  <p className="mt-1 text-[11px] text-slate-500">старт {money(a.openingBalance)} · <span className={flow >= 0 ? "text-emerald-400" : "text-rose-400"}>{flow >= 0 ? "+" : ""}{money(flow)}</span></p>
+                  <p className="mt-1 text-[11px]"><span className="text-emerald-400">+{money(inn)}</span> <span className="text-slate-600">·</span> <span className="text-rose-400">−{money(out)}</span></p>
                 </div>
               );
             })}
@@ -3615,7 +3912,44 @@ function AcctOverviewTab({ data, branches, requests = [] }: { data: AcctOverview
           </div>
         </section>
       </div>
+    </div>
+  );
+}
 
+// ── Вкладка «Аналитика»: чистый поток по месяцам, разбивки статей, ДДС, ОПиУ,
+//    платёжный календарь и выручка по филиалам — всё из фактических данных API.
+function AcctAnalyticsTab({ data, branches = [] }: { data: AcctOverview; branches?: any[] }) {
+  const { cashflow } = data;
+  const maxNet = Math.max(1, ...cashflow.netByMonth.map((v) => Math.abs(v)));
+  const topExpense = [...cashflow.expenseRows].sort((a, b) => b.total - a.total).slice(0, 6);
+  const topIncome = [...cashflow.incomeRows].sort((a, b) => b.total - a.total).slice(0, 6);
+  const maxExp = Math.max(1, ...topExpense.map((r) => r.total));
+  const maxInc = Math.max(1, ...topIncome.map((r) => r.total));
+
+  const Breakdown = ({ title, rows, max, tone }: { title: string; rows: AcctRow[]; max: number; tone: "emerald" | "rose" }) => (
+    <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+      <h3 className="font-black text-white">{title}</h3>
+      {rows.length === 0 ? <p className="mt-4 text-sm text-slate-500">Нет данных.</p> : (
+        <div className="mt-4 space-y-3">
+          {rows.map((r) => (
+            <div key={r.category}>
+              <div className="flex items-baseline justify-between text-sm">
+                <span className="text-slate-300">{r.category}</span>
+                <span className={`font-bold ${tone === "emerald" ? "text-emerald-400" : "text-rose-400"}`}>{money(r.total)}</span>
+              </div>
+              <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-white/5">
+                <div className={`h-full rounded-full ${tone === "emerald" ? "bg-emerald-500/70" : "bg-rose-500/70"}`} style={{ width: `${Math.max(3, (r.total / max) * 100)}%` }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+
+  return (
+    <div className="space-y-5">
+      {/* Чистый денежный поток по месяцам */}
       <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
         <h3 className="font-black text-white">Чистый денежный поток по месяцам</h3>
         <div className="mt-4 flex items-end gap-3" style={{ height: 160 }}>
@@ -3634,6 +3968,19 @@ function AcctOverviewTab({ data, branches, requests = [] }: { data: AcctOverview
         </div>
       </section>
 
+      {/* Разбивки доходов/расходов по статьям */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Breakdown title="Структура расходов" rows={topExpense} max={maxExp} tone="rose" />
+        <Breakdown title="Структура доходов" rows={topIncome} max={maxInc} tone="emerald" />
+      </div>
+
+      {/* ДДС и ОПиУ — детальные таблицы */}
+      <AcctCashflowTab data={data} />
+      <AcctPnlTab data={data} />
+
+      {/* Платёжный календарь */}
+      <AcctCalendarTab data={data} />
+
       {branches && branches.length > 0 && (
         <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
           <h3 className="font-black text-white">Выручка по филиалам</h3>
@@ -3643,6 +3990,138 @@ function AcctOverviewTab({ data, branches, requests = [] }: { data: AcctOverview
         </section>
       )}
     </div>
+  );
+}
+
+// ── Вкладка «Настройки»: счета, статьи доходов/расходов, налоговый режим и
+//    параметры учёта. Показываем фактическую конфигурацию из API.
+function AcctSettingsTab({ data, ops = [] }: { data: AcctOverview; ops?: AcctOp[] }) {
+  const incomeCats = data.categories.filter((c) => c.kind === "income");
+  const expenseCats = data.categories.filter((c) => c.kind === "expense");
+  const kindLabel = (k: string) => k === "bank" ? "Расчётный счёт" : k === "card" ? "Карта / Kaspi" : "Наличные";
+
+  return (
+    <div className="space-y-5">
+      <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+        <div className="flex items-center justify-between">
+          <h3 className="font-black text-white">Счета и кассы</h3>
+          <span className="text-[11px] text-slate-500">{data.accounts.length} счёт(ов)</span>
+        </div>
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[560px] border-collapse text-left text-sm">
+            <thead className="text-[10px] uppercase tracking-wider text-slate-500">
+              <tr><th className="p-3 font-bold">Счёт</th><th className="p-3 font-bold">Тип</th><th className="p-3 font-bold">Валюта</th><th className="p-3 text-right font-bold">Стартовый остаток</th><th className="p-3 text-right font-bold">Текущий остаток</th></tr>
+            </thead>
+            <tbody>
+              {data.accounts.map((a) => {
+                const Icon = accountIcon(a.kind);
+                return (
+                  <tr key={a.id} className="border-t border-white/5">
+                    <td className="p-3"><span className="inline-flex items-center gap-2 font-bold text-white"><Icon className="h-4 w-4 text-[#C5A059]" />{a.name}</span></td>
+                    <td className="p-3 text-slate-400">{kindLabel(a.kind)}</td>
+                    <td className="p-3 text-slate-400">{a.currency || "₸"}</td>
+                    <td className="p-3 text-right text-slate-300">{money(a.openingBalance)}</td>
+                    <td className="p-3 text-right font-bold text-white">{money(a.balance)}</td>
+                  </tr>
+                );
+              })}
+              {data.accounts.length === 0 && <tr><td colSpan={5} className="p-6 text-center text-sm text-slate-500">Счета не заведены.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+          <h3 className="font-black text-white">Статьи доходов <span className="text-slate-500">· {incomeCats.length}</span></h3>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {incomeCats.map((c) => <span key={c.id} className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-300">{c.name}</span>)}
+            {incomeCats.length === 0 && <p className="text-sm text-slate-500">Статьи доходов не заданы.</p>}
+          </div>
+        </section>
+        <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+          <h3 className="font-black text-white">Статьи расходов <span className="text-slate-500">· {expenseCats.length}</span></h3>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {expenseCats.map((c) => <span key={c.id} className="rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-1.5 text-xs font-bold text-rose-300">{c.name}</span>)}
+            {expenseCats.length === 0 && <p className="text-sm text-slate-500">Статьи расходов не заданы.</p>}
+          </div>
+        </section>
+      </div>
+
+      <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+        <h3 className="font-black text-white">Параметры учёта</h3>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <StatPill label="Налоговый режим" value="Упрощёнка · 3%" hint="ФНО 910.00" />
+          <StatPill label="Признание прибыли" value="По периоду расхода" hint="cash-basis" />
+          <StatPill label="Всего операций" value={String(ops.length)} hint="в базе" />
+        </div>
+        <p className="mt-3 text-xs text-slate-500">Настройки режима, статей и счетов конфигурируются под организацию. В расчёт прибыли идут только операции со статусом «Проведён».</p>
+      </section>
+    </div>
+  );
+}
+
+// ── Вкладка «История»: единая лента фактических операций и решений по заявкам.
+function AcctHistoryTab({ ops = [], requests = [], data }: { ops?: AcctOp[]; requests?: any[]; data: AcctOverview }) {
+  const catName = (id: string | null) => data.categories.find((c) => c.id === id)?.name || "Без статьи";
+  const accName = (id: string | null) => data.accounts.find((a) => a.id === id)?.name || "—";
+  const isRet = (o: AcctOp) => o.type === "return" || o.type === "refund";
+
+  type Ev = { ts: number; date: string; kind: "op" | "req"; title: string; sub: string; amount: number; sign: "+" | "−"; tone: "emerald" | "rose" | "slate"; tag: string };
+  const events: Ev[] = [];
+  for (const o of ops) {
+    const ret = isRet(o);
+    events.push({
+      ts: new Date(o.date).getTime(), date: o.date, kind: "op",
+      title: `${ret ? "Возврат" : o.type === "income" ? "Доход" : "Расход"} · ${catName(o.categoryId)}`,
+      sub: `${accName(o.accountId)}${o.counterparty ? ` · ${o.counterparty}` : ""}${o.description ? ` · ${o.description}` : ""}`,
+      amount: o.amount, sign: ret || o.type === "expense" ? "−" : "+",
+      tone: ret ? "slate" : o.type === "income" ? "emerald" : "rose",
+      tag: ret ? "Возврат" : o.status === "planned" ? "Черновик" : o.type === "income" ? "Поступило" : "Проведён",
+    });
+  }
+  for (const r of requests.filter((r) => r.status !== "pending")) {
+    const approved = r.status === "approved";
+    events.push({
+      ts: new Date(r.decidedAt || r.createdAt).getTime(), date: r.decidedAt || r.createdAt, kind: "req",
+      title: `Заявка ${approved ? "одобрена" : "отклонена"} · ${r.description || "без описания"}`,
+      sub: `${r.requestedByName || "Управляющий"}${r.decidedBy ? ` → ${r.decidedBy}` : ""}${r.decisionComment ? ` · ${r.decisionComment}` : ""}`,
+      amount: Number(r.amount) || 0, sign: "−", tone: approved ? "emerald" : "slate",
+      tag: approved ? "Одобрено" : "Отклонено",
+    });
+  }
+  events.sort((a, b) => b.ts - a.ts);
+
+  return (
+    <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+      <div className="flex items-center justify-between">
+        <h3 className="font-black text-white">История операций и решений</h3>
+        <span className="text-[11px] text-slate-500">{events.length} событ.</span>
+      </div>
+      {events.length === 0 ? (
+        <p className="mt-4 text-sm text-slate-500">Событий пока нет.</p>
+      ) : (
+        <div className="mt-4 space-y-2">
+          {events.map((e, i) => (
+            <div key={i} className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-[#161616] p-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${e.tone === "emerald" ? "bg-emerald-500/15 text-emerald-400" : e.tone === "rose" ? "bg-rose-500/15 text-rose-400" : "bg-slate-500/15 text-slate-300"}`}>
+                  {e.kind === "req" ? <Send className="h-4 w-4" /> : e.sign === "+" ? <ArrowUpRight className="h-4 w-4" /> : <ArrowDownRight className="h-4 w-4" />}
+                </div>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-bold text-white">{e.title}</p>
+                  <p className="truncate text-[11px] text-slate-500">{new Date(e.date).toLocaleDateString("ru-RU")} · {e.sub}</p>
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <span className="rounded-lg bg-white/5 px-2 py-1 text-[10px] font-bold text-slate-300">{e.tag}</span>
+                <span className={`text-sm font-black ${e.tone === "emerald" ? "text-emerald-400" : e.tone === "rose" ? "text-rose-400" : "text-slate-300"}`}>{e.sign}{money(e.amount)}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -7376,9 +7855,12 @@ function MeetingModal({ meeting, jhdr, hdr, onClose, onSaved, setError }: {
   );
 }
 
+const PLAN_MONTHS_FULL = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+
 function PlanningView() {
   const [tab, setTab] = useState<"plan" | "fact" | "planfact" | "daily" | "ai" | "motivation">("plan");
-  const [period, setPeriod] = useState("2026-06");
+  const [period, setPeriod] = useState("2026-07");
+  const [created, setCreated] = useState(false);
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -7423,33 +7905,38 @@ function PlanningView() {
     { id: "planfact", label: "План / Факт", icon: BarChart3 },
     { id: "daily", label: "Ежедневный отчёт", icon: ClipboardList },
     { id: "ai", label: "AI Аналитика", icon: Sparkles },
-    { id: "motivation", label: "Мотивация", icon: Trophy },
+    { id: "motivation", label: "Настройки мотивации", icon: Trophy },
   ];
 
+  const [yy, mm] = period.split("-");
+  const setMonth = (m: string) => setPeriod(`${yy}-${m}`);
+  const setYear = (y: string) => setPeriod(`${y}-${mm}`);
+  const selCls = "rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-bold text-white focus:border-[#C5A059]/40 focus:outline-none";
+
   return (
-    <OwnerScreen title="Планирование (БДР)" subtitle="Бюджет доходов и расходов · контроль плана · мотивация · прогнозы по всей сети. План доходов считается из абонементов по группам, факт тянется из CRM (поступления) и Бухгалтерии (расходы).">
+    <OwnerScreen title="Планирование (БДР)" subtitle="Бюджет доходов и расходов · контроль плана · мотивация · прогнозы по всей сети">
       {error && <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">Демо-режим: {error.length > 120 ? "сервер недоступен, показаны демонстрационные данные." : error}</div>}
 
-      {/* Период + сводка */}
-      <section className="rounded-[1.75rem] border border-white/10 bg-gradient-to-br from-[#141414] to-black p-5">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <h3 className="text-sm font-black uppercase tracking-wider text-white">Бюджет на период</h3>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {PLAN_PERIODS.map((p) => (
-              <button key={p} onClick={() => setPeriod(p)}
-                className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${period === p ? "bg-[#C5A059] text-black" : "border border-white/10 bg-white/[0.04] text-slate-300 hover:border-[#C5A059]/40"}`}>
-                {planMonthLabel(p)}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <StatPill label="Плановая выручка" value={data ? money(data.plan.plannedRevenue) : "—"} />
-          <StatPill label="Плановые расходы" value={data ? money(data.plan.plannedExpense) : "—"} tone="rose" />
-          <StatPill label="Плановая прибыль" value={data ? money(data.plan.plannedProfit) : "—"} tone="emerald" />
-          <StatPill label="Рентабельность" value={data ? `${data.plan.margin}%` : "—"} hint={data ? `факт: выполнено ${data.fact.donePct}%` : undefined} />
-        </div>
-      </section>
+      {/* Панель управления периодом */}
+      <div className="flex flex-wrap items-center gap-2">
+        <select value={mm} onChange={(e) => setMonth(e.target.value)} className={selCls}>
+          {PLAN_MONTHS_FULL.map((label, i) => (
+            <option key={i} value={String(i + 1).padStart(2, "0")}>{label}</option>
+          ))}
+        </select>
+        <select value={yy} onChange={(e) => setYear(e.target.value)} className={selCls}>
+          {["2025", "2026", "2027"].map((y) => <option key={y} value={y}>{y}</option>)}
+        </select>
+        <span className={`rounded-xl border px-3 py-2 text-xs font-bold ${created ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-white/10 bg-white/[0.04] text-slate-400"}`}>
+          {created ? "БДР создан" : "БДР не создан"}
+        </span>
+        <button onClick={() => setCreated(true)} className="inline-flex items-center gap-1.5 rounded-xl bg-[#C5A059] px-4 py-2 text-xs font-black text-black transition hover:brightness-110">
+          <Plus className="h-4 w-4" /> Создать БДР
+        </button>
+        <button className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-bold text-slate-300 hover:border-[#C5A059]/40">
+          <History className="h-4 w-4" /> История
+        </button>
+      </div>
 
       {/* Под-вкладки */}
       <div className="flex flex-wrap items-center gap-1.5">
@@ -7465,7 +7952,7 @@ function PlanningView() {
 
       {data && !loading && (
         <>
-          {tab === "plan" && <PlanTab data={data} busy={busy} onSave={saveBudget} />}
+          {tab === "plan" && <PlanTab data={data} period={period} busy={busy} onSave={saveBudget} />}
           {tab === "fact" && <PlanFactRevenueTab data={data} />}
           {tab === "planfact" && <PlanVsFactTab data={data} />}
           {tab === "daily" && <PlanDailyTab data={data} busy={busy} onAdd={addDaily} />}
@@ -7477,108 +7964,325 @@ function PlanningView() {
   );
 }
 
-// План БДР: создание на основе, доходы по группам, расходы, воронка.
-function PlanTab({ data, busy, onSave }: any) {
-  const [rev, setRev] = useState<any[]>(data.plan.revenueLines);
-  const [exp, setExp] = useState<any[]>(data.plan.expenseLines);
-  useEffect(() => { setRev(data.plan.revenueLines); setExp(data.plan.expenseLines); }, [data]);
-  const dirty = JSON.stringify(rev) !== JSON.stringify(data.plan.revenueLines) || JSON.stringify(exp) !== JSON.stringify(data.plan.expenseLines);
-  const revTotal = rev.reduce((s, r) => s + (Number(r.planned) || 0), 0);
-  const expTotal = exp.reduce((s, e) => s + (Number(e.planned) || 0), 0);
+// План БДР (по прототипу): общие показатели, план на основе, доходы по группам
+// (филиал → залы → группы), расходы с раскрытием ЗП/бонусов, воронка продаж.
+function PlanTab({ data, period, busy, onSave }: any) {
+  const d = data.detailed || {};
+  const clone = (x: any) => JSON.parse(JSON.stringify(x || []));
+  const [rooms, setRooms] = useState<any[]>(() => clone(d.rooms));
+  const [expenses, setExpenses] = useState<any[]>(() => clone(d.expenses));
+  const [neededSales, setNeededSales] = useState<number>(d.funnel?.neededSales ?? 20);
+  const [basis, setBasis] = useState<string>("prev_month");
+  const [openRooms, setOpenRooms] = useState<Record<number, boolean>>(() => Object.fromEntries((d.rooms || []).map((_: any, i: number) => [i, true])));
+  const [openExp, setOpenExp] = useState<Record<string, boolean>>({});
+  const [openIncome, setOpenIncome] = useState(true);
+  const [openExpenses, setOpenExpenses] = useState(true);
+  const [openFunnel, setOpenFunnel] = useState(true);
+  const [branchFilter, setBranchFilter] = useState("all");
 
-  const basisChips: [string, number, string][] = [
-    ["Прошлый месяц", data.basis.prevMonth, "prev_month"],
-    ["Прошлый год", data.basis.prevYear, "prev_year"],
-    ["Среднее за 6 мес", data.basis.avg6, "avg"],
+  useEffect(() => {
+    setRooms(clone(d.rooms)); setExpenses(clone(d.expenses));
+    setNeededSales(d.funnel?.neededSales ?? 20);
+    setOpenRooms(Object.fromEntries((d.rooms || []).map((_: any, i: number) => [i, true])));
+    /* eslint-disable-next-line */
+  }, [data]);
+
+  const numCls = "rounded-lg border border-white/10 bg-black/40 px-2 py-1 text-center text-sm text-white focus:border-[#C5A059]/40 focus:outline-none";
+  const mln = (v: number) => `${(v / 1_000_000).toFixed(1).replace(".", ",")} млн ₸`;
+
+  // ---- Живой пересчёт ----
+  const roomStudents = (r: any) => r.groups.reduce((s: number, g: any) => s + (Number(g.permanent) || 0) + (Number(g.new) || 0), 0);
+  const roomTotal = (r: any) => r.groups.reduce((s: number, g: any) => s + (Number(g.planned) || 0), 0);
+  const revenue = rooms.reduce((s, r) => s + roomTotal(r), 0);
+  const studentsCount = rooms.reduce((s, r) => s + roomStudents(r), 0);
+  const groupsCount = rooms.reduce((s, r) => s + r.groups.length, 0);
+  const capacityTotal = rooms.reduce((s, r) => s + r.groups.reduce((a: number, g: any) => a + (Number(g.permanent) || 0) + (Number(g.new) || 0) + (Number(g.free) || 0), 0), 0);
+  const fillPct = capacityTotal ? Math.round((studentsCount / capacityTotal) * 100) : 0;
+
+  const expSum = (e: any) => e.children ? e.children.reduce((s: number, c: any) => s + (Number(c.planned) || 0), 0) : (Number(e.planned) || 0);
+  const expense = expenses.reduce((s, e) => s + expSum(e), 0);
+  const profit = revenue - expense;
+  const margin = revenue ? Math.round((profit / revenue) * 100) : 0;
+
+  const allGroups = rooms.flatMap((r) => r.groups);
+  const isInd = (n: string) => /индивид/i.test(n);
+  const isMini = (n: string) => /мини/i.test(n);
+  const individual = allGroups.filter((g) => isInd(g.name)).reduce((s, g) => s + (Number(g.planned) || 0), 0);
+  const mini = allGroups.filter((g) => !isInd(g.name) && isMini(g.name)).reduce((s, g) => s + (Number(g.planned) || 0), 0);
+  const groupRev = revenue - individual - mini;
+  const newRev = allGroups.reduce((s, g) => s + (Number(g.check) || 0) * (Number(g.new) || 0), 0);
+  const permRev = revenue - newRev;
+
+  const trialConv = d.funnel?.trialConv ?? 0.5, recordConv = d.funnel?.recordConv ?? 0.7, leadConv = d.funnel?.leadConv ?? 0.55;
+  const trials = Math.ceil(neededSales / trialConv);
+  const records = Math.ceil(trials / recordConv);
+  const leads = Math.ceil(records / leadConv);
+
+  // ---- Мутаторы ----
+  const updGroup = (ri: number, gi: number, key: string, val: any) =>
+    setRooms((rs) => rs.map((r, i) => i !== ri ? r : { ...r, groups: r.groups.map((g: any, j: number) => j !== gi ? g : { ...g, [key]: val }) }));
+  const delGroup = (ri: number, gi: number) =>
+    setRooms((rs) => rs.map((r, i) => i !== ri ? r : { ...r, groups: r.groups.filter((_: any, j: number) => j !== gi) }));
+  const updExp = (key: string, val: number) => setExpenses((es) => es.map((e) => e.key !== key ? e : { ...e, planned: val }));
+  const updChild = (key: string, ci: number, val: number) => setExpenses((es) => es.map((e) => e.key !== key ? e : { ...e, children: e.children.map((c: any, j: number) => j !== ci ? c : { ...c, planned: val }) }));
+  const addChild = (key: string) => setExpenses((es) => es.map((e) => e.key !== key ? e : { ...e, children: [...(e.children || []), { label: "Новая строка", planned: 0 }] }));
+  const delExp = (key: string) => setExpenses((es) => es.filter((e) => e.key !== key));
+
+  // ---- План на основе ----
+  const [py, pm] = (period || "2026-07").split("-");
+  const prevMi = (Number(pm) + 10) % 12;
+  const prevMonthLabel = `${PLAN_MONTHS_FULL[prevMi]} ${prevMi === 11 ? Number(py) - 1 : py}`;
+  const prevYearLabel = `${PLAN_MONTHS_FULL[Number(pm) - 1]} ${Number(py) - 1}`;
+  const basisCards = [
+    { src: "prev_month", title: "Прошлый месяц", sub: `${prevMonthLabel}: ${mln(data.basis.prevMonth)}` },
+    { src: "prev_year", title: "Прошлый год", sub: `${prevYearLabel}: ${mln(data.basis.prevYear)}` },
+    { src: "avg", title: "Среднее значение", sub: `6 мес: ${mln(data.basis.avg6)}` },
+    { src: "manual", title: "Вручную", sub: "С нуля" },
   ];
-  const applyBasis = (target: number, source: string) => {
-    const factor = revTotal ? target / revTotal : 1;
-    setRev(rev.map((r) => ({ ...r, planned: Math.round(r.planned * factor) })));
-    onSave({ revenueLines: rev.map((r) => ({ ...r, planned: Math.round(r.planned * factor) })), expenseLines: exp, source });
-  };
+
+  const Chevron = ({ open }: { open: boolean }) => open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />;
 
   return (
     <div className="space-y-5">
+      {/* Общие показатели */}
+      <section className="rounded-[1.5rem] border border-white/10 bg-[#141414] p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 className="text-sm font-black text-white">Общие показатели · План БДР · {PLAN_MONTHS_FULL[Number(pm) - 1]} {py}</h3>
+          <select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}
+            className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-bold text-white focus:border-[#C5A059]/40 focus:outline-none">
+            <option value="all">Вся сеть</option>
+            {(d.branches || []).map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+        </div>
+        <div className="mt-4 grid gap-4 border-b border-white/10 pb-4 sm:grid-cols-3">
+          <div><p className="text-[11px] font-bold text-slate-400">Выручка</p><p className="mt-1 text-2xl font-black text-white">{money(revenue)}</p></div>
+          <div><p className="text-[11px] font-bold text-slate-400">Расходы</p><p className="mt-1 text-2xl font-black text-white">{money(expense)}</p></div>
+          <div><p className="text-[11px] font-bold text-slate-400">Ожидаемая прибыль · {margin}%</p><p className="mt-1 text-2xl font-black text-white">{money(profit)}</p></div>
+        </div>
+        <div className="mt-4 grid gap-6 sm:grid-cols-2">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">По типу занятий</p>
+            <div className="mt-2 space-y-1.5">
+              <div className="flex items-center justify-between text-sm"><span className="text-slate-300">Групповые абонементы</span><span className="font-bold text-white">{money(groupRev)}</span></div>
+              <div className="flex items-center justify-between text-sm"><span className="text-slate-300">Мини-группы</span><span className="font-bold text-white">{money(mini)}</span></div>
+              <div className="flex items-center justify-between text-sm"><span className="text-slate-300">Индивидуальные</span><span className="font-bold text-white">{money(individual)}</span></div>
+            </div>
+          </div>
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">По аудитории</p>
+            <div className="mt-2 space-y-1.5">
+              <div className="flex items-center justify-between text-sm"><span className="text-slate-300">Постоянные ученики</span><span className="font-bold text-white">{money(permRev)}</span></div>
+              <div className="flex items-center justify-between text-sm"><span className="text-slate-300">Новые ученики</span><span className="font-bold text-white">{money(newRev)}</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Создать план на основе */}
-      <section className="rounded-[1.5rem] border border-white/10 bg-white/[0.02] p-5">
-        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Создать план на основе · CRM подставит цифры, любую сумму можно изменить вручную</p>
-        <div className="mt-3 grid gap-2 sm:grid-cols-3">
-          {basisChips.map(([label, val, src]) => (
-            <button key={src} disabled={busy} onClick={() => applyBasis(val, src)}
-              className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-left transition hover:border-[#C5A059]/40 disabled:opacity-50">
-              <p className="text-[11px] font-bold text-slate-400">{label}</p>
-              <p className="mt-1 text-lg font-black text-[#C5A059]">{(val / 1_000_000).toFixed(1)} млн ₸</p>
+      <section className="rounded-[1.5rem] border border-white/10 bg-[#141414] p-5">
+        <h4 className="text-sm font-black text-white">Создать план на основе</h4>
+        <p className="mt-1 text-xs text-slate-400">CRM автоматически подставит цифры. Любую сумму можно изменить вручную.</p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          {basisCards.map((c) => (
+            <button key={c.src} disabled={busy} onClick={() => setBasis(c.src)}
+              className={`rounded-2xl border p-4 text-left transition disabled:opacity-50 ${basis === c.src ? "border-[#C5A059] bg-[#C5A059]/10" : "border-white/10 bg-white/[0.03] hover:border-[#C5A059]/40"}`}>
+              <p className="text-sm font-black text-white">{c.title}</p>
+              <p className="mt-1 text-xs text-slate-400">{c.sub}</p>
             </button>
           ))}
         </div>
       </section>
 
-      {/* Доходы по группам */}
-      <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.02]">
-        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-          <h4 className="text-sm font-black text-white">Доходы по группам / направлениям</h4>
-          <button onClick={() => setRev([...rev, { direction: "Новое направление", planned: 0, mode: "manual" }])} className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-[11px] font-bold text-slate-300 hover:text-white"><Plus className="h-3.5 w-3.5" /> Направление</button>
-        </div>
-        <table className="w-full text-left text-sm">
-          <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Направление</th><th className="px-4 py-2 text-right font-bold">План, ₸</th><th className="px-4 py-2 font-bold">Режим</th><th className="px-2 py-2"></th></tr></thead>
-          <tbody>
-            {rev.map((r, i) => (
-              <tr key={i} className="border-t border-white/5">
-                <td className="px-4 py-2"><input value={r.direction} onChange={(e) => setRev(rev.map((x, j) => j === i ? { ...x, direction: e.target.value } : x))} className="w-full rounded-lg border border-transparent bg-transparent px-1 py-1 text-white hover:border-white/10 focus:border-[#C5A059]/40 focus:outline-none" /></td>
-                <td className="px-4 py-2 text-right"><input type="number" value={r.planned} onChange={(e) => setRev(rev.map((x, j) => j === i ? { ...x, planned: Number(e.target.value) } : x))} className="w-32 rounded-lg border border-white/10 bg-black/40 px-2 py-1 text-right text-white" /></td>
-                <td className="px-4 py-2"><span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${r.mode === "auto" ? "bg-emerald-500/15 text-emerald-300" : "bg-white/10 text-slate-300"}`}>{r.mode === "auto" ? "авто из абонементов" : "вручную"}</span></td>
-                <td className="px-2 py-2"><button onClick={() => setRev(rev.filter((_, j) => j !== i))} className="text-slate-500 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button></td>
-              </tr>
+      {/* ПЛАНИРОВАНИЕ ДОХОДОВ — детально по группам */}
+      <div>
+        <button onClick={() => setOpenIncome((v) => !v)} className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-[#C5A059]">
+          <Chevron open={openIncome} /> Планирование доходов · детально по группам
+        </button>
+        {openIncome && (
+          <section className="mt-3 overflow-hidden rounded-[1.5rem] border border-white/10 bg-[#141414]">
+            <div className="flex flex-wrap items-center gap-3 border-b border-white/10 px-4 py-3">
+              <h4 className="text-base font-black text-white">Выручка по группам</h4>
+              <div className="ml-auto flex flex-wrap items-center gap-2">
+                <label className="flex items-center gap-1.5 text-xs text-slate-400">Филиал:
+                  <select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)} className="rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1 text-xs font-bold text-white focus:outline-none">
+                    <option value="all">{d.branchName || "Все"}</option>
+                    {(d.branches || []).map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  </select>
+                </label>
+                <button className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-[11px] font-bold text-slate-300 hover:text-white"><Plus className="h-3.5 w-3.5" /> Открыть направление</button>
+                <button className="inline-flex items-center gap-1 rounded-lg bg-[#C5A059] px-2.5 py-1 text-[11px] font-black text-black hover:brightness-110"><Sparkles className="h-3.5 w-3.5" /> Рассчитать рекомендации</button>
+                <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/15 px-2.5 py-1 text-[11px] font-bold text-emerald-300"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> авто из абонементов</span>
+              </div>
+            </div>
+
+            {/* Свод по филиалу */}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-[#C5A059]/10 px-4 py-3">
+              <div>
+                <p className="text-sm font-black text-white">{d.branchName || "Филиал"}</p>
+                <p className="text-xs text-slate-400">{groupsCount} групп · {studentsCount} учеников · заполненность {fillPct}%</p>
+              </div>
+              <div className="flex gap-6 text-right">
+                <div><p className="text-[10px] font-bold uppercase text-slate-500">Выручка</p><p className="text-sm font-black text-white">{money(revenue)}</p></div>
+                <div><p className="text-[10px] font-bold uppercase text-slate-500">Расходы</p><p className="text-sm font-black text-rose-400">{money(expense)}</p></div>
+                <div><p className="text-[10px] font-bold uppercase text-slate-500">Прибыль</p><p className="text-sm font-black text-[#C5A059]">{money(profit)}</p></div>
+              </div>
+            </div>
+
+            {/* Залы */}
+            {rooms.map((r, ri) => (
+              <div key={ri} className="border-b border-white/10 last:border-0">
+                <button onClick={() => setOpenRooms((o) => ({ ...o, [ri]: !o[ri] }))}
+                  className="flex w-full items-center justify-between bg-white/[0.03] px-4 py-2.5 text-left">
+                  <span className="flex items-center gap-1.5 text-sm font-black text-white"><Chevron open={openRooms[ri]} /> {r.name} · {r.groups.length} гр · {roomStudents(r)} уч</span>
+                  <span className="text-sm font-black text-white">{money(roomTotal(r))}</span>
+                </button>
+                {openRooms[ri] && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[880px] text-left text-sm">
+                      <thead className="text-[10px] uppercase tracking-wider text-slate-500">
+                        <tr>
+                          <th className="px-4 py-2 font-bold">Группа</th>
+                          <th className="px-2 py-2 font-bold">Педагог</th>
+                          <th className="px-2 py-2 text-center font-bold">Чек</th>
+                          <th className="px-2 py-2 text-center font-bold">Пост</th>
+                          <th className="px-2 py-2 text-center font-bold">Нов</th>
+                          <th className="px-2 py-2 text-center font-bold">Всего</th>
+                          <th className="px-2 py-2 text-center font-bold">Своб</th>
+                          <th className="px-2 py-2 text-right font-bold">Факт пр. мес.</th>
+                          <th className="px-2 py-2 text-right font-bold">Реком.</th>
+                          <th className="px-2 py-2 text-right font-bold">План</th>
+                          <th className="px-2 py-2"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {r.groups.map((gr: any, gi: number) => (
+                          <tr key={gi} className="border-t border-white/5">
+                            <td className="px-4 py-2 font-bold text-white">{gr.name}</td>
+                            <td className="px-2 py-2 text-slate-400">{gr.teacher || "—"}</td>
+                            <td className="px-2 py-2 text-center"><input type="number" value={gr.check} onChange={(e) => updGroup(ri, gi, "check", Number(e.target.value))} className={`${numCls} w-20`} /></td>
+                            <td className="px-2 py-2 text-center"><input type="number" value={gr.permanent} onChange={(e) => updGroup(ri, gi, "permanent", Number(e.target.value))} className={`${numCls} w-14`} /></td>
+                            <td className="px-2 py-2 text-center"><input type="number" value={gr.new} onChange={(e) => updGroup(ri, gi, "new", Number(e.target.value))} className={`${numCls} w-14`} /></td>
+                            <td className={`px-2 py-2 text-center font-black ${Number(gr.free) <= 0 ? "text-rose-400" : "text-white"}`}>{(Number(gr.permanent) || 0) + (Number(gr.new) || 0)}</td>
+                            <td className="px-2 py-2 text-center text-slate-400">{gr.free}</td>
+                            <td className="px-2 py-2 text-right text-slate-400">{Number(gr.factPrev).toLocaleString("ru-RU")}</td>
+                            <td className="px-2 py-2 text-right font-bold text-[#C5A059]">{Number(gr.recommended).toLocaleString("ru-RU")}</td>
+                            <td className="px-2 py-2 text-right"><input type="number" value={gr.planned} onChange={(e) => updGroup(ri, gi, "planned", Number(e.target.value))} className={`${numCls} w-24 text-right`} /></td>
+                            <td className="px-2 py-2 text-center"><button onClick={() => delGroup(ri, gi)} className="text-slate-500 hover:text-rose-400"><X className="h-4 w-4" /></button></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             ))}
-            <tr className="border-t border-white/10 bg-white/[0.03]"><td className="px-4 py-2 font-black text-white">Итого выручка</td><td className="px-4 py-2 text-right font-black text-[#C5A059]">{money(revTotal)}</td><td colSpan={2}></td></tr>
-          </tbody>
-        </table>
-      </section>
+          </section>
+        )}
+      </div>
 
-      {/* Расходы */}
-      <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.02]">
-        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-          <h4 className="text-sm font-black text-white">Расходы по категориям</h4>
-          <button onClick={() => setExp([...exp, { category: "Новая категория", planned: 0, mode: "manual" }])} className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-[11px] font-bold text-slate-300 hover:text-white"><Plus className="h-3.5 w-3.5" /> Категория</button>
-        </div>
-        <table className="w-full text-left text-sm">
-          <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Категория</th><th className="px-4 py-2 text-right font-bold">План, ₸</th><th className="px-4 py-2 font-bold">Режим</th><th className="px-2 py-2"></th></tr></thead>
-          <tbody>
-            {exp.map((r, i) => (
-              <tr key={i} className="border-t border-white/5">
-                <td className="px-4 py-2"><input value={r.category} onChange={(e) => setExp(exp.map((x, j) => j === i ? { ...x, category: e.target.value } : x))} className="w-full rounded-lg border border-transparent bg-transparent px-1 py-1 text-white hover:border-white/10 focus:border-[#C5A059]/40 focus:outline-none" /></td>
-                <td className="px-4 py-2 text-right"><input type="number" value={r.planned} onChange={(e) => setExp(exp.map((x, j) => j === i ? { ...x, planned: Number(e.target.value) } : x))} className="w-32 rounded-lg border border-white/10 bg-black/40 px-2 py-1 text-right text-white" /></td>
-                <td className="px-4 py-2"><span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${r.mode === "auto" ? "bg-emerald-500/15 text-emerald-300" : "bg-white/10 text-slate-300"}`}>{r.mode === "auto" ? "авто (ЗП из карточек)" : "вручную"}</span></td>
-                <td className="px-2 py-2"><button onClick={() => setExp(exp.filter((_, j) => j !== i))} className="text-slate-500 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button></td>
-              </tr>
-            ))}
-            <tr className="border-t border-white/10 bg-white/[0.03]"><td className="px-4 py-2 font-black text-white">Итого расходы</td><td className="px-4 py-2 text-right font-black text-rose-300">{money(expTotal)}</td><td colSpan={2}></td></tr>
-          </tbody>
-        </table>
-      </section>
+      {/* ПЛАНИРОВАНИЕ РАСХОДОВ */}
+      <div>
+        <button onClick={() => setOpenExpenses((v) => !v)} className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-[#C5A059]">
+          <Chevron open={openExpenses} /> Планирование расходов · ЗП и бонусы раскрываются по людям
+        </button>
+        {openExpenses && (
+          <section className="mt-3 overflow-hidden rounded-[1.5rem] border border-white/10 bg-[#141414]">
+            <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+              <h4 className="text-base font-black text-white">Расходы</h4>
+              <button onClick={() => setExpenses((es) => [...es, { key: `cat-${Date.now()}`, label: "Новая категория", planned: 0, mode: "manual" }])}
+                className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-[11px] font-bold text-slate-300 hover:text-white"><Plus className="h-3.5 w-3.5" /> Категория</button>
+            </div>
+            <table className="w-full text-left text-sm">
+              <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Категория</th><th className="px-4 py-2 text-right font-bold">План, ₸</th><th className="px-4 py-2 font-bold">Режим</th><th className="px-2 py-2"></th></tr></thead>
+              <tbody>
+                {expenses.map((e) => (
+                  <React.Fragment key={e.key}>
+                    <tr className="border-t border-white/5">
+                      <td className="px-4 py-2">
+                        {e.children ? (
+                          <button onClick={() => setOpenExp((o) => ({ ...o, [e.key]: !o[e.key] }))} className="flex items-center gap-1.5 font-black text-white">
+                            <Chevron open={!!openExp[e.key]} /> {e.label}
+                          </button>
+                        ) : <span className="font-black text-white">{e.label}</span>}
+                      </td>
+                      <td className="px-4 py-2 text-right">
+                        {e.children ? <span className="font-black text-white">{Number(expSum(e)).toLocaleString("ru-RU")}</span>
+                          : <input type="number" value={e.planned} onChange={(ev) => updExp(e.key, Number(ev.target.value))} className={`${numCls} w-32 text-right`} />}
+                      </td>
+                      <td className="px-4 py-2">{e.mode === "auto" ? <span className="rounded-md bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-300">авто</span> : <span className="rounded-md bg-white/10 px-2 py-0.5 text-[10px] font-bold text-slate-300">вручную</span>}</td>
+                      <td className="px-2 py-2"><button onClick={() => delExp(e.key)} className="text-slate-500 hover:text-rose-400"><X className="h-4 w-4" /></button></td>
+                    </tr>
+                    {e.children && openExp[e.key] && (
+                      <>
+                        {e.children.map((c: any, ci: number) => (
+                          <tr key={ci} className="border-t border-white/5 bg-white/[0.02]">
+                            <td className="py-1.5 pl-10 pr-4 text-slate-400">{c.label}</td>
+                            <td className="px-4 py-1.5 text-right"><input type="number" value={c.planned} onChange={(ev) => updChild(e.key, ci, Number(ev.target.value))} className={`${numCls} w-32 text-right`} /></td>
+                            <td colSpan={2}></td>
+                          </tr>
+                        ))}
+                        <tr className="border-t border-white/5 bg-white/[0.02]">
+                          <td className="py-1.5 pl-10 pr-4" colSpan={4}>
+                            <button onClick={() => addChild(e.key)} className="text-[11px] font-bold text-[#C5A059] hover:brightness-110">+ добавить строку</button>
+                          </td>
+                        </tr>
+                      </>
+                    )}
+                  </React.Fragment>
+                ))}
+                <tr className="border-t border-white/10 bg-white/[0.03]"><td className="px-4 py-2 font-black text-white">Итого расходы</td><td className="px-4 py-2 text-right font-black text-rose-400">{money(expense)}</td><td colSpan={2}></td></tr>
+              </tbody>
+            </table>
+          </section>
+        )}
+      </div>
 
-      {/* Итог + сохранить */}
-      <section className="grid gap-3 sm:grid-cols-3">
-        <StatPill label="Плановая прибыль" value={money(revTotal - expTotal)} tone="emerald" />
-        <StatPill label="Рентабельность" value={`${revTotal ? Math.round(((revTotal - expTotal) / revTotal) * 100) : 0}%`} />
-        <div className="flex items-end justify-end">
-          <button disabled={busy || !dirty} onClick={() => onSave({ revenueLines: rev, expenseLines: exp, source: "manual" })}
-            className="w-full rounded-xl bg-[#C5A059] px-4 py-3 text-xs font-black text-black transition hover:brightness-110 disabled:opacity-40">
-            {dirty ? "Сохранить БДР" : "Сохранено"}
-          </button>
-        </div>
-      </section>
+      {/* ВОРОНКА ПРОДАЖ */}
+      <div>
+        <button onClick={() => setOpenFunnel((v) => !v)} className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-[#C5A059]">
+          <Chevron open={openFunnel} /> Воронка продаж · сколько действий нужно для плана
+        </button>
+        {openFunnel && (
+          <section className="mt-3 rounded-[1.5rem] border border-white/10 bg-[#141414] p-5">
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="font-bold text-slate-300">Нужно новых продаж:</span>
+              <input type="number" value={neededSales} onChange={(e) => setNeededSales(Math.max(0, Number(e.target.value)))} className={`${numCls} w-20`} />
+              <span className="text-xs text-slate-500">— система посчитает пробные, записи и лиды по конверсиям</span>
+            </div>
+            <div className="mt-4 space-y-1">
+              {[
+                { label: "Нужно новых продаж", value: neededSales, conv: `конверсия пробный→покупка ${Math.round(trialConv * 100)}%` },
+                { label: "Провести пробных уроков", value: trials, conv: `запись→приход ${Math.round(recordConv * 100)}%` },
+                { label: "Записать на пробный", value: records, conv: `лид→запись ${Math.round(leadConv * 100)}%` },
+                { label: "Нужно лидов", value: leads, conv: null },
+              ].map((row, i) => (
+                <React.Fragment key={i}>
+                  <div className="flex items-center justify-between rounded-xl bg-white/[0.03] px-4 py-3">
+                    <span className="text-sm font-bold text-white">{row.label}</span>
+                    <span className="text-xl font-black text-[#C5A059]">{row.value}</span>
+                  </div>
+                  {row.conv && <p className="py-0.5 text-center text-[11px] text-slate-500">↓ {row.conv}</p>}
+                </React.Fragment>
+              ))}
+            </div>
+          </section>
+        )}
+      </div>
 
-      {/* Воронка продаж */}
-      <section className="rounded-[1.5rem] border border-white/10 bg-white/[0.02] p-5">
-        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Воронка продаж · сколько действий нужно для плана</p>
-        <div className="mt-3 grid gap-3 sm:grid-cols-4">
-          <StatPill label="Нужно новых продаж" value={data.funnel.neededSales} />
-          <StatPill label="Записать на пробный" value={data.funnel.trials} tone="white" />
-          <StatPill label="Целевых записей" value={data.funnel.signups} tone="white" />
-          <StatPill label="Привлечь лидов" value={data.funnel.leads} tone="white" />
-        </div>
-        <p className="mt-3 text-xs text-slate-500">Расчёт от разницы план−факт по среднему чеку и демо-конверсиям (пробный→продажа 40%, лид→продажа 20%).</p>
+      {/* Итоговые карточки */}
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {[
+          { badge: null, value: money(revenue).replace(" ₸", ""), label: "Плановая выручка", cls: "text-white" },
+          { badge: "−", value: money(expense).replace(" ₸", ""), label: "Плановые расходы", cls: "text-white", badgeCls: "bg-rose-500/15 text-rose-400" },
+          { badge: "✓", value: money(profit).replace(" ₸", ""), label: "Плановая прибыль", cls: "text-emerald-400", badgeCls: "bg-emerald-500/15 text-emerald-400" },
+          { badge: "%", value: `${margin}%`, label: "Рентабельность", cls: "text-white", badgeCls: "bg-white/10 text-slate-400" },
+        ].map((c, i) => (
+          <div key={i} className="rounded-[1.25rem] border border-white/10 bg-[#141414] p-5">
+            {c.badge && <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg text-sm font-black ${c.badgeCls}`}>{c.badge}</span>}
+            <p className={`mt-2 text-2xl font-black ${c.cls}`}>{c.value}</p>
+            <p className="mt-1 text-xs text-slate-400">{c.label}</p>
+          </div>
+        ))}
       </section>
     </div>
   );
@@ -7594,7 +8298,7 @@ function PlanFactRevenueTab({ data }: any) {
         <StatPill label="Прибыль (факт)" value={money(data.fact.profit)} tone="emerald" />
         <StatPill label="Выполнение плана" value={`${data.fact.donePct}%`} />
       </div>
-      <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.02]">
+      <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-[#141414]">
         <div className="border-b border-white/10 px-4 py-3"><h4 className="text-sm font-black text-white">Поступления по направлениям</h4></div>
         <table className="w-full text-left text-sm">
           <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Направление</th><th className="px-4 py-2 text-right font-bold">План</th><th className="px-4 py-2 text-right font-bold">Факт</th><th className="px-4 py-2 text-right font-bold">Выполнение</th></tr></thead>
@@ -7622,7 +8326,7 @@ function PlanVsFactTab({ data }: any) {
   const chart = data.fact.incomeByDirection.map((r: any) => ({ name: r.direction, План: r.plan, Факт: r.fact }));
   return (
     <div className="space-y-5">
-      <section className="rounded-[1.5rem] border border-white/10 bg-white/[0.02] p-5">
+      <section className="rounded-[1.5rem] border border-white/10 bg-[#141414] p-5">
         <h4 className="text-sm font-black text-white">План vs Факт по направлениям</h4>
         <div className="mt-4 h-64">
           <ResponsiveContainer width="100%" height="100%">
@@ -7638,7 +8342,7 @@ function PlanVsFactTab({ data }: any) {
           </ResponsiveContainer>
         </div>
       </section>
-      <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.02]">
+      <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-[#141414]">
         <div className="border-b border-white/10 px-4 py-3"><h4 className="text-sm font-black text-white">Выполнение плана · по уровням групп</h4></div>
         <table className="w-full text-left text-sm">
           <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Уровень</th><th className="px-4 py-2 text-right font-bold">План</th><th className="px-4 py-2 text-right font-bold">Факт</th><th className="px-4 py-2 text-right font-bold">Отклонение</th><th className="px-4 py-2 text-right font-bold">Выполнение</th></tr></thead>
@@ -7666,7 +8370,7 @@ function PlanDailyTab({ data, busy, onAdd }: any) {
   const submit = () => { onAdd({ ...f, revenue: Number(f.revenue) || 0, trials: Number(f.trials) || 0, sales: Number(f.sales) || 0, author: "Владелец" }); set("revenue", ""); set("trials", ""); set("sales", ""); set("comment", ""); };
   return (
     <div className="space-y-5">
-      <section className="rounded-[1.5rem] border border-white/10 bg-white/[0.02] p-5">
+      <section className="rounded-[1.5rem] border border-white/10 bg-[#141414] p-5">
         <h4 className="text-sm font-black text-white">Добавить отчёт за день</h4>
         <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <ModalInput label="Дата" type="date" value={f.date} onChange={(v) => set("date", v)} />
@@ -7677,7 +8381,7 @@ function PlanDailyTab({ data, busy, onAdd }: any) {
           <ModalInput label="Комментарий" value={f.comment} onChange={(v) => set("comment", v)} full />
         </div>
       </section>
-      <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.02]">
+      <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-[#141414]">
         <table className="w-full text-left text-sm">
           <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Дата</th><th className="px-4 py-2 text-right font-bold">Выручка</th><th className="px-4 py-2 text-right font-bold">Пробных</th><th className="px-4 py-2 text-right font-bold">Продаж</th><th className="px-4 py-2 font-bold">Комментарий</th><th className="px-4 py-2 font-bold">Автор</th></tr></thead>
           <tbody>
@@ -7729,7 +8433,7 @@ function PlanMotivationTab({ data, busy, onSave }: any) {
   useEffect(() => { setRows(data.motivation); }, [data]);
   const dirty = JSON.stringify(rows) !== JSON.stringify(data.motivation);
   return (
-    <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.02]">
+    <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-[#141414]">
       <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
         <h4 className="text-sm font-black text-white">Настройки мотивации · пороги выполнения плана и бонусы</h4>
         <button onClick={() => setRows([...rows, { level: "Новый уровень", threshold: 0, bonus: "" }])} className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-[11px] font-bold text-slate-300 hover:text-white"><Plus className="h-3.5 w-3.5" /> Уровень</button>
@@ -7754,12 +8458,15 @@ function PlanMotivationTab({ data, busy, onSave }: any) {
   );
 }
 
-function OwnerScreen({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
+function OwnerScreen({ title, subtitle, children, eyebrow = "CEO Network Command", badge }: { title: string; subtitle: string; children: React.ReactNode; eyebrow?: string; badge?: React.ReactNode }) {
   return (
     <div className="space-y-5">
       <div>
-        <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-[#C5A059]">CEO Network Command</p>
-        <h1 className="mt-1.5 text-3xl font-extrabold leading-[1.1] tracking-tight text-white md:text-[38px]">{title}</h1>
+        <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-[#C5A059]">{eyebrow}</p>
+        <div className="mt-1.5 flex flex-wrap items-center gap-3">
+          <h1 className="text-3xl font-extrabold leading-[1.1] tracking-tight text-white md:text-[38px]">{title}</h1>
+          {badge}
+        </div>
         <p className="mt-2.5 max-w-3xl text-sm leading-relaxed text-slate-400">{subtitle}</p>
       </div>
       {children}
@@ -7767,13 +8474,29 @@ function OwnerScreen({ title, subtitle, children }: { title: string; subtitle: s
   );
 }
 
-function OwnerNavButton({ tab, active, onClick }: { key?: React.Key; tab: any; active: boolean; onClick: () => void }) {
+function OwnerNavButton({ tab, active, onClick, onOpenSettings }: { key?: React.Key; tab: any; active: boolean; onClick: () => void; onOpenSettings?: () => void }) {
   const Icon = tab.icon;
+  const accent = tab.accent || "#C5A059";
+  const label = tab.effectiveLabel || tab.label;
   return (
-    <button onClick={onClick} className={`flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left text-xs font-bold transition ${active ? "border border-[#C5A059]/25 bg-[#C5A059]/10 text-[#C5A059]" : "text-slate-400 hover:bg-white/5 hover:text-white"}`}>
-      <Icon className="h-4 w-4" />
-      <span>{tab.label}</span>
-    </button>
+    <div
+      className={`group flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-xs font-bold transition ${active ? "border border-[#C5A059]/25 bg-[#C5A059]/10" : "border border-transparent hover:bg-white/5"}`}
+    >
+      <button onClick={onClick} className="flex min-w-0 flex-1 items-center gap-3">
+        <Icon className="h-4 w-4 shrink-0" style={{ color: active ? accent : undefined }} />
+        <span className={`truncate ${active ? "" : "text-slate-400 group-hover:text-white"}`} style={{ color: active ? accent : undefined }}>{label}</span>
+      </button>
+      {onOpenSettings && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onOpenSettings(); }}
+          title="Настройки раздела"
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-slate-500 opacity-0 transition hover:bg-white/10 hover:text-[#C5A059] focus:opacity-100 group-hover:opacity-100"
+        >
+          <Settings className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -7782,7 +8505,7 @@ function OwnerMobileNav({ tab, active, onClick }: { key?: React.Key; tab: any; a
   return (
     <button onClick={onClick} className={`flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-2xl py-2 text-[9px] font-black uppercase ${active ? "text-[#C5A059]" : "text-slate-500"}`}>
       <Icon className="h-5 w-5" />
-      <span>{tab.short}</span>
+      <span className="max-w-full truncate px-1">{tab.short || tab.effectiveLabel || tab.label}</span>
     </button>
   );
 }

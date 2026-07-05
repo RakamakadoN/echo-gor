@@ -4987,6 +4987,190 @@ export function registerMvpApi(app: express.Express) {
     "Малыши": 2_700_000, "Выступления": 1_000_000, "Товары / форма": 600_000,
   };
 
+  // ---- Детальный План БДР (как в прототипе): филиал → залы → группы,
+  // расходы с раскрытием ЗП/бонусов по людям, воронка продаж. ----
+  type PlanGroupRow = {
+    name: string; teacher: string; check: number;
+    permanent: number; new: number; total: number; free: number;
+    factPrev: number; recommended: number; planned: number;
+  };
+  type PlanRoom = { name: string; groupsCount: number; studentsCount: number; total: number; groups: PlanGroupRow[] };
+  type PlanExpenseRow = { key: string; label: string; planned: number; mode: "auto" | "manual"; children?: { label: string; planned: number }[] };
+
+  const g = (name: string, teacher: string, check: number, perm: number, nw: number, free: number, factPrev: number, recommended: number, planned: number): PlanGroupRow =>
+    ({ name, teacher, check, permanent: perm, new: nw, total: perm + nw, free, factPrev, recommended, planned });
+
+  // Демо-данные один-в-один со скринами прототипа (филиал «Астана 203»).
+  const planDetailedMock = () => {
+    const rooms: PlanRoom[] = [
+      { name: "Зал №2", groupsCount: 4, studentsCount: 51, total: 991_330, groups: [
+        g("Ансамбль", "—", 17_176, 17, 0, 1, 292_904, 282_310, 291_992),
+        g("Мужская взрослая 17:00", "—", 21_900, 10, 0, 12, 209_310, 309_557, 219_000),
+        g("Мужская взрослая 18:30", "—", 20_143, 7, 0, 15, 143_220, 261_188, 141_001),
+        g("Младший ансамбль", "—", 19_961, 17, 0, 4, 351_547, 359_084, 339_337),
+      ] },
+      { name: "Зал №1", groupsCount: 17, studentsCount: 340, total: 6_648_051, groups: [
+        g("Мужская студия Сб Вс (Хамит)", "Хамит", 18_914, 28, 0, 0, 516_272, 492_261, 529_592),
+        g("Мужская начальный Вт Чт (Тимур)", "Тимур", 18_338, 19, 1, 3, 347_843, 370_275, 366_760),
+        g("Продолжающая группа Сб Вс (Тимур)", "Тимур", 20_444, 27, 0, 0, 509_733, 505_424, 551_988),
+        g("Взрослая продолжающая Сб Вс (Дэйси)", "Дэйси", 19_089, 15, 0, 5, 287_619, 318_897, 286_335),
+        g("Девичья Ср Пт (Дэйси)", "Дэйси", 19_550, 12, 3, 0, 278_193, 280_223, 293_250),
+        g("Девичья 10:15 сб/вс (Дэйси)", "Дэйси", 20_130, 27, 0, 0, 557_220, 518_002, 543_510),
+        g("Взрослая начальная Сб Вс (Мерей)", "Мерей", 20_174, 23, 0, 0, 475_489, 464_581, 464_002),
+        g("Взрослая продолжающая Сб Вс (Мерей)", "Мерей", 19_684, 19, 0, 3, 360_619, 372_559, 373_996),
+        g("Девичья 10:00 (Анжела)", "Анжела", 18_572, 22, 0, 3, 426_740, 425_060, 408_584),
+        g("Женская продолжающая Анжела", "—", 19_851, 37, 0, 0, 684_583, 670_438, 734_487),
+        g("Девичья 3-4 года (Анжела)", "Анжела", 20_273, 11, 0, 11, 229_731, 311_612, 223_003),
+        g("Женская студия Анжела", "—", 18_357, 14, 0, 3, 263_404, 279_937, 256_998),
+        g("Женская взрослая Анжела 19:30", "—", 18_559, 16, 1, 5, 312_256, 353_559, 315_503),
+        g("Грузинская группа", "—", 19_709, 11, 0, 0, 210_123, 208_831, 216_799),
+        g("Девичья продолжающая вт/чт (Анжела)", "Анжела", 19_420, 22, 0, 0, 439_126, 426_047, 427_240),
+        g("Мужская 10:00 (Ислам)", "Ислам", 20_700, 20, 0, 2, 427_257, 429_080, 414_000),
+        g("Продолжающая (Ислам)", "Ислам", 20_167, 12, 0, 0, 244_809, 229_663, 242_004),
+      ] },
+      { name: "Зал №3", groupsCount: 10, studentsCount: 55, total: 1_364_626, groups: [
+        g("Мини группа взрослая Ср Пт (Медина)", "Медина", 16_375, 7, 4, 0, 171_051, 168_429, 180_125),
+        g("Мини-группа взрослая ПН Ср (Хамит)", "Хамит", 20_389, 6, 3, 1, 170_724, 177_248, 183_501),
+        g("Индивидуальные Хамит", "—", 47_000, 6, 1, 0, 306_999, 304_661, 329_000),
+        g("Мини-группа детская Пн Ср (Хамит)", "Хамит", 18_750, 8, 1, 0, 169_195, 163_157, 168_750),
+        g("Мини группа детская Вт Чт (Тимур)", "Тимур", 24_219, 4, 0, 2, 93_787, 110_315, 96_876),
+        g("Мини-группа взрослая Вт Чт (Дэйси)", "Дэйси", 22_656, 8, 0, 0, 173_038, 178_152, 181_248),
+        g("Индивидуальные Дэйси", "—", 22_500, 2, 0, 0, 45_191, 44_314, 45_000),
+        g("Индивидуальный Тимур", "—", 36_750, 1, 0, 0, 34_627, 35_359, 36_750),
+        g("Индивидуальные Медина", "—", 44_063, 1, 1, 0, 82_947, 82_590, 88_126),
+        g("Индивидуальный Ислам", "—", 27_625, 2, 0, 0, 52_000, 54_000, 55_250),
+      ] },
+    ];
+    const expenses: PlanExpenseRow[] = [
+      { key: "rent", label: "Аренда", planned: 1_080_450, mode: "auto" },
+      { key: "utilities", label: "Ком. услуги", planned: 55_000, mode: "auto" },
+      { key: "salaries", label: "Зарплаты", planned: 2_619_025, mode: "auto", children: [
+        { label: "Педагог · Хамит", planned: 420_000 },
+        { label: "Педагог · Тимур", planned: 480_000 },
+        { label: "Педагог · Дэйси", planned: 390_000 },
+        { label: "Управляющий · Анель", planned: 350_000 },
+        { label: "Администратор", planned: 250_000 },
+        { label: "Прочий персонал", planned: 729_025 },
+      ] },
+      { key: "bonuses", label: "Бонусы", planned: 333_700, mode: "auto", children: [
+        { label: "Бонус управляющего", planned: 180_000 },
+        { label: "Бонусы педагогов", planned: 153_700 },
+      ] },
+      { key: "household", label: "Хоз. товары", planned: 140_000, mode: "manual" },
+      { key: "marketing", label: "Маркетинг", planned: 340_000, mode: "auto" },
+      { key: "comms", label: "Сотовая связь и подписки", planned: 147_230, mode: "manual" },
+    ];
+    return { rooms, expenses };
+  };
+
+  // Собрать детальный план из реальных данных (supabase) с откатом на демо.
+  const buildDetailedPlan = async (session: MvpSession, period: string, _branchId: string | null) => {
+    const mock = planDetailedMock();
+    let rooms = mock.rooms;
+    let expenses = mock.expenses;
+    let branchName = "Астана 203";
+    const branches = [{ id: "astana203", name: "Астана 203" }];
+
+    if (supabaseEnabled) {
+      try {
+        const orgFilter = `organization_id=eq.${session.organizationId}`;
+        const monthStart = `${period}-01`;
+        const [branchesRaw, hallsRaw, groupsRaw, usersRaw, studentsRaw, subsRaw, compRaw] = await Promise.all([
+          supabaseFetch<any[]>("branches", `select=*&${orgFilter}&status=neq.archived`),
+          supabaseFetch<any[]>("halls", `select=*`).catch(() => [] as any[]),
+          supabaseFetch<any[]>("groups", `select=*&${orgFilter}`).catch(() => [] as any[]),
+          supabaseFetch<any[]>("users", `select=*&${orgFilter}`).catch(() => [] as any[]),
+          supabaseFetch<any[]>("students", `select=*&${orgFilter}&status=eq.active`).catch(() => [] as any[]),
+          supabaseFetch<any[]>("student_subscriptions", `select=*`).catch(() => [] as any[]),
+          supabaseFetch<any[]>("teacher_compensation", `select=*&${orgFilter}`).catch(() => [] as any[]),
+        ]);
+        if (Array.isArray(groupsRaw) && groupsRaw.length) {
+          const branch = (branchesRaw || [])[0];
+          if (branch) { branchName = branch.name; branches[0] = { id: branch.id, name: branch.name }; }
+          const teacherName = new Map((usersRaw || []).map((u: any) => [u.id, (u.full_name || "").split(" ")[0] || "—"]));
+          const hallName = new Map((hallsRaw || []).map((h: any) => [h.id, h.name]));
+          // подписки по группе (активные)
+          const subsByGroup = new Map<string, any[]>();
+          (subsRaw || []).forEach((s: any) => {
+            if (s.status !== "active" || !s.group_id) return;
+            const list = subsByGroup.get(s.group_id) || []; list.push(s); subsByGroup.set(s.group_id, list);
+          });
+          const studentsByGroup = new Map<string, any[]>();
+          (studentsRaw || []).forEach((s: any) => {
+            if (!s.group_id) return;
+            const list = studentsByGroup.get(s.group_id) || []; list.push(s); studentsByGroup.set(s.group_id, list);
+          });
+          const roomMap = new Map<string, PlanRoom>();
+          for (const grp of groupsRaw) {
+            const subs = subsByGroup.get(grp.id) || [];
+            const students = studentsByGroup.get(grp.id) || [];
+            const check = subs.length ? Math.round(subs.reduce((a, b) => a + Number(b.price || 0), 0) / subs.length) : 0;
+            const total = students.length;
+            const isNew = (s: any) => s.created_at && s.created_at >= monthStart;
+            const nw = students.filter(isNew).length;
+            const perm = Math.max(0, total - nw);
+            const capacity = Number(grp.capacity || 0);
+            const free = Math.max(0, capacity - total);
+            const factPrev = subs.reduce((a, b) => a + Number(b.price || 0), 0);
+            const planned = check * total;
+            const recommended = Math.round(check * Math.max(total, Math.round(capacity * 0.9)));
+            const row: PlanGroupRow = { name: grp.name, teacher: teacherName.get(grp.teacher_id) || "—", check, permanent: perm, new: nw, total, free, factPrev, recommended, planned };
+            const rn = hallName.get(grp.hall_id) || "Без зала";
+            const room = roomMap.get(rn) || { name: rn, groupsCount: 0, studentsCount: 0, total: 0, groups: [] };
+            room.groups.push(row); room.groupsCount++; room.studentsCount += total; room.total += planned;
+            roomMap.set(rn, room);
+          }
+          if (roomMap.size) rooms = Array.from(roomMap.values());
+          // расходы: ЗП из карточек педагогов
+          const salaryChildren = (compRaw || []).map((c: any) => ({ label: `Педагог · ${teacherName.get(c.teacher_id) || "—"}`, planned: Number(c.base_salary || 0) })).filter((x: any) => x.planned > 0);
+          if (salaryChildren.length) {
+            const salTotal = salaryChildren.reduce((a: number, b: any) => a + b.planned, 0);
+            expenses = expenses.map((e) => e.key === "salaries" ? { ...e, planned: salTotal, children: salaryChildren } : e);
+          }
+        }
+      } catch (e: any) {
+        console.warn("[planning] detailed real-data compute failed, using mock:", e?.message || e);
+      }
+    }
+
+    // Свод по группам.
+    const allGroups = rooms.flatMap((r) => r.groups);
+    const revenue = rooms.reduce((s, r) => s + r.total, 0);
+    const studentsCount = rooms.reduce((s, r) => s + r.studentsCount, 0);
+    const groupsCount = rooms.reduce((s, r) => s + r.groupsCount, 0);
+    const capacityTotal = allGroups.reduce((s, r) => s + r.total + r.free, 0);
+    const fillPct = capacityTotal ? Math.round((studentsCount / capacityTotal) * 100) : 0;
+    const expense = expenses.reduce((s, e) => s + e.planned, 0);
+    const profit = revenue - expense;
+    const margin = revenue ? Math.round((profit / revenue) * 100) : 0;
+
+    // По типу занятий (эвристика: индивидуальные / мини-группы / групповые).
+    const isIndividual = (n: string) => /индивид/i.test(n);
+    const isMini = (n: string) => /мини/i.test(n);
+    const individual = allGroups.filter((x) => isIndividual(x.name)).reduce((s, x) => s + x.planned, 0);
+    const mini = allGroups.filter((x) => !isIndividual(x.name) && isMini(x.name)).reduce((s, x) => s + x.planned, 0);
+    const group = revenue - individual - mini;
+    // По аудитории: новые = доля новых учеников по чеку.
+    const newRevenue = allGroups.reduce((s, x) => s + x.check * x.new, 0);
+    const permRevenue = revenue - newRevenue;
+
+    // Воронка (демо-конверсии прототипа).
+    const neededSales = 20;
+    const trialConv = 0.5, recordConv = 0.7, leadConv = 0.55;
+    const trials = Math.ceil(neededSales / trialConv);
+    const records = Math.ceil(trials / recordConv);
+    const leads = Math.ceil(records / leadConv);
+
+    return {
+      branchName, branches, groupsCount, studentsCount, fillPct,
+      revenue, expense, profit, margin,
+      byType: { group, mini, individual },
+      byAudience: { permanent: permRevenue, new: newRevenue },
+      rooms, expenses,
+      funnel: { neededSales, trialConv, trials, recordConv, records, leadConv, leads },
+    };
+  };
+
   const buildPlanningOverview = (session: MvpSession, period: string, branchId: string | null) => {
     const key = `${session.organizationId}:${period}`;
     const budget = planningStore[key] || planningDefaults(period);
@@ -5053,7 +5237,9 @@ export function registerMvpApi(app: express.Express) {
     if (session.role !== "owner") return res.status(403).json({ error: "Раздел «Планирование» доступен только владельцу" });
     const period = String(req.query.period || new Date().toISOString().slice(0, 7));
     const branchId = req.query.branch && req.query.branch !== "all" ? String(req.query.branch) : null;
-    res.json(buildPlanningOverview(session, period, branchId));
+    const base = buildPlanningOverview(session, period, branchId);
+    const detailed = await buildDetailedPlan(session, period, branchId);
+    res.json({ ...base, detailed });
   }));
 
   // Создать / сохранить бюджет на период (план доходов и расходов).

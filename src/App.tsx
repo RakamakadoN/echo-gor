@@ -3512,7 +3512,7 @@ export default function App() {
                 </span>
                 <div className="flex items-baseline space-x-2">
                   <span className="text-2xl md:text-3xl font-bold text-white tracking-tight">
-                    {metricsSummary.todayRevenue.toLocaleString()} ₽
+                    {metricsSummary.todayRevenue.toLocaleString()} ₸
                   </span>
                   <span className="text-xs text-[#C5A059]">Высокая</span>
                 </div>
@@ -3574,7 +3574,7 @@ export default function App() {
                           </div>
                           <div>
                             <p className="text-sm font-bold text-emerald-400">
-                              {bm.revenue.toLocaleString()} ₽
+                              {bm.revenue.toLocaleString()} ₸
                             </p>
                             <p className="text-[9px] text-slate-500 uppercase">Сбор кассы</p>
                           </div>
@@ -4470,7 +4470,7 @@ export default function App() {
                         <label className="text-slate-400 font-bold uppercase block text-[10px]">Призовой фонд и кубки</label>
                         <input
                           type="text"
-                          placeholder="например, Кубок Главы Вайнахов + Гран-При 150,000 ₽"
+                          placeholder="например, Кубок Главы Вайнахов + Гран-При 150,000 ₸"
                           value={newCompPrize}
                           onChange={(e) => setNewCompPrize(e.target.value)}
                           className="w-full bg-black/40 border border-[#2d2d2d] focus:border-[#C5A059] rounded-xl px-3.5 py-2.5 focus:outline-none text-white"
@@ -4927,7 +4927,7 @@ export default function App() {
                             <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
                               hasDebt ? "bg-red-500/10 text-red-400" : "bg-emerald-500/10 text-emerald-400"
                             }`}>
-                              {stud.balance.toLocaleString()} ₽
+                              {stud.balance.toLocaleString()} ₸
                             </span>
                           </div>
                         </button>
@@ -5060,7 +5060,7 @@ export default function App() {
                           <button
                             onClick={() => {
                               setQuickMsgStudentId(stud.id);
-                              setQuickMsgText(`Здравствуйте, ${stud.parentName}! Напоминаем о необходимости оплатить обучение ${stud.name} в Академии танца «Эхо Гор». Пожалуйста, пополните личный счет. Баланс: ${stud.balance} ₽. Спасибо!`);
+                              setQuickMsgText(`Здравствуйте, ${stud.parentName}! Напоминаем о необходимости оплатить обучение ${stud.name} в Академии танца «Эхо Гор». Пожалуйста, пополните личный счет. Баланс: ${stud.balance} ₸. Спасибо!`);
                               setShowQuickMsgModal(true);
                             }}
                             className="px-3 py-2 bg-white/5 hover:bg-white/10 text-slate-300 rounded-xl border border-white/5 hover:border-white/10 text-xs transition-all font-semibold"
@@ -5092,7 +5092,7 @@ export default function App() {
                         <div className="p-4 bg-black/30 rounded-2xl border border-white/5">
                           <span className="text-[10px] text-slate-500 uppercase font-bold">Личный счет</span>
                           <p className={`text-lg font-bold mt-1 ${stud.balance < 0 ? "text-red-400" : "text-emerald-400"}`}>
-                            {stud.balance.toLocaleString()} ₽
+                            {stud.balance.toLocaleString()} ₸
                           </p>
                           <p className="text-[9px] text-slate-500 mt-1 uppercase">
                             {stud.balance < 0 ? "Имеется задолженность!" : "Средства активны"}
@@ -5304,7 +5304,7 @@ export default function App() {
                                           {p.method === 'card' ? 'Карта' : p.method === 'cash' ? 'Наличные' : 'Перевод'}
                                         </td>
                                         <td className="py-3 px-2 text-right font-extrabold text-white">
-                                          {p.amount.toLocaleString()} ₽
+                                          {p.amount.toLocaleString()} ₸
                                         </td>
                                         <td className="py-3 px-4 text-center">
                                           <span className="inline-flex items-center gap-1 text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-bold uppercase tracking-wider">
@@ -5364,7 +5364,7 @@ export default function App() {
                   </div>
                   <div>
                     <h4 className="text-xs font-bold text-white uppercase tracking-wider">Внимание: Задолженность по абонементам!</h4>
-                    <p className="text-[11px] text-slate-400">Ученик Алан Дзагоев имеет просроченную подписку на сумму 4,500 ₽.</p>
+                    <p className="text-[11px] text-slate-400">Ученик Алан Дзагоев имеет просроченную подписку на сумму 4,500 ₸.</p>
                   </div>
                 </div>
                 <button
@@ -5377,7 +5377,7 @@ export default function App() {
                   }}
                   className="px-3.5 py-1.5 bg-[#8B0000] text-white hover:bg-red-700 rounded-xl text-xs font-bold tracking-wide uppercase transition-all"
                 >
-                  Погасить долг ₽
+                  Погасить долг ₸
                 </button>
               </div>
 
@@ -5405,7 +5405,7 @@ export default function App() {
                             <td>{p.description}</td>
                             <td>{p.date}</td>
                             <td className="uppercase font-mono text-slate-405">{p.method}</td>
-                            <td className="font-extrabold text-white">{p.amount.toLocaleString()} ₽</td>
+                            <td className="font-extrabold text-white">{p.amount.toLocaleString()} ₸</td>
                             <td>
                               <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-bold uppercase tracking-wider">
                                 {p.status === "paid" ? "Проведено" : "В обработке"}
@@ -6395,7 +6395,7 @@ export default function App() {
 
             <form onSubmit={processPayment} className="space-y-4">
               <div>
-                <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Сумма платежа (руб.)</label>
+                <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Сумма платежа (тг)</label>
                 <input
                   type="number"
                   required
@@ -6546,7 +6546,7 @@ export default function App() {
                     <div className="bg-black/40 border border-white/5 rounded-2xl p-3.5 space-y-2">
                       <p className="text-[10px] text-amber-500 font-bold uppercase tracking-wider">Предпросмотр сообщения</p>
                       <p className="text-[11px] text-slate-400 font-sans italic leading-relaxed bg-white/5 p-3 rounded-lg border border-white/5">
-                        "Здравствуйте, {s.parentName}! Напоминаем о необходимости произвести оплату обучения {s.name} в Академии народного танца «Эхо Гор» по причине отсутствия активного абонемента. Баланс: {s.balance} ₽. Спасибо!"
+                        "Здравствуйте, {s.parentName}! Напоминаем о необходимости произвести оплату обучения {s.name} в Академии народного танца «Эхо Гор» по причине отсутствия активного абонемента. Баланс: {s.balance} ₸. Спасибо!"
                       </p>
                     </div>
 
