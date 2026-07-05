@@ -352,7 +352,6 @@ export function OwnerExecutiveWorkspace({
                 tab={tab}
                 active={activeTab === tab.id}
                 onClick={() => setActiveTab(tab.id as OwnerTab)}
-                onOpenSettings={() => setSettingsForTab(tab.id as OwnerTab)}
               />
             ))}
           </nav>

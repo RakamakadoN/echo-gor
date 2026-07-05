@@ -2350,12 +2350,13 @@ export default function App() {
           <div className="absolute inset-y-0 right-0 hidden w-[42%] md:block" style={{ background: "#06090F" }} />
           <div className="absolute inset-y-0 right-[42%] hidden w-[10%] md:block" style={{ background: "linear-gradient(to left, #06090F, rgba(6,9,15,0))" }} />
 
-          {/* Настоящая форма входа */}
-          <div className="absolute inset-0 z-10 flex items-center justify-center px-5 md:justify-end md:pr-[6vw]">
+          {/* Настоящая форма входа — адаптив: по центру на узких экранах, справа на десктопе;
+              вертикальная прокрутка, чтобы форма не обрезалась на низких окнах. */}
+          <div className="absolute inset-0 z-10 flex items-center justify-center overflow-y-auto px-4 py-6 sm:px-5 sm:py-8 md:justify-end md:pr-[clamp(24px,6vw,96px)]">
             <form
               onSubmit={handleDesktopLogin}
               noValidate
-              className="w-full max-w-[400px] rounded-[28px] border border-white/10 bg-[#0E1420]/90 p-7 shadow-[0_30px_80px_-20px_rgba(0,0,0,0.85)] backdrop-blur-xl sm:p-8"
+              className="my-auto w-full max-w-[400px] rounded-[24px] border border-white/10 bg-[#0E1420]/90 p-6 shadow-[0_30px_80px_-20px_rgba(0,0,0,0.85)] backdrop-blur-xl sm:rounded-[28px] sm:p-8"
             >
               <div className="mb-6 text-center">
                 <h2 className="text-[26px] font-black tracking-tight text-white sm:text-[28px]">Добро пожаловать!</h2>
