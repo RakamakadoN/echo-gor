@@ -17,6 +17,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import AiBriefingPanel from "./AiBriefingPanel";
+import { useVoiceInput } from "../hooks/useVoiceInput";
 import {
   Send,
   Loader2,
@@ -34,6 +35,7 @@ import {
   ListPlus,
   Database,
   Check,
+  Mic,
 } from "lucide-react";
 
 type Source = { tool: string; label: string };
@@ -228,6 +230,11 @@ export function AiHubView({ roleHeader = "owner" }: Props) {
   const [councilOrder, setCouncilOrder] = useState<CouncilOrderItem[]>([]);
   const [councilError, setCouncilError] = useState<string | null>(null);
 
+  // Голосовой ввод (Web Speech API, ru-RU): отдельно для чата агента и для
+  // поля вопроса «Совет». Наговор пишется в соответствующее поле.
+  const agentVoice = useVoiceInput(() => input, setInput);
+  const councilVoice = useVoiceInput(() => councilQ, setCouncilQ);
+
   function showToast(text: string) {
     setToast(text);
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -321,6 +328,7 @@ export function AiHubView({ roleHeader = "owner" }: Props) {
   async function send(text: string) {
     const trimmed = text.trim();
     if (!trimmed || loading || !active) return;
+    agentVoice.stop();
     const key = active.key;
 
     const next: ChatMessage[] = [...threads[key], { role: "user", content: trimmed }];
@@ -389,6 +397,7 @@ export function AiHubView({ roleHeader = "owner" }: Props) {
   async function askCouncil(text: string) {
     const trimmed = text.trim();
     if (!trimmed || councilLoading) return;
+    councilVoice.stop();
     setCouncilLoading(true);
     setCouncilError(null);
     setCouncilResult({ question: trimmed, turns: [], synthesis: "" });
@@ -494,10 +503,24 @@ export function AiHubView({ roleHeader = "owner" }: Props) {
               <input
                 value={councilQ}
                 onChange={(e) => setCouncilQ(e.target.value)}
-                placeholder="Например: стоит ли открывать третий филиал?"
+                placeholder={councilVoice.recording ? "Говорите…" : "Например: стоит ли открывать третий филиал?"}
                 disabled={councilLoading}
                 className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3.5 py-2.5 text-[13px] text-white placeholder:text-slate-500 outline-none focus:border-[#C5A059]/50 disabled:opacity-60"
               />
+              <button
+                type="button"
+                onClick={councilVoice.toggle}
+                disabled={councilLoading}
+                aria-label={councilVoice.recording ? "Остановить запись" : "Голосовой ввод"}
+                title={councilVoice.recording ? "Остановить запись" : "Голосовой ввод"}
+                className={`flex items-center justify-center rounded-xl border px-3.5 py-2.5 transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                  councilVoice.recording
+                    ? "border-red-500/60 bg-red-500/20 text-red-300 animate-pulse"
+                    : "border-white/10 bg-white/5 text-slate-300 hover:border-[#C5A059]/50 hover:text-[#E8C887]"
+                }`}
+              >
+                <Mic size={16} />
+              </button>
               <button
                 type="submit"
                 disabled={councilLoading || !councilQ.trim()}
@@ -507,6 +530,9 @@ export function AiHubView({ roleHeader = "owner" }: Props) {
                 Собрать совет
               </button>
             </form>
+            {councilVoice.error && (
+              <div className="mt-2 text-[11px] text-red-400">{councilVoice.error}</div>
+            )}
 
             {!councilResult && !councilLoading && (
               <div className="mt-3 flex flex-wrap gap-2">
@@ -871,6 +897,18 @@ export function AiHubView({ roleHeader = "owner" }: Props) {
 
               {/* Поле ввода */}
               <div className="border-t border-white/10 bg-[#0C0E14] p-3">
+                {agentVoice.recording && (
+                  <div className="mb-2 flex items-center gap-2 px-1 text-[11px]" style={{ color: active.accent }}>
+                    <span className="relative flex h-2 w-2">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                      <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+                    </span>
+                    Слушаю… говорите, текст появится в поле
+                  </div>
+                )}
+                {agentVoice.error && (
+                  <div className="mb-2 px-1 text-[11px] text-red-400">{agentVoice.error}</div>
+                )}
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
@@ -882,10 +920,24 @@ export function AiHubView({ roleHeader = "owner" }: Props) {
                     ref={inputRef}
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
-                    placeholder={`Спросите ${active.name}…`}
+                    placeholder={agentVoice.recording ? "Говорите…" : `Спросите ${active.name}…`}
                     disabled={loading}
                     className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3.5 py-2.5 text-[13px] text-white placeholder:text-slate-500 outline-none focus:border-[#C5A059]/50 disabled:opacity-60"
                   />
+                  <button
+                    type="button"
+                    onClick={agentVoice.toggle}
+                    disabled={loading}
+                    aria-label={agentVoice.recording ? "Остановить запись" : "Голосовой ввод"}
+                    title={agentVoice.recording ? "Остановить запись" : "Голосовой ввод"}
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                      agentVoice.recording
+                        ? "border-red-500/60 bg-red-500/20 text-red-300 animate-pulse"
+                        : "border-white/10 bg-white/5 text-slate-300 hover:border-[#C5A059]/50 hover:text-[#E8C887]"
+                    }`}
+                  >
+                    <Mic size={17} />
+                  </button>
                   <button
                     type="submit"
                     disabled={loading || !input.trim()}

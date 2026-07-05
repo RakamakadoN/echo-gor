@@ -129,16 +129,8 @@ export function BranchManagerWorkspace({
 
   const branch = branches.find((item) => item.id === branchId);
 
-  if (!branch) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[#0A0A0A] text-slate-400">
-        <p>Загрузка данных филиала или филиал не найден...</p>
-      </div>
-    );
-  }
-
-  const branchGroups = useMemo(() => groups.filter((group) => group.branchId === branch.id), [groups, branch.id]);
-  const branchStudents = useMemo(() => students.filter((student) => student.branchId === branch.id), [students, branch.id]);
+  const branchGroups = useMemo(() => groups.filter((group) => group.branchId === branch?.id), [groups, branch?.id]);
+  const branchStudents = useMemo(() => students.filter((student) => student.branchId === branch?.id), [students, branch?.id]);
   const branchTeacherIds = useMemo(() => new Set(branchGroups.map((group) => group.teacherId)), [branchGroups]);
   const branchTeachers = useMemo(
     () => teachers.filter((teacher) => branchTeacherIds.has(teacher.id)),
@@ -150,13 +142,23 @@ export function BranchManagerWorkspace({
     [payments, branchStudentIds]
   );
   const branchAnnouncements = useMemo(
-    () => announcements.filter((item) => !item.branchId || item.branchId === branch.id),
-    [announcements, branch.id]
+    () => announcements.filter((item) => !item.branchId || item.branchId === branch?.id),
+    [announcements, branch?.id]
   );
   const branchCompetitions = useMemo(
     () => competitions.filter((competition) => competition.registeredGroupIds.some((id) => branchGroups.some((group) => group.id === id))),
     [competitions, branchGroups]
   );
+
+  // Guard — только ПОСЛЕ всех хуков. Ранний return до useMemo нарушает правила хуков
+  // и роняет всё приложение («Rendered fewer hooks than expected») при перезагрузке данных.
+  if (!branch) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#0A0A0A] text-slate-400">
+        <p>Загрузка данных филиала или филиал не найден...</p>
+      </div>
+    );
+  }
 
   const attendanceToday = averageAttendance(branchStudents, ["2026-06-01"]);
   const attendanceWeek = averageAttendance(branchStudents, ["2026-05-25", "2026-05-27", "2026-05-29", "2026-06-01"]);

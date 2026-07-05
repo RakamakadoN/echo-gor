@@ -17,9 +17,10 @@ import logoImg from "./assets/images/echogor_logo_1780297382250.png";
 // @ts-ignore
 import trainerLoginImg from "./assets/images/new_trainer_login_bg_1780308409116.png";
 // @ts-ignore
-import desktopLoginBg from "./assets/images/login_desktop_bg.png";
+import desktopLoginBg from "./assets/images/login_dancers_bg.png";
 // @ts-ignore
-import mobileLoginBg from "./assets/images/login_mobile_bg.png";
+import mobileLoginBg from "./assets/images/login_dancers_bg.png";
+import echogorLogo from "./assets/images/echogor_logo_1780297382250.png";
 // @ts-ignore
 import studentArtistCard from "./assets/images/student_artist_card.png";
 // @ts-ignore
@@ -79,7 +80,6 @@ import {
   PieChart,
   Pie,
   Cell,
-  ResponsiveContainer,
   Tooltip,
   Legend,
   BarChart,
@@ -88,6 +88,7 @@ import {
   YAxis,
   CartesianGrid
 } from "recharts";
+import { ResponsiveContainer } from "./components/SafeResponsiveContainer";
 
 import {
   ArtistLevel,
@@ -2270,25 +2271,42 @@ export default function App() {
   // Видео при входе удалено — звук больше не воспроизводится.
   const primeLoginVideoAudio = () => {};
 
-  const handleDesktopLogin = (e?: React.FormEvent) => {
+  const handleDesktopLogin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    
-    // Auto-detect role from email input, default to owner
-    let targetedRole = "owner";
-    const emailLower = (desktopEmail || "").toLowerCase();
-    
-    if (emailLower.includes("teacher") || emailLower.includes("ustaz")) {
-      targetedRole = "teacher";
-    } else if (emailLower.includes("student") || emailLower.includes("solist")) {
-      targetedRole = "student";
-    } else if (emailLower.includes("admin") || emailLower.includes("registrar")) {
-      targetedRole = "admin";
-    } else if (emailLower.includes("branch")) {
-      targetedRole = "branch";
+
+    const phone = (desktopEmail || "").replace(/\D/g, "");
+
+    // 1) Вход ученика: номер телефона + стандартный пароль (12345).
+    if (phone.length >= 10 && desktopPassword) {
+      setStudentLoginBusy(true);
+      try {
+        const resp = await fetch("/api/mvp/student-auth", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone, password: desktopPassword }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (resp.ok) {
+          addAuditLog("Авторизация ученика", `Вход по телефону +7${phone}. Права: ${data?.level === "junior" ? "маленькая" : "взрослая"} группа`);
+          applyStudentAuth(data);
+          return;
+        }
+        // Телефон совпал с учеником, но пароль неверный — не пускаем дальше.
+        if (resp.status === 401) {
+          setDesktopLoginError(data?.error || "Неверный пароль");
+          return;
+        }
+        // 404 — телефон не принадлежит ученику: пробуем как персонал (демо).
+      } catch {
+        // нет связи с сервером — падаем в демо-вход персонала
+      } finally {
+        setStudentLoginBusy(false);
+      }
     }
-    
-    setActiveRole(targetedRole);
-    addAuditLog("Авторизация CRM (Десктоп)", `Вход ученика/директора: ${desktopEmail || "Владелец (По умолчанию)"}. Права: ${targetedRole}`);
+
+    // 2) Персонал (демо): по умолчанию — Владелец сети.
+    setActiveRole("owner");
+    addAuditLog("Авторизация CRM (Десктоп)", `Вход персонала: ${phone ? "+7" + phone : "Владелец (по умолчанию)"}`);
     startLoginVideo("desktop");
   };
 
@@ -2308,117 +2326,133 @@ export default function App() {
       {/* Desktop login uses the supplied image as the visible UI, with real controls as transparent hotspots. */}
       {isPlayingPromo && (
         <div className="login-auth-screen fixed inset-0 z-[9999] bg-[#0A0D14] overflow-hidden select-none animate-fade-in font-sans text-slate-200">
+          {/* Базовый тёмный фон — всегда виден, даже если фото не подгрузилось. */}
+          <div className="absolute inset-0" style={{ background: "radial-gradient(120% 120% at 15% 10%, #1a2536 0%, #0B1018 45%, #05070C 100%)" }} />
+          {/* Фоновая фотография (танцоры + горы) поверх подложки. */}
           <img
             src={desktopLoginBg}
-            alt="Экран входа Эхогор"
-            className="absolute inset-0 hidden h-full w-full object-cover md:block"
+            alt=""
+            aria-hidden="true"
+            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+            className="absolute inset-0 hidden h-full w-full object-cover opacity-95 md:block"
             referrerPolicy="no-referrer"
           />
           <img
             src={mobileLoginBg}
-            alt="Мобильный экран входа Эхогор"
-            className="absolute inset-0 block h-full w-full object-cover md:hidden"
+            alt=""
+            aria-hidden="true"
+            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+            className="absolute inset-0 block h-full w-full object-cover opacity-95 md:hidden"
             referrerPolicy="no-referrer"
           />
+          {/* Затемнение фона для контраста формы (inline-градиент в sRGB — без oklab-артефактов Tailwind v4). */}
+          <div className="absolute inset-0" style={{ background: "linear-gradient(to right, rgba(5,7,12,0.35), rgba(5,7,12,0.10) 40%, rgba(5,7,12,0.55))" }} />
+          {/* Плотная правая колонка — полностью скрывает «вшитую» в картинку форму. */}
+          <div className="absolute inset-y-0 right-0 hidden w-[42%] md:block" style={{ background: "#06090F" }} />
+          <div className="absolute inset-y-0 right-[42%] hidden w-[10%] md:block" style={{ background: "linear-gradient(to left, #06090F, rgba(6,9,15,0))" }} />
+          <img src={echogorLogo} alt="Эхогор — студия кавказского танца" className="pointer-events-none absolute z-10 left-[clamp(20px,4vw,56px)] top-[clamp(20px,4vw,44px)] h-auto w-[clamp(150px,22vw,300px)] select-none drop-shadow-[0_4px_20px_rgba(0,0,0,0.6)]" />
+          <div className="pointer-events-none absolute z-10 left-[clamp(20px,4vw,56px)] bottom-[clamp(20px,4vw,40px)] flex items-center gap-[.6em] whitespace-nowrap text-[clamp(13px,2vw,22px)] font-black uppercase tracking-[0.12em] text-white select-none drop-shadow-[0_2px_12px_rgba(0,0,0,0.7)]">Сила <span className="text-[#C5A059]">|</span> Честь <span className="text-[#C5A059]">|</span> Традиции</div>
 
-          {/* Mobile login controls — transparent hotspots positioned over the portrait mockup */}
-          <div className="absolute inset-0 z-10 md:hidden">
-            <button
-              type="button"
-              aria-label="Войти"
-              onPointerDown={primeLoginVideoAudio}
-              onClick={() => handleDesktopLogin()}
-              className="absolute left-[8.2%] top-[77.6%] h-[5.1%] w-[83.6%] rounded-[24px] appearance-none bg-transparent border-0 outline-none focus:ring-2 focus:ring-white/80 active:bg-white/5"
-            />
-            <button
-              type="button"
-              aria-label="Регистрация"
-              onClick={() => {
-                alert("Регистрация студийных аккаунтов доступна внутри CRM в разделе «Ученики». Для демо нажмите «Войти».");
-              }}
-              className="absolute left-[8.2%] top-[83.7%] h-[5.0%] w-[83.6%] rounded-[22px] appearance-none bg-transparent border-0 outline-none focus:ring-2 focus:ring-[#C5A059]/80 active:bg-white/5"
-            />
-            <button
-              type="button"
-              aria-label="Войти через Google"
-              onClick={() => {
-                setIsLoggingInWithGoogle(true);
-              }}
-              className="absolute left-[8.2%] top-[92.5%] h-[5.0%] w-[83.6%] rounded-[22px] appearance-none bg-transparent border-0 outline-none focus:ring-2 focus:ring-white/80 active:bg-white/5"
-            />
-          </div>
-
-          <form onSubmit={handleDesktopLogin} noValidate className="absolute inset-0 z-10 hidden md:block">
-            <input
-              type="email"
-              aria-label="Электронная почта"
-              value={desktopEmail}
-              onChange={(e) => {
-                setDesktopEmail(e.target.value);
-                setActiveHotspot(null);
-                setDesktopLoginError(null);
-              }}
-              className="absolute left-[56.2%] top-[28.5%] h-[7.2%] w-[36.5%] rounded-xl bg-transparent text-transparent caret-white outline-none focus:ring-2 focus:ring-[#C5A059]/70"
-            />
-            <input
-              type={desktopShowPassword ? "text" : "password"}
-              aria-label="Пароль"
-              value={desktopPassword}
-              onChange={(e) => {
-                setDesktopPassword(e.target.value);
-                setActiveHotspot(null);
-                setDesktopLoginError(null);
-              }}
-              className="absolute left-[56.2%] top-[38.4%] h-[7.3%] w-[36.5%] rounded-xl bg-transparent text-transparent caret-white outline-none focus:ring-2 focus:ring-[#C5A059]/70"
-            />
-            <button
-              type="button"
-              aria-label={desktopShowPassword ? "Скрыть пароль" : "Показать пароль"}
-              onClick={() => setDesktopShowPassword(!desktopShowPassword)}
-              className="absolute left-[88.6%] top-[41.2%] h-[3%] w-[3.5%] rounded-full outline-none focus:ring-2 focus:ring-[#C5A059]/70"
-            />
-            <label
-              aria-label="Запомнить меня"
-              className="absolute left-[56.2%] top-[49.2%] h-[4.4%] w-[18%] rounded-md cursor-pointer outline-none focus-within:ring-2 focus-within:ring-[#C5A059]/70"
+          {/* Настоящая форма входа — адаптив: по центру на узких экранах, справа на десктопе;
+              вертикальная прокрутка, чтобы форма не обрезалась на низких окнах. */}
+          <div className="absolute inset-0 z-10 flex items-center justify-center overflow-y-auto px-4 py-6 sm:px-5 sm:py-8 md:justify-end md:pr-[clamp(24px,6vw,96px)]">
+            <form
+              onSubmit={handleDesktopLogin}
+              noValidate
+              className="my-auto w-full max-w-[400px] rounded-[24px] border border-white/10 bg-[#0E1420]/90 p-6 shadow-[0_30px_80px_-20px_rgba(0,0,0,0.85)] backdrop-blur-xl sm:rounded-[28px] sm:p-8"
             >
-              <input
-                type="checkbox"
-                checked={desktopRememberMe}
-                onChange={() => setDesktopRememberMe(!desktopRememberMe)}
-                className="h-full w-full cursor-pointer opacity-0"
-              />
-            </label>
-            <button
-              type="button"
-              aria-label="Забыли пароль"
-              onClick={() => {
-                alert("Для демо-входа можно нажать «Войти» без заполнения данных. Если в email указать teacher, parent, student, admin или branch, откроется соответствующая роль.");
-              }}
-              className="absolute left-[82.6%] top-[49.2%] h-[4.4%] w-[10.4%] rounded-md outline-none focus:ring-2 focus:ring-[#C5A059]/70"
-            />
-            <button
-              type="submit"
-              aria-label="Войти"
-              onPointerDown={primeLoginVideoAudio}
-              className="absolute left-[56.2%] top-[55.7%] h-[7.1%] w-[36.6%] rounded-xl outline-none focus:ring-2 focus:ring-white/80 active:bg-white/5"
-            />
-            <button
-              type="button"
-              aria-label="Регистрация"
-              onClick={() => {
-                alert("Регистрация студийных аккаунтов доступна внутри CRM в разделе «Ученики». Для демо нажмите «Войти».");
-              }}
-              className="absolute left-[56.2%] top-[65.0%] h-[6.8%] w-[36.6%] rounded-xl outline-none focus:ring-2 focus:ring-[#C5A059]/70 active:bg-white/5"
-            />
-            <button
-              type="button"
-              aria-label="Войти через Google"
-              onClick={() => {
-                setIsLoggingInWithGoogle(true);
-              }}
-              className="absolute left-[56.2%] top-[78.7%] h-[6.8%] w-[36.6%] rounded-xl outline-none focus:ring-2 focus:ring-white/80 active:bg-white/5"
-            />
-          </form>
+              <div className="mb-6 text-center">
+                <h2 className="text-[26px] font-black tracking-tight text-white sm:text-[28px]">Добро пожаловать!</h2>
+                <p className="mt-1.5 text-sm text-slate-400">Войдите по номеру телефона, чтобы продолжить</p>
+              </div>
+
+              {/* Телефон +7 */}
+              <label className="mb-3 flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3.5 transition focus-within:border-[#C5A059]/70 focus-within:bg-white/[0.06]">
+                <Phone className="h-5 w-5 shrink-0 text-slate-400" />
+                <span className="text-[15px] font-semibold text-slate-300 select-none">+7</span>
+                <input
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  placeholder="(___) ___-__-__"
+                  value={desktopEmail}
+                  onChange={(e) => {
+                    // оставляем только цифры, максимум 10 (без кода страны)
+                    const digits = e.target.value.replace(/\D/g, "").slice(0, 10);
+                    setDesktopEmail(digits);
+                    setActiveHotspot(null);
+                    setDesktopLoginError(null);
+                  }}
+                  className="w-full bg-transparent text-[15px] tracking-wide text-white outline-none placeholder:text-slate-500"
+                />
+              </label>
+
+              {/* Пароль */}
+              <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3.5 transition focus-within:border-[#C5A059]/70 focus-within:bg-white/[0.06]">
+                <Lock className="h-5 w-5 shrink-0 text-slate-400" />
+                <input
+                  type={desktopShowPassword ? "text" : "password"}
+                  autoComplete="current-password"
+                  placeholder="Пароль"
+                  value={desktopPassword}
+                  onChange={(e) => {
+                    setDesktopPassword(e.target.value);
+                    setActiveHotspot(null);
+                    setDesktopLoginError(null);
+                  }}
+                  className="w-full bg-transparent text-[15px] text-white outline-none placeholder:text-slate-500"
+                />
+                <button
+                  type="button"
+                  aria-label={desktopShowPassword ? "Скрыть пароль" : "Показать пароль"}
+                  onClick={() => setDesktopShowPassword(!desktopShowPassword)}
+                  className="shrink-0 text-slate-400 transition hover:text-white"
+                >
+                  {desktopShowPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                </button>
+              </label>
+
+              {/* Запомнить / Забыли пароль */}
+              <div className="mt-4 flex items-center justify-between">
+                <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-300 select-none">
+                  <input
+                    type="checkbox"
+                    checked={desktopRememberMe}
+                    onChange={() => setDesktopRememberMe(!desktopRememberMe)}
+                    className="h-4 w-4 rounded border-white/20 bg-white/10 accent-[#C5A059]"
+                  />
+                  Запомнить меня
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    alert("Доступ выдаёт студия при добавлении ученика/сотрудника: номер телефона +7 и пароль. Забыли пароль — обратитесь к администратору.");
+                  }}
+                  className="text-sm font-semibold text-[#C5A059] transition hover:text-[#d8b877]"
+                >
+                  Забыли пароль?
+                </button>
+              </div>
+
+              {desktopLoginError && (
+                <p className="mt-3 text-sm font-semibold text-rose-400">{desktopLoginError}</p>
+              )}
+
+              {/* Войти */}
+              <button
+                type="submit"
+                onPointerDown={primeLoginVideoAudio}
+                className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#C5A059] to-[#B3894A] px-4 py-3.5 text-base font-black text-[#1a1206] shadow-lg shadow-[#C5A059]/20 transition hover:brightness-110 active:scale-[0.99]"
+              >
+                Войти
+                <ArrowRight className="h-5 w-5" />
+              </button>
+
+              <p className="mt-4 text-center text-xs text-slate-500">
+                Доступ выдаёт студия при добавлении ученика или сотрудника
+              </p>
+            </form>
+          </div>
 
           <button
             type="button"
@@ -2434,89 +2468,6 @@ export default function App() {
             <span>Запустить мобильный кабинет</span>
           </button>
 
-          {/* Быстрый выбор роли: плитки поверх экрана входа. */}
-          <div className="absolute bottom-24 left-1/2 z-20 w-full max-w-3xl -translate-x-1/2 px-4">
-            <p className="mb-3 text-center text-[11px] font-black uppercase tracking-[0.35em] text-white/70 drop-shadow-[0_1px_6px_rgba(0,0,0,0.8)]">
-              Выберите роль для входа
-            </p>
-            <div className="flex flex-wrap items-stretch justify-center gap-2.5">
-              {roles.map((r) => {
-                const RoleIcon = r.icon;
-                return (
-                  <button
-                    key={r.id}
-                    type="button"
-                    onClick={() => handleRoleLogin(r.id)}
-                    className="group flex min-w-[120px] flex-1 basis-[120px] flex-col items-center gap-1.5 rounded-2xl border border-white/25 bg-black/45 px-4 py-3 text-center shadow-xl backdrop-blur-md transition hover:border-[#C5A059]/70 hover:bg-black/65 active:scale-95"
-                  >
-                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#C5A059]/20 text-[#C5A059] transition group-hover:bg-[#C5A059]/30">
-                      <RoleIcon className="h-5 w-5" />
-                    </span>
-                    <span className="text-sm font-black leading-tight text-white">{r.id === "teacher" ? "Педагог" : r.name}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Вход ученика: видимая кнопка «Я ученик» поверх экрана входа. */}
-          <button
-            type="button"
-            onClick={() => { setShowStudentLogin(true); setStudentLoginError(null); setStudentCodeInput(""); }}
-            className="absolute bottom-6 left-1/2 z-20 inline-flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/30 bg-black/45 px-6 py-3 text-sm font-black text-white shadow-xl backdrop-blur-md transition hover:bg-black/65 active:scale-95"
-          >
-            <Flame className="h-4 w-4 text-[#C5A059]" /> Я ученик — вход по коду
-          </button>
-
-          {/* Оверлей ввода короткого кода. */}
-          {showStudentLogin && (
-            <div
-              className="absolute inset-0 z-30 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-fade-in"
-              onClick={() => setShowStudentLogin(false)}
-            >
-              <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-                <div className="mb-1 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <KeyRound className="h-5 w-5 text-[#C5A059]" />
-                    <h2 className="text-lg font-black text-slate-800">Вход ученика</h2>
-                  </div>
-                  <button
-                    type="button"
-                    aria-label="Закрыть"
-                    onClick={() => setShowStudentLogin(false)}
-                    className="rounded-full p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
-                </div>
-                <p className="mb-4 text-sm text-slate-500">Введите код, который выдал педагог или администратор.</p>
-                <form onSubmit={submitStudentCode}>
-                  <input
-                    autoFocus
-                    value={studentCodeInput}
-                    onChange={(e) => { setStudentCodeInput(e.target.value.toUpperCase()); setStudentLoginError(null); }}
-                    placeholder="ABC234"
-                    maxLength={12}
-                    autoCapitalize="characters"
-                    autoCorrect="off"
-                    spellCheck={false}
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-center font-mono text-2xl font-black tracking-[0.3em] text-slate-800 outline-none transition placeholder:text-slate-300 focus:border-[#C5A059] focus:ring-2 focus:ring-[#C5A059]/30"
-                  />
-                  {studentLoginError && (
-                    <p className="mt-2 text-sm font-semibold text-rose-500">{studentLoginError}</p>
-                  )}
-                  <button
-                    type="submit"
-                    disabled={studentLoginBusy}
-                    className="mt-4 w-full rounded-2xl bg-[#C5A059] px-4 py-3 text-base font-black text-white transition hover:bg-[#b3914c] disabled:opacity-50"
-                  >
-                    {studentLoginBusy ? "Входим…" : "Войти"}
-                  </button>
-                </form>
-                <p className="mt-3 text-center text-xs text-slate-400">Нет кода? Попроси его у педагога или администратора.</p>
-              </div>
-            </div>
-          )}
         </div>
       )}
 

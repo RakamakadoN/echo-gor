@@ -759,11 +759,45 @@ export default function StudentManagementCard({
           <div className="mt-3 rounded-2xl border border-[#C5A059]/40 bg-[#FBF7EE] p-4">
             <div className="mb-1 flex items-center gap-2">
               <KeyRound className="h-4 w-4 text-[#C5A059]" />
-              <p className="text-sm font-bold text-slate-800">Вход ученика по ссылке / QR</p>
+              <p className="text-sm font-bold text-slate-800">Вход ученика по телефону</p>
             </div>
             <p className="mb-3 text-xs text-slate-500">
-              «Маленькая» группа видит только Главную, Наклейки и Достижения. «Взрослая» — все разделы кабинета.
-              Уровень по умолчанию — по возрасту{typeof student.age === "number" ? ` (сейчас ${student.age} лет → «${accessStatus?.autoLevel === "junior" ? "маленькая" : "взрослая"}»)` : ""}.
+              Ученик заходит на экране входа по своему номеру телефона и стандартному паролю. Отдельный код/QR не нужен.
+            </p>
+
+            {/* Данные для входа: телефон + стандартный пароль */}
+            <div className="mb-3 grid gap-2 sm:grid-cols-2">
+              <div className="rounded-xl border border-slate-200 bg-white p-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Номер телефона (логин)</p>
+                <div className="mt-1 flex items-center gap-2">
+                  <span className="select-all font-mono text-base font-black text-slate-800">{student.phone || student.parentPhone || "—"}</span>
+                  {(student.phone || student.parentPhone) && (
+                    <button
+                      onClick={async () => { try { await navigator.clipboard.writeText(student.phone || student.parentPhone || ""); setAccessCopied(true); setTimeout(() => setAccessCopied(false), 1800); } catch { /* clipboard недоступен */ } }}
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-600 transition hover:bg-slate-50"
+                    >
+                      {accessCopied ? <><Check className="h-3.5 w-3.5 text-emerald-500" /> Скоп.</> : <><Copy className="h-3.5 w-3.5 text-slate-400" /> Тел.</>}
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Пароль (у всех одинаковый)</p>
+                <div className="mt-1 flex items-center gap-2">
+                  <span className="select-all font-mono text-base font-black tracking-[0.25em] text-slate-800">12345</span>
+                  <button
+                    onClick={async () => { try { await navigator.clipboard.writeText("12345"); setAccessCodeCopied(true); setTimeout(() => setAccessCodeCopied(false), 1800); } catch { /* clipboard недоступен */ } }}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-600 transition hover:bg-slate-50"
+                  >
+                    {accessCodeCopied ? <><Check className="h-3.5 w-3.5 text-emerald-500" /> Скоп.</> : <><Copy className="h-3.5 w-3.5 text-slate-400" /> Пароль</>}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <p className="mb-2 text-xs text-slate-500">
+              Уровень кабинета: «Маленькая» группа видит только Главную, Наклейки и Достижения; «Взрослая» — все разделы.
+              По умолчанию — по возрасту{typeof student.age === "number" ? ` (сейчас ${student.age} лет → «${accessStatus?.autoLevel === "junior" ? "маленькая" : "взрослая"}»)` : ""}.
             </p>
 
             {/* Выбор уровня прав */}
@@ -791,56 +825,13 @@ export default function StudentManagementCard({
               <div className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-600">{accessErr}</div>
             )}
 
-            {/* Активная ссылка + QR */}
-            {accessStatus?.enabled && accessUrl ? (
-              <div className="rounded-2xl border border-slate-200 bg-white p-3">
-                <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-start">
-                  {accessQr ? (
-                    <img src={accessQr} alt="QR-код входа ученика" className="h-40 w-40 flex-shrink-0 rounded-xl border border-slate-100" />
-                  ) : (
-                    <div className="flex h-40 w-40 flex-shrink-0 items-center justify-center rounded-xl border border-slate-100 text-xs text-slate-400">QR…</div>
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                      Уровень: {accessStatus.level === "junior" ? "Маленькая" : "Взрослая"}
-                    </p>
-                    {accessStatus.code && (
-                      <div className="mt-1 rounded-xl border border-[#C5A059]/40 bg-white p-2.5">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Код для входа</p>
-                        <div className="mt-1 flex items-center gap-2">
-                          <span className="select-all font-mono text-2xl font-black tracking-[0.25em] text-slate-800">{accessStatus.code}</span>
-                          <button onClick={copyAccessCode} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-600 transition hover:bg-slate-50">
-                            {accessCodeCopied ? <><Check className="h-3.5 w-3.5 text-emerald-500" /> Скоп.</> : <><Copy className="h-3.5 w-3.5 text-slate-400" /> Код</>}
-                          </button>
-                        </div>
-                        <p className="mt-1 text-[11px] text-slate-500">Ученик вводит его на экране входа → «Я ученик».</p>
-                      </div>
-                    )}
-                    <p className="mt-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">Ссылка / QR (один тап)</p>
-                    <p className="mt-1 break-all rounded-lg bg-slate-50 px-2 py-1.5 text-xs text-slate-600">{accessUrl}</p>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <button onClick={copyAccessUrl} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50">
-                        {accessCopied ? <><Check className="h-3.5 w-3.5 text-emerald-500" /> Скопировано</> : <><Copy className="h-3.5 w-3.5 text-slate-400" /> Копировать ссылку</>}
-                      </button>
-                      <button onClick={grantAccess} disabled={accessBusy} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-40">
-                        {accessBusy ? "…" : "Обновить уровень"}
-                      </button>
-                      <button onClick={revokeAccess} disabled={accessBusy} className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-500 transition hover:bg-rose-50 disabled:opacity-40">
-                        Отозвать доступ
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <button
-                onClick={grantAccess}
-                disabled={accessBusy}
-                className="inline-flex items-center gap-2 rounded-xl bg-[#C5A059] px-4 py-2.5 text-sm font-bold text-white transition hover:bg-[#b3914c] disabled:opacity-40"
-              >
-                <QrCode className="h-4 w-4" /> {accessBusy ? "Генерируем…" : "Выдать доступ и создать ссылку"}
-              </button>
-            )}
+            <button
+              onClick={grantAccess}
+              disabled={accessBusy}
+              className="inline-flex items-center gap-2 rounded-xl bg-[#C5A059] px-4 py-2.5 text-sm font-bold text-white transition hover:bg-[#b3914c] disabled:opacity-40"
+            >
+              <KeyRound className="h-4 w-4" /> {accessBusy ? "Сохраняем…" : "Сохранить уровень доступа"}
+            </button>
           </div>
         )}
 

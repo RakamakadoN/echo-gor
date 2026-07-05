@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { ResponsiveContainer, LineChart, Line } from 'recharts';
+import { LineChart, Line } from 'recharts';
+import { ResponsiveContainer } from './SafeResponsiveContainer';
 import { 
   Users, Calendar, CheckSquare, Trophy, Bell, BookOpen, User, 
   MessageSquare, BrainCircuit, PlayCircle, Plus, FileText, ChevronRight, 

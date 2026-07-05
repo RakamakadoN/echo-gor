@@ -51,6 +51,9 @@ const SENIOR_TABS = ["Главная", "Наклейки", "Достижения
 // Кто может выдавать/отзывать вход ученику.
 const accessGrantStaff = ["owner", "branch_manager", "admin"];
 
+// Стандартный пароль ученика (один для всех). Вход — по номеру телефона + этот пароль.
+const STUDENT_STANDARD_PASSWORD = "12345";
+
 // Эффективный уровень: ручное переопределение приоритетнее авто-расчёта по возрасту.
 // Возраст неизвестен (null/undefined/некорректный) → безопасный минимум «junior»
 // («маленькая» группа), персонал при желании переопределит вручную.
@@ -3626,8 +3629,32 @@ export function registerMvpApi(app: express.Express) {
     const body = req.body || {};
     const token = String(body.token || "").trim();
     const code = normalizeAccessCode(body.code || "");
-    if (!token && !code) return res.status(400).json({ error: "Введите код или откройте ссылку" });
+    // Вход ученика по номеру телефона + стандартному паролю.
+    const phoneDigits = String(body.phone || "").replace(/\D/g, "").slice(-10);
+    const password = String(body.password || "");
     const badCred = () => res.status(401).json({ error: "Код недействителен или доступ отозван" });
+
+    // ── Приоритетный путь: телефон + пароль (пароль у всех учеников стандартный) ──
+    if (phoneDigits) {
+      if (phoneDigits.length < 10) return res.status(400).json({ error: "Введите номер телефона полностью" });
+      if (password !== STUDENT_STANDARD_PASSWORD) return res.status(401).json({ error: "Неверный пароль" });
+      const last10 = (v: any) => String(v || "").replace(/\D/g, "").slice(-10);
+      if (!supabaseEnabled) {
+        const s: any = initialStudents.find((x: any) => last10(x.phone) === phoneDigits || last10(x.parentPhone) === phoneDigits);
+        if (!s) return res.status(404).json({ error: "Ученик с таким номером не найден" });
+        const level = effectiveAccessLevel(mockStudentAccess[s.id]?.level ?? null, s.age ?? ageFromBirthday(s.birthday));
+        return res.json({ studentId: s.id, name: s.name, level, token: null, tabs: tabsForLevel(level) });
+      }
+      const tail7 = phoneDigits.slice(-7);
+      const rows = await supabaseFetch<any[]>("students", `select=id,first_name,last_name,full_name,birthday,branch_id,access_level,phone,parent_phone&or=(phone.like.*${tail7}*,parent_phone.like.*${tail7}*)&limit=20`).catch(() => [] as any[]);
+      const r = rows.find((x) => last10(x.phone) === phoneDigits || last10(x.parent_phone) === phoneDigits);
+      if (!r) return res.status(404).json({ error: "Ученик с таким номером не найден" });
+      const name = [r.first_name, r.last_name].filter(Boolean).join(" ") || r.full_name || "Ученик";
+      const level = effectiveAccessLevel(r.access_level, ageFromBirthday(r.birthday));
+      return res.json({ studentId: r.id, name, level, token: null, tabs: tabsForLevel(level) });
+    }
+
+    if (!token && !code) return res.status(400).json({ error: "Введите номер телефона и пароль" });
 
     if (!supabaseEnabled) {
       const entry = Object.entries(mockStudentAccess).find(([, v]) =>
@@ -5261,11 +5288,11 @@ export function registerMvpApi(app: express.Express) {
       fact: planningFactByDirection[r.direction] ?? Math.round(r.planned * 0.73),
     }));
 
-    // Выполнение плана по уровням групп.
+    // Выполнение плана по форматам занятий (родитель «Доходы» + подуровни).
     const levels = [
-      { level: "Начинающие", plan: 8_000_000, fact: 6_000_000 },
-      { level: "Продолжающие", plan: 12_000_000, fact: 9_400_000 },
-      { level: "Ансамбль", plan: 10_000_000, fact: 6_500_000 },
+      { level: "Групповые", plan: 8_628_449, fact: 8_474_882 },
+      { level: "Мини-группы", plan: 882_486, fact: 810_500 },
+      { level: "Индивидуальные", plan: 551_500, fact: 554_125 },
     ].map((l) => ({ ...l, deviation: l.fact - l.plan, done: Math.round((l.fact / l.plan) * 100) }));
 
     // Воронка: сколько действий нужно для плана (демо-конверсии).
