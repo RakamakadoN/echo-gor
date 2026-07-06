@@ -9586,30 +9586,69 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
     return m;
   }, [groups]);
 
-  // Нормализуем занятия: парсим даты, подмешиваем данные группы
+  // Занятия на графике = реальные уроки (schedule_lessons) + повторяющиеся блоки
+  // групп по их дням/времени (Пн/Ср 18:30–20:00 → каждую неделю в периоде группы).
   const lessons = useMemo(() => {
-    return (scheduleItems || [])
+    const passFilters = (branchId: any, teacherId: any, hallId: any) =>
+      (!filterBranchId || branchId === filterBranchId) &&
+      (!filterTeacherId || teacherId === filterTeacherId) &&
+      (!filterHallId || hallId === filterHallId);
+
+    // 1) Реальные уроки.
+    const real = (scheduleItems || [])
       .filter((l: any) => l.status !== "cancelled")
-      .filter((l: any) => !filterBranchId || l.branchId === filterBranchId)
-      .filter((l: any) => !filterTeacherId || l.teacherId === filterTeacherId)
-      .filter((l: any) => !filterHallId || l.hallId === filterHallId)
-      .map((l: any) => {
-        const s = new Date(l.startsAt);
-        const e = l.endsAt ? new Date(l.endsAt) : new Date(s.getTime() + 60 * 60000);
-        const g = l.groupId ? groupById[l.groupId] : undefined;
-        return {
-          ...l,
-          _s: s, _e: e,
-          _start: hourFloat(s), _end: Math.max(hourFloat(e), hourFloat(s) + 0.5),
-          _date: s,
-          _capacity: g?.capacity ?? 0,
-          _students: g?.studentCount ?? 0,
-          _level: g?.level || "",
-          _age: g?.ageGroup || "",
-          _pal: paletteFor(l.groupId || l.groupName || ""),
-        };
+      .filter((l: any) => passFilters(l.branchId, l.teacherId, l.hallId))
+      .map((l: any) => ({ ...l, _virtual: false }));
+    const realKey = new Set(real.map((l: any) => `${l.groupId}_${new Date(l.startsAt).toDateString()}`));
+
+    // 2) Виртуальные блоки из расписания групп.
+    const DAY_IDX: Record<string, number> = { "вс": 0, "пн": 1, "вт": 2, "ср": 3, "чт": 4, "пт": 5, "сб": 6 };
+    const parseHM = (s: string) => { const [h, m] = String(s).trim().split(":").map((x) => parseInt(x, 10)); return { h: h || 0, m: m || 0 }; };
+    const virtual: any[] = [];
+    (groups || []).forEach((g: any) => {
+      const days: string[] = g.days || [];
+      if (!days.length || !g.time || !passFilters(g.branchId, g.teacherId, g.hallId)) return;
+      const wantIdx = new Set(days.map((d) => DAY_IDX[String(d).trim().toLowerCase()]).filter((x) => x !== undefined));
+      if (!wantIdx.size) return;
+      const [t1, t2] = String(g.time).split(/[–—-]/).map((s: string) => s.trim());
+      const sHM = parseHM(t1 || "18:30");
+      const eHM = t2 ? parseHM(t2) : { h: sHM.h + 1, m: sHM.m };
+      const gStart = g.startDate ? new Date(String(g.startDate).slice(0, 10) + "T00:00:00") : null;
+      const gEnd = g.endDate ? new Date(String(g.endDate).slice(0, 10) + "T23:59:59") : null;
+      range.days.forEach((d: Date) => {
+        if (!wantIdx.has(d.getDay())) return;
+        if (gStart && d < gStart) return;
+        if (gEnd && d > gEnd) return;
+        if (realKey.has(`${g.id}_${d.toDateString()}`)) return;
+        const s = new Date(d); s.setHours(sHM.h, sHM.m, 0, 0);
+        const e = new Date(d); e.setHours(eHM.h, eHM.m, 0, 0);
+        if (e <= s) e.setTime(s.getTime() + 90 * 60000);
+        virtual.push({
+          id: `grp-${g.id}-${isoDate(d)}`, groupId: g.id, groupName: g.name,
+          branchId: g.branchId, teacherId: g.teacherId, hallId: g.hallId,
+          startsAt: s.toISOString(), endsAt: e.toISOString(), status: "scheduled", _virtual: true,
+        });
       });
-  }, [scheduleItems, filterBranchId, filterTeacherId, filterHallId, groupById]);
+    });
+
+    // 3) Нормализация.
+    return [...real, ...virtual].map((l: any) => {
+      const s = new Date(l.startsAt);
+      const e = l.endsAt ? new Date(l.endsAt) : new Date(s.getTime() + 60 * 60000);
+      const g = l.groupId ? groupById[l.groupId] : undefined;
+      return {
+        ...l,
+        _s: s, _e: e,
+        _start: hourFloat(s), _end: Math.max(hourFloat(e), hourFloat(s) + 0.5),
+        _date: s,
+        _capacity: g?.capacity ?? 0,
+        _students: g?.studentCount ?? 0,
+        _level: g?.level || "",
+        _age: g?.ageGroup || "",
+        _pal: paletteFor(l.groupId || l.groupName || ""),
+      };
+    });
+  }, [scheduleItems, filterBranchId, filterTeacherId, filterHallId, groupById, groups, range]);
 
   const lessonsOnDay = (d: Date) => lessons.filter((l: any) => sameDay(l._date, d));
 
