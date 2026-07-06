@@ -534,18 +534,27 @@ export function StudentArtistCabinet({ student, group, allStudents = [], groups 
         )
       )}
 
-      {activeTab === "Магазин" && <EchoShop studentId={student.id} readOnly={readOnlyPreview} />}
+      {activeTab === "Магазин" && <EchoShop studentId={student.id} readOnly={readOnlyPreview} accessLevel={accessLevel} />}
     </div>
   );
 }
 
-// Магазин за ЭхоБаксы в кабинете ученика: баланс, витрина товаров, покупка, история.
-function EchoShop({ studentId, readOnly }: { studentId: string; readOnly?: boolean }) {
+// Статусы заявок на обмен (ТЗ §3.3): 🟡 Ожидает / 🟢 Выдано / 🔴 Отменено.
+const ECHO_ORDER_STATUS: Record<string, { label: string; cls: string }> = {
+  pending: { label: "🟡 Ожидает выдачи", cls: "border-amber-500/30 bg-amber-500/10 text-amber-300" },
+  issued: { label: "🟢 Выдано", cls: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" },
+  cancelled: { label: "🔴 Отменено", cls: "border-rose-500/30 bg-rose-500/10 text-rose-300" },
+};
+
+// Магазин за ЭхоБаксы в кабинете ученика: баланс, витрина, заявки на обмен, история.
+function EchoShop({ studentId, readOnly, accessLevel }: { studentId: string; readOnly?: boolean; accessLevel?: "junior" | "senior" }) {
   const hdr = { headers: { "x-demo-role": "student" } };
   const jhdr = { headers: { "Content-Type": "application/json", "x-demo-role": "student" } };
+  const canExchange = accessLevel !== "junior"; // обмен — только взрослой группе (senior)
   const [balance, setBalance] = useState(0);
   const [catalog, setCatalog] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
+  const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
@@ -553,29 +562,36 @@ function EchoShop({ studentId, readOnly }: { studentId: string; readOnly?: boole
   const load = async () => {
     setLoading(true);
     try {
-      const [c, w] = await Promise.all([
+      const [c, w, o] = await Promise.all([
         fetch("/api/mvp/shop/echo/catalog", hdr),
         fetch(`/api/mvp/shop/echo/wallet?studentId=${encodeURIComponent(studentId)}`, hdr),
+        fetch(`/api/mvp/shop/echo/orders?studentId=${encodeURIComponent(studentId)}`, hdr),
       ]);
       if (c.ok) setCatalog((await c.json()).products || []);
       if (w.ok) { const wj = await w.json(); setBalance(wj.balance || 0); setTransactions(wj.transactions || []); }
+      if (o.ok) setOrders((await o.json()).orders || []);
     } catch { /* ignore */ }
     finally { setLoading(false); }
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [studentId]);
 
-  const buy = async (p: any) => {
-    if (readOnly) { setMsg({ tone: "err", text: "Это read-only превью кабинета — покупка недоступна." }); return; }
-    if (balance < p.echoPrice) { setMsg({ tone: "err", text: "Недостаточно ЭхоБаксов для покупки." }); return; }
+  // ЭхоБаксы, «зарезервированные» ожидающими заявками — чтобы не оформить сверх баланса.
+  const pending = orders.filter((o) => o.status === "pending");
+  const reserved = pending.reduce((s, o) => s + (Number(o.echoPrice) || 0), 0);
+  const available = balance - reserved;
+
+  const exchange = async (p: any) => {
+    if (readOnly) { setMsg({ tone: "err", text: "Это read-only превью кабинета — обмен недоступен." }); return; }
+    if (!canExchange) { setMsg({ tone: "err", text: "Обмен ЭхоБаксов доступен взрослой группе." }); return; }
+    if (available < p.echoPrice) { setMsg({ tone: "err", text: "Недостаточно свободных ЭхоБаксов (учтены ожидающие заявки)." }); return; }
     setBusyId(p.id); setMsg(null);
     try {
-      const res = await fetch("/api/mvp/shop/echo/purchase", { method: "POST", ...jhdr, body: JSON.stringify({ studentId, productId: p.id }) });
+      const res = await fetch("/api/mvp/shop/echo/orders", { method: "POST", ...jhdr, body: JSON.stringify({ studentId, productId: p.id }) });
       const j = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(j.error || "Не удалось купить");
-      setBalance(j.balance ?? balance);
-      setMsg({ tone: "ok", text: `Куплено: ${j.productName || p.name}! Осталось ${j.balance} ⭐` });
+      if (!res.ok) throw new Error(j.error || "Не удалось оформить заявку");
+      setMsg({ tone: "ok", text: `Заявка на «${p.name}» создана. Ожидайте выдачи у администратора филиала.` });
       await load();
-    } catch (e: any) { setMsg({ tone: "err", text: e?.message || "Ошибка покупки" }); }
+    } catch (e: any) { setMsg({ tone: "err", text: e?.message || "Ошибка оформления заявки" }); }
     finally { setBusyId(null); }
   };
 
@@ -587,12 +603,21 @@ function EchoShop({ studentId, readOnly }: { studentId: string; readOnly?: boole
           <p className="text-[10px] font-black uppercase tracking-[0.28em] text-[#C5A059]">Кошелёк ЭхоБаксов</p>
           <p className="mt-1 text-sm text-slate-400">Зарабатывай за дисциплину, победы и помощь — трать на награды.</p>
         </div>
-        <div className="flex items-center gap-2 rounded-2xl border border-[#C5A059]/30 bg-black/40 px-5 py-3">
-          <Coins className="h-7 w-7 text-[#C5A059]" />
-          <span className="text-3xl font-black text-white">{balance}</span>
-          <span className="text-lg text-[#C5A059]">⭐</span>
+        <div className="text-right">
+          <div className="flex items-center justify-end gap-2 rounded-2xl border border-[#C5A059]/30 bg-black/40 px-5 py-3">
+            <Coins className="h-7 w-7 text-[#C5A059]" />
+            <span className="text-3xl font-black text-white">{balance}</span>
+            <span className="text-lg text-[#C5A059]">⭐</span>
+          </div>
+          {reserved > 0 && <p className="mt-1.5 text-[11px] text-amber-300/80">Свободно {available} ⭐ · в заявках {reserved} ⭐</p>}
         </div>
       </section>
+
+      {!canExchange && (
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+          Обмен ЭхоБаксов на награды доступен взрослой группе. Копи баллы — витрина уже открыта!
+        </div>
+      )}
 
       {msg && (
         <div className={`rounded-2xl border px-4 py-3 text-sm ${msg.tone === "ok" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-rose-500/30 bg-rose-500/10 text-rose-300"}`}>{msg.text}</div>
@@ -609,7 +634,7 @@ function EchoShop({ studentId, readOnly }: { studentId: string; readOnly?: boole
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {catalog.map((p) => {
-            const affordable = balance >= p.echoPrice;
+            const affordable = available >= p.echoPrice;
             return (
               <article key={p.id} className="flex flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#121212]">
                 <div className="flex aspect-video items-center justify-center overflow-hidden bg-gradient-to-br from-slate-900 to-black">
@@ -621,9 +646,9 @@ function EchoShop({ studentId, readOnly }: { studentId: string; readOnly?: boole
                   {p.description && <p className="mt-1 flex-1 text-xs leading-relaxed text-slate-400">{p.description}</p>}
                   <div className="mt-3 flex items-center justify-between">
                     <span className="flex items-center gap-1 text-lg font-black text-[#C5A059]">{p.echoPrice} <span className="text-sm">⭐</span></span>
-                    <button onClick={() => buy(p)} disabled={busyId === p.id || !affordable || readOnly}
-                      className={`rounded-xl px-4 py-2 text-xs font-black transition ${affordable && !readOnly ? "bg-[#C5A059] text-black hover:bg-[#d4af6a]" : "cursor-not-allowed border border-white/10 text-slate-500"}`}>
-                      {busyId === p.id ? "…" : affordable ? "Купить" : "Не хватает"}
+                    <button onClick={() => exchange(p)} disabled={busyId === p.id || !affordable || readOnly || !canExchange}
+                      className={`rounded-xl px-4 py-2 text-xs font-black transition ${affordable && !readOnly && canExchange ? "bg-[#C5A059] text-black hover:bg-[#d4af6a]" : "cursor-not-allowed border border-white/10 text-slate-500"}`}>
+                      {busyId === p.id ? "…" : !canExchange ? "Взрослым" : affordable ? "Обменять" : "Не хватает"}
                     </button>
                   </div>
                 </div>
@@ -631,6 +656,30 @@ function EchoShop({ studentId, readOnly }: { studentId: string; readOnly?: boole
             );
           })}
         </div>
+      )}
+
+      {/* Мои заявки на обмен */}
+      {orders.length > 0 && (
+        <section className="rounded-3xl border border-white/10 bg-white/[0.02] p-5">
+          <h3 className="text-sm font-black uppercase tracking-wider text-white">Мои заявки на обмен</h3>
+          <div className="mt-3 space-y-2">
+            {orders.map((o) => {
+              const st = ECHO_ORDER_STATUS[o.status] || ECHO_ORDER_STATUS.pending;
+              return (
+                <div key={o.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/5 bg-black/20 px-3 py-2.5 text-sm">
+                  <div className="min-w-0">
+                    <p className="truncate font-bold text-white">{o.productName} · {o.echoPrice} ⭐</p>
+                    <p className="text-[11px] text-slate-500">
+                      {o.createdAt ? new Date(o.createdAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : ""}
+                      {o.status === "cancelled" && o.cancelReason ? ` · причина: ${o.cancelReason}` : ""}
+                    </p>
+                  </div>
+                  <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-bold ${st.cls}`}>{st.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        </section>
       )}
 
       {/* История покупок и начислений */}
