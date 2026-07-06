@@ -3334,6 +3334,9 @@ export default function App() {
               onOpenPayment={openPaymentForStudent}
               onSellSubscription={handleSellSubscription}
               subscriptionPlans={subscriptionPlans}
+              onCreatePlan={handleCreatePlan}
+              onUpdatePlan={handleUpdatePlan}
+              onDeletePlan={handleDeletePlan}
               leadSources={leadSources}
               waitlist={waitlist}
               onAddToWaitlist={handleAddToWaitlist}

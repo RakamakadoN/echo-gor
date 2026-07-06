@@ -78,6 +78,7 @@ import AttendanceJournalView from "./AttendanceJournalView";
 import { BranchesGroupsView } from "./BranchesGroupsView";
 import AiHubView from "./AiHubView";
 import { useOwnerSectionSettings, SectionSettingsDrawer, SectionGearButton, type ResolvedTab } from "./OwnerSectionSettings";
+import { SubscriptionPlansManager } from "./SubscriptionPlansManager";
 import { computeOwnerDashboard, type DashFilters, type PeriodKey, type LevelKey, type DashExtras, type Delta, type DailyReport } from "../ownerDashboardAnalytics";
 
 // Память состояния свёрнутых блоков дашборда — отдельно для каждого пользователя (по роли).
@@ -196,6 +197,9 @@ interface OwnerExecutiveWorkspaceProps {
   onBulkAttendance?: any;
   journal?: any;
   onJournalTask?: (p: { studentId: string; studentName: string; title: string }) => void;
+  onCreatePlan?: (data: any) => Promise<boolean>;
+  onUpdatePlan?: (id: string, data: any) => Promise<boolean>;
+  onDeletePlan?: (id: string) => Promise<boolean>;
 }
 
 type OwnerTab = "dashboard" | "branches" | "students" | "teachers" | "payroll" | "journal" | "schedule" | "finance" | "planning" | "meetings" | "reports" | "performances" | "products" | "documents" | "marketing" | "events" | "feed" | "announcements" | "analytics" | "ai" | "aihub" | "settings";
@@ -243,6 +247,9 @@ export function OwnerExecutiveWorkspace({
   onOpenPayment,
   onSellSubscription,
   subscriptionPlans = [],
+  onCreatePlan,
+  onUpdatePlan,
+  onDeletePlan,
   studentTrash = [],
   onRestoreStudent,
   onConfirmDeleteStudent,
@@ -464,7 +471,7 @@ export function OwnerExecutiveWorkspace({
           {activeTab === "ai" && <OwnerAiView branches={branchScorecards} renewals={renewals} debt={debt} aiResult={aiResult} aiGenerating={aiGenerating} onTriggerAiReport={onTriggerAiReport} />}
           {activeTab === "aihub" && <AiHubView roleHeader="owner" />}
           {activeTab === "marketing" && <MarketingView studentArchive={studentArchive} branches={branches} />}
-          {activeTab === "settings" && <NetworkSettingsView branches={branches} teachers={teachers} />}
+          {activeTab === "settings" && <NetworkSettingsView branches={branches} teachers={teachers} subscriptionPlans={subscriptionPlans} onCreatePlan={onCreatePlan} onUpdatePlan={onUpdatePlan} onDeletePlan={onDeletePlan} />}
         </main>
       </div>
 
@@ -7360,9 +7367,12 @@ function MarketingView({ studentArchive = [], branches = [] }: { studentArchive?
   );
 }
 
-function NetworkSettingsView({ branches, teachers }: { branches: Branch[]; teachers: Teacher[] }) {
+function NetworkSettingsView({ branches, teachers, subscriptionPlans = [], onCreatePlan, onUpdatePlan, onDeletePlan }: { branches: Branch[]; teachers: Teacher[]; subscriptionPlans?: SubscriptionPlan[]; onCreatePlan?: (data: any) => Promise<boolean>; onUpdatePlan?: (id: string, data: any) => Promise<boolean>; onDeletePlan?: (id: string) => Promise<boolean> }) {
   return (
-    <OwnerScreen title="Настройки сети" subtitle="Справочники, филиалы, роли, права доступа, тарифы, шаблоны, audit log, интеграции и лицензия.">
+    <OwnerScreen title="Настройки сети" subtitle="Справочники, тарифы абонементов, филиалы, роли, права доступа, шаблоны, audit log, интеграции и лицензия.">
+      {/* Тарифы абонементов: владелец задаёт названия, кол-во занятий, срок и цену. */}
+      <SubscriptionPlansManager plans={subscriptionPlans} onCreatePlan={onCreatePlan} onUpdatePlan={onUpdatePlan} onDeletePlan={onDeletePlan} />
+
       {/* Настраиваемые справочники: владелец добавляет значения, остальные выбирают из готового. */}
       <section className="rounded-[1.75rem] border border-white/10 bg-gradient-to-br from-[#141414] to-black p-5">
         <h3 className="text-sm font-black uppercase tracking-wider text-white">Справочники</h3>
