@@ -79,6 +79,8 @@ export interface Group {
   ageTo?: number | null;
   capacity?: number; // вместимость группы (для расчёта заполняемости)
   level: string; // e.g., "Начинающие", "Продолжающие", "Ансамбль"
+  startDate?: string | null; // период работы группы — дата начала
+  endDate?: string | null;   // период работы группы — дата окончания
   studentCount: number;
 }
 

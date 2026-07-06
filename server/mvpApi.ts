@@ -1852,6 +1852,8 @@ export function registerMvpApi(app: express.Express) {
       time: row.schedule_time || "",
       ageGroup: row.age_from != null && row.age_to != null ? `${row.age_from}–${row.age_to} лет` : "Все возрасты",
       level: row.level || "MVP",
+      startDate: row.start_date || null,
+      endDate: row.end_date || null,
       studentCount,
     };
   }
@@ -1893,6 +1895,8 @@ export function registerMvpApi(app: express.Express) {
           level: payload.level || "Начинающие",
           schedule_days: payload.scheduleDays || null,
           schedule_time: payload.scheduleTime || null,
+          start_date: payload.startDate || null,
+          end_date: payload.endDate || null,
           status: "active",
         }),
       });
@@ -1920,6 +1924,8 @@ export function registerMvpApi(app: express.Express) {
     if (payload.level !== undefined) updates.level = payload.level || null;
     if (payload.scheduleDays !== undefined) updates.schedule_days = payload.scheduleDays || null;
     if (payload.scheduleTime !== undefined) updates.schedule_time = payload.scheduleTime || null;
+    if (payload.startDate !== undefined) updates.start_date = payload.startDate || null;
+    if (payload.endDate !== undefined) updates.end_date = payload.endDate || null;
     if (Object.keys(updates).length === 0) return res.status(400).json({ error: "Нет полей для обновления" });
     try {
       // ТЗ §10: при смене педагога фиксируем старого/нового в журнале.

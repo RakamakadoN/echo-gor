@@ -2798,6 +2798,8 @@ function registerMvpApi(app2) {
       time: row.schedule_time || "",
       ageGroup: row.age_from != null && row.age_to != null ? `${row.age_from}\u2013${row.age_to} \u043B\u0435\u0442` : "\u0412\u0441\u0435 \u0432\u043E\u0437\u0440\u0430\u0441\u0442\u044B",
       level: row.level || "MVP",
+      startDate: row.start_date || null,
+      endDate: row.end_date || null,
       studentCount
     };
   }
@@ -2837,6 +2839,8 @@ function registerMvpApi(app2) {
           level: payload.level || "\u041D\u0430\u0447\u0438\u043D\u0430\u044E\u0449\u0438\u0435",
           schedule_days: payload.scheduleDays || null,
           schedule_time: payload.scheduleTime || null,
+          start_date: payload.startDate || null,
+          end_date: payload.endDate || null,
           status: "active"
         })
       });
@@ -2863,6 +2867,8 @@ function registerMvpApi(app2) {
     if (payload.level !== void 0) updates.level = payload.level || null;
     if (payload.scheduleDays !== void 0) updates.schedule_days = payload.scheduleDays || null;
     if (payload.scheduleTime !== void 0) updates.schedule_time = payload.scheduleTime || null;
+    if (payload.startDate !== void 0) updates.start_date = payload.startDate || null;
+    if (payload.endDate !== void 0) updates.end_date = payload.endDate || null;
     if (Object.keys(updates).length === 0) return res.status(400).json({ error: "\u041D\u0435\u0442 \u043F\u043E\u043B\u0435\u0439 \u0434\u043B\u044F \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F" });
     try {
       let prevTeacherId = null;

@@ -9556,7 +9556,7 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
   const [filterTeacherId, setFilterTeacherId] = useState("");
   const [filterHallId, setFilterHallId] = useState("");
   const [lessonForm, setLessonForm] = useState({ groupId: "", startsAt: "", endsAt: "", teacherId: "", hallId: "", topic: "" });
-  const [groupForm, setGroupForm] = useState({ name: "", branchId: "", teacherId: "", hallId: "", ageFrom: "", ageTo: "", level: "Начинающие", scheduleDays: "", scheduleTime: "" });
+  const [groupForm, setGroupForm] = useState({ name: "", branchId: "", teacherId: "", hallId: "", ageFrom: "", ageTo: "", level: "Начинающие", scheduleDays: "", scheduleTime: "", startDate: "", endDate: "" });
   const [saving, setSaving] = useState(false);
 
   // Видимый диапазон по выбранному режиму
@@ -9676,7 +9676,7 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
     setSaving(true);
     const ok = await onCreateGroup?.({ ...groupForm, ageFrom: groupForm.ageFrom ? Number(groupForm.ageFrom) : undefined, ageTo: groupForm.ageTo ? Number(groupForm.ageTo) : undefined });
     setSaving(false);
-    if (ok) { setGroupForm({ name: "", branchId: "", teacherId: "", hallId: "", ageFrom: "", ageTo: "", level: "Начинающие", scheduleDays: "", scheduleTime: "" }); setActiveForm(null); }
+    if (ok) { setGroupForm({ name: "", branchId: "", teacherId: "", hallId: "", ageFrom: "", ageTo: "", level: "Начинающие", scheduleDays: "", scheduleTime: "", startDate: "", endDate: "" }); setActiveForm(null); }
   };
 
   const inputCls = "rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white w-full";
@@ -9824,6 +9824,13 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
             </label>
             <label className={labelCls}><span className={kicCls}>Время</span>
               <input type="text" value={groupForm.scheduleTime} onChange={(e) => setGroupForm(f => ({ ...f, scheduleTime: e.target.value }))} placeholder="18:30–20:00" className={inputCls} />
+            </label>
+            <label className={labelCls}><span className={kicCls}>Период работы группы</span>
+              <div className="flex items-center gap-2">
+                <input type="date" value={groupForm.startDate} onChange={(e) => setGroupForm(f => ({ ...f, startDate: e.target.value }))} className={inputCls} title="Дата начала" />
+                <span className="text-slate-500">—</span>
+                <input type="date" value={groupForm.endDate} onChange={(e) => setGroupForm(f => ({ ...f, endDate: e.target.value }))} className={inputCls} title="Дата окончания" />
+              </div>
             </label>
           </div>
           <div className="flex gap-3">
