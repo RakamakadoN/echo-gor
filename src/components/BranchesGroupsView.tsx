@@ -276,6 +276,7 @@ function BranchesTab({ data, avgSubPrice, canManage, onCreate, onUpdate, onDelet
     return Object.fromEntries(METRIC_COLS.map((c) => [c.key, true]));
   });
   const [colsOpen, setColsOpen] = useState(false);
+  const [branchOpen, setBranchOpen] = useState(false);
   useEffect(() => { try { localStorage.setItem("echogor.branches.cols", JSON.stringify(cols)); } catch (e) {} }, [cols]);
   const filtered = data.filter((d: any) => {
     const q = query.trim().toLowerCase();
@@ -325,9 +326,26 @@ function BranchesTab({ data, avgSubPrice, canManage, onCreate, onUpdate, onDelet
 
       {/* Фильтры списка филиалов */}
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <div className="relative min-w-[200px] flex-1 sm:max-w-xs">
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Поиск по названию, городу, управляющему…" className="w-full rounded-xl border border-white/10 bg-[#121212] px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:border-[#C5A059]/50 focus:outline-none" />
-          {query && <button onClick={() => setQuery("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"><X className="h-4 w-4" /></button>}
+        <div className="relative min-w-[220px] flex-1 sm:max-w-sm">
+          <input value={query} onChange={(e) => { setQuery(e.target.value); setBranchOpen(true); }} onFocus={() => setBranchOpen(true)} placeholder="Поиск или выбор филиала…" className="w-full rounded-xl border border-white/10 bg-[#121212] px-3 py-2 pr-14 text-sm text-white placeholder:text-slate-600 focus:border-[#C5A059]/50 focus:outline-none" />
+          <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
+            {query && <button onClick={() => setQuery("")} className="text-slate-500 hover:text-white"><X className="h-4 w-4" /></button>}
+            <button onClick={() => setBranchOpen((v) => !v)} className="text-slate-500 hover:text-white"><ChevronDown className="h-4 w-4" /></button>
+          </div>
+          {branchOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setBranchOpen(false)} />
+              <div className="absolute left-0 right-0 z-20 mt-2 max-h-64 overflow-auto rounded-2xl border border-white/10 bg-[#0F0F0F] p-1 shadow-xl">
+                {filtered.map((d: any) => (
+                  <button key={d.raw.id} onClick={() => { setQuery(d.raw.name); setBranchOpen(false); }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-slate-300 transition hover:bg-white/5">
+                    <MapPin className="h-4 w-4 shrink-0 text-slate-500" />
+                    <span className="min-w-0 flex-1 truncate"><span className="font-bold text-white">{d.raw.name}</span>{d.raw.city ? <span className="text-slate-500"> · {d.raw.city}</span> : null}</span>
+                  </button>
+                ))}
+                {filtered.length === 0 && <p className="px-3 py-2 text-sm text-slate-500">{data.length === 0 ? "Нет добавленных филиалов" : "Ничего не найдено"}</p>}
+              </div>
+            </>
+          )}
         </div>
         <div className="relative">
           <button onClick={() => setColsOpen((v) => !v)} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-[#121212] px-3 py-2 text-sm font-bold text-slate-300 transition hover:border-[#C5A059]/40 hover:text-white">
