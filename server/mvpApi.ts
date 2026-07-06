@@ -1875,7 +1875,7 @@ export function registerMvpApi(app: express.Express) {
           name: String(payload.name).trim(),
           age_from: payload.ageFrom ?? null,
           age_to: payload.ageTo ?? null,
-          capacity: payload.capacity ?? null,
+          capacity: payload.capacity ?? 0,
           level: payload.level || "Начинающие",
           schedule_days: payload.scheduleDays || null,
           schedule_time: payload.scheduleTime || null,
@@ -1902,7 +1902,7 @@ export function registerMvpApi(app: express.Express) {
     if (payload.teacherId !== undefined) updates.teacher_id = payload.teacherId || null;
     if (payload.ageFrom !== undefined) updates.age_from = payload.ageFrom ?? null;
     if (payload.ageTo !== undefined) updates.age_to = payload.ageTo ?? null;
-    if (payload.capacity !== undefined) updates.capacity = payload.capacity ?? null;
+    if (payload.capacity !== undefined) updates.capacity = payload.capacity ?? 0;
     if (payload.level !== undefined) updates.level = payload.level || null;
     if (payload.scheduleDays !== undefined) updates.schedule_days = payload.scheduleDays || null;
     if (payload.scheduleTime !== undefined) updates.schedule_time = payload.scheduleTime || null;

@@ -2824,7 +2824,7 @@ function registerMvpApi(app2) {
           name: String(payload.name).trim(),
           age_from: payload.ageFrom ?? null,
           age_to: payload.ageTo ?? null,
-          capacity: payload.capacity ?? null,
+          capacity: payload.capacity ?? 0,
           level: payload.level || "\u041D\u0430\u0447\u0438\u043D\u0430\u044E\u0449\u0438\u0435",
           schedule_days: payload.scheduleDays || null,
           schedule_time: payload.scheduleTime || null,
@@ -2850,7 +2850,7 @@ function registerMvpApi(app2) {
     if (payload.teacherId !== void 0) updates.teacher_id = payload.teacherId || null;
     if (payload.ageFrom !== void 0) updates.age_from = payload.ageFrom ?? null;
     if (payload.ageTo !== void 0) updates.age_to = payload.ageTo ?? null;
-    if (payload.capacity !== void 0) updates.capacity = payload.capacity ?? null;
+    if (payload.capacity !== void 0) updates.capacity = payload.capacity ?? 0;
     if (payload.level !== void 0) updates.level = payload.level || null;
     if (payload.scheduleDays !== void 0) updates.schedule_days = payload.scheduleDays || null;
     if (payload.scheduleTime !== void 0) updates.schedule_time = payload.scheduleTime || null;
