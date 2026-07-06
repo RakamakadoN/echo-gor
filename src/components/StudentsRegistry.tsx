@@ -9,6 +9,8 @@
  */
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ArchiveReasonModal } from "./ArchiveReasonModal";
+import StatusSettings from "./StatusSettings";
+import { getStatusLabel, getStatusToneRaw, getManualStatuses, TONE_FUNNEL } from "../statusConfig";
 import {
   Search,
   Plus,
@@ -53,7 +55,6 @@ import {
   ROW_TONE_CLASS,
   STATUS_BADGE_CLASS,
   COLOR_LEGEND,
-  DEFAULT_MANUAL_STATUSES,
   AUTO_STATUS_GROUPS,
   formatAge,
   ageFromBirthday,
@@ -290,6 +291,7 @@ export default function StudentsRegistry({
   // Видимые столбцы (с сохранением выбора пользователя).
   const [columns, setColumns] = useState<Record<ColKey, boolean>>(loadColumnPrefs);
   const [showColumnConfig, setShowColumnConfig] = useState(false);
+  const [showStatusSettings, setShowStatusSettings] = useState(false);
   useEffect(() => {
     try { window.localStorage.setItem(COLS_STORAGE_KEY, JSON.stringify(columns)); } catch { /* ignore */ }
   }, [columns]);
@@ -519,7 +521,7 @@ export default function StudentsRegistry({
 
   const massSetStatus = async (value: string) => {
     if (!value) return;
-    const manual = DEFAULT_MANUAL_STATUSES.includes(value);
+    const manual = getManualStatuses().includes(value);
     // Статус «… оплатит» — спрашиваем дату обещанной оплаты для контроля дожима.
     let promiseDate: string | null = null;
     if (manual && /оплат/i.test(value)) {
@@ -542,7 +544,7 @@ export default function StudentsRegistry({
   // Смена статуса одного ученика (для карточки).
   const setStudentStatus = async (id: string, value: string) => {
     if (!value || !onUpdateStudent) return;
-    const manual = DEFAULT_MANUAL_STATUSES.includes(value);
+    const manual = getManualStatuses().includes(value);
     let promiseDate: string | null = null;
     if (manual && /оплат/i.test(value)) {
       const today = new Date().toISOString().slice(0, 10);
@@ -773,14 +775,16 @@ export default function StudentsRegistry({
         <p className="mb-3 text-[11px] font-bold uppercase" style={{ letterSpacing: "0.88px", color: CLR.muted }}>Основные показатели</p>
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
           {kpis.map((k) => {
-            const ic = KPI_ICON[k.color] || KPI_ICON.gray;
+            const kTone = getStatusToneRaw(k.kpiKey) || k.color;
+            const ic = KPI_ICON[kTone] || KPI_ICON.gray;
+            const kLabel = getStatusLabel(k.kpiKey, k.label);
             return (
               <div key={k.label} onClick={() => openKpi(k.kpiKey, k.label)} role="button" tabIndex={0} className="cursor-pointer rounded-[14px] bg-white px-4 py-3.5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md" style={{ border: `1px solid ${CLR.border}` }}>
                 <div className="mb-2 inline-flex h-9 w-9 items-center justify-center rounded-[10px]" style={{ background: ic.bg, color: ic.color }}>
                   <k.icon className="h-[18px] w-[18px]" />
                 </div>
                 <p className="text-[28px] font-extrabold leading-none" style={{ color: CLR.strong }}>{k.value}</p>
-                <p className="mt-1.5 text-[11px] font-semibold uppercase" style={{ letterSpacing: "0.55px", color: CLR.muted }}>{k.label}</p>
+                <p className="mt-1.5 text-[11px] font-semibold uppercase" style={{ letterSpacing: "0.55px", color: CLR.muted }}>{kLabel}</p>
               </div>
             );
           })}
@@ -793,20 +797,23 @@ export default function StudentsRegistry({
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
           {FUNNEL_STAGES.map((st, i) => {
             const ids = funnel[st.key] || [];
+            const fTone = getStatusToneRaw("funnel:" + st.key);
+            const fc = fTone ? TONE_FUNNEL[fTone] : st;
+            const fLabel = getStatusLabel("funnel:" + st.key, st.label);
             return (
               <button
                 key={st.key}
                 onClick={() => openFunnel(st.key, st.label)}
                 className="group relative flex flex-col items-start rounded-[14px] px-4 py-3.5 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
-                style={{ background: st.bg, border: `1px solid ${st.border}` }}
+                style={{ background: fc.bg, border: `1px solid ${fc.border}` }}
               >
                 <div className="flex w-full items-center justify-between">
-                  <st.icon className="h-[18px] w-[18px]" style={{ color: st.icon_c }} />
+                  <st.icon className="h-[18px] w-[18px]" style={{ color: fc.icon_c }} />
                   <span className="text-[11px] font-bold" style={{ color: CLR.muted }}>{i + 1}</span>
                 </div>
-                <p className="mt-1.5 text-[26px] font-extrabold leading-none" style={{ color: st.val }}>{ids.length}</p>
-                <p className="mt-1 text-[12px] font-semibold leading-tight" style={{ color: CLR.text }}>{st.label}</p>
-                {st.hint && <p className="mt-1 text-[11px] font-semibold" style={{ color: st.hint_c }}>{st.hint}</p>}
+                <p className="mt-1.5 text-[26px] font-extrabold leading-none" style={{ color: fc.val }}>{ids.length}</p>
+                <p className="mt-1 text-[12px] font-semibold leading-tight" style={{ color: CLR.text }}>{fLabel}</p>
+                {st.hint && <p className="mt-1 text-[11px] font-semibold" style={{ color: fc.hint_c }}>{st.hint}</p>}
               </button>
             );
           })}
@@ -876,6 +883,9 @@ export default function StudentsRegistry({
             <button onClick={() => setShowColumnConfig((v) => !v)} className="inline-flex items-center justify-center gap-2 rounded-[10px] px-3.5 py-2 text-[13px] font-semibold transition" style={showColumnConfig ? { background: "#F2EDE2", border: `1px solid ${CLR.gold}`, color: CLR.gold } : { background: CLR.fill, border: `1px solid ${CLR.border}`, color: CLR.second }}>
               <SlidersHorizontal className="h-4 w-4" /> Настроить таблицу
             </button>
+            <button onClick={() => setShowStatusSettings(true)} className="inline-flex items-center justify-center gap-2 rounded-[10px] px-3.5 py-2 text-[13px] font-semibold transition" style={{ background: CLR.fill, border: `1px solid ${CLR.border}`, color: CLR.second }}>
+              <SlidersHorizontal className="h-4 w-4" /> Статусы
+            </button>
           </div>
 
           {/* Конфигуратор столбцов */}
@@ -926,7 +936,7 @@ export default function StudentsRegistry({
                 <option value="" disabled>Статус…</option>
                 <option value="active">Активный</option>
                 <option value="paused">Заморозить абонемент</option>
-                {DEFAULT_MANUAL_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                {getManualStatuses().map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
               <MassBtn icon={MessageCircle} label="WhatsApp" onClick={massWhatsApp} />
               <MassBtn icon={Download} label="Excel" onClick={() => exportCsv(selectedStudents)} />
@@ -1132,7 +1142,7 @@ export default function StudentsRegistry({
                 onClose={() => setOpenId(null)}
                 onArchive={onArchiveStudent ? () => { setOpenId(null); setArchiveModal([openStudent]); } : undefined}
                 onSetStatus={onUpdateStudent ? (value) => setStudentStatus(openStudent.id, value) : undefined}
-                statusOptions={[{ value: "active", label: "Активный" }, { value: "paused", label: "Заморозить абонемент" }, ...DEFAULT_MANUAL_STATUSES.map((s) => ({ value: s, label: s }))]}
+                statusOptions={[{ value: "active", label: "Активный" }, { value: "paused", label: "Заморозить абонемент" }, ...getManualStatuses().map((s) => ({ value: s, label: s }))]}
                 onEdit={canManage ? () => { setOpenId(null); openEdit(openStudent); } : undefined}
                 onDelete={onDeleteStudent ? async () => { await onDeleteStudent(openStudent.id); applyOverride(openStudent.id, { status: "left" }); setOpenId(null); } : undefined}
                 onOpenPayment={onOpenPayment ? () => onOpenPayment(openStudent) : undefined}
@@ -1149,6 +1159,8 @@ export default function StudentsRegistry({
           </div>
         </div>
       )}
+
+      {showStatusSettings && <StatusSettings onClose={() => setShowStatusSettings(false)} />}
 
       {archiveModal && (
         <ArchiveReasonModal
