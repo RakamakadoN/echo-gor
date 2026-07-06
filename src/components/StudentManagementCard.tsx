@@ -21,6 +21,7 @@ import {
   Clock,
   X,
   Trash2,
+  Archive,
   CreditCard,
   CheckCircle2,
   Wallet,
@@ -68,6 +69,12 @@ export interface StudentManagementCardProps {
   onClose?: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
+  /** Отметить уход / отправить ученика в архив (модалка причины у родителя). */
+  onArchive?: () => void;
+  /** Сменить статус ученика вручную (значение из statusOptions). */
+  onSetStatus?: (value: string) => void | Promise<boolean | void> | boolean;
+  /** Опции для выпадающего списка смены статуса. */
+  statusOptions?: { value: string; label: string }[];
   onOpenPayment?: () => void;
   /** Доступные планы абонементов организации (для формы продажи) */
   plans?: SubscriptionPlan[];
@@ -136,6 +143,9 @@ export default function StudentManagementCard({
   onClose,
   onEdit,
   onDelete,
+  onArchive,
+  onSetStatus,
+  statusOptions = [],
   onOpenPayment,
   plans = [],
   leadSources = [],
@@ -566,6 +576,26 @@ export default function StudentManagementCard({
             >
               <Trash2 className="h-4 w-4" /> В корзину
             </button>
+          )}
+          {onArchive && (
+            <button
+              onClick={onArchive}
+              className="inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-white px-4 py-2.5 text-sm font-bold text-amber-600 transition hover:bg-amber-50"
+            >
+              <Archive className="h-4 w-4" /> В архив
+            </button>
+          )}
+          {onSetStatus && statusOptions.length > 0 && (
+            <select
+              defaultValue=""
+              onChange={(e) => { const v = e.target.value; e.target.value = ""; if (v) onSetStatus(v); }}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
+            >
+              <option value="" disabled>Изменить статус…</option>
+              {statusOptions.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
           )}
         </div>
 
