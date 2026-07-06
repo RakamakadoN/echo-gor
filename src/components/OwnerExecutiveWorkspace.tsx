@@ -5847,7 +5847,7 @@ function ProductAddModal({ busy, onClose, onSubmit, role = "owner", initial = nu
 }
 
 // Панель начисления ЭхоБаксов ученикам (владелец/управляющий/админ).
-function EchoGrantPanel({ role }: { role: string }) {
+export function EchoGrantPanel({ role }: { role: string }) {
   const hdr = { headers: { "x-demo-role": role } };
   const jhdr = { headers: { "Content-Type": "application/json", "x-demo-role": role } };
   const [students, setStudents] = useState<any[]>([]);

@@ -5,11 +5,12 @@ import {
   Users, Calendar, CheckSquare, Trophy, Bell, BookOpen, User, 
   MessageSquare, BrainCircuit, PlayCircle, Plus, FileText, ChevronRight, 
   Search, Star, AlertCircle, ArrowUpRight, ArrowDownRight, MoreHorizontal,
-  Home, ClipboardList, Download
+  Home, ClipboardList, Download, Coins
 } from 'lucide-react';
 import { Group, Student, Competition, Announcement, Homework } from '../types';
 import StudentManagementCard from './StudentManagementCard';
 import AttendanceJournalView from './AttendanceJournalView';
+import { EchoGrantPanel } from './OwnerExecutiveWorkspace';
 import { motion, AnimatePresence } from 'motion/react';
 // @ts-ignore
 import teacherProfileCard from '../assets/images/teacher_profile_card.png';
@@ -80,7 +81,7 @@ export function TeacherWorkspace({
   onJournalTask,
 }: TeacherWorkspaceProps) {
 
-  const [activeTab, setActiveTab] = useState<'today' | 'profile' | 'groups' | 'students' | 'journal' | 'feedback' | 'more'>('today');
+  const [activeTab, setActiveTab] = useState<'today' | 'profile' | 'groups' | 'students' | 'journal' | 'feedback' | 'shop' | 'more'>('today');
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
 
@@ -276,6 +277,16 @@ export function TeacherWorkspace({
             />
           )}
 
+          {activeTab === 'shop' && (
+            <div className="pb-24">
+              <div className="mb-4">
+                <h2 className="text-xl font-black text-white">Магазин · ЭхоБаксы</h2>
+                <p className="mt-1 text-sm text-slate-400">Начисляйте ученикам ЭхоБаксы за дисциплину, успехи и помощь — или списывайте при необходимости. Ученики тратят баллы на награды в своём кабинете.</p>
+              </div>
+              <EchoGrantPanel role="teacher" />
+            </div>
+          )}
+
           {activeTab === 'more' && (
             <AINotebookView
               announcements={announcements}
@@ -298,6 +309,7 @@ export function TeacherWorkspace({
           <NavItem icon={<ClipboardList className="w-5 h-5" />} label="Журнал" active={activeTab === 'journal'} onClick={() => {setActiveTab('journal'); setSelectedGroupId(null); setSelectedStudentId(null)}} />
           <NavItem icon={<CheckSquare className="w-5 h-5" />} label="Ученики" active={activeTab === 'students'} onClick={() => setActiveTab('students')} />
           <NavItem icon={<Star className="w-5 h-5" />} label="Спасибо" active={activeTab === 'feedback'} onClick={() => {setActiveTab('feedback'); setSelectedGroupId(null); setSelectedStudentId(null)}} />
+          <NavItem icon={<Coins className="w-5 h-5" />} label="ЭхоБаксы" active={activeTab === 'shop'} onClick={() => {setActiveTab('shop'); setSelectedGroupId(null); setSelectedStudentId(null)}} />
           <NavItem icon={<BrainCircuit className="w-5 h-5" />} label="Notebook" active={activeTab === 'more'} onClick={() => {setActiveTab('more'); setSelectedGroupId(null); setSelectedStudentId(null)}} />
         </div>
       </div>
