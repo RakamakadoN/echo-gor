@@ -3822,6 +3822,181 @@ export function registerMvpApi(app: express.Express) {
     }
   }));
 
+  // ======================================================================
+  // ЗАЯВКИ НА ОБМЕН ЭХОБАКСОВ (ТЗ «Магазин», Блок 1) — миграция 035.
+  // Ученик (только senior/взрослый) создаёт заявку «Обменять» → pending, без
+  // списания. Персонал филиала (владелец/управляющий/админ) подтверждает выдачу
+  // (issued): списываются ЭхоБаксы + товар со склада, либо отменяет (cancelled).
+  // Есть mock-фолбэк.
+  // ======================================================================
+  const echoOrderStaff = ["owner", "branch_manager", "admin"];
+  const mockEchoOrders: any[] = [];
+  const echoOrderOut = (o: any) => ({
+    id: o.id, studentId: o.studentId ?? o.student_id, productId: o.productId ?? o.product_id ?? null,
+    branchId: o.branchId ?? o.branch_id ?? null,
+    studentName: o.studentName ?? o.student_name ?? null, branchName: o.branchName ?? o.branch_name ?? null,
+    groupName: o.groupName ?? o.group_name ?? null, teacherName: o.teacherName ?? o.teacher_name ?? null,
+    productName: o.productName ?? o.product_name ?? null, productPhoto: o.productPhoto ?? o.product_photo ?? null,
+    echoPrice: Number(o.echoPrice ?? o.echo_price) || 0, balance: Number(o.balanceAtRequest ?? o.balance_at_request) || 0,
+    status: o.status || "pending", cancelReason: o.cancelReason ?? o.cancel_reason ?? null,
+    decidedBy: o.decidedBy ?? o.decided_by ?? null, createdAt: o.createdAt ?? o.created_at,
+    decidedAt: o.decidedAt ?? o.decided_at ?? null,
+  });
+
+  // Снапшот карточки ученика для заявки: ФИО, филиал, группа, педагог, баланс.
+  const resolveEchoCard = async (session: MvpSession, studentId: string): Promise<null | {
+    name: string; branchId: string | null; branchName: string | null; groupName: string | null; teacherName: string | null; balance: number;
+  }> => {
+    if (!supabaseEnabled) {
+      const s: any = initialStudents.find((x: any) => x.id === studentId);
+      if (!s) return null;
+      const g: any = initialGroups.find((x: any) => x.id === s.groupId);
+      const t: any = initialTeachers.find((x: any) => x.id === (g?.teacherId ?? s.teacherId));
+      const b: any = initialBranches.find((x: any) => x.id === s.branchId);
+      return { name: s.name || "Ученик", branchId: s.branchId ?? null, branchName: b?.name ?? null, groupName: g?.name ?? null, teacherName: t?.name ?? null, balance: mockEchoBalances[studentId] ?? 0 };
+    }
+    const st = await supabaseFetch<any[]>("students", `select=*&id=eq.${studentId}&organization_id=eq.${session.organizationId}&limit=1`).catch(() => [] as any[]);
+    if (!st[0]) return null;
+    const s = st[0];
+    const name = [s.first_name, s.last_name].filter(Boolean).join(" ") || s.full_name || "Ученик";
+    let branchName: string | null = null, groupName: string | null = null, teacherName: string | null = null;
+    if (s.branch_id) { const b = await supabaseFetch<any[]>("branches", `select=name&id=eq.${s.branch_id}&limit=1`).catch(() => [] as any[]); branchName = b[0]?.name ?? null; }
+    if (s.group_id) {
+      const g = await supabaseFetch<any[]>("groups", `select=name,teacher_id&id=eq.${s.group_id}&limit=1`).catch(() => [] as any[]);
+      groupName = g[0]?.name ?? null;
+      const tid = g[0]?.teacher_id ?? s.teacher_id;
+      if (tid) { const t = await supabaseFetch<any[]>("teachers", `select=name,first_name,last_name&id=eq.${tid}&limit=1`).catch(() => [] as any[]); teacherName = t[0]?.name ?? [t[0]?.first_name, t[0]?.last_name].filter(Boolean).join(" ") ?? null; }
+    }
+    return { name, branchId: s.branch_id ?? null, branchName, groupName, teacherName, balance: Number(s.echo_balance) || 0 };
+  };
+
+  // Текущий остаток товара на складе (для проверки наличия).
+  const productStock = async (session: MvpSession, productId: string): Promise<number> => {
+    const { sales, receipts, writeoffs } = await loadProducts(session);
+    return stockBalance(productId, sales, receipts, writeoffs);
+  };
+
+  // Создать заявку на обмен (ученик). Списания нет — только заявка.
+  app.post("/api/mvp/shop/echo/orders", ah(async (req, res) => {
+    const session = getSession(req);
+    // Только взрослые (senior). junior — блокируем (undefined в демо не блокируется).
+    if (session.role === "student" && session.accessLevel === "junior") {
+      return res.status(403).json({ error: "Обмен ЭхоБаксов доступен только взрослой группе" });
+    }
+    const b = req.body || {};
+    const studentId = String(b.studentId || session.studentId || "");
+    const productId = String(b.productId || "");
+    if (!studentId || !productId) return res.status(400).json({ error: "Не указан ученик или товар" });
+    if (session.role === "student" && session.studentId && session.studentId !== studentId) {
+      return res.status(403).json({ error: "Нельзя оформлять заявку за другого ученика" });
+    }
+    // Товар: активность + цена в ЭхоБаксах + фото.
+    let prod: { name: string; echoPrice: number; active: boolean; photo: string | null } | null = null;
+    if (!supabaseEnabled) {
+      const p = mockProducts.find((x) => x.id === productId);
+      if (p) prod = { name: p.name, echoPrice: Number(p.echoPrice) || 0, active: p.isActive !== false, photo: p.photoUrl || null };
+    } else {
+      const rows = await supabaseFetch<any[]>("products", `select=name,echo_price,is_active,photo_url&id=eq.${productId}&organization_id=eq.${session.organizationId}&limit=1`);
+      if (rows[0]) prod = { name: rows[0].name, echoPrice: Number(rows[0].echo_price) || 0, active: rows[0].is_active ?? true, photo: rows[0].photo_url || null };
+    }
+    if (!prod) return res.status(404).json({ error: "Товар не найден" });
+    if (!prod.active || prod.echoPrice <= 0) return res.status(400).json({ error: "Товар недоступен для обмена на ЭхоБаксы" });
+    // Наличие на складе.
+    if (await productStock(session, productId) <= 0) return res.status(400).json({ error: "Товара нет в наличии — обмен временно недоступен" });
+    // Карточка ученика + баланс.
+    const card = await resolveEchoCard(session, studentId);
+    if (!card) return res.status(404).json({ error: "Ученик не найден" });
+    if (card.balance < prod.echoPrice) return res.status(400).json({ error: "Недостаточно ЭхоБаксов для обмена" });
+    // Одна активная заявка на товар за раз.
+    const dupPending = (list: any[]) => list.some((o) => (o.studentId ?? o.student_id) === studentId && (o.productId ?? o.product_id) === productId && o.status === "pending");
+    if (!supabaseEnabled) {
+      if (dupPending(mockEchoOrders)) return res.status(400).json({ error: "Заявка на этот товар уже создана и ожидает выдачи" });
+      const order = { id: uid(), studentId, productId, branchId: card.branchId, studentName: card.name, branchName: card.branchName, groupName: card.groupName, teacherName: card.teacherName, productName: prod.name, productPhoto: prod.photo, echoPrice: prod.echoPrice, balanceAtRequest: card.balance, status: "pending", cancelReason: null, decidedBy: null, createdAt: new Date().toISOString(), decidedAt: null };
+      mockEchoOrders.unshift(order);
+      return res.status(201).json({ order: echoOrderOut(order) });
+    }
+    const exist = await supabaseFetch<any[]>("echo_orders", `select=id&student_id=eq.${studentId}&product_id=eq.${productId}&status=eq.pending&limit=1`).catch(() => [] as any[]);
+    if (dupPending(exist)) return res.status(400).json({ error: "Заявка на этот товар уже создана и ожидает выдачи" });
+    const ins = await supabaseFetch<any[]>("echo_orders", "", { method: "POST", body: JSON.stringify({
+      organization_id: session.organizationId, student_id: studentId, product_id: productId, branch_id: card.branchId,
+      student_name: card.name, branch_name: card.branchName, group_name: card.groupName, teacher_name: card.teacherName,
+      product_name: prod.name, product_photo: prod.photo, echo_price: prod.echoPrice, balance_at_request: card.balance, status: "pending",
+    }) });
+    res.status(201).json({ order: ins[0] ? echoOrderOut(ins[0]) : null });
+  }));
+
+  // Список заявок. С ?studentId= — заявки ученика (кабинет). Без — инбокс персонала (по филиалу).
+  app.get("/api/mvp/shop/echo/orders", ah(async (req, res) => {
+    const session = getSession(req);
+    const studentId = String((req.query as any).studentId || "");
+    const rows: any[] = supabaseEnabled
+      ? await supabaseFetch<any[]>("echo_orders", `select=*&organization_id=eq.${session.organizationId}&order=created_at.desc`)
+      : mockEchoOrders.slice();
+    if (studentId) {
+      if (session.role === "student" && session.studentId && session.studentId !== studentId) {
+        return res.status(403).json({ error: "Нет доступа к чужим заявкам" });
+      }
+      return res.json({ orders: rows.filter((o) => (o.studentId ?? o.student_id) === studentId).map(echoOrderOut) });
+    }
+    if (!echoOrderStaff.includes(session.role)) return res.status(403).json({ error: "Доступно владельцу, управляющему и администратору" });
+    const scoped = rows.filter((o) => canSeeBranch(session, o.branchId ?? o.branch_id));
+    res.json({ orders: scoped.map(echoOrderOut) });
+  }));
+
+  // Выдать / отменить заявку (персонал). body: { action: 'issue' | 'cancel', reason? }.
+  app.patch("/api/mvp/shop/echo/orders/:id", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!echoOrderStaff.includes(session.role)) return res.status(403).json({ error: "Недостаточно прав" });
+    const action = String((req.body || {}).action || "");
+    const reason = String((req.body || {}).reason || "").trim() || null;
+    if (!["issue", "cancel"].includes(action)) return res.status(400).json({ error: "Неизвестное действие" });
+
+    // Загрузить заявку.
+    let order: any;
+    if (!supabaseEnabled) {
+      order = mockEchoOrders.find((o) => o.id === req.params.id);
+    } else {
+      const rows = await supabaseFetch<any[]>("echo_orders", `select=*&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}&limit=1`);
+      order = rows[0];
+    }
+    if (!order) return res.status(404).json({ error: "Заявка не найдена" });
+    const oBranch = order.branchId ?? order.branch_id;
+    if (!canSeeBranch(session, oBranch)) return res.status(403).json({ error: "Заявка другого филиала" });
+    if (order.status !== "pending") return res.status(400).json({ error: "Заявка уже обработана" });
+    const studentId = order.studentId ?? order.student_id;
+    const productId = order.productId ?? order.product_id;
+    const price = Number(order.echoPrice ?? order.echo_price) || 0;
+    const productName = order.productName ?? order.product_name ?? "Товар";
+    const nowIso = new Date().toISOString();
+
+    if (action === "cancel") {
+      if (!supabaseEnabled) { order.status = "cancelled"; order.cancelReason = reason; order.decidedBy = session.fullName || null; order.decidedAt = nowIso; return res.json({ ok: true, order: echoOrderOut(order) }); }
+      await supabaseFetch("echo_orders", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ status: "cancelled", cancel_reason: reason, decided_by: session.fullName || null, decided_at: nowIso }) });
+      return res.json({ ok: true, status: "cancelled" });
+    }
+
+    // action === "issue": проверить наличие, списать баксы, списать склад, закрыть.
+    if (productId && await productStock(session, productId) <= 0) return res.status(400).json({ error: "Товара нет на складе — выдача невозможна" });
+    try {
+      await applyEcho(session, studentId, -price, "purchase", `Магазин: ${productName}`, productId || null);
+    } catch (e: any) {
+      if (e?.message === "INSUFFICIENT") return res.status(400).json({ error: "У ученика недостаточно ЭхоБаксов" });
+      if (e?.message === "NOT_FOUND") return res.status(404).json({ error: "Ученик не найден" });
+      throw e;
+    }
+    // Списание со склада (расход, без выручки).
+    if (productId) {
+      if (!supabaseEnabled) {
+        mockWriteoffs.unshift({ id: uid(), productId, qty: 1, reason: "Выдача из магазина ЭхоБаксов", writeoffDate: todayStr(), comment: `Заявка ${order.studentName ?? order.student_name ?? ""}`.trim(), branchId: oBranch || demoBranchAlmaty });
+      } else {
+        await supabaseFetch("product_writeoffs", "", { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ organization_id: session.organizationId, branch_id: oBranch || null, product_id: productId, qty: 1, reason: "Выдача из магазина ЭхоБаксов", writeoff_date: todayStr(), comment: `Заявка магазина: ${order.student_name || ""}`.trim() }) }).catch((e: any) => console.warn("[echo-order] списание склада не прошло:", e?.message || e));
+      }
+    }
+    if (!supabaseEnabled) { order.status = "issued"; order.decidedBy = session.fullName || null; order.decidedAt = nowIso; return res.json({ ok: true, order: echoOrderOut(order) }); }
+    await supabaseFetch("echo_orders", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ status: "issued", decided_by: session.fullName || null, decided_at: nowIso }) });
+    res.json({ ok: true, status: "issued" });
+  }));
+
   // ===== Маркетинг: авторассылка приглашений (WhatsApp Cloud API) =====
   // Работает, если заданы WHATSAPP_TOKEN и WHATSAPP_PHONE_ID. Иначе 503 — фронт
   // переключается на ручное открытие диалогов wa.me.

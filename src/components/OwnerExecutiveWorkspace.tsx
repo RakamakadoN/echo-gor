@@ -5404,8 +5404,9 @@ export function ProductsView({ role = "owner" }: { role?: string } = {}) {
   const hdr = { headers: { "x-demo-role": role } };
   const jhdr = { headers: { "Content-Type": "application/json", "x-demo-role": role } };
 
-  const [tab, setTab] = useState<"products" | "sales" | "stock" | "receipts" | "writeoffs" | "orders" | "echo">(isCashier ? "sales" : "products");
+  const [tab, setTab] = useState<"products" | "sales" | "stock" | "receipts" | "writeoffs" | "orders" | "echo" | "echoOrders">(isCashier ? "sales" : "products");
   const [products, setProducts] = useState<any[]>([]);
+  const [echoOrders, setEchoOrders] = useState<any[]>([]);
   const [sales, setSales] = useState<any[]>([]);
   const [stock, setStock] = useState<any[]>([]);
   const [stockSummary, setStockSummary] = useState<any>(null);
@@ -5425,7 +5426,7 @@ export function ProductsView({ role = "owner" }: { role?: string } = {}) {
     try {
       // Касса (админ): только справочник + сегодняшние продажи. Остальное недоступно по роли.
       const reqs = isCashier
-        ? [fetch(`/api/mvp/products`, hdr), fetch(`/api/mvp/products/sales`, hdr), fetch(`/api/mvp/shop/orders`, hdr)]
+        ? [fetch(`/api/mvp/products`, hdr), fetch(`/api/mvp/products/sales`, hdr), fetch(`/api/mvp/shop/orders`, hdr), fetch(`/api/mvp/shop/echo/orders`, hdr)]
         : [
             fetch(`/api/mvp/products`, hdr),
             fetch(`/api/mvp/products/sales`, hdr),
@@ -5434,6 +5435,7 @@ export function ProductsView({ role = "owner" }: { role?: string } = {}) {
             fetch(`/api/mvp/products/overview?period=${period}`, hdr),
             fetch(`/api/mvp/products/writeoffs`, hdr),
             fetch(`/api/mvp/shop/orders`, hdr),
+            fetch(`/api/mvp/shop/echo/orders`, hdr),
           ];
       const all = await Promise.all(reqs);
       const P = all[0]; if (!P.ok) throw new Error(await P.text());
@@ -5445,8 +5447,10 @@ export function ProductsView({ role = "owner" }: { role?: string } = {}) {
         const O = all[4]; if (O?.ok) setOverview(await O.json());
         const W = all[5]; if (W?.ok) setWriteoffs((await W.json()).writeoffs || []);
         const ORD = all[6]; if (ORD?.ok) setOrders((await ORD.json()).orders || []);
+        const EO = all[7]; if (EO?.ok) setEchoOrders((await EO.json()).orders || []);
       } else {
         const ORD = all[2]; if (ORD?.ok) setOrders((await ORD.json()).orders || []);
+        const EO = all[3]; if (EO?.ok) setEchoOrders((await EO.json()).orders || []);
       }
     } catch (e: any) { setError(e?.message || "Не удалось загрузить товары"); }
     finally { setLoading(false); }
@@ -5484,13 +5488,24 @@ export function ProductsView({ role = "owner" }: { role?: string } = {}) {
     try { await fetch(`/api/mvp/shop/orders/${id}`, { method: "PATCH", ...jhdr, body: JSON.stringify({ status }) }); await load(); }
     catch (e: any) { setError(e?.message || "Не удалось обновить заказ"); } finally { setBusy(false); }
   };
+  // Выдать (issue) / отменить (cancel) заявку на обмен ЭхоБаксов.
+  const decideEchoOrder = async (id: string, action: "issue" | "cancel", reason?: string) => {
+    setBusy(true); setError(null);
+    try {
+      const res = await fetch(`/api/mvp/shop/echo/orders/${id}`, { method: "PATCH", ...jhdr, body: JSON.stringify({ action, reason }) });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({} as any))).error || "Не удалось обработать заявку");
+      await load();
+    } catch (e: any) { setError(e?.message || "Не удалось обработать заявку"); } finally { setBusy(false); }
+  };
 
   const cashierRevenue = sales.reduce((s, x) => s + (Number(x.amount) || 0), 0);
   const newOrders = orders.filter((o) => o.status === "new").length;
   const ordersLabel = `Заказы${newOrders ? ` (${newOrders})` : ""}`;
+  const pendingEcho = echoOrders.filter((o) => o.status === "pending").length;
+  const echoOrdersLabel = `Заявки ЭхоБаксов${pendingEcho ? ` (${pendingEcho})` : ""}`;
   const tabs: [typeof tab, string][] = isCashier
-    ? [["sales", "Продажи за сегодня"], ["products", "Каталог"], ["orders", ordersLabel]]
-    : [["products", "Товары"], ["sales", "Продажи"], ["stock", "Остатки"], ["receipts", "Поступления"], ["writeoffs", "Списания"], ["orders", ordersLabel], ["echo", "ЭхоБаксы"]];
+    ? [["sales", "Продажи за сегодня"], ["products", "Каталог"], ["orders", ordersLabel], ["echoOrders", echoOrdersLabel]]
+    : [["products", "Товары"], ["sales", "Продажи"], ["stock", "Остатки"], ["receipts", "Поступления"], ["writeoffs", "Списания"], ["orders", ordersLabel], ["echo", "ЭхоБаксы"], ["echoOrders", echoOrdersLabel]];
 
   return (
     <OwnerScreen
@@ -5598,6 +5613,8 @@ export function ProductsView({ role = "owner" }: { role?: string } = {}) {
 
       {/* ЭХОБАКСЫ — начисление ученикам */}
       {!loading && tab === "echo" && <EchoGrantPanel role={role} />}
+
+      {!loading && tab === "echoOrders" && <EchoOrdersInbox orders={echoOrders} busy={busy} onDecide={decideEchoOrder} />}
 
       {/* ПРОДАЖИ */}
       {!loading && tab === "sales" && (
@@ -5830,7 +5847,7 @@ function ProductAddModal({ busy, onClose, onSubmit, role = "owner", initial = nu
 }
 
 // Панель начисления ЭхоБаксов ученикам (владелец/управляющий/админ).
-function EchoGrantPanel({ role }: { role: string }) {
+export function EchoGrantPanel({ role }: { role: string }) {
   const hdr = { headers: { "x-demo-role": role } };
   const jhdr = { headers: { "Content-Type": "application/json", "x-demo-role": role } };
   const [students, setStudents] = useState<any[]>([]);
@@ -5927,6 +5944,98 @@ function EchoGrantPanel({ role }: { role: string }) {
         )}
       </div>
     </section>
+  );
+}
+
+// Инбокс заявок на обмен ЭхоБаксов (ТЗ «Магазин» Блок 1): персонал видит заявки
+// своего филиала, подтверждает выдачу (списываются баксы + товар со склада) или
+// отменяет с причиной.
+const ECHO_STATUS_META: Record<string, { label: string; cls: string }> = {
+  pending: { label: "🟡 Ожидает выдачи", cls: "border-amber-500/30 bg-amber-500/10 text-amber-300" },
+  issued: { label: "🟢 Выдано", cls: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" },
+  cancelled: { label: "🔴 Отменено", cls: "border-rose-500/30 bg-rose-500/10 text-rose-300" },
+};
+function EchoOrdersInbox({ orders, busy, onDecide }: { orders: any[]; busy: boolean; onDecide: (id: string, action: "issue" | "cancel", reason?: string) => void }) {
+  const [filter, setFilter] = useState<"pending" | "all">("pending");
+  const [cancelId, setCancelId] = useState<string | null>(null);
+  const [reason, setReason] = useState("");
+  const shown = filter === "pending" ? orders.filter((o) => o.status === "pending") : orders;
+  const pendingCount = orders.filter((o) => o.status === "pending").length;
+
+  const fmtDate = (s?: string) => s ? new Date(s).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        {([["pending", `Ожидают выдачи${pendingCount ? ` (${pendingCount})` : ""}`], ["all", "Все заявки"]] as [typeof filter, string][]).map(([id, label]) => (
+          <button key={id} onClick={() => setFilter(id)}
+            className={`rounded-full px-4 py-1.5 text-xs font-black transition ${filter === id ? "bg-[#C5A059] text-black" : "border border-white/10 text-slate-400 hover:text-white"}`}>{label}</button>
+        ))}
+      </div>
+
+      {shown.length === 0 ? (
+        <section className="rounded-[1.5rem] border border-white/10 bg-white/[0.02] py-16 text-center">
+          <ShoppingBag className="mx-auto h-8 w-8 text-slate-600" />
+          <p className="mt-3 text-sm text-slate-400">{filter === "pending" ? "Нет заявок, ожидающих выдачи." : "Заявок на обмен ЭхоБаксов пока нет."}</p>
+        </section>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {shown.map((o) => {
+            const st = ECHO_STATUS_META[o.status] || ECHO_STATUS_META.pending;
+            const enough = (Number(o.balance) || 0) >= (Number(o.echoPrice) || 0);
+            return (
+              <article key={o.id} className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-[#121212]">
+                <div className="flex gap-4 p-4">
+                  <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 to-black">
+                    {o.productPhoto ? <img src={o.productPhoto} alt={o.productName} className="h-full w-full object-cover" /> : <ShoppingBag className="h-8 w-8 text-[#C5A059]/60" />}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="truncate text-base font-black text-white">{o.productName}</h3>
+                      <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-bold ${st.cls}`}>{st.label}</span>
+                    </div>
+                    <p className="mt-0.5 text-sm font-black text-[#C5A059]">{o.echoPrice} ⭐</p>
+                    <p className="mt-1 truncate text-sm font-bold text-white">{o.studentName || "Ученик"}</p>
+                    <p className="text-[11px] text-slate-500">
+                      {[o.branchName && `📍 ${o.branchName}`, o.groupName && `👥 ${o.groupName}`, o.teacherName && `👨‍🏫 ${o.teacherName}`].filter(Boolean).join(" · ") || "—"}
+                    </p>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Баланс: <span className={enough ? "text-emerald-400" : "text-rose-300"}>{o.balance} ⭐</span> · Заявка: {fmtDate(o.createdAt)}
+                    </p>
+                    {o.status === "cancelled" && o.cancelReason && <p className="mt-1 text-[11px] text-rose-300/80">Причина отмены: {o.cancelReason}</p>}
+                    {o.status !== "pending" && o.decidedBy && <p className="text-[11px] text-slate-600">{o.status === "issued" ? "Выдал" : "Отменил"}: {o.decidedBy} · {fmtDate(o.decidedAt)}</p>}
+                  </div>
+                </div>
+
+                {o.status === "pending" && (
+                  <div className="border-t border-white/5 bg-black/20 p-3">
+                    {cancelId === o.id ? (
+                      <div className="space-y-2">
+                        <input autoFocus value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Причина отмены (необязательно)"
+                          className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white placeholder:text-slate-600" />
+                        <div className="flex gap-2">
+                          <button disabled={busy} onClick={() => { onDecide(o.id, "cancel", reason.trim() || undefined); setCancelId(null); setReason(""); }}
+                            className="flex-1 rounded-xl bg-rose-500/90 px-3 py-2 text-xs font-black text-white hover:bg-rose-500 disabled:opacity-50">Подтвердить отмену</button>
+                          <button disabled={busy} onClick={() => { setCancelId(null); setReason(""); }}
+                            className="rounded-xl border border-white/10 px-3 py-2 text-xs font-black text-slate-300 hover:text-white">Назад</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex gap-2">
+                        <button disabled={busy || !enough} title={enough ? "" : "У ученика недостаточно ЭхоБаксов"} onClick={() => onDecide(o.id, "issue")}
+                          className={`flex-1 rounded-xl px-3 py-2 text-xs font-black transition ${enough ? "bg-emerald-500/90 text-white hover:bg-emerald-500" : "cursor-not-allowed border border-white/10 text-slate-500"}`}>✅ Выдать товар</button>
+                        <button disabled={busy} onClick={() => setCancelId(o.id)}
+                          className="rounded-xl border border-rose-500/30 px-3 py-2 text-xs font-black text-rose-300 hover:bg-rose-500/10">Отменить</button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
