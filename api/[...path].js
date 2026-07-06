@@ -1513,7 +1513,7 @@ async function dbBootstrap(session) {
     // Cross-org lessons are unlikely but we keep mapping safe
     supabaseFetch("attendance", "select=*"),
     supabaseFetch("student_subscriptions", `select=*`),
-    supabaseFetch("subscription_plans", `select=*&${orgFilter}`),
+    supabaseFetch("subscription_plans", `select=*&${orgFilter}&status=eq.active`),
     supabaseFetch("finance_transactions", `select=*&${orgFilter}&order=created_at.desc`),
     // tasks/lead_sources не имеют organization_id — фильтруем по филиалу в коде
     supabaseFetch("tasks", `select=*&order=created_at.desc`).catch(() => []),
@@ -3154,11 +3154,17 @@ function registerMvpApi(app2) {
   app2.delete("/api/mvp/subscription-plans/:id", async (req, res) => {
     const session = getSession(req);
     if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const scope = `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`;
     try {
-      await supabaseFetch("subscription_plans", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
-      res.json({ ok: true });
+      await supabaseFetch("subscription_plans", scope, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      res.json({ ok: true, archived: false });
     } catch (error) {
-      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u0430\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442" });
+      try {
+        await supabaseFetch("subscription_plans", scope, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ status: "archived" }) });
+        res.json({ ok: true, archived: true });
+      } catch (e2) {
+        res.status(400).json({ error: e2?.message || error?.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u0430\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442" });
+      }
     }
   });
   app2.post("/api/mvp/lead-sources", async (req, res) => {

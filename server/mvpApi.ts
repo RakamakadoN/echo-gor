@@ -402,7 +402,7 @@ async function dbBootstrap(session: MvpSession) {
     supabaseFetch<any[]>("schedule_lessons", `select=*&order=starts_at.desc`), // Cross-org lessons are unlikely but we keep mapping safe
     supabaseFetch<any[]>("attendance", "select=*"),
     supabaseFetch<any[]>("student_subscriptions", `select=*`),
-    supabaseFetch<any[]>("subscription_plans", `select=*&${orgFilter}`),
+    supabaseFetch<any[]>("subscription_plans", `select=*&${orgFilter}&status=eq.active`),
     supabaseFetch<any[]>("finance_transactions", `select=*&${orgFilter}&order=created_at.desc`),
     // tasks/lead_sources не имеют organization_id — фильтруем по филиалу в коде
     supabaseFetch<any[]>("tasks", `select=*&order=created_at.desc`).catch(() => [] as any[]),
@@ -2231,11 +2231,21 @@ export function registerMvpApi(app: express.Express) {
   app.delete("/api/mvp/subscription-plans/:id", async (req, res) => {
     const session = getSession(req);
     if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const scope = `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`;
     try {
-      await supabaseFetch("subscription_plans", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
-      res.json({ ok: true });
+      // Пытаемся удалить полностью (если тариф ещё нигде не продан).
+      await supabaseFetch("subscription_plans", scope, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      res.json({ ok: true, archived: false });
     } catch (error: any) {
-      res.status(400).json({ error: error.message || "Не удалось удалить абонемент" });
+      // Тариф уже используется в проданных абонементах (FK RESTRICT) —
+      // архивируем вместо удаления, чтобы сохранить историю. В UI он пропадёт
+      // (bootstrap грузит только активные тарифы).
+      try {
+        await supabaseFetch("subscription_plans", scope, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ status: "archived" }) });
+        res.json({ ok: true, archived: true });
+      } catch (e2: any) {
+        res.status(400).json({ error: e2?.message || error?.message || "Не удалось удалить абонемент" });
+      }
     }
   });
 
