@@ -954,7 +954,7 @@ function proxiedFetch(base = fetch) {
   const provider = (process.env.SCRAPER_PROVIDER || "scraperapi").toLowerCase();
   const render = process.env.SCRAPER_RENDER === "true";
   if (!key && !template) return base;
-  return async (input, init) => {
+  return (async (input, init) => {
     const target = typeof input === "string" ? input : input?.url ?? String(input);
     let wrapped;
     if (template) {
@@ -965,7 +965,7 @@ function proxiedFetch(base = fetch) {
       wrapped = `https://api.scraperapi.com/?api_key=${key}&url=${encodeURIComponent(target)}${render ? "&render=true" : ""}`;
     }
     return base(wrapped, init);
-  };
+  });
 }
 var TICKETON_CITIES = [
   { slug: "almaty", city: "\u0410\u043B\u043C\u0430\u0442\u044B", country: "KZ" },
@@ -1214,6 +1214,7 @@ var JUNIOR_MAX_AGE = 10;
 var JUNIOR_TABS = ["\u0413\u043B\u0430\u0432\u043D\u0430\u044F", "\u041D\u0430\u043A\u043B\u0435\u0439\u043A\u0438", "\u0414\u043E\u0441\u0442\u0438\u0436\u0435\u043D\u0438\u044F"];
 var SENIOR_TABS = ["\u0413\u043B\u0430\u0432\u043D\u0430\u044F", "\u041D\u0430\u043A\u043B\u0435\u0439\u043A\u0438", "\u0414\u043E\u0441\u0442\u0438\u0436\u0435\u043D\u0438\u044F", "\u041C\u043E\u0439 \u043F\u0443\u0442\u044C", "\u041F\u0430\u0441\u043F\u043E\u0440\u0442", "\u0421\u043E\u043E\u0431\u0449\u0435\u0441\u0442\u0432\u043E", "\u041C\u0430\u0433\u0430\u0437\u0438\u043D", "\u0412\u044B\u0441\u0442\u0443\u043F\u043B\u0435\u043D\u0438\u044F", "\u0412\u0438\u0434\u0435\u043E"];
 var accessGrantStaff = ["owner", "branch_manager", "admin"];
+var STUDENT_STANDARD_PASSWORD = "12345";
 function effectiveAccessLevel(manual, age) {
   if (manual === "junior" || manual === "senior") return manual;
   if (age === null || age === void 0) return "junior";
@@ -1683,6 +1684,56 @@ function mapDbRecalc(row, studentName) {
   };
 }
 function registerMvpApi(app2) {
+  const PUBLIC_MVP_PATHS = /* @__PURE__ */ new Set([
+    "/session/demo-users",
+    "/session/demo-login",
+    "/student-auth"
+  ]);
+  app2.use("/api/mvp", (req, res, next) => {
+    if (PUBLIC_MVP_PATHS.has(req.path)) return next();
+    const hasRole = Boolean(req.headers["x-demo-role"]);
+    const hasStudentToken = Boolean(req.headers["x-student-token"]);
+    if (!hasRole && !hasStudentToken) {
+      return res.status(401).json({ error: "\u041D\u0435 \u0430\u0432\u0442\u043E\u0440\u0438\u0437\u043E\u0432\u0430\u043D\u043E: \u0443\u043A\u0430\u0436\u0438\u0442\u0435 \u0440\u043E\u043B\u044C \u0438\u043B\u0438 \u0432\u043E\u0439\u0434\u0438\u0442\u0435 \u043A\u0430\u043A \u0443\u0447\u0435\u043D\u0438\u043A" });
+    }
+    return next();
+  });
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  app2.use("/api/mvp", (req, res, next) => {
+    if (req.method === "GET") return next();
+    res.on("finish", () => {
+      try {
+        const session = getSession(req);
+        const parts = req.path.split("/").filter(Boolean);
+        const entityType = parts[0] || "unknown";
+        const maybeId = parts.find((p) => UUID_RE.test(p)) || null;
+        const record = {
+          actor_id: null,
+          branch_id: null,
+          entity_type: entityType,
+          entity_id: maybeId,
+          action: req.method,
+          after_data: {
+            path: req.originalUrl,
+            status: res.statusCode,
+            role: session.role,
+            user: session.fullName || null,
+            body: req.body && Object.keys(req.body).length ? JSON.stringify(req.body).slice(0, 1e3) : null
+          },
+          ip_address: req.ip || null,
+          user_agent: String(req.headers["user-agent"] || "").slice(0, 300) || null
+        };
+        if (supabaseEnabled) {
+          supabaseFetch("audit_logs", "", { method: "POST", body: JSON.stringify(record) }).catch((e) => console.warn("[audit] \u043D\u0435 \u0437\u0430\u043F\u0438\u0441\u0430\u043D:", e?.message || e));
+        } else {
+          console.log(`[audit] ${record.action} ${record.after_data.path} \xB7 ${record.after_data.role} \xB7 HTTP ${record.after_data.status}`);
+        }
+      } catch (e) {
+        console.warn("[audit] \u043E\u0448\u0438\u0431\u043A\u0430 \u0444\u043E\u0440\u043C\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u044F \u0437\u0430\u043F\u0438\u0441\u0438:", e?.message || e);
+      }
+    });
+    return next();
+  });
   const ah = (fn) => (req, res) => {
     Promise.resolve(fn(req, res)).catch((error) => {
       console.error("[mvpApi] \u041E\u0448\u0438\u0431\u043A\u0430 \u043E\u0431\u0440\u0430\u0431\u043E\u0442\u0447\u0438\u043A\u0430:", error?.message || error);
@@ -3969,6 +4020,7 @@ function registerMvpApi(app2) {
     if (session.role !== "owner") return res.status(403).json({ error: "\u0421\u043E\u0437\u0434\u0430\u0432\u0430\u0442\u044C \u043C\u043E\u0436\u0435\u0442 \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u0435\u0446" });
     const p = req.body || {};
     if (!String(p.clientName || "").trim()) return res.status(400).json({ error: "\u0423\u043A\u0430\u0436\u0438\u0442\u0435 \u043A\u043B\u0438\u0435\u043D\u0442\u0430" });
+    const eventDate = p.eventDate || p.date || todayStr();
     const type = p.type ? String(p.type) : "basic";
     const price = Number(p.price) || 0;
     const expense = Number(p.expense) || 0;
@@ -3976,13 +4028,13 @@ function registerMvpApi(app2) {
     const paymentMethod = p.paymentMethod || null;
     const markPaid = p.status === "paid";
     if (!supabaseEnabled) {
-      const payments = markPaid && price > 0 ? [{ id: uid(), amount: price, paidDate: p.eventDate || todayStr(), method: paymentMethod || "cash", comment: null }] : [];
+      const payments = markPaid && price > 0 ? [{ id: uid(), amount: price, paidDate: eventDate, method: paymentMethod || "cash", comment: null }] : [];
       const rec = {
         id: uid(),
         clientName: String(p.clientName).trim(),
         clientPhone: p.clientPhone || null,
         address: p.address || null,
-        eventDate: p.eventDate || todayStr(),
+        eventDate,
         eventTime: p.eventTime || null,
         type,
         typeLabel: p.typeLabel || null,
@@ -4006,7 +4058,7 @@ function registerMvpApi(app2) {
         client_name: String(p.clientName).trim(),
         client_phone: p.clientPhone || null,
         address: p.address || null,
-        event_date: p.eventDate || todayStr(),
+        event_date: eventDate,
         event_time: p.eventTime || null,
         type,
         type_label: p.typeLabel || null,
@@ -4022,7 +4074,7 @@ function registerMvpApi(app2) {
     if (markPaid && price > 0 && inserted[0]) {
       await supabaseFetch("performance_payments", "", {
         method: "POST",
-        body: JSON.stringify({ organization_id: session.organizationId, performance_id: inserted[0].id, amount: price, paid_date: p.eventDate || todayStr(), method: paymentMethod || "cash", comment: "\u041E\u043F\u043B\u0430\u0442\u0430 \u043F\u0440\u0438 \u0441\u043E\u0437\u0434\u0430\u043D\u0438\u0438" })
+        body: JSON.stringify({ organization_id: session.organizationId, performance_id: inserted[0].id, amount: price, paid_date: eventDate, method: paymentMethod || "cash", comment: "\u041E\u043F\u043B\u0430\u0442\u0430 \u043F\u0440\u0438 \u0441\u043E\u0437\u0434\u0430\u043D\u0438\u0438" })
       });
       pays = await supabaseFetch("performance_payments", `select=*&performance_id=eq.${inserted[0].id}`);
     }
@@ -4483,8 +4535,28 @@ function registerMvpApi(app2) {
     const body = req.body || {};
     const token = String(body.token || "").trim();
     const code = normalizeAccessCode(body.code || "");
-    if (!token && !code) return res.status(400).json({ error: "\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u043A\u043E\u0434 \u0438\u043B\u0438 \u043E\u0442\u043A\u0440\u043E\u0439\u0442\u0435 \u0441\u0441\u044B\u043B\u043A\u0443" });
+    const phoneDigits = String(body.phone || "").replace(/\D/g, "").slice(-10);
+    const password = String(body.password || "");
     const badCred = () => res.status(401).json({ error: "\u041A\u043E\u0434 \u043D\u0435\u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0442\u0435\u043B\u0435\u043D \u0438\u043B\u0438 \u0434\u043E\u0441\u0442\u0443\u043F \u043E\u0442\u043E\u0437\u0432\u0430\u043D" });
+    if (phoneDigits) {
+      if (phoneDigits.length < 10) return res.status(400).json({ error: "\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u043D\u043E\u043C\u0435\u0440 \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u0430 \u043F\u043E\u043B\u043D\u043E\u0441\u0442\u044C\u044E" });
+      if (password !== STUDENT_STANDARD_PASSWORD) return res.status(401).json({ error: "\u041D\u0435\u0432\u0435\u0440\u043D\u044B\u0439 \u043F\u0430\u0440\u043E\u043B\u044C" });
+      const last10 = (v) => String(v || "").replace(/\D/g, "").slice(-10);
+      if (!supabaseEnabled) {
+        const s = initialStudents.find((x) => last10(x.phone) === phoneDigits || last10(x.parentPhone) === phoneDigits);
+        if (!s) return res.status(404).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u0441 \u0442\u0430\u043A\u0438\u043C \u043D\u043E\u043C\u0435\u0440\u043E\u043C \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+        const level3 = effectiveAccessLevel(mockStudentAccess[s.id]?.level ?? null, s.age ?? ageFromBirthday(s.birthday));
+        return res.json({ studentId: s.id, name: s.name, level: level3, token: null, tabs: tabsForLevel(level3) });
+      }
+      const tail7 = phoneDigits.slice(-7);
+      const rows2 = await supabaseFetch("students", `select=id,first_name,last_name,full_name,birthday,branch_id,access_level,phone,parent_phone&or=(phone.like.*${tail7}*,parent_phone.like.*${tail7}*)&limit=20`).catch(() => []);
+      const r2 = rows2.find((x) => last10(x.phone) === phoneDigits || last10(x.parent_phone) === phoneDigits);
+      if (!r2) return res.status(404).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u0441 \u0442\u0430\u043A\u0438\u043C \u043D\u043E\u043C\u0435\u0440\u043E\u043C \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+      const name2 = [r2.first_name, r2.last_name].filter(Boolean).join(" ") || r2.full_name || "\u0423\u0447\u0435\u043D\u0438\u043A";
+      const level2 = effectiveAccessLevel(r2.access_level, ageFromBirthday(r2.birthday));
+      return res.json({ studentId: r2.id, name: name2, level: level2, token: null, tabs: tabsForLevel(level2) });
+    }
+    if (!token && !code) return res.status(400).json({ error: "\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u043D\u043E\u043C\u0435\u0440 \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u0430 \u0438 \u043F\u0430\u0440\u043E\u043B\u044C" });
     if (!supabaseEnabled) {
       const entry = Object.entries(mockStudentAccess).find(([, v]) => v.enabled && (token && v.token === token || code && v.code === code));
       const cached = !entry && token ? studentAccessTokens.get(token) : void 0;
@@ -4621,6 +4693,183 @@ function registerMvpApi(app2) {
       if (e?.message === "NOT_FOUND") return res.status(404).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
       throw e;
     }
+  }));
+  const echoOrderStaff = ["owner", "branch_manager", "admin"];
+  const mockEchoOrders = [];
+  const echoOrderOut = (o) => ({
+    id: o.id,
+    studentId: o.studentId ?? o.student_id,
+    productId: o.productId ?? o.product_id ?? null,
+    branchId: o.branchId ?? o.branch_id ?? null,
+    studentName: o.studentName ?? o.student_name ?? null,
+    branchName: o.branchName ?? o.branch_name ?? null,
+    groupName: o.groupName ?? o.group_name ?? null,
+    teacherName: o.teacherName ?? o.teacher_name ?? null,
+    productName: o.productName ?? o.product_name ?? null,
+    productPhoto: o.productPhoto ?? o.product_photo ?? null,
+    echoPrice: Number(o.echoPrice ?? o.echo_price) || 0,
+    balance: Number(o.balanceAtRequest ?? o.balance_at_request) || 0,
+    status: o.status || "pending",
+    cancelReason: o.cancelReason ?? o.cancel_reason ?? null,
+    decidedBy: o.decidedBy ?? o.decided_by ?? null,
+    createdAt: o.createdAt ?? o.created_at,
+    decidedAt: o.decidedAt ?? o.decided_at ?? null
+  });
+  const resolveEchoCard = async (session, studentId) => {
+    if (!supabaseEnabled) {
+      const s2 = initialStudents.find((x) => x.id === studentId);
+      if (!s2) return null;
+      const g2 = initialGroups.find((x) => x.id === s2.groupId);
+      const t = initialTeachers.find((x) => x.id === (g2?.teacherId ?? s2.teacherId));
+      const b = initialBranches.find((x) => x.id === s2.branchId);
+      return { name: s2.name || "\u0423\u0447\u0435\u043D\u0438\u043A", branchId: s2.branchId ?? null, branchName: b?.name ?? null, groupName: g2?.name ?? null, teacherName: t?.name ?? null, balance: mockEchoBalances[studentId] ?? 0 };
+    }
+    const st = await supabaseFetch("students", `select=*&id=eq.${studentId}&organization_id=eq.${session.organizationId}&limit=1`).catch(() => []);
+    if (!st[0]) return null;
+    const s = st[0];
+    const name = [s.first_name, s.last_name].filter(Boolean).join(" ") || s.full_name || "\u0423\u0447\u0435\u043D\u0438\u043A";
+    let branchName = null, groupName = null, teacherName = null;
+    if (s.branch_id) {
+      const b = await supabaseFetch("branches", `select=name&id=eq.${s.branch_id}&limit=1`).catch(() => []);
+      branchName = b[0]?.name ?? null;
+    }
+    if (s.group_id) {
+      const g2 = await supabaseFetch("groups", `select=name,teacher_id&id=eq.${s.group_id}&limit=1`).catch(() => []);
+      groupName = g2[0]?.name ?? null;
+      const tid = g2[0]?.teacher_id ?? s.teacher_id;
+      if (tid) {
+        const t = await supabaseFetch("teachers", `select=name,first_name,last_name&id=eq.${tid}&limit=1`).catch(() => []);
+        teacherName = t[0]?.name ?? [t[0]?.first_name, t[0]?.last_name].filter(Boolean).join(" ") ?? null;
+      }
+    }
+    return { name, branchId: s.branch_id ?? null, branchName, groupName, teacherName, balance: Number(s.echo_balance) || 0 };
+  };
+  const productStock = async (session, productId) => {
+    const { sales, receipts, writeoffs } = await loadProducts(session);
+    return stockBalance(productId, sales, receipts, writeoffs);
+  };
+  app2.post("/api/mvp/shop/echo/orders", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role === "student" && session.accessLevel === "junior") {
+      return res.status(403).json({ error: "\u041E\u0431\u043C\u0435\u043D \u042D\u0445\u043E\u0411\u0430\u043A\u0441\u043E\u0432 \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u0437\u0440\u043E\u0441\u043B\u043E\u0439 \u0433\u0440\u0443\u043F\u043F\u0435" });
+    }
+    const b = req.body || {};
+    const studentId = String(b.studentId || session.studentId || "");
+    const productId = String(b.productId || "");
+    if (!studentId || !productId) return res.status(400).json({ error: "\u041D\u0435 \u0443\u043A\u0430\u0437\u0430\u043D \u0443\u0447\u0435\u043D\u0438\u043A \u0438\u043B\u0438 \u0442\u043E\u0432\u0430\u0440" });
+    if (session.role === "student" && session.studentId && session.studentId !== studentId) {
+      return res.status(403).json({ error: "\u041D\u0435\u043B\u044C\u0437\u044F \u043E\u0444\u043E\u0440\u043C\u043B\u044F\u0442\u044C \u0437\u0430\u044F\u0432\u043A\u0443 \u0437\u0430 \u0434\u0440\u0443\u0433\u043E\u0433\u043E \u0443\u0447\u0435\u043D\u0438\u043A\u0430" });
+    }
+    let prod = null;
+    if (!supabaseEnabled) {
+      const p = mockProducts.find((x) => x.id === productId);
+      if (p) prod = { name: p.name, echoPrice: Number(p.echoPrice) || 0, active: p.isActive !== false, photo: p.photoUrl || null };
+    } else {
+      const rows = await supabaseFetch("products", `select=name,echo_price,is_active,photo_url&id=eq.${productId}&organization_id=eq.${session.organizationId}&limit=1`);
+      if (rows[0]) prod = { name: rows[0].name, echoPrice: Number(rows[0].echo_price) || 0, active: rows[0].is_active ?? true, photo: rows[0].photo_url || null };
+    }
+    if (!prod) return res.status(404).json({ error: "\u0422\u043E\u0432\u0430\u0440 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+    if (!prod.active || prod.echoPrice <= 0) return res.status(400).json({ error: "\u0422\u043E\u0432\u0430\u0440 \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0434\u043B\u044F \u043E\u0431\u043C\u0435\u043D\u0430 \u043D\u0430 \u042D\u0445\u043E\u0411\u0430\u043A\u0441\u044B" });
+    if (await productStock(session, productId) <= 0) return res.status(400).json({ error: "\u0422\u043E\u0432\u0430\u0440\u0430 \u043D\u0435\u0442 \u0432 \u043D\u0430\u043B\u0438\u0447\u0438\u0438 \u2014 \u043E\u0431\u043C\u0435\u043D \u0432\u0440\u0435\u043C\u0435\u043D\u043D\u043E \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D" });
+    const card = await resolveEchoCard(session, studentId);
+    if (!card) return res.status(404).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+    if (card.balance < prod.echoPrice) return res.status(400).json({ error: "\u041D\u0435\u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E \u042D\u0445\u043E\u0411\u0430\u043A\u0441\u043E\u0432 \u0434\u043B\u044F \u043E\u0431\u043C\u0435\u043D\u0430" });
+    const dupPending = (list) => list.some((o) => (o.studentId ?? o.student_id) === studentId && (o.productId ?? o.product_id) === productId && o.status === "pending");
+    if (!supabaseEnabled) {
+      if (dupPending(mockEchoOrders)) return res.status(400).json({ error: "\u0417\u0430\u044F\u0432\u043A\u0430 \u043D\u0430 \u044D\u0442\u043E\u0442 \u0442\u043E\u0432\u0430\u0440 \u0443\u0436\u0435 \u0441\u043E\u0437\u0434\u0430\u043D\u0430 \u0438 \u043E\u0436\u0438\u0434\u0430\u0435\u0442 \u0432\u044B\u0434\u0430\u0447\u0438" });
+      const order = { id: uid(), studentId, productId, branchId: card.branchId, studentName: card.name, branchName: card.branchName, groupName: card.groupName, teacherName: card.teacherName, productName: prod.name, productPhoto: prod.photo, echoPrice: prod.echoPrice, balanceAtRequest: card.balance, status: "pending", cancelReason: null, decidedBy: null, createdAt: (/* @__PURE__ */ new Date()).toISOString(), decidedAt: null };
+      mockEchoOrders.unshift(order);
+      return res.status(201).json({ order: echoOrderOut(order) });
+    }
+    const exist = await supabaseFetch("echo_orders", `select=id&student_id=eq.${studentId}&product_id=eq.${productId}&status=eq.pending&limit=1`).catch(() => []);
+    if (dupPending(exist)) return res.status(400).json({ error: "\u0417\u0430\u044F\u0432\u043A\u0430 \u043D\u0430 \u044D\u0442\u043E\u0442 \u0442\u043E\u0432\u0430\u0440 \u0443\u0436\u0435 \u0441\u043E\u0437\u0434\u0430\u043D\u0430 \u0438 \u043E\u0436\u0438\u0434\u0430\u0435\u0442 \u0432\u044B\u0434\u0430\u0447\u0438" });
+    const ins = await supabaseFetch("echo_orders", "", { method: "POST", body: JSON.stringify({
+      organization_id: session.organizationId,
+      student_id: studentId,
+      product_id: productId,
+      branch_id: card.branchId,
+      student_name: card.name,
+      branch_name: card.branchName,
+      group_name: card.groupName,
+      teacher_name: card.teacherName,
+      product_name: prod.name,
+      product_photo: prod.photo,
+      echo_price: prod.echoPrice,
+      balance_at_request: card.balance,
+      status: "pending"
+    }) });
+    res.status(201).json({ order: ins[0] ? echoOrderOut(ins[0]) : null });
+  }));
+  app2.get("/api/mvp/shop/echo/orders", ah(async (req, res) => {
+    const session = getSession(req);
+    const studentId = String(req.query.studentId || "");
+    const rows = supabaseEnabled ? await supabaseFetch("echo_orders", `select=*&organization_id=eq.${session.organizationId}&order=created_at.desc`) : mockEchoOrders.slice();
+    if (studentId) {
+      if (session.role === "student" && session.studentId && session.studentId !== studentId) {
+        return res.status(403).json({ error: "\u041D\u0435\u0442 \u0434\u043E\u0441\u0442\u0443\u043F\u0430 \u043A \u0447\u0443\u0436\u0438\u043C \u0437\u0430\u044F\u0432\u043A\u0430\u043C" });
+      }
+      return res.json({ orders: rows.filter((o) => (o.studentId ?? o.student_id) === studentId).map(echoOrderOut) });
+    }
+    if (!echoOrderStaff.includes(session.role)) return res.status(403).json({ error: "\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443, \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0435\u043C\u0443 \u0438 \u0430\u0434\u043C\u0438\u043D\u0438\u0441\u0442\u0440\u0430\u0442\u043E\u0440\u0443" });
+    const scoped = rows.filter((o) => canSeeBranch(session, o.branchId ?? o.branch_id));
+    res.json({ orders: scoped.map(echoOrderOut) });
+  }));
+  app2.patch("/api/mvp/shop/echo/orders/:id", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!echoOrderStaff.includes(session.role)) return res.status(403).json({ error: "\u041D\u0435\u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E \u043F\u0440\u0430\u0432" });
+    const action = String((req.body || {}).action || "");
+    const reason = String((req.body || {}).reason || "").trim() || null;
+    if (!["issue", "cancel"].includes(action)) return res.status(400).json({ error: "\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u043E\u0435 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0435" });
+    let order;
+    if (!supabaseEnabled) {
+      order = mockEchoOrders.find((o) => o.id === req.params.id);
+    } else {
+      const rows = await supabaseFetch("echo_orders", `select=*&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}&limit=1`);
+      order = rows[0];
+    }
+    if (!order) return res.status(404).json({ error: "\u0417\u0430\u044F\u0432\u043A\u0430 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430" });
+    const oBranch = order.branchId ?? order.branch_id;
+    if (!canSeeBranch(session, oBranch)) return res.status(403).json({ error: "\u0417\u0430\u044F\u0432\u043A\u0430 \u0434\u0440\u0443\u0433\u043E\u0433\u043E \u0444\u0438\u043B\u0438\u0430\u043B\u0430" });
+    if (order.status !== "pending") return res.status(400).json({ error: "\u0417\u0430\u044F\u0432\u043A\u0430 \u0443\u0436\u0435 \u043E\u0431\u0440\u0430\u0431\u043E\u0442\u0430\u043D\u0430" });
+    const studentId = order.studentId ?? order.student_id;
+    const productId = order.productId ?? order.product_id;
+    const price = Number(order.echoPrice ?? order.echo_price) || 0;
+    const productName = order.productName ?? order.product_name ?? "\u0422\u043E\u0432\u0430\u0440";
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    if (action === "cancel") {
+      if (!supabaseEnabled) {
+        order.status = "cancelled";
+        order.cancelReason = reason;
+        order.decidedBy = session.fullName || null;
+        order.decidedAt = nowIso;
+        return res.json({ ok: true, order: echoOrderOut(order) });
+      }
+      await supabaseFetch("echo_orders", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ status: "cancelled", cancel_reason: reason, decided_by: session.fullName || null, decided_at: nowIso }) });
+      return res.json({ ok: true, status: "cancelled" });
+    }
+    if (productId && await productStock(session, productId) <= 0) return res.status(400).json({ error: "\u0422\u043E\u0432\u0430\u0440\u0430 \u043D\u0435\u0442 \u043D\u0430 \u0441\u043A\u043B\u0430\u0434\u0435 \u2014 \u0432\u044B\u0434\u0430\u0447\u0430 \u043D\u0435\u0432\u043E\u0437\u043C\u043E\u0436\u043D\u0430" });
+    try {
+      await applyEcho(session, studentId, -price, "purchase", `\u041C\u0430\u0433\u0430\u0437\u0438\u043D: ${productName}`, productId || null);
+    } catch (e) {
+      if (e?.message === "INSUFFICIENT") return res.status(400).json({ error: "\u0423 \u0443\u0447\u0435\u043D\u0438\u043A\u0430 \u043D\u0435\u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E \u042D\u0445\u043E\u0411\u0430\u043A\u0441\u043E\u0432" });
+      if (e?.message === "NOT_FOUND") return res.status(404).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+      throw e;
+    }
+    if (productId) {
+      if (!supabaseEnabled) {
+        mockWriteoffs.unshift({ id: uid(), productId, qty: 1, reason: "\u0412\u044B\u0434\u0430\u0447\u0430 \u0438\u0437 \u043C\u0430\u0433\u0430\u0437\u0438\u043D\u0430 \u042D\u0445\u043E\u0411\u0430\u043A\u0441\u043E\u0432", writeoffDate: todayStr(), comment: `\u0417\u0430\u044F\u0432\u043A\u0430 ${order.studentName ?? order.student_name ?? ""}`.trim(), branchId: oBranch || demoBranchAlmaty });
+      } else {
+        await supabaseFetch("product_writeoffs", "", { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ organization_id: session.organizationId, branch_id: oBranch || null, product_id: productId, qty: 1, reason: "\u0412\u044B\u0434\u0430\u0447\u0430 \u0438\u0437 \u043C\u0430\u0433\u0430\u0437\u0438\u043D\u0430 \u042D\u0445\u043E\u0411\u0430\u043A\u0441\u043E\u0432", writeoff_date: todayStr(), comment: `\u0417\u0430\u044F\u0432\u043A\u0430 \u043C\u0430\u0433\u0430\u0437\u0438\u043D\u0430: ${order.student_name || ""}`.trim() }) }).catch((e) => console.warn("[echo-order] \u0441\u043F\u0438\u0441\u0430\u043D\u0438\u0435 \u0441\u043A\u043B\u0430\u0434\u0430 \u043D\u0435 \u043F\u0440\u043E\u0448\u043B\u043E:", e?.message || e));
+      }
+    }
+    if (!supabaseEnabled) {
+      order.status = "issued";
+      order.decidedBy = session.fullName || null;
+      order.decidedAt = nowIso;
+      return res.json({ ok: true, order: echoOrderOut(order) });
+    }
+    await supabaseFetch("echo_orders", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ status: "issued", decided_by: session.fullName || null, decided_at: nowIso }) });
+    res.json({ ok: true, status: "issued" });
   }));
   app2.post("/api/mvp/marketing/broadcast", ah(async (req, res) => {
     const session = getSession(req);
@@ -5987,9 +6236,9 @@ function registerMvpApi(app2) {
       fact: planningFactByDirection[r.direction] ?? Math.round(r.planned * 0.73)
     }));
     const levels = [
-      { level: "\u041D\u0430\u0447\u0438\u043D\u0430\u044E\u0449\u0438\u0435", plan: 8e6, fact: 6e6 },
-      { level: "\u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0430\u044E\u0449\u0438\u0435", plan: 12e6, fact: 94e5 },
-      { level: "\u0410\u043D\u0441\u0430\u043C\u0431\u043B\u044C", plan: 1e7, fact: 65e5 }
+      { level: "\u0413\u0440\u0443\u043F\u043F\u043E\u0432\u044B\u0435", plan: 8628449, fact: 8474882 },
+      { level: "\u041C\u0438\u043D\u0438-\u0433\u0440\u0443\u043F\u043F\u044B", plan: 882486, fact: 810500 },
+      { level: "\u0418\u043D\u0434\u0438\u0432\u0438\u0434\u0443\u0430\u043B\u044C\u043D\u044B\u0435", plan: 551500, fact: 554125 }
     ].map((l) => ({ ...l, deviation: l.fact - l.plan, done: Math.round(l.fact / l.plan * 100) }));
     const avgCheck = 24e3;
     const neededSales = Math.max(0, Math.ceil((plannedRevenue - factRevenue) / avgCheck));
