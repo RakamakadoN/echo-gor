@@ -260,6 +260,29 @@ function BranchesTab({ data, avgSubPrice, canManage, onCreate, onUpdate, onDelet
   const [modal, setModal] = useState<{ mode: "add" | "edit"; id?: string } | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
 
+  const [query, setQuery] = useState("");
+  const METRIC_COLS = [
+    { key: "free", label: "Своб. места" },
+    { key: "students", label: "Ученики" },
+    { key: "teachers", label: "Педагоги" },
+    { key: "fill", label: "Заполненность" },
+    { key: "retention", label: "Удержание" },
+    { key: "revenue", label: "Выручка" },
+    { key: "potential", label: "Потенциал" },
+    { key: "rating", label: "AI-оценка" },
+  ] as const;
+  const [cols, setCols] = useState<Record<string, boolean>>(() => {
+    try { const raw = localStorage.getItem("echogor.branches.cols"); if (raw) return { ...Object.fromEntries(METRIC_COLS.map((c) => [c.key, true])), ...JSON.parse(raw) }; } catch (e) {}
+    return Object.fromEntries(METRIC_COLS.map((c) => [c.key, true]));
+  });
+  const [colsOpen, setColsOpen] = useState(false);
+  useEffect(() => { try { localStorage.setItem("echogor.branches.cols", JSON.stringify(cols)); } catch (e) {} }, [cols]);
+  const filtered = data.filter((d: any) => {
+    const q = query.trim().toLowerCase();
+    if (!q) return true;
+    return [d.raw.name, d.raw.city, d.raw.managerName].some((s: any) => String(s || "").toLowerCase().includes(q));
+  });
+
   // Сводный дашборд по сети
   const totCapacity = data.reduce((a: number, d: any) => a + d.capacity, 0);
   const totActive = data.reduce((a: number, d: any) => a + d.active, 0);
@@ -292,7 +315,7 @@ function BranchesTab({ data, avgSubPrice, canManage, onCreate, onUpdate, onDelet
       </CollapsibleDash>
 
       <div className="mb-4 flex items-center justify-between">
-        <p className="text-sm font-bold text-white">Список филиалов <span className="text-slate-500">({data.length})</span></p>
+        <p className="text-sm font-bold text-white">Список филиалов <span className="text-slate-500">({filtered.length}{filtered.length !== data.length ? " из " + data.length : ""})</span></p>
         {canManage && (
           <button onClick={() => setModal({ mode: "add" })} className="inline-flex items-center gap-2 rounded-2xl bg-[#C5A059] px-4 py-2 text-sm font-bold text-black transition hover:bg-[#d4b06a]">
             <Plus className="h-4 w-4" /> Добавить филиал
@@ -300,10 +323,41 @@ function BranchesTab({ data, avgSubPrice, canManage, onCreate, onUpdate, onDelet
         )}
       </div>
 
+      {/* Фильтры списка филиалов */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[200px] flex-1 sm:max-w-xs">
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Поиск по названию, городу, управляющему…" className="w-full rounded-xl border border-white/10 bg-[#121212] px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:border-[#C5A059]/50 focus:outline-none" />
+          {query && <button onClick={() => setQuery("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"><X className="h-4 w-4" /></button>}
+        </div>
+        <div className="relative">
+          <button onClick={() => setColsOpen((v) => !v)} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-[#121212] px-3 py-2 text-sm font-bold text-slate-300 transition hover:border-[#C5A059]/40 hover:text-white">
+            <Layers className="h-4 w-4" /> Показатели <span className="text-xs text-slate-500">{METRIC_COLS.filter((c) => cols[c.key]).length}/{METRIC_COLS.length}</span>
+          </button>
+          {colsOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setColsOpen(false)} />
+              <div className="absolute right-0 z-20 mt-2 w-56 rounded-2xl border border-white/10 bg-[#0F0F0F] p-2 shadow-xl">
+                <p className="px-2 py-1 text-[11px] uppercase tracking-wider text-slate-500">Колонки списка</p>
+                {METRIC_COLS.map((c) => (
+                  <label key={c.key} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-slate-300 hover:bg-white/5">
+                    <input type="checkbox" checked={!!cols[c.key]} onChange={() => setCols((p) => ({ ...p, [c.key]: !p[c.key] }))} className="accent-[#C5A059]" />
+                    {c.label}
+                  </label>
+                ))}
+                <div className="mt-1 flex gap-3 border-t border-white/10 px-2 pt-2">
+                  <button onClick={() => setCols(Object.fromEntries(METRIC_COLS.map((c) => [c.key, true])))} className="text-xs text-slate-400 hover:text-white">Показать все</button>
+                  <button onClick={() => setCols(Object.fromEntries(METRIC_COLS.map((c) => [c.key, false])))} className="text-xs text-slate-400 hover:text-white">Скрыть все</button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
       {/* Мобильные карточки филиалов */}
       <div className="space-y-2 md:hidden">
-        {data.length === 0 && <div className="rounded-[1.25rem] border border-white/10 bg-[#0F0F0F] p-8 text-center text-sm text-slate-500">Филиалов пока нет.</div>}
-        {data.map((d: any) => (
+        {filtered.length === 0 && <div className="rounded-[1.25rem] border border-white/10 bg-[#0F0F0F] p-8 text-center text-sm text-slate-500">Филиалов пока нет.</div>}
+        {filtered.map((d: any) => (
           <div key={d.raw.id} className="rounded-[1.25rem] border border-white/10 bg-[#0F0F0F] p-4">
             <div className="flex items-start justify-between gap-2">
               <button onClick={() => setDetailId(d.raw.id)} className="min-w-0 text-left">
@@ -334,33 +388,33 @@ function BranchesTab({ data, avgSubPrice, canManage, onCreate, onUpdate, onDelet
             <tr>
               <th className="p-3">№</th>
               <th className="p-3">Филиал</th>
-              <th className="p-3">Своб. места</th>
-              <th className="p-3">Ученики</th>
-              <th className="p-3">Педагоги</th>
-              <th className="p-3 w-40">Заполненность</th>
-              <th className="p-3">Удержание</th>
-              <th className="p-3">Выручка</th>
-              <th className="p-3">Потенциал</th>
-              <th className="p-3">AI-оценка</th>
+              {cols.free && <th className="p-3">Своб. места</th>}
+              {cols.students && <th className="p-3">Ученики</th>}
+              {cols.teachers && <th className="p-3">Педагоги</th>}
+              {cols.fill && <th className="p-3 w-40">Заполненность</th>}
+              {cols.retention && <th className="p-3">Удержание</th>}
+              {cols.revenue && <th className="p-3">Выручка</th>}
+              {cols.potential && <th className="p-3">Потенциал</th>}
+              {cols.rating && <th className="p-3">AI-оценка</th>}
               <th className="p-3 text-right">Действия</th>
             </tr>
           </thead>
           <tbody>
-            {data.map((d: any, i: number) => (
+            {filtered.map((d: any, i: number) => (
               <tr key={d.raw.id} className="border-b border-white/5 text-slate-300 transition hover:bg-white/[0.02]">
                 <td className="p-3 text-slate-500">{i + 1}</td>
                 <td className="p-3">
                   <p className="font-bold text-white">{d.raw.name}</p>
                   <p className="text-xs text-slate-500">{d.raw.city} · {d.raw.managerName}</p>
                 </td>
-                <td className="p-3"><span className="font-bold text-white">{d.freeSeats}</span> <span className="text-xs text-slate-500">из {d.capacity}</span></td>
-                <td className="p-3 font-bold text-white">{d.active}</td>
-                <td className="p-3">{d.teachersCount}</td>
-                <td className="p-3"><FillBar pct={d.fill} /></td>
-                <td className="p-3"><span className="font-bold text-white">{round(d.retention)}%</span> <Delta value={d.retentionDelta} /></td>
-                <td className="p-3 font-bold text-white">{money(d.revenue)}</td>
-                <td className="p-3 text-slate-400">{money(d.potential)}</td>
-                <td className="p-3"><AiBadge rating={d.rating} /></td>
+                {cols.free && <td className="p-3"><span className="font-bold text-white">{d.freeSeats}</span> <span className="text-xs text-slate-500">из {d.capacity}</span></td>}
+                {cols.students && <td className="p-3 font-bold text-white">{d.active}</td>}
+                {cols.teachers && <td className="p-3">{d.teachersCount}</td>}
+                {cols.fill && <td className="p-3"><FillBar pct={d.fill} /></td>}
+                {cols.retention && <td className="p-3"><span className="font-bold text-white">{round(d.retention)}%</span> <Delta value={d.retentionDelta} /></td>}
+                {cols.revenue && <td className="p-3 font-bold text-white">{money(d.revenue)}</td>}
+                {cols.potential && <td className="p-3 text-slate-400">{money(d.potential)}</td>}
+                {cols.rating && <td className="p-3"><AiBadge rating={d.rating} /></td>}
                 <td className="p-3">
                   <div className="flex items-center justify-end gap-1">
                     <IconBtn title="Просмотр" onClick={() => setDetailId(d.raw.id)}><Eye className="h-4 w-4" /></IconBtn>
@@ -370,11 +424,11 @@ function BranchesTab({ data, avgSubPrice, canManage, onCreate, onUpdate, onDelet
                 </td>
               </tr>
             ))}
-            {data.length === 0 && <tr><td colSpan={11} className="p-8 text-center text-slate-500">Филиалов пока нет.</td></tr>}
+            {filtered.length === 0 && <tr><td colSpan={3 + METRIC_COLS.filter((c) => cols[c.key]).length} className="p-8 text-center text-slate-500">Филиалов пока нет.</td></tr>}
           </tbody>
         </table>
       </div>
-      <p className="mt-2 text-xs text-slate-600">Показано 1–{data.length} из {data.length} филиалов</p>
+      <p className="mt-2 text-xs text-slate-600">Показано 1–{filtered.length} из {data.length} филиалов</p>
 
       {modal && (
         <BranchModal
