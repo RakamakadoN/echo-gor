@@ -208,9 +208,9 @@ export function BranchesGroupsView(props: Props) {
     });
   }, [props.groups, props.students]);
 
+  // «Группы» убраны из вкладки «Филиалы» — управление группами живёт в «Расписании».
   const tabs: { id: Tab; label: string; icon: any }[] = [
     { id: "branches", label: "Филиалы", icon: Building2 },
-    { id: "groups", label: "Группы", icon: Users },
     { id: "halls", label: "Залы", icon: DoorOpen },
   ];
 

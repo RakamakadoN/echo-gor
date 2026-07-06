@@ -2309,6 +2309,15 @@ function registerMvpApi(app2) {
       const recalc = Math.max(0, Number(payload.recalc) || 0);
       const finalPrice = payload.price !== void 0 ? Math.max(0, Number(payload.price) || 0) : Math.max(0, basePrice - discountAmount - recalc);
       const paid = payload.paid !== false;
+      if (paid) {
+        const overlap = await supabaseFetch(
+          "student_subscriptions",
+          `select=id,starts_on,ends_on&student_id=eq.${studentId}&status=eq.active&starts_on=lte.${endsOn}&ends_on=gte.${startsOn}`
+        ).catch(() => []);
+        if (overlap.length > 0) {
+          return res.status(409).json({ error: "\u0423 \u0443\u0447\u0435\u043D\u0438\u043A\u0430 \u0443\u0436\u0435 \u0435\u0441\u0442\u044C \u0430\u043A\u0442\u0438\u0432\u043D\u044B\u0439 \u0430\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442 \u043D\u0430 \u044D\u0442\u043E\u0442 \u043F\u0435\u0440\u0438\u043E\u0434 \u2014 \u043D\u0435\u043B\u044C\u0437\u044F \u043F\u0440\u043E\u0434\u0430\u0442\u044C \u0432\u0442\u043E\u0440\u043E\u0439 \u043D\u0430 \u043F\u0435\u0440\u0435\u0441\u0435\u043A\u0430\u044E\u0449\u0438\u0435\u0441\u044F \u0434\u0430\u0442\u044B." });
+        }
+      }
       const insertedSub = await supabaseFetch("student_subscriptions", "", {
         method: "POST",
         body: JSON.stringify({

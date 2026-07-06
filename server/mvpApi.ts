@@ -1314,6 +1314,20 @@ export function registerMvpApi(app: express.Express) {
       // «Сохранить счёт» (paid=false) → абонемент создаётся неактивным (ещё не продан).
       // «Продать абонемент» (paid=true) → активный + платёж.
       const paid = payload.paid !== false;
+
+      // Запрет двойной продажи: у ученика уже есть активный абонемент, чьи даты
+      // пересекаются с новым периодом ([starts_on..ends_on]). Проверяем только при
+      // реальной продаже (paid), чтобы можно было сохранять черновые счёта.
+      if (paid) {
+        const overlap = await supabaseFetch<any[]>(
+          "student_subscriptions",
+          `select=id,starts_on,ends_on&student_id=eq.${studentId}&status=eq.active&starts_on=lte.${endsOn}&ends_on=gte.${startsOn}`
+        ).catch(() => [] as any[]);
+        if (overlap.length > 0) {
+          return res.status(409).json({ error: "У ученика уже есть активный абонемент на этот период — нельзя продать второй на пересекающиеся даты." });
+        }
+      }
+
       const insertedSub = await supabaseFetch<any[]>("student_subscriptions", "", {
         method: "POST",
         body: JSON.stringify({

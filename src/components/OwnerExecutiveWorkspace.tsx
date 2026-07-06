@@ -209,7 +209,6 @@ const ownerTabs: { id: OwnerTab; label: string; short: string; icon: React.Eleme
   { id: "branches", label: "Филиалы", short: "Филиалы", icon: Building2 },
   { id: "students", label: "Ученики", short: "Ученики", icon: Users },
   { id: "teachers", label: "Преподаватели", short: "Педагоги", icon: GraduationCap },
-  { id: "payroll", label: "Зарплаты", short: "Зарплаты", icon: Wallet },
   { id: "journal", label: "Журнал посещаемости", short: "Журнал", icon: ClipboardList },
   { id: "schedule", label: "Расписание", short: "Расписание", icon: CalendarDays },
   { id: "finance", label: "Бухгалтерия", short: "Учёт", icon: Coins },
@@ -425,7 +424,6 @@ export function OwnerExecutiveWorkspace({
           {activeTab === "branches" && <BranchesGroupsView branches={branchScorecards} rawBranches={branches} students={students} groups={groups} teachers={teachers} halls={halls} payments={payments} onCreateBranch={onCreateBranch} onUpdateBranch={onUpdateBranch} onDeleteBranch={onDeleteBranch} onCreateGroup={onCreateGroup} onUpdateGroup={onUpdateGroup} onDeleteGroup={onDeleteGroup} onCreateHall={onCreateHall} onUpdateHall={onUpdateHall} onDeleteHall={onDeleteHall} onOpenStudents={openStudentsWithPreset} />}
           {activeTab === "students" && <StudentsNetworkView students={students} branches={branches} groups={groups} teachers={teachers} onCreateStudent={onCreateStudent} onUpdateStudent={onUpdateStudent} onDeleteStudent={onDeleteStudent} onOpenPayment={onOpenPayment} onSellSubscription={onSellSubscription} subscriptionPlans={subscriptionPlans} studentTrash={studentTrash} onRestoreStudent={onRestoreStudent} onConfirmDeleteStudent={onConfirmDeleteStudent} studentArchive={studentArchive} onArchiveStudent={onArchiveStudent} onUnarchiveStudent={onUnarchiveStudent} leadSources={leadSources} waitlist={waitlist} onAddToWaitlist={onAddToWaitlist} onRemoveFromWaitlist={onRemoveFromWaitlist} onCreateLeadSource={onCreateLeadSource} onUpdateLeadSource={onUpdateLeadSource} onDeleteLeadSource={onDeleteLeadSource} preset={studentsPreset} />}
           {activeTab === "teachers" && <TeachersNetworkView teachers={teachers} metrics={metrics} branches={branches} students={students} groups={groups} payments={payments} onCreateTeacher={onCreateTeacher} onUpdateTeacher={onUpdateTeacher} onDeleteTeacher={onDeleteTeacher} />}
-          {activeTab === "payroll" && <PayrollView teachers={teachers} students={students} groups={groups} payments={payments} />}
           {activeTab === "finance" && <BookkeepingView branches={branchScorecards} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
           {activeTab === "planning" && <PlanningView />}
           {activeTab === "meetings" && <MeetingsView />}
@@ -2910,9 +2908,6 @@ function TeachersNetworkView({ teachers, metrics, branches, students = [], group
               <button onClick={() => setShowPenaltyJournal(true)} className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-[#121212] px-4 py-2.5 text-sm font-bold text-slate-200 transition hover:border-rose-400/50 hover:text-rose-300">
                 <AlertTriangle className="h-4 w-4 text-rose-400" /> Штрафы{penalties.length > 0 ? ` · ${penalties.length}` : ""}
               </button>
-              <button onClick={() => setShowSalary(true)} className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-[#121212] px-4 py-2.5 text-sm font-bold text-slate-200 transition hover:border-[#C5A059]/50 hover:text-[#C5A059]">
-                <Coins className="h-4 w-4" /> Рассчитать ЗП
-              </button>
               <button onClick={startAdd} className="inline-flex items-center gap-2 rounded-full bg-[#C5A059] px-5 py-2.5 text-sm font-black text-black shadow-[0_6px_16px_rgba(197,160,89,0.35)] transition hover:brightness-105">
                 <Plus className="h-4 w-4" /> Добавить преподавателя
               </button>
@@ -2921,12 +2916,6 @@ function TeachersNetworkView({ teachers, metrics, branches, students = [], group
         </div>
       </div>
 
-      {showSalary && (
-        <SalaryCalcModal teachers={teachers} metricFor={metricFor} penalties={penalties} months={TN_MONTHS}
-          month={tnMonth} effectiveWinnerId={effectiveWinnerId}
-          onClose={() => setShowSalary(false)}
-          onCharge={() => { setShowSalary(false); setShowChargePenalty(true); }} />
-      )}
       {showPenaltyJournal && (
         <PenaltyJournalModal penalties={penalties} teachers={teachers} months={TN_MONTHS} month={tnMonth} onClose={() => setShowPenaltyJournal(false)}
           onCharge={() => { setShowPenaltyJournal(false); setShowChargePenalty(true); }} onRemove={removePenalty} />
@@ -7921,31 +7910,14 @@ function PenaltyJournalModal({ penalties, teachers, months, month, onClose, onCh
   const [fMonth, setFMonth] = useState<string>(month || "");
   const [fTeacher, setFTeacher] = useState<string>("");
 
-  // Собираем штрафы из seed-профилей педагогов и из базы (реальные начисления).
+  // Только реальные штрафы из базы (teacher_penalties). Seed-мокапы убраны.
   const all = useMemo(() => {
-    const rows: any[] = [];
-    (teachers || []).forEach((t: Teacher) => {
-      const seed = TN_SEED[t.name.trim().toLowerCase()];
-      if (!seed) return;
-      Object.entries(seed.fines).forEach(([mo, arr]) => {
-        (arr as TnFine[]).forEach((f, i) => rows.push({
-          id: `seed-${t.id}-${mo}-${i}`, source: "seed",
-          teacherId: t.id, teacherName: t.name, cat: seed.cat,
-          reason: f.reason, amount: f.sum, month: mo, date: f.date, comment: f.comment, by: f.by || "Владелец",
-        }));
-      });
-    });
-    (penalties || []).forEach((p: any) => {
-      const t = (teachers || []).find((x: Teacher) => x.id === p.teacherId);
-      const seed = t ? TN_SEED[t.name.trim().toLowerCase()] : null;
-      rows.push({
-        id: p.id, source: "db",
-        teacherId: p.teacherId, teacherName: p.teacherName, cat: seed?.cat,
-        reason: p.reason, amount: p.amount, month: p.period_month, date: p.date || p.created_at, comment: p.comment, by: p.created_by || "Владелец",
-      });
-    });
-    return rows;
-  }, [teachers, penalties]);
+    return (penalties || []).map((p: any) => ({
+      id: p.id, source: "db",
+      teacherId: p.teacherId, teacherName: p.teacherName, cat: undefined,
+      reason: p.reason, amount: p.amount, month: p.period_month, date: p.date || p.created_at, comment: p.comment, by: p.created_by || "Владелец",
+    }));
+  }, [penalties]);
 
   const teacherNames = useMemo(() => Array.from(new Set(all.map((r) => r.teacherName))), [all]);
   const filtered = all.filter((r) => (!fMonth || r.month === fMonth) && (!fTeacher || r.teacherName === fTeacher));
