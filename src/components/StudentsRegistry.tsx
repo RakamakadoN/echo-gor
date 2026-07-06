@@ -539,6 +539,25 @@ export default function StudentsRegistry({
     clearSelection();
   };
 
+  // Смена статуса одного ученика (для карточки).
+  const setStudentStatus = async (id: string, value: string) => {
+    if (!value || !onUpdateStudent) return;
+    const manual = DEFAULT_MANUAL_STATUSES.includes(value);
+    let promiseDate: string | null = null;
+    if (manual && /оплат/i.test(value)) {
+      const today = new Date().toISOString().slice(0, 10);
+      const input = window.prompt("Дата обещанной оплаты (ГГГГ-ММ-ДД):", today);
+      if (input === null) return;
+      promiseDate = input.trim() || null;
+    }
+    const payload: StudentInput = manual
+      ? { manualStatus: value, status: value === "Каникулы" || value === "Медицинская пауза" ? "paused" : undefined, ...(promiseDate !== null ? { payPromiseDate: promiseDate } : {}) }
+      : { status: value, manualStatus: null, payPromiseDate: null };
+    applyOverride(id, manual ? { manualStatus: value, ...(promiseDate ? { payPromiseDate: promiseDate } : {}) } : { status: value, manualStatus: null, payPromiseDate: null });
+    await onUpdateStudent(id, payload);
+    setMassNote(`Статус «${value}» обновлён`);
+  };
+
   const massTransferGroup = async (groupId: string) => {
     if (!groupId || !onUpdateStudent) return;
     for (const s of selectedStudents) {
@@ -1111,6 +1130,9 @@ export default function StudentsRegistry({
                 allBranches={branches}
                 allTeachers={teachers}
                 onClose={() => setOpenId(null)}
+                onArchive={onArchiveStudent ? () => { setOpenId(null); setArchiveModal([openStudent]); } : undefined}
+                onSetStatus={onUpdateStudent ? (value) => setStudentStatus(openStudent.id, value) : undefined}
+                statusOptions={[{ value: "active", label: "Активный" }, { value: "paused", label: "Заморозить абонемент" }, ...DEFAULT_MANUAL_STATUSES.map((s) => ({ value: s, label: s }))]}
                 onEdit={canManage ? () => { setOpenId(null); openEdit(openStudent); } : undefined}
                 onDelete={onDeleteStudent ? async () => { await onDeleteStudent(openStudent.id); applyOverride(openStudent.id, { status: "left" }); setOpenId(null); } : undefined}
                 onOpenPayment={onOpenPayment ? () => onOpenPayment(openStudent) : undefined}
