@@ -8268,7 +8268,7 @@ function MeetingModal({ meeting, jhdr, hdr, onClose, onSaved, setError }: {
 const PLAN_MONTHS_FULL = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
 
 function PlanningView() {
-  const [tab, setTab] = useState<"plan" | "fact" | "planfact" | "daily" | "ai" | "motivation">("plan");
+  const [tab, setTab] = useState<"plan" | "planfact" | "daily" | "ai" | "motivation">("plan");
   const [period, setPeriod] = useState("2026-07");
   const [created, setCreated] = useState(false);
   const [data, setData] = useState<any>(null);
@@ -8311,7 +8311,6 @@ function PlanningView() {
 
   const tabs: { id: typeof tab; label: string; icon: React.ElementType }[] = [
     { id: "plan", label: "План БДР", icon: LineChart },
-    { id: "fact", label: "Факт БДР", icon: Receipt },
     { id: "planfact", label: "План / Факт", icon: BarChart3 },
     { id: "daily", label: "Ежедневный отчёт", icon: ClipboardList },
     { id: "ai", label: "AI Аналитика", icon: Sparkles },
@@ -8363,7 +8362,6 @@ function PlanningView() {
       {data && !loading && (
         <>
           {tab === "plan" && <PlanTab data={data} period={period} busy={busy} onSave={saveBudget} />}
-          {tab === "fact" && <PlanFactRevenueTab data={data} />}
           {tab === "planfact" && <PlanVsFactTab data={data} />}
           {tab === "daily" && <PlanDailyTab data={data} period={period} />}
           {tab === "ai" && <PlanAiTab data={data} period={period} />}
