@@ -96,3 +96,5 @@ export function getManualStatuses(): string[] {
   const cfg = loadStatusConfig();
   return cfg.manual && cfg.manual.length ? cfg.manual : DEFAULT_MANUAL_STATUSES;
 }
+
+// redeploy trigger
