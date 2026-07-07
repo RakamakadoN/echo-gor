@@ -160,6 +160,14 @@ export default function StudentManagementCard({
   const [tab, setTab] = useState<TabId>("general");
   const [panel, setPanel] = useState<null | "trial" | "transfer" | "sell" | "access">(null);
   const [openSub, setOpenSub] = useState<Subscription | null>(null);
+  // Локальный оверлей удалённых абонементов (§3): помечаем «Удалён» сразу после запроса.
+  const [subDeletes, setSubDeletes] = useState<Record<string, Partial<Subscription>>>({});
+  const mergeDel = (s: Subscription): Subscription => (subDeletes[s.id] ? { ...s, ...subDeletes[s.id] } : s);
+  const deleteSub = async (subId: string, reason: string, comment: string) => {
+    const res = await fetch(`/api/mvp/student-subscriptions/${subId}`, { method: "DELETE", headers: accessHeaders(), body: JSON.stringify({ reason, comment }) });
+    if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as any).error || "Не удалось удалить абонемент");
+    setSubDeletes((m) => ({ ...m, [subId]: { status: "deleted", cancelReason: reason, cancelComment: comment || null, deletedAt: new Date().toISOString(), deletedBy: "вы" } }));
+  };
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);
   const [waitlisted, setWaitlisted] = useState(inWaitlist);
@@ -910,6 +918,7 @@ export default function StudentManagementCard({
           {tab === "subscriptions" && (
             <SubscriptionsTab
               student={student}
+              subs={(student.subscriptions || []).map(mergeDel)}
               onSell={(canSell || onOpenPayment) ? handleSellClick : undefined}
               onOpenSub={setOpenSub}
             />
@@ -935,10 +944,12 @@ export default function StudentManagementCard({
 
       {openSub && (
         <SubscriptionDetailModal
-          subscription={openSub}
+          subscription={mergeDel(openSub)}
           student={student}
           branch={branch}
           group={group}
+          canDelete={["owner", "branch_manager", "admin"].includes(roleHeader)}
+          onDelete={deleteSub}
           onClose={() => setOpenSub(null)}
         />
       )}
@@ -1444,26 +1455,45 @@ function SubscriptionDetailModal({
   student,
   branch,
   group,
+  canDelete,
+  onDelete,
   onClose,
 }: {
   subscription: Subscription;
   student: Student;
   branch?: Branch;
   group?: Group;
+  canDelete?: boolean;
+  onDelete?: (subId: string, reason: string, comment: string) => Promise<void>;
   onClose: () => void;
 }) {
   const s = subscription;
   const used = Math.max(0, (s.lessonsTotal || 0) - (s.lessonsLeft || 0));
   const pct = s.lessonsTotal > 0 ? Math.round((used / s.lessonsTotal) * 100) : 0;
+  const isDeleted = s.status === "deleted";
   const statusLabel =
-    s.status === "active" ? "Активный" : s.status === "suspended" ? "Приостановлен" : "Истёк";
+    s.status === "active" ? "Активный" : s.status === "deleted" ? "Удалён" : s.status === "suspended" ? "Приостановлен" : "Истёк";
   const statusCls =
     s.status === "active"
       ? "bg-emerald-100 text-emerald-700"
+      : s.status === "deleted"
+      ? "bg-rose-100 text-rose-700"
       : s.status === "suspended"
       ? "bg-amber-100 text-amber-700"
       : "bg-slate-200 text-slate-500";
   const fmt = (iso?: string) => (iso ? ddmmyyyyFromIso(iso) : "—");
+  const [confirming, setConfirming] = useState(false);
+  const [delReason, setDelReason] = useState("");
+  const [delComment, setDelComment] = useState("");
+  const [delBusy, setDelBusy] = useState(false);
+  const [delErr, setDelErr] = useState<string | null>(null);
+  const doDelete = async () => {
+    if (!delReason.trim() || !onDelete) return;
+    setDelBusy(true); setDelErr(null);
+    try { await onDelete(s.id, delReason.trim(), delComment.trim()); onClose(); }
+    catch (e: any) { setDelErr(e?.message || "Не удалось удалить"); }
+    finally { setDelBusy(false); }
+  };
 
   return (
     <div
@@ -1537,7 +1567,44 @@ function SubscriptionDetailModal({
             <DetailRow k="Автопродление" v={s.isAutoRenew ? "Включено" : "Выключено"} last />
           </div>
 
-          <div className="mt-4 flex justify-end">
+          {/* Инфо об удалении (§3): удалённый абонемент не исчезает, а показывает причину */}
+          {isDeleted && (
+            <div className="mt-4 rounded-2xl border border-rose-100 bg-rose-50/70 p-4 text-sm">
+              <p className="font-black text-rose-700">Абонемент удалён</p>
+              <DetailRow k="Причина" v={s.cancelReason || "—"} />
+              {s.cancelComment && <DetailRow k="Комментарий" v={s.cancelComment} />}
+              <DetailRow k="Кто удалил" v={s.deletedBy || "—"} />
+              <DetailRow k="Когда" v={s.deletedAt ? new Date(s.deletedAt).toLocaleString("ru-RU") : "—"} last />
+            </div>
+          )}
+
+          {/* Форма удаления с причиной */}
+          {!isDeleted && confirming && (
+            <div className="mt-4 rounded-2xl border border-rose-100 bg-rose-50/60 p-4">
+              <p className="text-sm font-black text-rose-700">Удаление абонемента</p>
+              <p className="mt-0.5 text-xs text-slate-500">Абонемент сохранится в истории со статусом «Удалён».</p>
+              <input value={delReason} onChange={(e) => setDelReason(e.target.value)} placeholder="Причина удаления *"
+                className="mt-3 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 placeholder-slate-400" />
+              <input value={delComment} onChange={(e) => setDelComment(e.target.value)} placeholder="Комментарий (необязательно)"
+                className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 placeholder-slate-400" />
+              {delErr && <p className="mt-2 text-xs font-bold text-rose-600">{delErr}</p>}
+              <div className="mt-3 flex gap-2">
+                <button onClick={doDelete} disabled={!delReason.trim() || delBusy}
+                  className="flex-1 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-black text-white transition hover:bg-rose-700 disabled:opacity-40">
+                  {delBusy ? "Удаление…" : "Подтвердить удаление"}
+                </button>
+                <button onClick={() => { setConfirming(false); setDelErr(null); }} className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-500 hover:bg-slate-50">Назад</button>
+              </div>
+            </div>
+          )}
+
+          <div className="mt-4 flex justify-between gap-2">
+            {!isDeleted && canDelete && onDelete && !confirming ? (
+              <button onClick={() => setConfirming(true)}
+                className="rounded-xl border border-rose-200 bg-white px-5 py-2.5 text-sm font-bold text-rose-600 transition hover:bg-rose-50">
+                Удалить абонемент
+              </button>
+            ) : <span />}
             <button
               onClick={onClose}
               className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-bold text-slate-500 transition hover:bg-slate-50"
@@ -1562,14 +1629,16 @@ function DetailRow({ k, v, tone, last }: { k: string; v: string; tone?: "rose"; 
 
 function SubscriptionsTab({
   student,
+  subs: props_subs,
   onSell,
   onOpenSub,
 }: {
   student: Student;
+  subs?: Subscription[];
   onSell?: () => void;
   onOpenSub?: (sub: Subscription) => void;
 }) {
-  const subs = student.subscriptions || [];
+  const subs = props_subs ?? (student.subscriptions || []);
   return (
     <div>
       <SectionHeader title="Абонементы" action="Продать" onAction={onSell} />
@@ -1599,10 +1668,12 @@ function SubscriptionsTab({
                   className={`mt-0.5 inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold ${
                     sub.status === "active"
                       ? "bg-emerald-100 text-emerald-600"
+                      : sub.status === "deleted"
+                      ? "bg-rose-100 text-rose-600"
                       : "bg-slate-200 text-slate-500"
                   }`}
                 >
-                  {sub.status === "active" ? "Активный" : "Неактивный"}
+                  {sub.status === "active" ? "Активный" : sub.status === "deleted" ? "Удалён" : "Неактивный"}
                 </span>
               </div>
               <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" />

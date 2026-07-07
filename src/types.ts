@@ -209,7 +209,11 @@ export interface Subscription {
   lessonsLeft: number;
   validUntil: string;
   isAutoRenew: boolean;
-  status: 'active' | 'expired' | 'suspended';
+  status: 'active' | 'expired' | 'suspended' | 'deleted';
+  cancelReason?: string | null;
+  cancelComment?: string | null;
+  deletedBy?: string | null;
+  deletedAt?: string | null;
   startsOn?: string; // YYYY-MM-DD, дата начала
   discountAmount?: number; // скидка + перерасчёт, тг
   groupId?: string | null;
