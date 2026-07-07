@@ -1462,10 +1462,14 @@ function mapDbStudent(row, attendanceByStudent, subsByStudent) {
       lessonsLeft: sub.lessons_left || 0,
       validUntil: sub.ends_on,
       isAutoRenew: false,
-      status: sub.status === "active" ? "active" : "expired",
+      status: sub.status === "active" ? "active" : sub.status === "archived" ? "deleted" : "expired",
       startsOn: sub.starts_on,
       discountAmount: Number(sub.discount_amount || 0),
-      groupId: sub.group_id || null
+      groupId: sub.group_id || null,
+      cancelReason: sub.cancel_reason || null,
+      cancelComment: sub.cancel_comment || null,
+      deletedBy: sub.deleted_by || null,
+      deletedAt: sub.deleted_at || null
     }))
   };
 }
@@ -1493,10 +1497,14 @@ function mapDbSubscription(row, planName) {
     lessonsLeft: row.lessons_left || 0,
     validUntil: row.ends_on,
     isAutoRenew: false,
-    status: row.status === "active" ? "active" : "expired",
+    status: row.status === "active" ? "active" : row.status === "archived" ? "deleted" : "expired",
     startsOn: row.starts_on,
     discountAmount: Number(row.discount_amount || 0),
-    groupId: row.group_id || null
+    groupId: row.group_id || null,
+    cancelReason: row.cancel_reason || null,
+    cancelComment: row.cancel_comment || null,
+    deletedBy: row.deleted_by || null,
+    deletedAt: row.deleted_at || null
   };
 }
 async function dbBootstrap(session) {
@@ -2309,13 +2317,13 @@ function registerMvpApi(app2) {
       const recalc = Math.max(0, Number(payload.recalc) || 0);
       const finalPrice = payload.price !== void 0 ? Math.max(0, Number(payload.price) || 0) : Math.max(0, basePrice - discountAmount - recalc);
       const paid = payload.paid !== false;
-      if (paid) {
+      if (paid && payload.groupId) {
         const overlap = await supabaseFetch(
           "student_subscriptions",
-          `select=id,starts_on,ends_on&student_id=eq.${studentId}&status=eq.active&starts_on=lte.${endsOn}&ends_on=gte.${startsOn}`
+          `select=id,starts_on,ends_on&student_id=eq.${studentId}&group_id=eq.${payload.groupId}&status=eq.active&starts_on=lte.${endsOn}&ends_on=gte.${startsOn}`
         ).catch(() => []);
         if (overlap.length > 0) {
-          return res.status(409).json({ error: "\u0423 \u0443\u0447\u0435\u043D\u0438\u043A\u0430 \u0443\u0436\u0435 \u0435\u0441\u0442\u044C \u0430\u043A\u0442\u0438\u0432\u043D\u044B\u0439 \u0430\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442 \u043D\u0430 \u044D\u0442\u043E\u0442 \u043F\u0435\u0440\u0438\u043E\u0434 \u2014 \u043D\u0435\u043B\u044C\u0437\u044F \u043F\u0440\u043E\u0434\u0430\u0442\u044C \u0432\u0442\u043E\u0440\u043E\u0439 \u043D\u0430 \u043F\u0435\u0440\u0435\u0441\u0435\u043A\u0430\u044E\u0449\u0438\u0435\u0441\u044F \u0434\u0430\u0442\u044B." });
+          return res.status(409).json({ error: "\u0423 \u0443\u0447\u0435\u043D\u0438\u043A\u0430 \u0443\u0436\u0435 \u0435\u0441\u0442\u044C \u0430\u043A\u0442\u0438\u0432\u043D\u044B\u0439 \u0430\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442 \u0432 \u044D\u0442\u043E\u0439 \u0433\u0440\u0443\u043F\u043F\u0435 \u043D\u0430 \u043F\u0435\u0440\u0435\u0441\u0435\u043A\u0430\u044E\u0449\u0438\u0439\u0441\u044F \u043F\u0435\u0440\u0438\u043E\u0434. \u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0434\u0440\u0443\u0433\u0443\u044E \u0433\u0440\u0443\u043F\u043F\u0443, \u043F\u0435\u0440\u0438\u043E\u0434 \u0438\u043B\u0438 \u0438\u043D\u0434\u0438\u0432\u0438\u0434\u0443\u0430\u043B\u044C\u043D\u043E\u0435 \u0437\u0430\u043D\u044F\u0442\u0438\u0435." });
         }
       }
       const insertedSub = await supabaseFetch("student_subscriptions", "", {
@@ -2383,6 +2391,25 @@ function registerMvpApi(app2) {
       });
     } catch (error) {
       res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u0440\u043E\u0434\u0430\u0442\u044C \u0430\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442" });
+    }
+  });
+  app2.delete("/api/mvp/student-subscriptions/:id", async (req, res) => {
+    const session = getSession(req);
+    if (!["owner", "branch_manager", "admin"].includes(session.role)) return res.status(403).json({ error: "\u041D\u0435\u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E \u043F\u0440\u0430\u0432" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const reason = String((req.body || {}).reason || "").trim();
+    const comment = String((req.body || {}).comment || "").trim() || null;
+    if (!reason) return res.status(400).json({ error: "\u0423\u043A\u0430\u0436\u0438\u0442\u0435 \u043F\u0440\u0438\u0447\u0438\u043D\u0443 \u0443\u0434\u0430\u043B\u0435\u043D\u0438\u044F \u0430\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442\u0430" });
+    try {
+      const rows = await supabaseFetch("student_subscriptions", `id=eq.${req.params.id}`, {
+        method: "PATCH",
+        headers: { Prefer: "return=representation" },
+        body: JSON.stringify({ status: "archived", cancel_reason: reason, cancel_comment: comment, deleted_by: session.fullName || session.role, deleted_at: (/* @__PURE__ */ new Date()).toISOString() })
+      });
+      if (!rows[0]) return res.status(404).json({ error: "\u0410\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+      res.json({ ok: true, subscription: mapDbSubscription(rows[0]) });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u0430\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442" });
     }
   });
   app2.post("/api/mvp/attendance", async (req, res) => {

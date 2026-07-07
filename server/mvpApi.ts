@@ -349,10 +349,14 @@ function mapDbStudent(row: any, attendanceByStudent: Map<string, Record<string, 
       lessonsLeft: sub.lessons_left || 0,
       validUntil: sub.ends_on,
       isAutoRenew: false,
-      status: sub.status === "active" ? "active" : "expired",
+      status: sub.status === "active" ? "active" : sub.status === "archived" ? "deleted" : "expired",
       startsOn: sub.starts_on,
       discountAmount: Number(sub.discount_amount || 0),
-      groupId: sub.group_id || null
+      groupId: sub.group_id || null,
+      cancelReason: sub.cancel_reason || null,
+      cancelComment: sub.cancel_comment || null,
+      deletedBy: sub.deleted_by || null,
+      deletedAt: sub.deleted_at || null
     }))
   };
 }
@@ -382,10 +386,14 @@ function mapDbSubscription(row: any, planName?: string) {
     lessonsLeft: row.lessons_left || 0,
     validUntil: row.ends_on,
     isAutoRenew: false,
-    status: row.status === "active" ? "active" : "expired",
+    status: row.status === "active" ? "active" : row.status === "archived" ? "deleted" : "expired",
     startsOn: row.starts_on,
     discountAmount: Number(row.discount_amount || 0),
-    groupId: row.group_id || null
+    groupId: row.group_id || null,
+    cancelReason: row.cancel_reason || null,
+    cancelComment: row.cancel_comment || null,
+    deletedBy: row.deleted_by || null,
+    deletedAt: row.deleted_at || null
   };
 }
 
@@ -1315,16 +1323,17 @@ export function registerMvpApi(app: express.Express) {
       // «Продать абонемент» (paid=true) → активный + платёж.
       const paid = payload.paid !== false;
 
-      // Запрет двойной продажи: у ученика уже есть активный абонемент, чьи даты
-      // пересекаются с новым периодом ([starts_on..ends_on]). Проверяем только при
-      // реальной продаже (paid), чтобы можно было сохранять черновые счёта.
-      if (paid) {
+      // Запрет двойной продажи (ТЗ §4): блокируем только если у ученика уже есть
+      // активный абонемент в ТОЙ ЖЕ группе с пересекающимся периодом. Другая группа,
+      // индивидуальное/мини-группа (group_id пуст) или другой период — разрешено.
+      // Проверяем только при реальной продаже (paid), чтобы сохранять черновые счёта.
+      if (paid && payload.groupId) {
         const overlap = await supabaseFetch<any[]>(
           "student_subscriptions",
-          `select=id,starts_on,ends_on&student_id=eq.${studentId}&status=eq.active&starts_on=lte.${endsOn}&ends_on=gte.${startsOn}`
+          `select=id,starts_on,ends_on&student_id=eq.${studentId}&group_id=eq.${payload.groupId}&status=eq.active&starts_on=lte.${endsOn}&ends_on=gte.${startsOn}`
         ).catch(() => [] as any[]);
         if (overlap.length > 0) {
-          return res.status(409).json({ error: "У ученика уже есть активный абонемент на этот период — нельзя продать второй на пересекающиеся даты." });
+          return res.status(409).json({ error: "У ученика уже есть активный абонемент в этой группе на пересекающийся период. Выберите другую группу, период или индивидуальное занятие." });
         }
       }
 
@@ -1398,6 +1407,27 @@ export function registerMvpApi(app: express.Express) {
       });
     } catch (error: any) {
       res.status(400).json({ error: error.message || "Не удалось продать абонемент" });
+    }
+  });
+
+  // Удалить абонемент (ТЗ §3): мягкое удаление — абонемент не исчезает, а помечается
+  // «Удалён» (status='archived') с причиной/комментарием/кто/когда. Требуется причина.
+  app.delete("/api/mvp/student-subscriptions/:id", async (req, res) => {
+    const session = getSession(req);
+    if (!["owner", "branch_manager", "admin"].includes(session.role)) return res.status(403).json({ error: "Недостаточно прав" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const reason = String((req.body || {}).reason || "").trim();
+    const comment = String((req.body || {}).comment || "").trim() || null;
+    if (!reason) return res.status(400).json({ error: "Укажите причину удаления абонемента" });
+    try {
+      const rows = await supabaseFetch<any[]>("student_subscriptions", `id=eq.${req.params.id}`, {
+        method: "PATCH", headers: { Prefer: "return=representation" },
+        body: JSON.stringify({ status: "archived", cancel_reason: reason, cancel_comment: comment, deleted_by: session.fullName || session.role, deleted_at: new Date().toISOString() }),
+      });
+      if (!rows[0]) return res.status(404).json({ error: "Абонемент не найден" });
+      res.json({ ok: true, subscription: mapDbSubscription(rows[0]) });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось удалить абонемент" });
     }
   });
 
