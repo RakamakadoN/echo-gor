@@ -103,13 +103,15 @@ type TabId =
   | "finance"
   | "comments"
   | "communications"
-  | "family";
+  | "family"
+  | "history";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "general", label: "Общая" },
   { id: "subscriptions", label: "Абонементы" },
   { id: "attendance", label: "Посещения" },
   { id: "finance", label: "Финансы" },
+  { id: "history", label: "История" },
   { id: "comments", label: "Комментарии" },
   { id: "communications", label: "Коммуникации" },
   { id: "family", label: "Семья" },
@@ -938,6 +940,7 @@ export default function StudentManagementCard({
           {tab === "communications" && (
             <CommunicationsTab student={student} />
           )}
+          {tab === "history" && <HistoryTab studentId={student.id} roleHeader={roleHeader} />}
           {tab === "family" && <FamilyTab student={student} />}
         </div>
       </div>
@@ -1623,6 +1626,41 @@ function DetailRow({ k, v, tone, last }: { k: string; v: string; tone?: "rose"; 
     <div className={`flex items-center justify-between py-2 text-sm ${last ? "" : "border-b border-slate-200/70"}`}>
       <span className="text-slate-500">{k}</span>
       <span className={`font-bold ${tone === "rose" ? "text-rose-600" : "text-slate-800"}`}>{v}</span>
+    </div>
+  );
+}
+
+// История действий ученика (§16): лента событий из бэкенда.
+function HistoryTab({ studentId, roleHeader }: { studentId: string; roleHeader: string }) {
+  const [events, setEvents] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setLoading(true);
+      try {
+        const r = await fetch(`/api/mvp/students/${studentId}/history`, { headers: { "x-demo-role": roleHeader } });
+        if (r.ok && alive) setEvents((await r.json()).events || []);
+      } catch { /* ignore */ } finally { if (alive) setLoading(false); }
+    })();
+    return () => { alive = false; };
+  }, [studentId, roleHeader]);
+
+  const ICON: Record<string, string> = { created: "➕", status: "🔄", payment: "💰", sub_buy: "🎫", sub_del: "🗑️", echo: "⭐", archive: "📦", trash: "🗂️" };
+  if (loading) return <p className="p-4 text-sm text-slate-400">Загрузка истории…</p>;
+  if (!events.length) return <p className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-400">История действий пуста.</p>;
+  return (
+    <div className="space-y-2">
+      {events.map((e, i) => (
+        <div key={i} className="flex gap-3 rounded-2xl border border-slate-100 bg-white p-3">
+          <span className="text-lg leading-none">{ICON[e.type] || "•"}</span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-bold text-slate-800">{e.title}</p>
+            {e.detail && <p className="text-xs text-slate-500">{e.detail}</p>}
+            <p className="mt-0.5 text-[11px] text-slate-400">{e.at ? new Date(e.at).toLocaleString("ru-RU") : ""}{e.by ? ` · ${e.by}` : ""}</p>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

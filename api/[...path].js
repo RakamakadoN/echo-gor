@@ -2412,6 +2412,36 @@ function registerMvpApi(app2) {
       res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u0430\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442" });
     }
   });
+  app2.get("/api/mvp/students/:id/history", async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) return res.json({ events: [] });
+    const sid = req.params.id;
+    try {
+      const [stu, statusEv, pays, subs, echo] = await Promise.all([
+        supabaseFetch("students", `select=created_at,archived_at,archive_reason,archived_by,deletion_requested_at,deletion_reason,deletion_requested_by&id=eq.${sid}&organization_id=eq.${session.organizationId}&limit=1`).catch(() => []),
+        supabaseFetch("student_status_events", `select=from_status,to_status,occurred_at,created_by&student_id=eq.${sid}&order=occurred_at.desc`).catch(() => []),
+        supabaseFetch("payments", `select=amount,paid_at,comment&student_id=eq.${sid}&order=paid_at.desc`).catch(() => []),
+        supabaseFetch("student_subscriptions", `select=price,starts_on,ends_on,created_at,deleted_at,deleted_by,cancel_reason&student_id=eq.${sid}&order=created_at.desc`).catch(() => []),
+        supabaseFetch("echo_transactions", `select=amount,reason,created_at,created_by&student_id=eq.${sid}&order=created_at.desc`).catch(() => [])
+      ]);
+      const ev = [];
+      const s0 = stu[0];
+      if (s0?.created_at) ev.push({ type: "created", title: "\u0423\u0447\u0435\u043D\u0438\u043A \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D", detail: null, at: s0.created_at, by: null });
+      for (const e of statusEv) ev.push({ type: "status", title: `\u0421\u0442\u0430\u0442\u0443\u0441: ${e.from_status || "\u2014"} \u2192 ${e.to_status}`, detail: null, at: e.occurred_at, by: e.created_by });
+      for (const p of pays) ev.push({ type: "payment", title: `\u041E\u043F\u043B\u0430\u0442\u0430 ${Math.round(Number(p.amount) || 0)} \u20B8`, detail: p.comment || null, at: p.paid_at, by: null });
+      for (const sub of subs) {
+        ev.push({ type: "sub_buy", title: `\u041A\u0443\u043F\u043B\u0435\u043D \u0430\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442${sub.price ? ` \xB7 ${Math.round(Number(sub.price))} \u20B8` : ""}`, detail: [sub.starts_on, sub.ends_on].filter(Boolean).join(" \u2013 ") || null, at: sub.created_at, by: null });
+        if (sub.deleted_at) ev.push({ type: "sub_del", title: "\u0423\u0434\u0430\u043B\u0451\u043D \u0430\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442", detail: sub.cancel_reason || null, at: sub.deleted_at, by: sub.deleted_by });
+      }
+      for (const t of echo) ev.push({ type: "echo", title: `\u042D\u0445\u043E\u0411\u0430\u043A\u0441\u044B ${Number(t.amount) > 0 ? "+" : ""}${t.amount} \u2B50`, detail: t.reason || null, at: t.created_at, by: t.created_by });
+      if (s0?.archived_at) ev.push({ type: "archive", title: "\u041F\u0435\u0440\u0435\u0432\u0435\u0434\u0451\u043D \u0432 \u0430\u0440\u0445\u0438\u0432", detail: s0.archive_reason || null, at: s0.archived_at, by: s0.archived_by });
+      if (s0?.deletion_requested_at) ev.push({ type: "trash", title: "\u041F\u0435\u0440\u0435\u043C\u0435\u0449\u0451\u043D \u0432 \u043A\u043E\u0440\u0437\u0438\u043D\u0443", detail: s0.deletion_reason || null, at: s0.deletion_requested_at, by: s0.deletion_requested_by });
+      ev.sort((a, b) => new Date(b.at || 0).getTime() - new Date(a.at || 0).getTime());
+      res.json({ events: ev });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0438\u0441\u0442\u043E\u0440\u0438\u044E" });
+    }
+  });
   app2.post("/api/mvp/attendance", async (req, res) => {
     const session = getSession(req);
     const payload = req.body || {};

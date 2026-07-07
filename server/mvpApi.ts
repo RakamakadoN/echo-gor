@@ -1431,6 +1431,39 @@ export function registerMvpApi(app: express.Express) {
     }
   });
 
+  // История действий ученика (ТЗ §16): агрегируем статусы, оплаты, абонементы,
+  // ЭхоБаксы, архив/корзину в одну ленту (сортировка по времени, свежее сверху).
+  app.get("/api/mvp/students/:id/history", async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) return res.json({ events: [] });
+    const sid = req.params.id;
+    try {
+      const [stu, statusEv, pays, subs, echo] = await Promise.all([
+        supabaseFetch<any[]>("students", `select=created_at,archived_at,archive_reason,archived_by,deletion_requested_at,deletion_reason,deletion_requested_by&id=eq.${sid}&organization_id=eq.${session.organizationId}&limit=1`).catch(() => [] as any[]),
+        supabaseFetch<any[]>("student_status_events", `select=from_status,to_status,occurred_at,created_by&student_id=eq.${sid}&order=occurred_at.desc`).catch(() => [] as any[]),
+        supabaseFetch<any[]>("payments", `select=amount,paid_at,comment&student_id=eq.${sid}&order=paid_at.desc`).catch(() => [] as any[]),
+        supabaseFetch<any[]>("student_subscriptions", `select=price,starts_on,ends_on,created_at,deleted_at,deleted_by,cancel_reason&student_id=eq.${sid}&order=created_at.desc`).catch(() => [] as any[]),
+        supabaseFetch<any[]>("echo_transactions", `select=amount,reason,created_at,created_by&student_id=eq.${sid}&order=created_at.desc`).catch(() => [] as any[]),
+      ]);
+      const ev: any[] = [];
+      const s0 = stu[0];
+      if (s0?.created_at) ev.push({ type: "created", title: "Ученик добавлен", detail: null, at: s0.created_at, by: null });
+      for (const e of statusEv) ev.push({ type: "status", title: `Статус: ${e.from_status || "—"} → ${e.to_status}`, detail: null, at: e.occurred_at, by: e.created_by });
+      for (const p of pays) ev.push({ type: "payment", title: `Оплата ${Math.round(Number(p.amount) || 0)} ₸`, detail: p.comment || null, at: p.paid_at, by: null });
+      for (const sub of subs) {
+        ev.push({ type: "sub_buy", title: `Куплен абонемент${sub.price ? ` · ${Math.round(Number(sub.price))} ₸` : ""}`, detail: [sub.starts_on, sub.ends_on].filter(Boolean).join(" – ") || null, at: sub.created_at, by: null });
+        if (sub.deleted_at) ev.push({ type: "sub_del", title: "Удалён абонемент", detail: sub.cancel_reason || null, at: sub.deleted_at, by: sub.deleted_by });
+      }
+      for (const t of echo) ev.push({ type: "echo", title: `ЭхоБаксы ${Number(t.amount) > 0 ? "+" : ""}${t.amount} ⭐`, detail: t.reason || null, at: t.created_at, by: t.created_by });
+      if (s0?.archived_at) ev.push({ type: "archive", title: "Переведён в архив", detail: s0.archive_reason || null, at: s0.archived_at, by: s0.archived_by });
+      if (s0?.deletion_requested_at) ev.push({ type: "trash", title: "Перемещён в корзину", detail: s0.deletion_reason || null, at: s0.deletion_requested_at, by: s0.deletion_requested_by });
+      ev.sort((a, b) => new Date(b.at || 0).getTime() - new Date(a.at || 0).getTime());
+      res.json({ events: ev });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось загрузить историю" });
+    }
+  });
+
   app.post("/api/mvp/attendance", async (req, res) => {
     const session = getSession(req);
     const payload = req.body || {};
