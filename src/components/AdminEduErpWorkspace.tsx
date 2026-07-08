@@ -1126,7 +1126,9 @@ function CalendarView({ groups, teachers, branches, halls, scheduleItems, schedu
   const today = new Date().toISOString().slice(0, 10);
   const weekAhead = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
 
-  const [lessonForm, setLessonForm] = useState({ groupId: "", startsAt: "", endsAt: "", teacherId: "", hallId: "", topic: "" });
+  const [lessonForm, setLessonForm] = useState({ groupId: "", teacherId: "", hallId: "", date: "", startTime: "", endTime: "", reason: "", topic: "" });
+  // Список времени (08:00–22:00, шаг 30 мин) — как у владельца и руководителя.
+  const LESSON_TIMES = useMemo(() => { const o: string[] = []; for (let h = 8; h <= 22; h++) for (const m of [0, 30]) o.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`); return o; }, []);
   const [groupForm, setGroupForm] = useState({ name: "", branchId: "", teacherId: "", hallId: "", ageFrom: "", ageTo: "", level: "Начинающие", scheduleDays: "", scheduleTime: "" });
   const [saving, setSaving] = useState(false);
   const [activeForm, setActiveForm] = useState<"lesson" | "group" | null>(null);
@@ -1138,12 +1140,24 @@ function CalendarView({ groups, teachers, branches, halls, scheduleItems, schedu
 
   const upcoming = (scheduleItems || []).filter((l: any) => l.status !== "cancelled");
 
+  const lessonReady = Boolean(lessonForm.groupId && lessonForm.hallId && lessonForm.date && lessonForm.startTime && lessonForm.endTime && lessonForm.startTime < lessonForm.endTime);
   const handleSaveLesson = async () => {
-    if (!lessonForm.groupId || !lessonForm.startsAt || !lessonForm.endsAt) return;
+    if (!lessonReady) return;
     setSaving(true);
-    const ok = await onCreateLesson?.({ ...lessonForm });
+    const topic = [lessonForm.reason, lessonForm.topic].filter(Boolean).join(" — ");
+    const ok = await onCreateLesson?.({
+      groupId: lessonForm.groupId, teacherId: lessonForm.teacherId, hallId: lessonForm.hallId,
+      startsAt: new Date(`${lessonForm.date}T${lessonForm.startTime}`).toISOString(),
+      endsAt: new Date(`${lessonForm.date}T${lessonForm.endTime}`).toISOString(),
+      topic,
+    });
     setSaving(false);
-    if (ok) { setLessonForm({ groupId: "", startsAt: "", endsAt: "", teacherId: "", hallId: "", topic: "" }); setActiveForm(null); }
+    if (ok) {
+      const from = lessonForm.date;
+      setLessonForm({ groupId: "", teacherId: "", hallId: "", date: "", startTime: "", endTime: "", reason: "", topic: "" });
+      setActiveForm(null);
+      onLoadSchedule?.({ from, to: from });
+    }
   };
 
   const handleSaveGroup = async () => {
@@ -1204,27 +1218,44 @@ function CalendarView({ groups, teachers, branches, halls, scheduleItems, schedu
               </select>
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Начало *</span>
-              <input type="datetime-local" value={lessonForm.startsAt} onChange={(e) => setLessonForm(f => ({ ...f, startsAt: e.target.value }))} className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white" />
+              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Дата урока *</span>
+              <input type="date" value={lessonForm.date} onChange={(e) => setLessonForm(f => ({ ...f, date: e.target.value }))} className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white [color-scheme:dark]" />
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Конец *</span>
-              <input type="datetime-local" value={lessonForm.endsAt} onChange={(e) => setLessonForm(f => ({ ...f, endsAt: e.target.value }))} className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white" />
+              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Время урока *</span>
+              <div className="flex items-center gap-2">
+                <select value={lessonForm.startTime} onChange={(e) => setLessonForm(f => ({ ...f, startTime: e.target.value }))} className="w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white">
+                  <option value="">с…</option>
+                  {LESSON_TIMES.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+                <span className="text-slate-500">–</span>
+                <select value={lessonForm.endTime} onChange={(e) => setLessonForm(f => ({ ...f, endTime: e.target.value }))} className="w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white">
+                  <option value="">до…</option>
+                  {LESSON_TIMES.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Зал</span>
+              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Зал *</span>
               <select value={lessonForm.hallId} onChange={(e) => setLessonForm(f => ({ ...f, hallId: e.target.value }))} className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white">
-                <option value="">Без зала</option>
+                <option value="">Выберите зал</option>
                 {(halls || []).map((h: any) => <option key={h.id} value={h.id}>{h.name}</option>)}
               </select>
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Тема</span>
-              <input type="text" value={lessonForm.topic} onChange={(e) => setLessonForm(f => ({ ...f, topic: e.target.value }))} placeholder="Напр. «Лезгинка — базовые движения»" className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder-slate-600" />
+              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Причина / тип урока</span>
+              <select value={lessonForm.reason} onChange={(e) => setLessonForm(f => ({ ...f, reason: e.target.value }))} className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white">
+                <option value="">— не указано —</option>
+                {["Разовый урок", "Перенос урока", "Болезнь ученика", "Отсутствие педагога", "Индивидуальное занятие", "Замена педагога", "Другое"].map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Тема / комментарий</span>
+              <input type="text" value={lessonForm.topic} onChange={(e) => setLessonForm(f => ({ ...f, topic: e.target.value }))} placeholder="Напр. «перенос с пятницы»" className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder-slate-600" />
             </label>
           </div>
           <div className="mt-4 flex gap-3">
-            <button onClick={handleSaveLesson} disabled={saving || !lessonForm.groupId || !lessonForm.startsAt || !lessonForm.endsAt} className="rounded-xl bg-[#C5A059] px-5 py-2 text-sm font-bold text-black disabled:opacity-40 hover:bg-[#D4AF70] transition-colors">
+            <button onClick={handleSaveLesson} disabled={saving || !lessonReady} title={!lessonReady ? "Заполните группу, зал, дату и время (конец позже начала)" : undefined} className="rounded-xl bg-[#C5A059] px-5 py-2 text-sm font-bold text-black disabled:opacity-40 hover:bg-[#D4AF70] transition-colors">
               {saving ? "Сохранение…" : "Создать урок"}
             </button>
             <button onClick={() => setActiveForm(null)} className="rounded-xl bg-white/5 px-5 py-2 text-sm font-bold text-slate-400 hover:bg-white/10 transition-colors">Отмена</button>
