@@ -46,6 +46,26 @@ context=${JSON.stringify(currentContext ?? {})}`;
     }
   });
 
+  // ИИ-реактивация ушедших (панель «Можно вернуть» в ежедневном отчёте).
+  // Вход: {students:[{id,name,archiveReason,archiveComment,monthsInArchive}]}
+  // Выход: {"candidates":[{id,recommend,offerType,message,reasoning}]} — по Offer в ReactivationPanel.
+  app.post("/api/gemini/reactivation", async (req, res) => {
+    if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });
+    const { students } = req.body || {};
+    if (!Array.isArray(students) || students.length === 0) {
+      return res.status(400).json({ error: "students обязателен" });
+    }
+    const prompt = `Ты — заботливый менеджер школы кавказского танца «Эхо Гор». Ученики ниже ушли из школы 2+ месяца назад. Для КАЖДОГО подбери персональный оффер возврата с учётом причины ухода и срока отсутствия, и составь короткое тёплое сообщение для WhatsApp (без давления, 2-4 предложения, по-русски, обращение по имени). Верни СТРОГО JSON по схеме:
+{"candidates": [{"id": string, "recommend": boolean, "offerType": string, "message": string, "reasoning": string}]}
+offerType — короткое название оффера (напр. «Скидка 20% на месяц», «Бесплатное занятие», «Заморозка цены»). recommend=false только если возвращать бессмысленно (переезд в другой город и т.п.).
+students=${JSON.stringify(students.slice(0, 20))}`;
+    try {
+      res.json(await generateJson(prompt));
+    } catch (e: any) {
+      res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
+
   // Per-student progress analysis for teachers.
   app.post("/api/gemini/student-analysis", async (req, res) => {
     if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });
