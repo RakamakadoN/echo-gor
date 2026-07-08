@@ -1320,7 +1320,7 @@ function CalendarView({ groups, teachers, branches, halls, scheduleItems, schedu
                   <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-[#C5A059]">{group.studentCount} учеников</p>
                 </div>
                 {onDeleteGroup && (
-                  <button onClick={() => onDeleteGroup(group.id)} className="flex-shrink-0 rounded-lg bg-red-500/10 px-2 py-1 text-[10px] font-bold text-red-400 hover:bg-red-500/20 transition-colors">
+                  <button onClick={() => { if (window.confirm(`Архивировать группу «${group.name}»? Ученики сохранятся.`)) onDeleteGroup(group.id); }} className="flex-shrink-0 rounded-lg bg-red-500/10 px-2 py-1 text-[10px] font-bold text-red-400 hover:bg-red-500/20 transition-colors">
                     Архив
                   </button>
                 )}
