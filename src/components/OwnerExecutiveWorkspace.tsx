@@ -10096,8 +10096,8 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
                                   <div className="h-1 overflow-hidden rounded-full bg-white/10"><div className={`h-full rounded-full ${l._pal.bar}`} style={{ width: `${Math.min(fill, 100)}%` }} /></div>
                                 </div>
                               )}
-                              {onDeleteLesson && (
-                                <button onClick={() => onDeleteLesson(l.id)} title="Отменить" className="absolute right-1 top-1 hidden h-4 w-4 items-center justify-center rounded bg-black/50 text-red-300 hover:bg-red-500/40 group-hover:flex"><X className="h-2.5 w-2.5" /></button>
+                              {onDeleteLesson && !l._virtual && (
+                                <button onClick={() => onDeleteLesson(l.id)} title="Отменить урок" className="absolute right-1 top-1 hidden h-4 w-4 items-center justify-center rounded bg-black/50 text-red-300 hover:bg-red-500/40 group-hover:flex"><X className="h-2.5 w-2.5" /></button>
                               )}
                             </div>
                           );

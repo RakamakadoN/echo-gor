@@ -1416,6 +1416,7 @@ export default function App() {
   const handleUpdateLesson = async (id: string, data: Partial<{
     startsAt: string; endsAt: string; teacherId: string; hallId: string; status: string; topic: string;
   }>) => {
+    if (String(id).startsWith("grp-")) { toast.info("Это постоянное занятие группы. Изменить его можно в расписании группы."); return false; }
     try {
       const response = await fetch(`/api/mvp/schedule/${id}`, {
         method: "PATCH",
@@ -1433,6 +1434,9 @@ export default function App() {
   };
 
   const handleDeleteLesson = async (id: string) => {
+    // Виртуальные блоки (постоянное расписание группы) имеют синтетический id grp-… —
+    // их нельзя удалять как разовый урок (иначе 22P02). Меняйте расписание в карточке группы.
+    if (String(id).startsWith("grp-")) { toast.info("Это постоянное занятие группы. Изменить его можно в расписании группы, а не поштучно."); return false; }
     try {
       const response = await fetch(`/api/mvp/schedule/${id}`, {
         method: "DELETE",
