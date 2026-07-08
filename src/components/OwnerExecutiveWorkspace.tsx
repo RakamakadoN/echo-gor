@@ -9716,18 +9716,21 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
     setSaving(true);
     // Причина (перенос/болезнь/отсутствие педагога) — в примечании урока.
     const topic = [lessonForm.reason, lessonForm.topic].filter(Boolean).join(" — ");
-    const startsAt = `${lessonForm.date}T${lessonForm.startTime}`;
-    const endsAt = `${lessonForm.date}T${lessonForm.endTime}`;
+    // Локальное время → ISO с учётом зоны (иначе Postgres трактует как UTC и время уезжает).
+    const startsAt = new Date(`${lessonForm.date}T${lessonForm.startTime}`).toISOString();
+    const endsAt = new Date(`${lessonForm.date}T${lessonForm.endTime}`).toISOString();
     const ok = await onCreateLesson?.({ branchId: lessonForm.branchId, groupId: lessonForm.groupId, teacherId: lessonForm.teacherId, hallId: lessonForm.hallId, startsAt, endsAt, topic });
     setSaving(false);
     if (ok) {
       const d = new Date(`${lessonForm.date}T00:00:00`); d.setHours(0, 0, 0, 0);
-      const from = lessonForm.date, branchId = lessonForm.branchId;
+      const from = lessonForm.date;
+      const to = isoDate(addDays(d, 1)); // до следующего дня, иначе урок в 09:00 не попадёт в диапазон
       setLessonForm({ branchId: "", groupId: "", teacherId: "", hallId: "", date: "", startTime: "", endTime: "", topic: "", reason: "" });
       setActiveForm(null);
-      // Показать созданный урок: перейти на его день и перезагрузить график.
+      // Показать созданный урок: сбрасываем фильтры, переходим на его день, грузим график.
+      setFilterBranchId(""); setFilterTeacherId(""); setFilterHallId("");
       setAnchor(d); setView("day");
-      onLoadSchedule?.({ from, to: from, branchId });
+      onLoadSchedule?.({ from, to });
     }
   };
 
