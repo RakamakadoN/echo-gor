@@ -2585,7 +2585,7 @@ function registerMvpApi(app2) {
             starts_at: startsAt,
             ends_at: endsAt,
             status: "scheduled",
-            topic: "\u041F\u0440\u043E\u0431\u043D\u044B\u0439 \u0443\u0440\u043E\u043A",
+            comment: "\u041F\u0440\u043E\u0431\u043D\u044B\u0439 \u0443\u0440\u043E\u043A",
             created_by: session.userId.startsWith("demo-") ? null : session.userId
           })
         });
@@ -3159,7 +3159,7 @@ function registerMvpApi(app2) {
       startsAt: row.starts_at,
       endsAt: row.ends_at,
       status: row.status || "scheduled",
-      topic: row.topic || null
+      topic: row.comment || null
     };
   }
   app2.get("/api/mvp/schedule", async (req, res) => {
@@ -3222,7 +3222,7 @@ function registerMvpApi(app2) {
           starts_at: payload.startsAt,
           ends_at: payload.endsAt,
           status: "scheduled",
-          topic: payload.topic || null,
+          comment: payload.topic || null,
           created_by: session.userId.startsWith("demo-") ? null : session.userId
         })
       });
@@ -3241,7 +3241,7 @@ function registerMvpApi(app2) {
     if (payload.teacherId !== void 0) updates.teacher_id = payload.teacherId || null;
     if (payload.hallId !== void 0) updates.hall_id = payload.hallId || null;
     if (payload.status !== void 0) updates.status = payload.status;
-    if (payload.topic !== void 0) updates.topic = payload.topic || null;
+    if (payload.topic !== void 0) updates.comment = payload.topic || null;
     if (Object.keys(updates).length === 0) return res.status(400).json({ error: "\u041D\u0435\u0442 \u043F\u043E\u043B\u0435\u0439 \u0434\u043B\u044F \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F" });
     try {
       const rows = await supabaseFetch(

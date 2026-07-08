@@ -7,6 +7,7 @@
  * пропсами (currentBranchId / currentTeacherId / canEdit).
  */
 import { useEffect, useMemo, useState } from "react";
+import { parseGroupDays } from "./GroupScheduleGrid";
 import {
   Users, UserX, ShoppingCart, ClipboardCheck, Clock, CheckCircle2, XCircle,
   AlertCircle, RotateCcw, Flag, MessageCircle, IdCard, BadgePlus, CalendarClock,
@@ -63,7 +64,8 @@ const STATUS_META: Record<string, { short: string; label: string; cell: string; 
   unmarked: { short: "—", label: "Не отмечено",         cell: "bg-white/5 text-slate-500",     dot: "bg-white/10" },
 };
 
-const iso = (d: Date) => d.toISOString().slice(0, 10);
+// Локальная дата YYYY-MM-DD БЕЗ перевода в UTC (иначе для UTC+N дата уезжает на день назад).
+const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const todayIso = () => iso(new Date());
 
 function studentInGroup(s: Student, groupId: string) {
@@ -78,7 +80,10 @@ function hasActiveSub(s: Student) {
 // Даты занятий группы в выбранном месяце по её расписанию (group.days).
 function groupLessonDates(group: Group | undefined, year: number, month: number): string[] {
   if (!group) return [];
-  const days = group.days && group.days.length ? group.days : ["Пн", "Ср", "Пт"];
+  // Устойчивый парсинг дней («Пн,Ср» и «Понедельник среда»). Без расписания —
+  // пусто (не подставляем фейковые дни): показываем только фактические занятия.
+  const days = parseGroupDays((group.days || []).join(" "));
+  if (!days.length) return [];
   const out: string[] = [];
   const last = new Date(year, month + 1, 0).getDate();
   for (let day = 1; day <= last; day++) {

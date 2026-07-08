@@ -101,14 +101,19 @@ export default function GroupScheduleGrid({
                   <p className="font-bold text-white">{hallName(row.hallId)}</p>
                   <p className="text-xs text-slate-500">{row.time}</p>
                 </td>
-                {WEEK_DAYS.map((d) => (
+                {WEEK_DAYS.map((d) => {
+                  const cellGroups = row.byDay[d] || [];
+                  // Накладка: 2+ группы в ОДНОМ зале в одно время в один день.
+                  const conflict = cellGroups.length >= 2;
+                  return (
                   <td key={d} className="px-2 py-2 align-top">
-                    <div className="flex flex-col items-stretch gap-1">
-                      {(row.byDay[d] || []).map((g) => (
+                    <div className={`flex flex-col items-stretch gap-1 ${conflict ? "rounded-lg p-1 ring-2 ring-rose-500/60" : ""}`}>
+                      {conflict && <span className="text-center text-[9px] font-black uppercase tracking-wider text-rose-400">⚠ Накладка</span>}
+                      {cellGroups.map((g) => (
                         <button
                           key={g.id}
                           onClick={() => onOpenGroup?.(g.id)}
-                          className="rounded-lg border border-[#C5A059]/25 bg-[#C5A059]/10 px-2 py-1.5 text-left text-xs font-bold text-[#E8C887] transition hover:bg-[#C5A059]/20"
+                          className={`rounded-lg border px-2 py-1.5 text-left text-xs font-bold transition ${conflict ? "border-rose-500/40 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20" : "border-[#C5A059]/25 bg-[#C5A059]/10 text-[#E8C887] hover:bg-[#C5A059]/20"}`}
                           title={g.teacherName ? `Педагог: ${g.teacherName}` : undefined}
                         >
                           {g.name}
@@ -117,7 +122,8 @@ export default function GroupScheduleGrid({
                       ))}
                     </div>
                   </td>
-                ))}
+                  );
+                })}
               </tr>
             ))}
           </tbody>

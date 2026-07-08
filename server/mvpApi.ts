@@ -1622,7 +1622,7 @@ export function registerMvpApi(app: express.Express) {
           method: "POST",
           body: JSON.stringify({
             branch_id: st.branch_id, group_id: st.group_id, teacher_id: st.teacher_id || null,
-            starts_at: startsAt, ends_at: endsAt, status: "scheduled", topic: "Пробный урок",
+            starts_at: startsAt, ends_at: endsAt, status: "scheduled", comment: "Пробный урок",
             created_by: session.userId.startsWith("demo-") ? null : session.userId,
           }),
         });
@@ -2238,7 +2238,7 @@ export function registerMvpApi(app: express.Express) {
       startsAt: row.starts_at,
       endsAt: row.ends_at,
       status: row.status || "scheduled",
-      topic: row.topic || null,
+      topic: row.comment || null,
     };
   }
 
@@ -2307,7 +2307,7 @@ export function registerMvpApi(app: express.Express) {
           starts_at: payload.startsAt,
           ends_at: payload.endsAt,
           status: "scheduled",
-          topic: payload.topic || null,
+          comment: payload.topic || null,
           created_by: session.userId.startsWith("demo-") ? null : session.userId,
         }),
       });
@@ -2327,7 +2327,7 @@ export function registerMvpApi(app: express.Express) {
     if (payload.teacherId !== undefined) updates.teacher_id = payload.teacherId || null;
     if (payload.hallId !== undefined) updates.hall_id = payload.hallId || null;
     if (payload.status !== undefined) updates.status = payload.status;
-    if (payload.topic !== undefined) updates.topic = payload.topic || null;
+    if (payload.topic !== undefined) updates.comment = payload.topic || null;
     if (Object.keys(updates).length === 0) return res.status(400).json({ error: "Нет полей для обновления" });
     try {
       const rows = await supabaseFetch<any[]>(
