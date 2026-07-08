@@ -123,12 +123,12 @@ export default function StudentsArchiveView({
 
   const startEdit = (id: string, leftAt?: string) => {
     setEditId(id);
-    setEditMonth((leftAt || new Date().toISOString()).slice(0, 7));
+    setEditMonth((leftAt || new Date().toISOString()).slice(0, 10));
   };
   const saveEdit = async (id: string) => {
-    if (!onEditLeftOn || editMonth.length !== 7) { setEditId(null); return; }
+    if (!onEditLeftOn || editMonth.length !== 10) { setEditId(null); return; }
     setBusy(id);
-    try { await onEditLeftOn(id, { leftOn: `${editMonth}-01` }); } finally { setBusy(null); setEditId(null); }
+    try { await onEditLeftOn(id, { leftOn: editMonth }); } finally { setBusy(null); setEditId(null); }
   };
 
   const TABS: { id: Cat; label: string; icon: ElementType }[] = [
@@ -206,10 +206,11 @@ export default function StudentsArchiveView({
               {editId === r.id ? (
                 <div className="flex items-center gap-1">
                   <input
-                    type="month"
+                    type="date"
                     value={editMonth}
-                    max={new Date().toISOString().slice(0, 7)}
+                    max={new Date().toISOString().slice(0, 10)}
                     onChange={(e) => setEditMonth(e.target.value)}
+                    autoFocus
                     className="rounded-[8px] px-2 py-1 text-[12px] outline-none"
                     style={{ background: CLR.fill, border: `1px solid ${CLR.border}`, color: CLR.text }}
                   />
@@ -219,7 +220,7 @@ export default function StudentsArchiveView({
               ) : (
                 <>
                   <p style={{ color: CLR.text }}>
-                    {r.leftAt ? new Date(r.leftAt).toLocaleDateString("ru-RU", { month: "long", year: "numeric" }) : "—"}
+                    {r.leftAt ? new Date(r.leftAt).toLocaleDateString("ru-RU", { day: "2-digit", month: "short", year: "numeric" }) : "—"}
                     {r.editable && onEditLeftOn && (
                       <button onClick={() => startEdit(r.id, r.leftAt)} className="ml-1.5 text-[11px] font-bold" style={{ color: CLR.gold }} title="Изменить месяц ухода">✎</button>
                     )}

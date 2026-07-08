@@ -22,9 +22,9 @@ export function ArchiveReasonModal({
 }) {
   const [reason, setReason] = useState("");
   const [comment, setComment] = useState("");
-  // Месяц, когда ученик реально перестал ходить (по умолчанию — текущий).
-  const [leftMonth, setLeftMonth] = useState(() => new Date().toISOString().slice(0, 7));
-  const canSubmit = reason.trim().length > 0 && comment.trim().length > 0 && leftMonth.length === 7 && !busy;
+  // Дата ухода — когда ученик реально перестал ходить (по умолчанию — сегодня).
+  const [leftDate, setLeftDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const canSubmit = reason.trim().length > 0 && comment.trim().length > 0 && leftDate.length === 10 && !busy;
 
   const REASONS = [
     "Переезд",
@@ -78,15 +78,15 @@ export function ArchiveReasonModal({
         </label>
 
         <label className="mt-3 block">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Месяц ухода *</span>
+          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Дата ухода *</span>
           <input
-            type="month"
-            value={leftMonth}
-            max={new Date().toISOString().slice(0, 7)}
-            onChange={(e) => setLeftMonth(e.target.value)}
-            className={fieldCls}
+            type="date"
+            value={leftDate}
+            max={new Date().toISOString().slice(0, 10)}
+            onChange={(e) => setLeftDate(e.target.value)}
+            className={`${fieldCls} [color-scheme:dark]`}
           />
-          <span className="mt-1 block text-[11px] text-slate-500">Когда ученик реально перестал посещать занятия (может отличаться от даты переноса в архив).</span>
+          <span className="mt-1 block text-[11px] text-slate-500">Когда ученик реально перестал посещать занятия (может отличаться от даты переноса в архив). Нажмите — откроется календарь.</span>
         </label>
 
         <label className="mt-3 block">
@@ -108,7 +108,7 @@ export function ArchiveReasonModal({
             Отмена
           </button>
           <button
-            onClick={() => canSubmit && onConfirm(reason.trim(), comment.trim(), `${leftMonth}-01`)}
+            onClick={() => canSubmit && onConfirm(reason.trim(), comment.trim(), leftDate)}
             disabled={!canSubmit}
             className="rounded-xl border border-rose-500/30 bg-rose-500/15 px-4 py-2 text-sm font-black text-rose-300 transition hover:bg-rose-500/25 disabled:cursor-not-allowed disabled:opacity-40"
           >
