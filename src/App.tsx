@@ -968,12 +968,12 @@ export default function App() {
   };
 
   // Перевод ученика в архив с обязательными комментариями (причина + свободный).
-  const handleArchiveStudent = async (id: string, reason: string, comment: string) => {
+  const handleArchiveStudent = async (id: string, reason: string, comment: string, leftOn?: string) => {
     try {
       const response = await fetch(`/api/mvp/students/${id}/archive`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
-        body: JSON.stringify({ reason, comment })
+        body: JSON.stringify({ reason, comment, leftOn })
       });
       if (!response.ok) throw new Error(await response.text());
       await loadStudentArchive();
@@ -983,6 +983,23 @@ export default function App() {
       return true;
     } catch (error: any) {
       setMvpDataError(error.message || "Не удалось перевести ученика в архив");
+      return false;
+    }
+  };
+
+  // Правка архивной карточки (дата ухода / причина / комментарий).
+  const handleEditArchive = async (id: string, patch: { leftOn?: string; reason?: string; comment?: string }) => {
+    try {
+      const response = await fetch(`/api/mvp/students/${id}/archive`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+        body: JSON.stringify(patch)
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await loadStudentArchive();
+      return true;
+    } catch (error: any) {
+      setMvpDataError(error.message || "Не удалось изменить карточку архива");
       return false;
     }
   };
@@ -3306,6 +3323,9 @@ export default function App() {
               onUpdateStudent={handleUpdateStudent}
               onDeleteStudent={handleDeleteStudent}
               onArchiveStudent={handleArchiveStudent}
+              onUnarchiveStudent={handleUnarchiveStudent}
+              onEditArchive={handleEditArchive}
+              studentArchive={studentArchive}
               waitlist={waitlist}
               onAddToWaitlist={handleAddToWaitlist}
               onRemoveFromWaitlist={handleRemoveFromWaitlist}
@@ -3350,6 +3370,7 @@ export default function App() {
               studentArchive={studentArchive}
               onArchiveStudent={handleArchiveStudent}
               onUnarchiveStudent={handleUnarchiveStudent}
+              onEditArchive={handleEditArchive}
               onCreateTeacher={handleCreateTeacher}
               onUpdateTeacher={handleUpdateTeacher}
               onDeleteTeacher={handleDeleteTeacher}
@@ -3408,6 +3429,7 @@ export default function App() {
               onDeleteStudent={handleDeleteStudent}
               onArchiveStudent={handleArchiveStudent}
               onUnarchiveStudent={handleUnarchiveStudent}
+              onEditArchive={handleEditArchive}
               studentArchive={studentArchive}
               onCreateAnnouncement={handleCreateAnnouncement}
               onOpenPayment={openPaymentForStudent}

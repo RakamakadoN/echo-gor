@@ -56,6 +56,7 @@ interface BranchManagerWorkspaceProps {
   onDeleteStudent?: (id: string) => Promise<boolean>;
   onArchiveStudent?: (id: string, reason: string, comment: string) => Promise<boolean | void> | void;
   onUnarchiveStudent?: (id: string) => Promise<unknown> | void;
+  onEditArchive?: (id: string, patch: { leftOn?: string; reason?: string; comment?: string }) => Promise<unknown> | void;
   studentArchive?: any[];
   leadSources?: LeadSource[];
   waitlist?: WaitlistEntry[];
@@ -113,6 +114,7 @@ export function BranchManagerWorkspace({
   onDeleteStudent,
   onArchiveStudent,
   onUnarchiveStudent,
+  onEditArchive,
   studentArchive = [],
   waitlist = [],
   onAddToWaitlist,
@@ -244,6 +246,7 @@ export function BranchManagerWorkspace({
               onDeleteStudent={onDeleteStudent}
               onArchiveStudent={onArchiveStudent}
               onUnarchiveStudent={onUnarchiveStudent}
+              onEditArchive={onEditArchive}
               studentArchive={studentArchive}
               onOpenPayment={onOpenPayment}
               onSellSubscription={onSellSubscription}
@@ -376,7 +379,7 @@ function DashboardView({ branch, metrics, attendanceWeek, attendanceMonth, group
   );
 }
 
-function StudentsView({ students, groups, teachers = [], branches = [], branchId, onCreateStudent, onUpdateStudent, onDeleteStudent, onArchiveStudent, onUnarchiveStudent, studentArchive = [], onOpenPayment, onSellSubscription, plans = [], waitlist = [], onAddToWaitlist, onRemoveFromWaitlist }: {
+function StudentsView({ students, groups, teachers = [], branches = [], branchId, onCreateStudent, onUpdateStudent, onDeleteStudent, onArchiveStudent, onUnarchiveStudent, onEditArchive, studentArchive = [], onOpenPayment, onSellSubscription, plans = [], waitlist = [], onAddToWaitlist, onRemoveFromWaitlist }: {
   students: Student[];
   groups: Group[];
   teachers?: Teacher[];
@@ -387,6 +390,7 @@ function StudentsView({ students, groups, teachers = [], branches = [], branchId
   onDeleteStudent?: (id: string) => Promise<boolean>;
   onArchiveStudent?: (id: string, reason: string, comment: string) => Promise<boolean | void> | void;
   onUnarchiveStudent?: (id: string) => Promise<unknown> | void;
+  onEditArchive?: (id: string, patch: { leftOn?: string; reason?: string; comment?: string }) => Promise<unknown> | void;
   studentArchive?: any[];
   onOpenPayment?: (student: Student) => void;
   onSellSubscription?: (payload: SellSubscriptionInput) => Promise<boolean> | boolean;
@@ -401,6 +405,7 @@ function StudentsView({ students, groups, teachers = [], branches = [], branchId
         roleHeader="branch_manager"
         studentArchive={studentArchive}
         onUnarchiveStudent={onUnarchiveStudent}
+        onEditArchive={onEditArchive}
         students={students}
         groups={groups}
         branches={branches}

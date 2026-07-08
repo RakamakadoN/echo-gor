@@ -109,6 +109,7 @@ interface AdminEduErpWorkspaceProps {
   onDeleteStudent?: (id: string) => Promise<boolean>;
   onArchiveStudent?: (id: string, reason: string, comment: string) => Promise<boolean | void> | void;
   onUnarchiveStudent?: (id: string) => Promise<unknown> | void;
+  onEditArchive?: (id: string, patch: { leftOn?: string; reason?: string; comment?: string }) => Promise<unknown> | void;
   studentArchive?: any[];
   waitlist?: WaitlistEntry[];
   onAddToWaitlist?: (payload: { studentId: string; branchId?: string | null; groupId?: string | null; comment?: string | null }) => Promise<boolean>;
@@ -184,6 +185,7 @@ export function AdminEduErpWorkspace({
   onDeleteStudent,
   onArchiveStudent,
   onUnarchiveStudent,
+  onEditArchive,
   studentArchive = [],
   waitlist = [],
   onAddToWaitlist,
@@ -322,6 +324,7 @@ export function AdminEduErpWorkspace({
               onDeleteStudent={onDeleteStudent}
               onArchiveStudent={onArchiveStudent}
               onUnarchiveStudent={onUnarchiveStudent}
+              onEditArchive={onEditArchive}
               studentArchive={studentArchive}
               onOpenPayment={onOpenPayment}
               onSellSubscription={onSellSubscription}
@@ -449,12 +452,13 @@ function DashboardView({ branches, groups, students, teachers, todayRevenue, mon
 }
 
 // Раздел «Ученики» (ТЗ): полноценный реестр клиентской базы.
-function VisitorsView({ students, groups, branches, teachers, adminBranchId, onCreateStudent, onUpdateStudent, onDeleteStudent, onArchiveStudent, onUnarchiveStudent, studentArchive = [], onOpenPayment, onSellSubscription, plans, leadSources, waitlist, onAddToWaitlist, onRemoveFromWaitlist, onCreateLeadSource, onUpdateLeadSource, onDeleteLeadSource }: any) {
+function VisitorsView({ students, groups, branches, teachers, adminBranchId, onCreateStudent, onUpdateStudent, onDeleteStudent, onArchiveStudent, onUnarchiveStudent, onEditArchive, studentArchive = [], onOpenPayment, onSellSubscription, plans, leadSources, waitlist, onAddToWaitlist, onRemoveFromWaitlist, onCreateLeadSource, onUpdateLeadSource, onDeleteLeadSource }: any) {
   return (
     <StudentsRegistry
       roleHeader="admin"
       studentArchive={studentArchive}
       onUnarchiveStudent={onUnarchiveStudent}
+      onEditArchive={onEditArchive}
       students={students}
       groups={groups}
       branches={branches}

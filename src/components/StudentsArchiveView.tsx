@@ -28,7 +28,7 @@ const CLR = {
 type ArchiveStudent = {
   id: string; name: string; branchId: string; phone?: string;
   parentName?: string; parentPhone?: string; archivedAt: string; archivedBy?: string;
-  archiveReason?: string; archiveComment?: string;
+  archiveReason?: string; archiveComment?: string; leftOn?: string | null;
   subscriptionsCount?: number; category?: "left" | "declined";
 };
 
@@ -55,15 +55,19 @@ export default function StudentsArchiveView({
   students = [],
   branches = [],
   onUnarchive,
+  onEditLeftOn,
 }: {
   archive?: ArchiveStudent[];
   students?: Student[];
   branches?: Branch[];
   onUnarchive?: (id: string) => Promise<unknown> | void;
+  onEditLeftOn?: (id: string, patch: { leftOn?: string }) => Promise<unknown> | void;
 }) {
   const [cat, setCat] = useState<Cat>("all");
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editMonth, setEditMonth] = useState("");
   const branchName = (id?: string) => branches.find((b) => b.id === id)?.name || "—";
 
   // Унифицированная строка архива из двух источников.
@@ -73,10 +77,11 @@ export default function StudentsArchiveView({
       name: a.name,
       branchId: a.branchId,
       category: (a.category || (Number(a.subscriptionsCount) >= 1 ? "left" : "declined")) as "left" | "declined",
-      leftAt: a.archivedAt,
+      leftAt: a.leftOn || a.archivedAt,   // дата ухода (месяц), иначе дата переноса в архив
       reason: a.archiveReason || "",
       comment: a.archiveComment || "",
       canUnarchive: true,
+      editable: true,
     }));
     // Отказавшиеся из активного списка: провал воронки пробных (вычисляемо).
     const declinedFromActive = students
@@ -91,6 +96,7 @@ export default function StudentsArchiveView({
         reason: st.statusLabel,
         comment: "",
         canUnarchive: false,
+        editable: false,
       }));
     return [...fromArchive, ...declinedFromActive];
   }, [archive, students]);
@@ -113,6 +119,16 @@ export default function StudentsArchiveView({
     if (!onUnarchive) return;
     setBusy(id);
     try { await onUnarchive(id); } finally { setBusy(null); }
+  };
+
+  const startEdit = (id: string, leftAt?: string) => {
+    setEditId(id);
+    setEditMonth((leftAt || new Date().toISOString()).slice(0, 7));
+  };
+  const saveEdit = async (id: string) => {
+    if (!onEditLeftOn || editMonth.length !== 7) { setEditId(null); return; }
+    setBusy(id);
+    try { await onEditLeftOn(id, { leftOn: `${editMonth}-01` }); } finally { setBusy(null); setEditId(null); }
   };
 
   const TABS: { id: Cat; label: string; icon: ElementType }[] = [
@@ -187,8 +203,30 @@ export default function StudentsArchiveView({
             </div>
             <div className="md:col-span-2">
               <p className="text-[11px] uppercase tracking-wider" style={{ color: CLR.muted }}>Ушёл</p>
-              <p style={{ color: CLR.text }}>{sinceLabel(r.leftAt)}</p>
-              {r.leftAt && <p className="text-[11px]" style={{ color: CLR.muted }}>{new Date(r.leftAt).toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric" })}</p>}
+              {editId === r.id ? (
+                <div className="flex items-center gap-1">
+                  <input
+                    type="month"
+                    value={editMonth}
+                    max={new Date().toISOString().slice(0, 7)}
+                    onChange={(e) => setEditMonth(e.target.value)}
+                    className="rounded-[8px] px-2 py-1 text-[12px] outline-none"
+                    style={{ background: CLR.fill, border: `1px solid ${CLR.border}`, color: CLR.text }}
+                  />
+                  <button onClick={() => saveEdit(r.id)} disabled={busy === r.id} className="rounded-[8px] px-2 py-1 text-[11px] font-bold" style={{ background: "#E9F0E6", color: "#4F8A63" }}>OK</button>
+                  <button onClick={() => setEditId(null)} className="rounded-[8px] px-1.5 py-1 text-[11px]" style={{ color: CLR.muted }}>✕</button>
+                </div>
+              ) : (
+                <>
+                  <p style={{ color: CLR.text }}>
+                    {r.leftAt ? new Date(r.leftAt).toLocaleDateString("ru-RU", { month: "long", year: "numeric" }) : "—"}
+                    {r.editable && onEditLeftOn && (
+                      <button onClick={() => startEdit(r.id, r.leftAt)} className="ml-1.5 text-[11px] font-bold" style={{ color: CLR.gold }} title="Изменить месяц ухода">✎</button>
+                    )}
+                  </p>
+                  <p className="text-[11px]" style={{ color: CLR.muted }}>{sinceLabel(r.leftAt)}</p>
+                </>
+              )}
             </div>
             <div className="md:col-span-3">
               <p className="text-[11px] uppercase tracking-wider" style={{ color: CLR.muted }}>Причина</p>

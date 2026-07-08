@@ -106,8 +106,9 @@ export interface StudentsRegistryProps {
   onUpdateStudent?: (id: string, data: StudentInput) => Promise<boolean>;
   onDeleteStudent?: (id: string) => Promise<boolean | void> | void;
   /** Перевод в архив с обязательными комментариями (причина + свободный). */
-  onArchiveStudent?: (id: string, reason: string, comment: string) => Promise<boolean | void> | void;
+  onArchiveStudent?: (id: string, reason: string, comment: string, leftOn?: string) => Promise<boolean | void> | void;
   onUnarchiveStudent?: (id: string) => Promise<unknown> | void;
+  onEditArchive?: (id: string, patch: { leftOn?: string; reason?: string; comment?: string }) => Promise<unknown> | void;
   studentArchive?: any[];
   onOpenPayment?: (student: Student) => void;
   plans?: SubscriptionPlan[];
@@ -246,6 +247,7 @@ export default function StudentsRegistry({
   onDeleteStudent,
   onArchiveStudent,
   onUnarchiveStudent,
+  onEditArchive,
   studentArchive = [],
   onOpenPayment,
   plans = [],
@@ -601,12 +603,12 @@ export default function StudentsRegistry({
     setArchiveModal(selectedStudents);
   };
 
-  const confirmArchive = async (reason: string, comment: string) => {
+  const confirmArchive = async (reason: string, comment: string, leftOn: string) => {
     if (!onArchiveStudent || !archiveModal) return;
     setArchiveBusy(true);
     let ok = 0;
     for (const s of archiveModal) {
-      const res = await onArchiveStudent(s.id, reason, comment);
+      const res = await onArchiveStudent(s.id, reason, comment, leftOn);
       if (res !== false) ok += 1;
     }
     setArchiveBusy(false);
@@ -833,6 +835,7 @@ export default function StudentsRegistry({
           students={data}
           branches={branches}
           onUnarchive={onUnarchiveStudent}
+          onEditLeftOn={onEditArchive}
         />
       ) : view === "waitlist" ? (
         <WaitlistTable

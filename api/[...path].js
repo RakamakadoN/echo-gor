@@ -2189,11 +2189,34 @@ function registerMvpApi(app2) {
       res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u0443\u0447\u0435\u043D\u0438\u043A\u0430" });
     }
   });
+  app2.patch("/api/mvp/students/:id/archive", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const existing = await supabaseFetch(
+      "students",
+      `select=id,branch_id,archived_at&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`
+    );
+    if (!existing[0]) return res.status(404).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+    if (!existing[0].archived_at) return res.status(400).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u043D\u0435 \u0432 \u0430\u0440\u0445\u0438\u0432\u0435" });
+    if (!canSeeBranch(session, existing[0].branch_id)) return res.status(403).json({ error: "Branch access denied" });
+    const patch = {};
+    if (req.body?.leftOn !== void 0) patch.left_on = req.body.leftOn ? String(req.body.leftOn).slice(0, 10) : null;
+    if (req.body?.reason !== void 0) patch.archive_reason = String(req.body.reason || "").trim();
+    if (req.body?.comment !== void 0) patch.archive_comment = String(req.body.comment || "").trim();
+    if (!Object.keys(patch).length) return res.status(400).json({ error: "\u041D\u0435\u0442 \u043F\u043E\u043B\u0435\u0439 \u0434\u043B\u044F \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F" });
+    const rows = await supabaseFetch(
+      "students",
+      `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
+      { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify(patch) }
+    );
+    res.json({ student: rows[0], updated: true });
+  }));
   app2.post("/api/mvp/students/:id/archive", ah(async (req, res) => {
     const session = getSession(req);
     if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
     const reason = req.body && String(req.body.reason || "").trim() || "";
     const comment = req.body && String(req.body.comment || "").trim() || "";
+    const leftOn = req.body && req.body.leftOn ? String(req.body.leftOn).slice(0, 10) : (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
     if (!reason) return res.status(400).json({ error: "\u0423\u043A\u0430\u0436\u0438\u0442\u0435 \u043F\u0440\u0438\u0447\u0438\u043D\u0443 \u0443\u0445\u043E\u0434\u0430 \u0443\u0447\u0435\u043D\u0438\u043A\u0430" });
     if (!comment) return res.status(400).json({ error: "\u0423\u043A\u0430\u0436\u0438\u0442\u0435 \u043A\u043E\u043C\u043C\u0435\u043D\u0442\u0430\u0440\u0438\u0439" });
     const existing = await supabaseFetch(
@@ -2210,6 +2233,7 @@ function registerMvpApi(app2) {
       `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
       { method: "PATCH", body: JSON.stringify({
         archived_at: (/* @__PURE__ */ new Date()).toISOString(),
+        left_on: leftOn,
         archive_reason: reason,
         archive_comment: comment,
         archived_by: archivedBy,
@@ -2271,6 +2295,7 @@ function registerMvpApi(app2) {
         parentName: row.parent_name || "",
         parentPhone: row.parent_phone || "",
         archivedAt: row.archived_at,
+        leftOn: row.left_on || null,
         archivedBy: row.archived_by || "\u2014",
         archiveReason: row.archive_reason || "",
         archiveComment: row.archive_comment || "",

@@ -1181,11 +1181,37 @@ export function registerMvpApi(app: express.Express) {
   // В архив переводят владелец / руководитель / администратор (в рамках своих филиалов).
   // Два комментария обязательны: «Почему он ушёл?» (reason) и свободный (comment).
   // Данные ученика сохраняются; ученик исчезает из активного реестра, но виден в Архиве.
+  // Редактирование архивной карточки: дата ухода / причина / комментарий.
+  app.patch("/api/mvp/students/:id/archive", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const existing = await supabaseFetch<any[]>(
+      "students",
+      `select=id,branch_id,archived_at&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`
+    );
+    if (!existing[0]) return res.status(404).json({ error: "Ученик не найден" });
+    if (!existing[0].archived_at) return res.status(400).json({ error: "Ученик не в архиве" });
+    if (!canSeeBranch(session, existing[0].branch_id)) return res.status(403).json({ error: "Branch access denied" });
+    const patch: Record<string, any> = {};
+    if (req.body?.leftOn !== undefined) patch.left_on = req.body.leftOn ? String(req.body.leftOn).slice(0, 10) : null;
+    if (req.body?.reason !== undefined) patch.archive_reason = String(req.body.reason || "").trim();
+    if (req.body?.comment !== undefined) patch.archive_comment = String(req.body.comment || "").trim();
+    if (!Object.keys(patch).length) return res.status(400).json({ error: "Нет полей для обновления" });
+    const rows = await supabaseFetch<any[]>(
+      "students",
+      `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
+      { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify(patch) }
+    );
+    res.json({ student: rows[0], updated: true });
+  }));
+
   app.post("/api/mvp/students/:id/archive", ah(async (req, res) => {
     const session = getSession(req);
     if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
     const reason = (req.body && String(req.body.reason || "").trim()) || "";
     const comment = (req.body && String(req.body.comment || "").trim()) || "";
+    // Дата ухода (месяц, когда реально перестал ходить). По умолчанию — сегодня.
+    const leftOn = (req.body && req.body.leftOn) ? String(req.body.leftOn).slice(0, 10) : new Date().toISOString().slice(0, 10);
     if (!reason) return res.status(400).json({ error: "Укажите причину ухода ученика" });
     if (!comment) return res.status(400).json({ error: "Укажите комментарий" });
     const existing = await supabaseFetch<any[]>(
@@ -1202,6 +1228,7 @@ export function registerMvpApi(app: express.Express) {
       `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
       { method: "PATCH", body: JSON.stringify({
         archived_at: new Date().toISOString(),
+        left_on: leftOn,
         archive_reason: reason,
         archive_comment: comment,
         archived_by: archivedBy,
@@ -1266,6 +1293,7 @@ export function registerMvpApi(app: express.Express) {
         parentName: row.parent_name || "",
         parentPhone: row.parent_phone || "",
         archivedAt: row.archived_at,
+        leftOn: row.left_on || null,
         archivedBy: row.archived_by || "—",
         archiveReason: row.archive_reason || "",
         archiveComment: row.archive_comment || "",

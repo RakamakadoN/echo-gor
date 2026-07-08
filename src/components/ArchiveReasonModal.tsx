@@ -17,12 +17,14 @@ export function ArchiveReasonModal({
   title: string;
   subtitle?: string;
   busy?: boolean;
-  onConfirm: (reason: string, comment: string) => void;
+  onConfirm: (reason: string, comment: string, leftOn: string) => void;
   onCancel: () => void;
 }) {
   const [reason, setReason] = useState("");
   const [comment, setComment] = useState("");
-  const canSubmit = reason.trim().length > 0 && comment.trim().length > 0 && !busy;
+  // Месяц, когда ученик реально перестал ходить (по умолчанию — текущий).
+  const [leftMonth, setLeftMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const canSubmit = reason.trim().length > 0 && comment.trim().length > 0 && leftMonth.length === 7 && !busy;
 
   const REASONS = [
     "Переезд",
@@ -76,6 +78,18 @@ export function ArchiveReasonModal({
         </label>
 
         <label className="mt-3 block">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Месяц ухода *</span>
+          <input
+            type="month"
+            value={leftMonth}
+            max={new Date().toISOString().slice(0, 7)}
+            onChange={(e) => setLeftMonth(e.target.value)}
+            className={fieldCls}
+          />
+          <span className="mt-1 block text-[11px] text-slate-500">Когда ученик реально перестал посещать занятия (может отличаться от даты переноса в архив).</span>
+        </label>
+
+        <label className="mt-3 block">
           <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Комментарий *</span>
           <textarea
             value={comment}
@@ -94,7 +108,7 @@ export function ArchiveReasonModal({
             Отмена
           </button>
           <button
-            onClick={() => canSubmit && onConfirm(reason.trim(), comment.trim())}
+            onClick={() => canSubmit && onConfirm(reason.trim(), comment.trim(), `${leftMonth}-01`)}
             disabled={!canSubmit}
             className="rounded-xl border border-rose-500/30 bg-rose-500/15 px-4 py-2 text-sm font-black text-rose-300 transition hover:bg-rose-500/25 disabled:cursor-not-allowed disabled:opacity-40"
           >
