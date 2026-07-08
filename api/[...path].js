@@ -1658,7 +1658,7 @@ async function dbBootstrap(session) {
   }
   const visibleStudentIds = new Set(students.map((student) => student.id));
   const waitlist = waitlistRaw.filter((w) => visibleStudentIds.has(w.student_id)).map(mapDbWaitlist);
-  const payments = paymentsRaw.filter((payment) => visibleStudentIds.has(payment.student_id)).map(mapDbPayment);
+  const payments = paymentsRaw.filter((payment) => !payment.branch_id || branchAllowed(payment.branch_id)).map(mapDbPayment);
   const branchesVisible = branches.filter((branch) => branchAllowed(branch.id)).map((branch) => ({
     id: branch.id,
     organizationId: branch.organization_id,

@@ -572,7 +572,9 @@ async function dbBootstrap(session: MvpSession) {
   const waitlist = waitlistRaw
     .filter((w) => visibleStudentIds.has(w.student_id))
     .map(mapDbWaitlist);
-  const payments = paymentsRaw.filter((payment) => visibleStudentIds.has(payment.student_id)).map(mapDbPayment);
+  // Платежи фильтруем по ФИЛИАЛУ (роль), а не по списку активных учеников:
+  // иначе оплаты архивных/ушедших исчезали из реестра, и он расходился с ДДС.
+  const payments = paymentsRaw.filter((payment) => !payment.branch_id || branchAllowed(payment.branch_id)).map(mapDbPayment);
 
   const branchesVisible = branches
     .filter((branch) => branchAllowed(branch.id))
