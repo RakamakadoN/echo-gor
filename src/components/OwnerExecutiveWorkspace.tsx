@@ -9558,7 +9558,7 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
   const [filterBranchId, setFilterBranchId] = useState("");
   const [filterTeacherId, setFilterTeacherId] = useState("");
   const [filterHallId, setFilterHallId] = useState("");
-  const [lessonForm, setLessonForm] = useState({ groupId: "", startsAt: "", endsAt: "", teacherId: "", hallId: "", topic: "" });
+  const [lessonForm, setLessonForm] = useState({ branchId: "", groupId: "", startsAt: "", endsAt: "", teacherId: "", hallId: "", topic: "", reason: "" });
   const [groupForm, setGroupForm] = useState({ name: "", branchId: "", teacherId: "", hallId: "", ageFrom: "", ageTo: "", level: "Начинающие", scheduleDays: "", scheduleTime: "", startDate: "", endDate: "" });
   const [saving, setSaving] = useState(false);
 
@@ -9708,9 +9708,11 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
   const handleSaveLesson = async () => {
     if (!lessonForm.groupId || !lessonForm.startsAt || !lessonForm.endsAt) return;
     setSaving(true);
-    const ok = await onCreateLesson?.({ ...lessonForm });
+    // Причина (перенос/болезнь/отсутствие педагога) сохраняется в примечании урока.
+    const topic = [lessonForm.reason, lessonForm.topic].filter(Boolean).join(" — ");
+    const ok = await onCreateLesson?.({ ...lessonForm, topic });
     setSaving(false);
-    if (ok) { setLessonForm({ groupId: "", startsAt: "", endsAt: "", teacherId: "", hallId: "", topic: "" }); setActiveForm(null); }
+    if (ok) { setLessonForm({ branchId: "", groupId: "", startsAt: "", endsAt: "", teacherId: "", hallId: "", topic: "", reason: "" }); setActiveForm(null); }
   };
 
   const handleSaveGroup = async () => {
@@ -9790,10 +9792,16 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
         <div className="rounded-3xl border border-white/10 bg-[#111] p-5 space-y-4">
           <p className="text-sm font-black text-white">Новый урок</p>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <label className={labelCls}><span className={kicCls}>Филиал *</span>
+              <select value={lessonForm.branchId} onChange={(e) => setLessonForm(f => ({ ...f, branchId: e.target.value, groupId: "" }))} className={inputCls}>
+                <option value="">Выберите филиал</option>
+                {(branches || []).map((b: any) => <option key={b.id} value={b.id}>{b.name || b.city}</option>)}
+              </select>
+            </label>
             <label className={labelCls}><span className={kicCls}>Группа *</span>
               <select value={lessonForm.groupId} onChange={(e) => setLessonForm(f => ({ ...f, groupId: e.target.value }))} className={inputCls}>
                 <option value="">Выберите группу</option>
-                {groups.map((g: Group) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                {groups.filter((g: Group) => !lessonForm.branchId || g.branchId === lessonForm.branchId).map((g: Group) => <option key={g.id} value={g.id}>{g.name}</option>)}
               </select>
             </label>
             <label className={labelCls}><span className={kicCls}>Преподаватель</span>
@@ -9814,8 +9822,14 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
             <label className={labelCls}><span className={kicCls}>Конец *</span>
               <input type="datetime-local" value={lessonForm.endsAt} onChange={(e) => setLessonForm(f => ({ ...f, endsAt: e.target.value }))} className={inputCls} />
             </label>
-            <label className={labelCls}><span className={kicCls}>Тема</span>
-              <input type="text" value={lessonForm.topic} onChange={(e) => setLessonForm(f => ({ ...f, topic: e.target.value }))} placeholder="Тема занятия" className={inputCls} />
+            <label className={labelCls}><span className={kicCls}>Причина / тип урока</span>
+              <select value={lessonForm.reason} onChange={(e) => setLessonForm(f => ({ ...f, reason: e.target.value }))} className={inputCls}>
+                <option value="">— не указано —</option>
+                {["Разовый урок", "Перенос урока", "Болезнь ученика", "Отсутствие педагога", "Индивидуальное занятие", "Замена педагога", "Другое"].map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </label>
+            <label className={labelCls}><span className={kicCls}>Тема / комментарий</span>
+              <input type="text" value={lessonForm.topic} onChange={(e) => setLessonForm(f => ({ ...f, topic: e.target.value }))} placeholder="Напр. «перенос с пятницы»" className={inputCls} />
             </label>
           </div>
           <div className="flex gap-3">
