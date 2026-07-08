@@ -321,6 +321,30 @@ function deriveStudentStatus(row: any, subs: any[]): string {
   return "no_status";
 }
 
+// Авто-перенос «отказа» в архив (ТЗ): ученик ушёл на этапе воронки пробных
+// (не пришёл / пришёл, но не купил) и последний пробный был ≥ AUTO_DECLINE_DAYS
+// дней назад. Консервативно: только статус trial/lead, без единого абонемента,
+// с реальной отметкой пробного и без конверсии. Идемпотентно (проверяем archived_at).
+const AUTO_DECLINE_DAYS = 14;
+function isAutoDeclinedArchive(row: any, subs: any[], attendance: Record<string, any>): boolean {
+  if (row.archived_at || row.deletion_requested_at) return false;
+  if ((subs || []).length > 0) return false; // купил хоть раз — это «ушедший», не «отказ»
+  const st = String(row.status || "");
+  if (st !== "trial" && st !== "lead") return false;
+  const trialDates: string[] = [];
+  for (const [date, rec] of Object.entries(attendance || {})) {
+    const r: any = rec;
+    if (r?.isTrial || r?.status === "trial") {
+      if (r?.trialOutcome === "converted") return false; // купил после пробного — не отказ
+      trialDates.push(String(date).slice(0, 10));
+    }
+  }
+  if (trialDates.length === 0) return false; // не было пробного — не трогаем
+  const last = trialDates.sort()[trialDates.length - 1];
+  const days = Math.floor((Date.now() - new Date(last).getTime()) / 86400000);
+  return days >= AUTO_DECLINE_DAYS;
+}
+
 function mapDbStudent(row: any, attendanceByStudent: Map<string, Record<string, Attendance>>, subsByStudent: Map<string, any[]>): Student {
   const name = [row.first_name, row.last_name].filter(Boolean).join(" ") || row.full_name || "Ученик";
   return {
@@ -516,6 +540,24 @@ async function dbBootstrap(session: MvpSession) {
     const next = deriveStudentStatus(s, subsByStudent.get(s.id) || []);
     if (next !== (s.computed_status || null)) {
       supabaseFetch("students", `id=eq.${s.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ computed_status: next }) }).catch(() => { /* кэш, не критично */ });
+    }
+  }
+
+  // Авто-перенос отказов в архив (ТЗ): фоново, идемпотентно. Дата ухода отказа =
+  // сегодня (день авто-переноса). Причина фиксируется — её видит ИИ-реактивация.
+  const autoArchiveNow = new Date().toISOString();
+  for (const s of studentsRaw) {
+    if (isAutoDeclinedArchive(s, subsByStudent.get(s.id) || [], attendanceByStudent.get(s.id) || {})) {
+      supabaseFetch("students", `id=eq.${s.id}&organization_id=eq.${session.organizationId}&archived_at=is.null`, {
+        method: "PATCH", headers: { Prefer: "return=minimal" },
+        body: JSON.stringify({
+          archived_at: autoArchiveNow,
+          left_on: autoArchiveNow.slice(0, 10),
+          archive_reason: "Отказ (не купил после пробного)",
+          archive_comment: `Автоматически перенесён в архив через ${AUTO_DECLINE_DAYS} дней после пробного без покупки.`,
+          archived_by: "Система",
+        })
+      }).catch(() => { /* авто-архив, не критично */ });
     }
   }
 

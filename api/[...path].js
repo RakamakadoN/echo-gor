@@ -1430,6 +1430,25 @@ function deriveStudentStatus(row, subs) {
   if (row.status === "trial") return "trial";
   return "no_status";
 }
+var AUTO_DECLINE_DAYS = 14;
+function isAutoDeclinedArchive(row, subs, attendance) {
+  if (row.archived_at || row.deletion_requested_at) return false;
+  if ((subs || []).length > 0) return false;
+  const st = String(row.status || "");
+  if (st !== "trial" && st !== "lead") return false;
+  const trialDates = [];
+  for (const [date, rec] of Object.entries(attendance || {})) {
+    const r = rec;
+    if (r?.isTrial || r?.status === "trial") {
+      if (r?.trialOutcome === "converted") return false;
+      trialDates.push(String(date).slice(0, 10));
+    }
+  }
+  if (trialDates.length === 0) return false;
+  const last = trialDates.sort()[trialDates.length - 1];
+  const days = Math.floor((Date.now() - new Date(last).getTime()) / 864e5);
+  return days >= AUTO_DECLINE_DAYS;
+}
 function mapDbStudent(row, attendanceByStudent, subsByStudent) {
   const name = [row.first_name, row.last_name].filter(Boolean).join(" ") || row.full_name || "\u0423\u0447\u0435\u043D\u0438\u043A";
   return {
@@ -1610,6 +1629,23 @@ async function dbBootstrap(session) {
     const next = deriveStudentStatus(s, subsByStudent.get(s.id) || []);
     if (next !== (s.computed_status || null)) {
       supabaseFetch("students", `id=eq.${s.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ computed_status: next }) }).catch(() => {
+      });
+    }
+  }
+  const autoArchiveNow = (/* @__PURE__ */ new Date()).toISOString();
+  for (const s of studentsRaw) {
+    if (isAutoDeclinedArchive(s, subsByStudent.get(s.id) || [], attendanceByStudent.get(s.id) || {})) {
+      supabaseFetch("students", `id=eq.${s.id}&organization_id=eq.${session.organizationId}&archived_at=is.null`, {
+        method: "PATCH",
+        headers: { Prefer: "return=minimal" },
+        body: JSON.stringify({
+          archived_at: autoArchiveNow,
+          left_on: autoArchiveNow.slice(0, 10),
+          archive_reason: "\u041E\u0442\u043A\u0430\u0437 (\u043D\u0435 \u043A\u0443\u043F\u0438\u043B \u043F\u043E\u0441\u043B\u0435 \u043F\u0440\u043E\u0431\u043D\u043E\u0433\u043E)",
+          archive_comment: `\u0410\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438 \u043F\u0435\u0440\u0435\u043D\u0435\u0441\u0451\u043D \u0432 \u0430\u0440\u0445\u0438\u0432 \u0447\u0435\u0440\u0435\u0437 ${AUTO_DECLINE_DAYS} \u0434\u043D\u0435\u0439 \u043F\u043E\u0441\u043B\u0435 \u043F\u0440\u043E\u0431\u043D\u043E\u0433\u043E \u0431\u0435\u0437 \u043F\u043E\u043A\u0443\u043F\u043A\u0438.`,
+          archived_by: "\u0421\u0438\u0441\u0442\u0435\u043C\u0430"
+        })
+      }).catch(() => {
       });
     }
   }
