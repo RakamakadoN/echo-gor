@@ -5,6 +5,27 @@
 // UI показывает «нет данных / накапливается», а не выдуманную цифру.
 
 import type { Branch, Group, Student, Payment, Teacher } from "./types";
+import { getStudentState } from "./studentSegments";
+
+// Стабильные названия авто-статусов для дашборда (по statusKey из getStudentState).
+const AUTO_STATUS_LABELS: Record<string, string> = {
+  lead: "Новый лид",
+  trial: "Записан на пробный",
+  trial_missed: "Не пришёл на пробный",
+  trial_rebooked: "Перезаписан на пробный",
+  trial_lost: "Был на пробном, не купил",
+  visitor_new: "Новый посетитель",
+  not_renewed: "Требуют продления",
+  debt_current: "Не оплачен текущий месяц",
+  debt_prev: "Не оплачен прошлый месяц",
+  debt_partial: "Частичный долг",
+  next_paid: "Куплен следующий месяц",
+  new: "Новый ученик",
+  active: "Активный",
+  returned: "Вернувшийся",
+  paused: "Замороженный абонемент",
+  manual: "Ручной статус",
+};
 
 export type PeriodKey = "today" | "yesterday" | "week" | "month" | "quarter" | "year" | "custom";
 export type LevelKey = "network" | "branch" | "group" | "teacher";
@@ -260,6 +281,7 @@ export interface OwnerDashboardModel {
     today: FunnelDay | null; yesterday: FunnelDay | null;
     month: { leads: number; signed: number; came: number; bought: number; convSigned: number | null; convCame: number | null; convBought: number | null };
   };
+  autoStatuses: { key: string; label: string; count: number }[];
   charts: {
     revenueByMonth: { month: string; cur: number; prev: number | null }[];
     avgCheckByMonth: { month: string; cur: number | null; prev: number | null }[];
@@ -394,6 +416,22 @@ export function computeOwnerDashboard(
     convCame: signed ? Math.round((came / signed) * 100) : null,
     convBought: came ? Math.round((bought / Math.max(came, bought)) * 100) : null
   };
+
+  // --- распределение по авто-статусам (getStudentState — тот же источник, что список
+  // учеников): «не пришёл на пробный», «был не купил», «требуют продления» и т.д.
+  // Так авто-статусы, которые система считает сама, подтягиваются к владельцу. ---
+  const autoStatusMap = new Map<string, number>();
+  for (const s of students) {
+    if (s.status === "archived" || (s as any).archivedAt) continue;
+    const st = getStudentState(s);
+    if (st.statusKey === "left") continue;
+    autoStatusMap.set(st.statusKey, (autoStatusMap.get(st.statusKey) || 0) + 1);
+  }
+  const autoStatuses = Array.from(autoStatusMap, ([key, count]) => ({
+    key,
+    label: AUTO_STATUS_LABELS[key] || key,
+    count,
+  })).filter((x) => x.count > 0).sort((a, b) => b.count - a.count);
 
   // --- графики: помесячно за тек. и пред. год ---
   const months: string[] = [];
@@ -736,6 +774,7 @@ export function computeOwnerDashboard(
     newStudents: { period: newPeriod, today: newToday, hasData: hasCreated },
     renewals,
     funnel: { today: extras.funnelToday ?? null, yesterday: extras.funnelYesterday ?? null, month },
+    autoStatuses,
     charts: { revenueByMonth, avgCheckByMonth, subsByMonth, retentionByMonth, retentionByDay },
     risks,
     riskTables: {
