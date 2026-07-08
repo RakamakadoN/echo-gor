@@ -103,6 +103,23 @@ const demoUsers: MvpSession[] = [
   { userId: "00000000-0000-0000-0000-000000001004", organizationId: orgId, role: "teacher", branchId: "branch-almaty", dbBranchId: demoBranchAlmaty, fullName: "Аслан Плиев" }
 ];
 
+// Демо-филиал из seed может отсутствовать в реальной БД (филиалы пересоздавали) —
+// тогда руководитель/админ/педагог видели ПУСТОЙ кабинет (0 групп/учеников).
+// Лениво перепривязываем демо-сессии к первому реальному филиалу организации.
+let demoBranchChecked = false;
+async function ensureDemoBranchBinding() {
+  if (demoBranchChecked || !supabaseEnabled) return;
+  try {
+    const branches = await supabaseFetch<any[]>("branches", `select=id&organization_id=eq.${orgId}&status=neq.archived&order=created_at.asc`);
+    const ids = new Set(branches.map((b) => b.id));
+    if (!ids.has(demoBranchAlmaty)) {
+      const fallback = branches[0]?.id || null;
+      for (const s of demoUsers) if (s.dbBranchId) s.dbBranchId = fallback;
+    }
+    demoBranchChecked = true;
+  } catch { /* повторим на следующем запросе */ }
+}
+
 const supabaseUrl = process.env.SUPABASE_URL?.replace(/\/$/, "");
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 // Считаем ключ "ненастроенным", если он пустой или остался плейсхолдером из .env.example.
@@ -692,6 +709,9 @@ function mapDbRecalc(row: any, studentName?: string) {
 }
 
 export function registerMvpApi(app: express.Express) {
+  // Демо-филиал сессий должен указывать на реальный филиал (см. ensureDemoBranchBinding).
+  app.use("/api/mvp", (_req, _res, next) => { ensureDemoBranchBinding().finally(next); });
+
   // ── Безопасность: запрос обязан объявить, кто он. ──────────────────────────
   // Раньше запрос БЕЗ каких-либо заголовков идентификации по умолчанию получал
   // роль owner (см. getSession) — аноним становился владельцем сети.

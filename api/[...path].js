@@ -1247,6 +1247,20 @@ var demoUsers = [
   { userId: "00000000-0000-0000-0000-000000001003", organizationId: orgId2, role: "admin", branchId: "branch-almaty", dbBranchId: demoBranchAlmaty, fullName: "\u0424\u0430\u0442\u0438\u043C\u0430 \u0426\u0430\u0440\u0438\u043A\u0430\u0435\u0432\u0430" },
   { userId: "00000000-0000-0000-0000-000000001004", organizationId: orgId2, role: "teacher", branchId: "branch-almaty", dbBranchId: demoBranchAlmaty, fullName: "\u0410\u0441\u043B\u0430\u043D \u041F\u043B\u0438\u0435\u0432" }
 ];
+var demoBranchChecked = false;
+async function ensureDemoBranchBinding() {
+  if (demoBranchChecked || !supabaseEnabled) return;
+  try {
+    const branches = await supabaseFetch("branches", `select=id&organization_id=eq.${orgId2}&status=neq.archived&order=created_at.asc`);
+    const ids = new Set(branches.map((b) => b.id));
+    if (!ids.has(demoBranchAlmaty)) {
+      const fallback = branches[0]?.id || null;
+      for (const s of demoUsers) if (s.dbBranchId) s.dbBranchId = fallback;
+    }
+    demoBranchChecked = true;
+  } catch {
+  }
+}
 var supabaseUrl = process.env.SUPABASE_URL?.replace(/\/$/, "");
 var supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 var isPlaceholder = (value) => {
@@ -1756,6 +1770,9 @@ function mapDbRecalc(row, studentName) {
   };
 }
 function registerMvpApi(app2) {
+  app2.use("/api/mvp", (_req, _res, next) => {
+    ensureDemoBranchBinding().finally(next);
+  });
   const PUBLIC_MVP_PATHS = /* @__PURE__ */ new Set([
     "/session/demo-users",
     "/session/demo-login",
