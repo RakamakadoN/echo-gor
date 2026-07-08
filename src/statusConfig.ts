@@ -58,7 +58,7 @@ export interface StatusConfig {
 
 const STORAGE_KEY = "echogor:status-config:v1";
 
-export function loadStatusConfig(): StatusConfig {
+function readLocal(): StatusConfig {
   try {
     const raw = typeof window !== "undefined" ? window.localStorage.getItem(STORAGE_KEY) : null;
     const parsed = raw ? JSON.parse(raw) : {};
@@ -72,12 +72,46 @@ export function loadStatusConfig(): StatusConfig {
   }
 }
 
-export function saveStatusConfig(cfg: StatusConfig): void {
+// Модульный кэш — чтобы чтения статусов (getManualStatuses и т.д.) оставались
+// синхронными в рендере. Инициализируется из localStorage, обновляется общим
+// конфигом организации с сервера (fetchStatusConfig).
+let _cache: StatusConfig | null = null;
+
+export function loadStatusConfig(): StatusConfig {
+  if (!_cache) _cache = readLocal();
+  return _cache;
+}
+
+/** Обновить кэш + localStorage (без записи на сервер). */
+export function hydrateStatusConfig(cfg: Partial<StatusConfig>): void {
+  _cache = {
+    labels: cfg.labels || {},
+    tones: (cfg.tones as Record<string, StatusTone>) || {},
+    manual: Array.isArray(cfg.manual) ? cfg.manual : [],
+  };
+  try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(_cache)); } catch { /* noop */ }
+}
+
+/** Загрузить общий конфиг организации с сервера в кэш (при старте/смене роли). */
+export async function fetchStatusConfig(roleHeader: string): Promise<void> {
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
-  } catch {
-    /* noop */
-  }
+    const res = await fetch("/api/mvp/settings/status-config", { headers: { "x-demo-role": roleHeader } });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data && data.config && typeof data.config === "object") hydrateStatusConfig(data.config);
+  } catch { /* оставляем локальный кэш */ }
+}
+
+/** Сохранить конфиг: кэш + localStorage + общий стор на сервере. */
+export function saveStatusConfig(cfg: StatusConfig, roleHeader = "owner"): void {
+  hydrateStatusConfig(cfg);
+  try {
+    fetch("/api/mvp/settings/status-config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "x-demo-role": roleHeader },
+      body: JSON.stringify({ config: cfg }),
+    }).catch(() => { /* локально уже сохранено */ });
+  } catch { /* noop */ }
 }
 
 /** Отображаемое название статуса (переопределение или значение по умолчанию). */

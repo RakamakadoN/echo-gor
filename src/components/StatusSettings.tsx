@@ -18,7 +18,7 @@ import {
   StatusTone,
 } from "../statusConfig";
 
-export default function StatusSettings({ onClose }: { onClose: () => void }) {
+export default function StatusSettings({ onClose, roleHeader = "owner" }: { onClose: () => void; roleHeader?: string }) {
   const initial = loadStatusConfig();
   const [labels, setLabels] = useState<Record<string, string>>(initial.labels || {});
   const [tones, setTones] = useState<Record<string, StatusTone>>(initial.tones || {});
@@ -30,10 +30,11 @@ export default function StatusSettings({ onClose }: { onClose: () => void }) {
   const save = () => {
     const cleanLabels: Record<string, string> = {};
     Object.entries(labels).forEach(([k, v]) => {
-      if (v && v.trim()) cleanLabels[k] = v.trim();
+      const s = String(v ?? "").trim();
+      if (s) cleanLabels[k] = s;
     });
     const cleanManual = manual.map((s) => s.trim()).filter(Boolean);
-    saveStatusConfig({ labels: cleanLabels, tones, manual: cleanManual });
+    saveStatusConfig({ labels: cleanLabels, tones, manual: cleanManual }, roleHeader);
     onClose();
   };
 

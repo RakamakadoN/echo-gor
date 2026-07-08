@@ -10,6 +10,7 @@ import { BranchManagerWorkspace } from "./components/BranchManagerWorkspace";
 import { OwnerExecutiveWorkspace } from "./components/OwnerExecutiveWorkspace";
 import { AdminEduErpWorkspace } from "./components/AdminEduErpWorkspace";
 import type { SellSubscriptionInput } from "./components/StudentManagementCard";
+import { fetchStatusConfig } from "./statusConfig";
 import { AnimatedBarChartShowcase } from "./components/AnimatedBarChartShowcase";
 import { MagomedAssistant } from "./components/MagomedAssistant";
 // @ts-ignore
@@ -953,6 +954,9 @@ export default function App() {
   const [studentTrash, setStudentTrash] = useState<any[]>([]);
   // --- Архив учеников (сохранение базы для маркетинга) ---
   const [studentArchive, setStudentArchive] = useState<any[]>([]);
+  // Версия общего конфига статусов — бампаем после загрузки с сервера, чтобы
+  // перерисовать компоненты, читающие статусы синхронно из кэша.
+  const [, setStatusCfgVersion] = useState(0);
 
   const loadStudentArchive = async () => {
     try {
@@ -1072,6 +1076,8 @@ export default function App() {
   useEffect(() => {
     if (activeRole === "owner") loadStudentTrash();
     if (["owner", "branch_manager", "admin"].includes(activeRole)) loadStudentArchive();
+    // Общий конфиг статусов организации — в кэш, затем перерисовка.
+    fetchStatusConfig(getMvpRoleHeader()).then(() => setStatusCfgVersion((v) => v + 1));
   }, [activeRole]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- Owner: teacher / staff management ---

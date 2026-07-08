@@ -1179,7 +1179,7 @@ export default function StudentsRegistry({
         </div>
       )}
 
-      {showStatusSettings && <StatusSettings onClose={() => setShowStatusSettings(false)} />}
+      {showStatusSettings && <StatusSettings roleHeader={roleHeader} onClose={() => setShowStatusSettings(false)} />}
 
       {archiveModal && (
         <ArchiveReasonModal

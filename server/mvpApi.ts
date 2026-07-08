@@ -3481,6 +3481,32 @@ export function registerMvpApi(app: express.Express) {
   const mockSettings: any[] = [];
 
   // Список значений справочника (с дефолтами, если своих ещё нет).
+  // Общий конфиг статусов организации (названия/цвета/ручные статусы).
+  app.get("/api/mvp/settings/status-config", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) return res.json({ config: {} });
+    const rows = await supabaseFetch<any[]>(
+      "org_status_config",
+      `select=config&organization_id=eq.${session.organizationId}`
+    ).catch(() => [] as any[]);
+    res.json({ config: rows[0]?.config || {} });
+  }));
+
+  app.put("/api/mvp/settings/status-config", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    if (!["owner", "branch_manager", "admin"].includes(session.role)) {
+      return res.status(403).json({ error: "Настраивать статусы может владелец или управляющий" });
+    }
+    const config = (req.body && req.body.config) || {};
+    await supabaseFetch("org_status_config", "", {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({ organization_id: session.organizationId, config, updated_at: new Date().toISOString() })
+    });
+    res.json({ ok: true });
+  }));
+
   app.get("/api/mvp/settings/lists", ah(async (req, res) => {
     const session = getSession(req);
     const kind = String((req.query as any).kind || "");

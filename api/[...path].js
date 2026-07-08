@@ -4363,6 +4363,29 @@ function registerMvpApi(app2) {
     document_category: ["\u0410\u0440\u0435\u043D\u0434\u0430", "\u0423\u0441\u043B\u0443\u0433\u0438 \u2014 \u0443\u0431\u043E\u0440\u043A\u0430", "\u0423\u0441\u043B\u0443\u0433\u0438 \u2014 \u0432\u044B\u0432\u043E\u0437 \u043C\u0443\u0441\u043E\u0440\u0430", "\u041F\u043E\u0434\u0440\u044F\u0434\u0447\u0438\u043A\u0438 / \u043F\u043E\u0441\u0442\u0430\u0432\u0449\u0438\u043A\u0438", "\u041F\u0440\u043E\u0447\u0435\u0435"]
   };
   const mockSettings = [];
+  app2.get("/api/mvp/settings/status-config", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) return res.json({ config: {} });
+    const rows = await supabaseFetch(
+      "org_status_config",
+      `select=config&organization_id=eq.${session.organizationId}`
+    ).catch(() => []);
+    res.json({ config: rows[0]?.config || {} });
+  }));
+  app2.put("/api/mvp/settings/status-config", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    if (!["owner", "branch_manager", "admin"].includes(session.role)) {
+      return res.status(403).json({ error: "\u041D\u0430\u0441\u0442\u0440\u0430\u0438\u0432\u0430\u0442\u044C \u0441\u0442\u0430\u0442\u0443\u0441\u044B \u043C\u043E\u0436\u0435\u0442 \u0432\u043B\u0430\u0434\u0435\u043B\u0435\u0446 \u0438\u043B\u0438 \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0438\u0439" });
+    }
+    const config = req.body && req.body.config || {};
+    await supabaseFetch("org_status_config", "", {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({ organization_id: session.organizationId, config, updated_at: (/* @__PURE__ */ new Date()).toISOString() })
+    });
+    res.json({ ok: true });
+  }));
   app2.get("/api/mvp/settings/lists", ah(async (req, res) => {
     const session = getSession(req);
     const kind = String(req.query.kind || "");
