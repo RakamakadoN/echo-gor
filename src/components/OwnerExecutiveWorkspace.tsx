@@ -9551,7 +9551,7 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
   const todayIso = isoDate(today);
 
   // Mobile-first: на телефоне открываем «День» (неделя не влезает), на десктопе — «Неделю».
-  const [view, setView] = useState<"day" | "week" | "month" | "halls" | "archive">(() => (typeof window !== "undefined" && window.innerWidth < 768 ? "day" : "week"));
+  const [view, setView] = useState<"day" | "week" | "month" | "halls" | "archive">("halls");
   const [anchor, setAnchor] = useState<Date>(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; });
   const [activeForm, setActiveForm] = useState<"lesson" | "group" | null>(null);
   const [showGroups, setShowGroups] = useState(false);
