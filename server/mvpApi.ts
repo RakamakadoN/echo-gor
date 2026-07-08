@@ -2373,6 +2373,10 @@ export function registerMvpApi(app: express.Express) {
     if (!payload.groupId || !payload.startsAt || !payload.endsAt) {
       return res.status(400).json({ error: "groupId, startsAt и endsAt обязательны" });
     }
+    // CHECK schedule_lessons_time_valid: начало должно быть раньше конца.
+    if (new Date(payload.startsAt).getTime() >= new Date(payload.endsAt).getTime()) {
+      return res.status(400).json({ error: "Время окончания урока должно быть позже времени начала." });
+    }
     try {
       // Resolve branchId from group if not provided
       let branchId = payload.branchId;
@@ -2397,7 +2401,11 @@ export function registerMvpApi(app: express.Express) {
       });
       res.status(201).json({ lesson: mapDbLesson(inserted[0]) });
     } catch (error: any) {
-      res.status(400).json({ error: error.message || "Не удалось создать урок" });
+      const raw = String(error?.message || "");
+      if (raw.includes("23514")) return res.status(400).json({ error: "Время окончания урока должно быть позже начала." });
+      if (raw.includes("22P02")) return res.status(400).json({ error: "Некорректные данные урока — проверьте выбранные филиал/группу/педагога и дату." });
+      if (raw.includes("23503")) return res.status(400).json({ error: "Выбранная группа/зал/педагог не найдены." });
+      res.status(400).json({ error: raw || "Не удалось создать урок" });
     }
   });
 

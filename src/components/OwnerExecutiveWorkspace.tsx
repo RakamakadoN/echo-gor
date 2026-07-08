@@ -9561,7 +9561,9 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
   const [filterBranchId, setFilterBranchId] = useState("");
   const [filterTeacherId, setFilterTeacherId] = useState("");
   const [filterHallId, setFilterHallId] = useState("");
-  const [lessonForm, setLessonForm] = useState({ branchId: "", groupId: "", startsAt: "", endsAt: "", teacherId: "", hallId: "", topic: "", reason: "" });
+  const [lessonForm, setLessonForm] = useState({ branchId: "", groupId: "", teacherId: "", hallId: "", date: "", startTime: "", endTime: "", topic: "", reason: "" });
+  // Список времени для выпадашек урока (08:00–22:00, шаг 30 мин).
+  const LESSON_TIMES = useMemo(() => { const o: string[] = []; for (let h = 8; h <= 22; h++) for (const m of [0, 30]) o.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`); return o; }, []);
   const [groupForm, setGroupForm] = useState({ name: "", branchId: "", teacherId: "", hallId: "", ageFrom: "", ageTo: "", level: "Начинающие", scheduleDays: "", scheduleTime: "", startDate: "", endDate: "" });
   const [saving, setSaving] = useState(false);
 
@@ -9708,14 +9710,25 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
 
   const filteredLessons = lessons; // совместимость со старым кодом форм ниже
 
+  const lessonReady = Boolean(lessonForm.branchId && lessonForm.groupId && lessonForm.hallId && lessonForm.date && lessonForm.startTime && lessonForm.endTime && lessonForm.startTime < lessonForm.endTime);
   const handleSaveLesson = async () => {
-    if (!lessonForm.groupId || !lessonForm.startsAt || !lessonForm.endsAt) return;
+    if (!lessonReady) return;
     setSaving(true);
-    // Причина (перенос/болезнь/отсутствие педагога) сохраняется в примечании урока.
+    // Причина (перенос/болезнь/отсутствие педагога) — в примечании урока.
     const topic = [lessonForm.reason, lessonForm.topic].filter(Boolean).join(" — ");
-    const ok = await onCreateLesson?.({ ...lessonForm, topic });
+    const startsAt = `${lessonForm.date}T${lessonForm.startTime}`;
+    const endsAt = `${lessonForm.date}T${lessonForm.endTime}`;
+    const ok = await onCreateLesson?.({ branchId: lessonForm.branchId, groupId: lessonForm.groupId, teacherId: lessonForm.teacherId, hallId: lessonForm.hallId, startsAt, endsAt, topic });
     setSaving(false);
-    if (ok) { setLessonForm({ branchId: "", groupId: "", startsAt: "", endsAt: "", teacherId: "", hallId: "", topic: "", reason: "" }); setActiveForm(null); }
+    if (ok) {
+      const d = new Date(`${lessonForm.date}T00:00:00`); d.setHours(0, 0, 0, 0);
+      const from = lessonForm.date, branchId = lessonForm.branchId;
+      setLessonForm({ branchId: "", groupId: "", teacherId: "", hallId: "", date: "", startTime: "", endTime: "", topic: "", reason: "" });
+      setActiveForm(null);
+      // Показать созданный урок: перейти на его день и перезагрузить график.
+      setAnchor(d); setView("day");
+      onLoadSchedule?.({ from, to: from, branchId });
+    }
   };
 
   const handleSaveGroup = async () => {
@@ -9813,17 +9826,26 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
                 {teachers.map((t: Teacher) => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
             </label>
-            <label className={labelCls}><span className={kicCls}>Зал</span>
+            <label className={labelCls}><span className={kicCls}>Зал *</span>
               <select value={lessonForm.hallId} onChange={(e) => setLessonForm(f => ({ ...f, hallId: e.target.value }))} className={inputCls}>
-                <option value="">Без зала</option>
-                {(halls || []).map((h: any) => <option key={h.id} value={h.id}>{h.name}</option>)}
+                <option value="">Выберите зал</option>
+                {(halls || []).filter((h: any) => !lessonForm.branchId || h.branchId === lessonForm.branchId).map((h: any) => <option key={h.id} value={h.id}>{h.name}</option>)}
               </select>
             </label>
-            <label className={labelCls}><span className={kicCls}>Начало *</span>
-              <input type="datetime-local" value={lessonForm.startsAt} onChange={(e) => setLessonForm(f => ({ ...f, startsAt: e.target.value }))} className={inputCls} />
+            <label className={labelCls}><span className={kicCls}>Дата урока *</span>
+              <input type="date" value={lessonForm.date} min={isoDate(today)} onChange={(e) => setLessonForm(f => ({ ...f, date: e.target.value }))} className={`${inputCls} [color-scheme:dark]`} />
             </label>
-            <label className={labelCls}><span className={kicCls}>Конец *</span>
-              <input type="datetime-local" value={lessonForm.endsAt} onChange={(e) => setLessonForm(f => ({ ...f, endsAt: e.target.value }))} className={inputCls} />
+            <label className={labelCls}><span className={kicCls}>Время с *</span>
+              <select value={lessonForm.startTime} onChange={(e) => setLessonForm(f => ({ ...f, startTime: e.target.value }))} className={inputCls}>
+                <option value="">—</option>
+                {LESSON_TIMES.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </label>
+            <label className={labelCls}><span className={kicCls}>Время до *</span>
+              <select value={lessonForm.endTime} onChange={(e) => setLessonForm(f => ({ ...f, endTime: e.target.value }))} className={inputCls}>
+                <option value="">—</option>
+                {LESSON_TIMES.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
             </label>
             <label className={labelCls}><span className={kicCls}>Причина / тип урока</span>
               <select value={lessonForm.reason} onChange={(e) => setLessonForm(f => ({ ...f, reason: e.target.value }))} className={inputCls}>
@@ -9836,7 +9858,7 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
             </label>
           </div>
           <div className="flex gap-3">
-            <button onClick={handleSaveLesson} disabled={saving || !lessonForm.groupId || !lessonForm.startsAt} className="rounded-xl bg-[#C5A059] px-5 py-2 text-sm font-bold text-black disabled:opacity-40">{saving ? "Сохранение…" : "Создать"}</button>
+            <button onClick={handleSaveLesson} disabled={saving || !lessonReady} title={!lessonReady ? "Заполните филиал, группу, зал, дату и время (конец позже начала)" : undefined} className="rounded-xl bg-[#C5A059] px-5 py-2 text-sm font-bold text-black disabled:opacity-40">{saving ? "Сохранение…" : "Создать"}</button>
             <button onClick={() => setActiveForm(null)} className="rounded-xl bg-white/5 px-5 py-2 text-sm font-bold text-slate-400">Отмена</button>
           </div>
         </div>
