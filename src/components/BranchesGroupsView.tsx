@@ -620,9 +620,9 @@ function GroupsTab({ groupData, canManage, rawBranches, teachers, halls, student
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm font-bold text-white">Группы <span className="text-slate-500">({filtered.length})</span></p>
         {canManage && (
-          <button onClick={() => setModal({ mode: "add" })} className="inline-flex items-center gap-2 rounded-2xl bg-[#C5A059] px-4 py-2 text-sm font-bold text-black transition hover:bg-[#d4b06a]">
-            <Plus className="h-4 w-4" /> Добавить группу
-          </button>
+          <span className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-400">
+            Добавить группу можно во вкладке «Расписание»
+          </span>
         )}
       </div>
 

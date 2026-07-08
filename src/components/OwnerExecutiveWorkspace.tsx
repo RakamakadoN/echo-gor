@@ -74,6 +74,8 @@ import { ResponsiveContainer } from "./SafeResponsiveContainer";
 import StudentManagementCard, { SellSubscriptionInput } from "./StudentManagementCard";
 import StudentsRegistry, { type RegistryPreset } from "./StudentsRegistry";
 import ReactivationPanel from "./ReactivationPanel";
+import GroupScheduleGrid from "./GroupScheduleGrid";
+import GroupScheduleFields from "./GroupScheduleFields";
 import { ArchiveReasonModal } from "./ArchiveReasonModal";
 import AttendanceJournalView from "./AttendanceJournalView";
 import { BranchesGroupsView } from "./BranchesGroupsView";
@@ -9540,7 +9542,7 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
   const todayIso = isoDate(today);
 
   // Mobile-first: на телефоне открываем «День» (неделя не влезает), на десктопе — «Неделю».
-  const [view, setView] = useState<"day" | "week" | "month">(() => (typeof window !== "undefined" && window.innerWidth < 768 ? "day" : "week"));
+  const [view, setView] = useState<"day" | "week" | "month" | "halls">(() => (typeof window !== "undefined" && window.innerWidth < 768 ? "day" : "week"));
   const [anchor, setAnchor] = useState<Date>(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; });
   const [activeForm, setActiveForm] = useState<"lesson" | "group" | null>(null);
   const [showGroups, setShowGroups] = useState(false);
@@ -9758,7 +9760,7 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
         <div className="flex flex-wrap items-center gap-2">
           {/* Сегментный переключатель */}
           <div className="flex rounded-xl bg-white/5 border border-white/10 p-0.5">
-            {([["day", "День"], ["week", "Неделя"], ["month", "Месяц"]] as const).map(([v, label]) => (
+            {([["day", "День"], ["week", "Неделя"], ["month", "Месяц"], ["halls", "По залам"]] as const).map(([v, label]) => (
               <button key={v} onClick={() => setView(v)} className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${view === v ? "bg-[#C5A059] text-black" : "text-slate-400 hover:text-white"}`}>{label}</button>
             ))}
           </div>
@@ -9850,12 +9852,13 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
                 {["Начинающие", "Продолжающие", "Ансамбль", "Профи"].map((l) => <option key={l}>{l}</option>)}
               </select>
             </label>
-            <label className={labelCls}><span className={kicCls}>Дни занятий</span>
-              <input type="text" value={groupForm.scheduleDays} onChange={(e) => setGroupForm(f => ({ ...f, scheduleDays: e.target.value }))} placeholder="Пн, Ср, Пт" className={inputCls} />
-            </label>
-            <label className={labelCls}><span className={kicCls}>Время</span>
-              <input type="text" value={groupForm.scheduleTime} onChange={(e) => setGroupForm(f => ({ ...f, scheduleTime: e.target.value }))} placeholder="18:30–20:00" className={inputCls} />
-            </label>
+            <GroupScheduleFields
+              days={groupForm.scheduleDays}
+              time={groupForm.scheduleTime}
+              onDays={(v) => setGroupForm(f => ({ ...f, scheduleDays: v }))}
+              onTime={(v) => setGroupForm(f => ({ ...f, scheduleTime: v }))}
+              dark
+            />
             <label className={labelCls}><span className={kicCls}>Период работы группы</span>
               <div className="flex items-center gap-2">
                 <input type="date" value={groupForm.startDate} onChange={(e) => setGroupForm(f => ({ ...f, startDate: e.target.value }))} className={inputCls} title="Дата начала" />
@@ -9874,7 +9877,16 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
       {/* Календарь + правая колонка */}
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0">
-          {view === "month" ? (
+          {view === "halls" ? (
+            /* ───── Весь график по залам (недельная сетка) ───── */
+            <GroupScheduleGrid
+              groups={(groups || []).filter((g: any) =>
+                (!filterBranchId || g.branchId === filterBranchId) &&
+                (!filterTeacherId || g.teacherId === filterTeacherId) &&
+                (!filterHallId || g.hallId === filterHallId))}
+              halls={halls || []}
+            />
+          ) : view === "month" ? (
             /* ───── Месяц ───── */
             <div className="rounded-3xl border border-white/10 bg-[#111] p-4">
               <div className="grid grid-cols-7 gap-1 mb-1">
