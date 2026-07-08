@@ -9734,6 +9734,7 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
         <div>
           <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#C5A059]">Сеть филиалов</p>
           <h2 className="text-2xl font-black text-white">Расписание занятий</h2>
+          <p className="mt-0.5 text-[11px] text-slate-500">Групп получено: {(groups || []).length} · с расписанием: {(groups || []).filter((g: any) => (g.days || []).length && g.time).length} · занятий на графике: {lessons.length}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button onClick={() => setActiveForm(activeForm === "lesson" ? null : "lesson")} className="flex items-center gap-2 rounded-xl bg-[#C5A059]/15 border border-[#C5A059]/30 px-4 py-2 text-sm font-bold text-[#C5A059] hover:bg-[#C5A059]/25 transition-colors">
