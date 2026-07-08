@@ -2,14 +2,15 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  *
- * ReactivationPanel — блок «Можно вернуть» на дашборде владельца.
- * Находит ушедших, кто в архиве дольше порога (по умолчанию 2 мес), и по кнопке
- * просит ИИ (Магомед/Gemini) подобрать оффер и готовый текст сообщения на основе
- * причины ухода. Напоминание, чтобы возврат учеников не забывался.
+ * ReactivationPanel — рекомендация «Можно вернуть» ВНУТРИ ежедневного отчёта
+ * руководителя. Это НЕ постоянное окно: если возвращать некого (нет ушедших в
+ * архиве дольше порога) — не рендерит ничего. Появляется только при
+ * необходимости, свёрнутой строкой-рекомендацией; по клику ИИ (Gemini) подбирает
+ * оффер и готовый текст сообщения по причине ухода.
  * Деградация: при 503 (нет GEMINI_API_KEY) показывает кандидатов без ИИ-текста.
  */
 import { useMemo, useState } from "react";
-import { HeartHandshake, Sparkles, Loader2, Copy, Check } from "lucide-react";
+import { HeartHandshake, Sparkles, Loader2, Copy, Check, ChevronDown, ChevronUp } from "lucide-react";
 
 type ArchiveStudent = {
   id: string; name: string; branchId: string;
@@ -35,6 +36,7 @@ export default function ReactivationPanel({
   roleHeader?: string;
   minMonths?: number;
 }) {
+  const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [offers, setOffers] = useState<Record<string, Offer> | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +51,11 @@ export default function ReactivationPanel({
     [archive, minMonths]
   );
 
+  // Возвращать некого — рекомендации нет вовсе (не постоянное окно).
+  if (candidates.length === 0) return null;
+
   const suggest = async () => {
+    setOpen(true);
     setLoading(true);
     setError(null);
     try {
@@ -88,35 +94,31 @@ export default function ReactivationPanel({
   };
 
   return (
-    <div className="overflow-hidden rounded-[2rem] border border-emerald-500/20 bg-[#0d1411]">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-emerald-500/15 px-5 py-4">
-        <div className="flex items-center gap-3">
-          <div className="rounded-2xl bg-emerald-500/15 p-2.5 text-emerald-300"><HeartHandshake className="h-5 w-5" /></div>
-          <div>
-            <h3 className="font-black text-white">Можно вернуть: {candidates.length}</h3>
-            <p className="text-xs text-slate-500">Ушедшие в архиве дольше {minMonths} мес. ИИ подберёт оффер по причине ухода.</p>
-          </div>
+    <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.06]">
+      {/* Строка-рекомендация */}
+      <button
+        onClick={() => (offers ? setOpen((v) => !v) : suggest())}
+        className="flex w-full items-center gap-3 px-4 py-3 text-left"
+      >
+        <div className="rounded-xl bg-emerald-500/15 p-2 text-emerald-300"><HeartHandshake className="h-4 w-4" /></div>
+        <div className="flex-1">
+          <p className="text-sm font-bold text-white">Рекомендация: можно вернуть {candidates.length} ушедших</p>
+          <p className="text-xs text-slate-400">В архиве дольше {minMonths} мес. ИИ подберёт оффер по причине ухода.</p>
         </div>
-        <button
-          onClick={suggest}
-          disabled={loading || candidates.length === 0}
-          className="inline-flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm font-bold text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-40"
-        >
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-          {offers ? "Обновить подсказки" : "Подобрать офферы (ИИ)"}
-        </button>
-      </div>
+        <span className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-300">
+          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+          {offers ? (open ? <>Свернуть <ChevronUp className="h-3.5 w-3.5" /></> : <>Показать <ChevronDown className="h-3.5 w-3.5" /></>) : "Подобрать офферы"}
+        </span>
+      </button>
 
-      {candidates.length === 0 ? (
-        <p className="px-5 py-8 text-center text-sm text-slate-500">Пока некого возвращать — нет ушедших в архиве дольше {minMonths} мес.</p>
-      ) : (
-        <div className="divide-y divide-white/5">
-          {error && <p className="px-5 py-3 text-xs text-amber-300">{error}</p>}
+      {open && (
+        <div className="divide-y divide-white/5 border-t border-emerald-500/15">
+          {error && <p className="px-4 py-2.5 text-xs text-amber-300">{error}</p>}
           {candidates.map((a) => {
             const o = offers?.[a.id];
             const hidden = o && o.recommend === false;
             return (
-              <div key={a.id} className={`px-5 py-3 text-sm ${hidden ? "opacity-50" : ""}`}>
+              <div key={a.id} className={`px-4 py-2.5 text-sm ${hidden ? "opacity-50" : ""}`}>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <span className="font-bold text-white">{a.name}</span>
