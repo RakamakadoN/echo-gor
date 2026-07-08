@@ -446,7 +446,7 @@ async function dbBootstrap(session: MvpSession) {
     supabaseFetch<any[]>("branches", `select=*&${orgFilter}&status=neq.archived`),
     supabaseFetch<any[]>("halls", `select=*`), // Halls are filtered by branch in mapping
     supabaseFetch<any[]>("users", `select=*&${orgFilter}`),
-    supabaseFetch<any[]>("groups", `select=*&${orgFilter}`),
+    supabaseFetch<any[]>("groups", `select=*&${orgFilter}&status=neq.archived`),
     supabaseFetch<any[]>("students", `select=*&${orgFilter}&status=neq.archived&deletion_requested_at=is.null&archived_at=is.null`),
     supabaseFetch<any[]>("payments", `select=*&${orgFilter}&order=paid_at.desc`),
     supabaseFetch<any[]>("schedule_lessons", `select=*&order=starts_at.desc`), // Cross-org lessons are unlikely but we keep mapping safe
@@ -2094,6 +2094,7 @@ export function registerMvpApi(app: express.Express) {
       time: row.schedule_time || "",
       ageGroup: row.age_from != null && row.age_to != null ? `${row.age_from}–${row.age_to} лет` : "Все возрасты",
       level: row.level || "MVP",
+      status: row.status || "active",
       startDate: row.start_date || null,
       endDate: row.end_date || null,
       studentCount,

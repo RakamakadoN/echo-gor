@@ -1547,7 +1547,7 @@ async function dbBootstrap(session) {
     supabaseFetch("halls", `select=*`),
     // Halls are filtered by branch in mapping
     supabaseFetch("users", `select=*&${orgFilter}`),
-    supabaseFetch("groups", `select=*&${orgFilter}`),
+    supabaseFetch("groups", `select=*&${orgFilter}&status=neq.archived`),
     supabaseFetch("students", `select=*&${orgFilter}&status=neq.archived&deletion_requested_at=is.null&archived_at=is.null`),
     supabaseFetch("payments", `select=*&${orgFilter}&order=paid_at.desc`),
     supabaseFetch("schedule_lessons", `select=*&order=starts_at.desc`),
@@ -3022,6 +3022,7 @@ function registerMvpApi(app2) {
       time: row.schedule_time || "",
       ageGroup: row.age_from != null && row.age_to != null ? `${row.age_from}\u2013${row.age_to} \u043B\u0435\u0442` : "\u0412\u0441\u0435 \u0432\u043E\u0437\u0440\u0430\u0441\u0442\u044B",
       level: row.level || "MVP",
+      status: row.status || "active",
       startDate: row.start_date || null,
       endDate: row.end_date || null,
       studentCount
