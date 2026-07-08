@@ -816,6 +816,7 @@ export default function App() {
       if (!response.ok) throw new Error(await response.text());
       await loadMvpBootstrap(activeRole);
       addAuditLog("Создание задачи", `Добавлена задача «${data.title}»`);
+      toast.success("Задача создана");
       return true;
     } catch (error: any) {
       notifyError(error.message || "Не удалось создать задачу");
@@ -831,6 +832,7 @@ export default function App() {
       });
       if (!response.ok) throw new Error(await response.text());
       await loadMvpBootstrap(activeRole);
+      toast.success("Задача обновлена");
       return true;
     } catch (error: any) {
       notifyError(error.message || "Не удалось обновить задачу");
@@ -845,6 +847,7 @@ export default function App() {
       });
       if (!response.ok) throw new Error(await response.text());
       await loadMvpBootstrap(activeRole);
+      toast.success("Задача удалена");
       return true;
     } catch (error: any) {
       notifyError(error.message || "Не удалось удалить задачу");
@@ -863,6 +866,7 @@ export default function App() {
       if (!response.ok) throw new Error(await response.text());
       await loadMvpBootstrap(activeRole);
       addAuditLog("Справочник: абонемент", `Добавлен абонемент «${data.name}»`);
+      toast.success("Абонемент (тариф) создан");
       return true;
     } catch (error: any) {
       notifyError(error.message || "Не удалось создать абонемент");
@@ -878,6 +882,7 @@ export default function App() {
       });
       if (!response.ok) throw new Error(await response.text());
       await loadMvpBootstrap(activeRole);
+      toast.success("Тариф обновлён");
       return true;
     } catch (error: any) {
       notifyError(error.message || "Не удалось обновить абонемент");
@@ -892,6 +897,7 @@ export default function App() {
       });
       if (!response.ok) throw new Error(await response.text());
       await loadMvpBootstrap(activeRole);
+      toast.success("Тариф удалён");
       return true;
     } catch (error: any) {
       notifyError(error.message || "Не удалось удалить абонемент");
@@ -910,6 +916,7 @@ export default function App() {
       if (!response.ok) throw new Error(await response.text());
       await loadMvpBootstrap(activeRole);
       addAuditLog("Справочник: источник", `Добавлен источник «${data.name}»`);
+      toast.success("Источник добавлен");
       return true;
     } catch (error: any) {
       notifyError(error.message || "Не удалось создать источник");
@@ -925,6 +932,7 @@ export default function App() {
       });
       if (!response.ok) throw new Error(await response.text());
       await loadMvpBootstrap(activeRole);
+      toast.success("Источник обновлён");
       return true;
     } catch (error: any) {
       notifyError(error.message || "Не удалось обновить источник");
@@ -939,6 +947,7 @@ export default function App() {
       });
       if (!response.ok) throw new Error(await response.text());
       await loadMvpBootstrap(activeRole);
+      toast.success("Источник удалён");
       return true;
     } catch (error: any) {
       notifyError(error.message || "Не удалось удалить источник");
@@ -1124,6 +1133,7 @@ export default function App() {
       await loadStudentTrash();
       await loadMvpBootstrap(activeRole);
       addAuditLog("Восстановление ученика", `Ученик возвращён из корзины (${id})`);
+      toast.success("Ученик восстановлен");
       return true;
     } catch (error: any) {
       notifyError(error.message || "Не удалось восстановить ученика");
@@ -1141,6 +1151,7 @@ export default function App() {
       await loadStudentTrash();
       await loadMvpBootstrap(activeRole);
       addAuditLog("Удаление ученика", `Владелец подтвердил удаление (${id})`);
+      toast.success("Ученик удалён окончательно");
       return true;
     } catch (error: any) {
       notifyError(error.message || "Не удалось удалить ученика");
@@ -1167,6 +1178,7 @@ export default function App() {
       if (!response.ok) throw new Error(await response.text());
       await loadMvpBootstrap(activeRole);
       addAuditLog("Добавление преподавателя", `Добавлен ${data.name} (роль: ${data.role || "teacher"})`);
+      toast.success("Преподаватель добавлен");
       return true;
     } catch (error: any) {
       notifyError(error.message || "Не удалось добавить преподавателя");
@@ -1183,6 +1195,7 @@ export default function App() {
       if (!response.ok) throw new Error(await response.text());
       await loadMvpBootstrap(activeRole);
       addAuditLog("Изменение преподавателя", `Обновлён ${data.name || id}`);
+      toast.success("Преподаватель обновлён");
       return true;
     } catch (error: any) {
       notifyError(error.message || "Не удалось обновить преподавателя");
@@ -1198,6 +1211,7 @@ export default function App() {
       if (!response.ok) throw new Error(await response.text());
       await loadMvpBootstrap(activeRole);
       addAuditLog("Удаление преподавателя", `Сотрудник архивирован (${id})`);
+      toast.success("Преподаватель удалён");
       return true;
     } catch (error: any) {
       notifyError(error.message || "Не удалось удалить преподавателя");
@@ -1216,6 +1230,7 @@ export default function App() {
       if (!response.ok) throw new Error(await response.text());
       await loadMvpBootstrap(activeRole);
       addAuditLog("Создание филиала", `Добавлен филиал ${data.name} (${data.city})`);
+      toast.success("Филиал создан");
       return true;
     } catch (error: any) {
       notifyError(error.message || "Не удалось создать филиал");
@@ -1233,6 +1248,7 @@ export default function App() {
       if (!response.ok) throw new Error(await response.text());
       await loadMvpBootstrap(activeRole);
       addAuditLog("Изменение филиала", `Обновлён филиал ${data.name || id}`);
+      toast.success("Филиал обновлён");
       return true;
     } catch (error: any) {
       notifyError(error.message || "Не удалось обновить филиал");
@@ -1249,6 +1265,7 @@ export default function App() {
       if (!response.ok) throw new Error(await response.text());
       await loadMvpBootstrap(activeRole);
       addAuditLog("Удаление филиала", `Филиал архивирован (${id})`);
+      toast.success("Филиал удалён");
       return true;
     } catch (error: any) {
       notifyError(error.message || "Не удалось удалить филиал");
@@ -1329,6 +1346,7 @@ export default function App() {
       });
       if (!response.ok) throw new Error(await response.text());
       await loadMvpBootstrap(activeRole);
+      toast.success("Зал создан");
       return true;
     } catch (error: any) {
       notifyError(error.message || "Не удалось создать зал");
@@ -1345,6 +1363,7 @@ export default function App() {
       });
       if (!response.ok) throw new Error(await response.text());
       await loadMvpBootstrap(activeRole);
+      toast.success("Зал обновлён");
       return true;
     } catch (error: any) {
       notifyError(error.message || "Не удалось обновить зал");
@@ -1360,6 +1379,7 @@ export default function App() {
       });
       if (!response.ok) throw new Error(await response.text());
       await loadMvpBootstrap(activeRole);
+      toast.success("Зал удалён");
       return true;
     } catch (error: any) {
       notifyError(error.message || "Не удалось удалить зал");
@@ -1426,6 +1446,7 @@ export default function App() {
       if (!response.ok) throw new Error(await response.text());
       const { lesson } = await response.json();
       setScheduleItems((prev) => prev.map((item) => (item.id === id ? lesson : item)));
+      toast.success("Урок обновлён");
       return true;
     } catch (error: any) {
       notifyError(error.message || "Не удалось обновить урок");
@@ -1444,6 +1465,7 @@ export default function App() {
       });
       if (!response.ok) throw new Error(await response.text());
       setScheduleItems((prev) => prev.map((item) => (item.id === id ? { ...item, status: "cancelled" } : item)));
+      toast.success("Урок отменён");
       return true;
     } catch (error: any) {
       notifyError(error.message || "Не удалось отменить урок");

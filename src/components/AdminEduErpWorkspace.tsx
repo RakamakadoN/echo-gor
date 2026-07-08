@@ -36,6 +36,7 @@ import StudentManagementCard, { SellSubscriptionInput } from "./StudentManagemen
 import StudentsRegistry from "./StudentsRegistry";
 import GroupScheduleGrid from "./GroupScheduleGrid";
 import GroupScheduleFields from "./GroupScheduleFields";
+import { GroupsTable, GroupsArchivePanel } from "./GroupListAndArchive";
 import AttendanceJournalView from "./AttendanceJournalView";
 import { ProductsView } from "./OwnerExecutiveWorkspace";
 
@@ -215,6 +216,9 @@ export function AdminEduErpWorkspace({
   onBulkAttendance,
   journal,
   onJournalTask,
+  archivedGroups = [],
+  onRestoreGroup,
+  onDeleteGroupPermanent,
 }: AdminEduErpWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<AdminTab>("dashboard");
   // Сворачивание бокового меню — раздел открывается на всю ширину.
@@ -375,6 +379,9 @@ export function AdminEduErpWorkspace({
               onCreateGroup={onCreateGroup}
               onUpdateGroup={onUpdateGroup}
               onDeleteGroup={onDeleteGroup}
+              archivedGroups={archivedGroups}
+              onRestoreGroup={onRestoreGroup}
+              onDeleteGroupPermanent={onDeleteGroupPermanent}
             />
           )}
           {activeTab === "billing" && <BillingView students={students} groups={groups} branches={branches} payments={payments} debt={debt} renewals={renewals} onOpenPayment={onOpenPayment} />}
@@ -1115,7 +1122,7 @@ function JournalView({ groups, students, branches, onToggleAttendance }: any) {
   );
 }
 
-function CalendarView({ groups, teachers, branches, halls, scheduleItems, scheduleLoading, onLoadSchedule, onCreateLesson, onUpdateLesson, onDeleteLesson, onCreateGroup, onUpdateGroup, onDeleteGroup }: any) {
+function CalendarView({ groups, teachers, branches, halls, scheduleItems, scheduleLoading, onLoadSchedule, onCreateLesson, onUpdateLesson, onDeleteLesson, onCreateGroup, onUpdateGroup, onDeleteGroup, archivedGroups = [], onRestoreGroup, onDeleteGroupPermanent }: any) {
   const today = new Date().toISOString().slice(0, 10);
   const weekAhead = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
 
@@ -1123,7 +1130,7 @@ function CalendarView({ groups, teachers, branches, halls, scheduleItems, schedu
   const [groupForm, setGroupForm] = useState({ name: "", branchId: "", teacherId: "", hallId: "", ageFrom: "", ageTo: "", level: "Начинающие", scheduleDays: "", scheduleTime: "" });
   const [saving, setSaving] = useState(false);
   const [activeForm, setActiveForm] = useState<"lesson" | "group" | null>(null);
-  const [schedMode, setSchedMode] = useState<"list" | "halls">("list");
+  const [schedMode, setSchedMode] = useState<"list" | "halls" | "groups" | "archive">("list");
 
   useEffect(() => {
     if (onLoadSchedule) onLoadSchedule({ from: today, to: weekAhead });
@@ -1167,13 +1174,17 @@ function CalendarView({ groups, teachers, branches, halls, scheduleItems, schedu
           Обновить
         </button>
         <div className="ml-auto flex rounded-xl bg-white/5 border border-white/10 p-0.5">
-          {([["list", "Список"], ["halls", "По залам"]] as const).map(([m, label]) => (
+          {([["list", "Уроки"], ["halls", "По залам"], ["groups", "Список групп"], ["archive", `Архив групп${archivedGroups.length ? ` (${archivedGroups.length})` : ""}`]] as const).map(([m, label]) => (
             <button key={m} onClick={() => setSchedMode(m)} className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${schedMode === m ? "bg-[#C5A059] text-black" : "text-slate-400 hover:text-white"}`}>{label}</button>
           ))}
         </div>
       </div>
 
       {schedMode === "halls" && <GroupScheduleGrid groups={groups} halls={halls || []} />}
+      {schedMode === "groups" && <GroupsTable groups={groups} branches={branches} teachers={teachers} halls={halls} onArchiveGroup={onDeleteGroup} />}
+      {schedMode === "archive" && (
+        <GroupsArchivePanel archivedGroups={archivedGroups} branches={branches} onRestoreGroup={onRestoreGroup} onDeleteGroupPermanent={onDeleteGroupPermanent} />
+      )}
 
       {activeForm === "lesson" && (
         <Panel title="Новый урок" kicker="Форма">
@@ -1280,7 +1291,7 @@ function CalendarView({ groups, teachers, branches, halls, scheduleItems, schedu
         </Panel>
       )}
 
-      <div className="grid gap-4 xl:grid-cols-2" hidden={schedMode === "halls"}>
+      <div className="grid gap-4 xl:grid-cols-2" hidden={schedMode !== "list"}>
         {/* Upcoming lessons */}
         <Panel title="Ближайшие уроки" kicker={scheduleLoading ? "Загрузка…" : `${upcoming.length} занятий`}>
           {upcoming.length === 0 ? (

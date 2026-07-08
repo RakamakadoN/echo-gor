@@ -30,6 +30,7 @@ import { Announcement, AnnouncementAudience, Attendance, Branch, Competition, Gr
 import StudentManagementCard, { SellSubscriptionInput } from "./StudentManagementCard";
 import StudentsRegistry from "./StudentsRegistry";
 import GroupScheduleGrid from "./GroupScheduleGrid";
+import { GroupsTable, GroupsArchivePanel } from "./GroupListAndArchive";
 import GroupScheduleFields from "./GroupScheduleFields";
 import AttendanceJournalView from "./AttendanceJournalView";
 import { PayrollView, ProductsView } from "./OwnerExecutiveWorkspace";
@@ -134,6 +135,9 @@ export function BranchManagerWorkspace({
   onBulkAttendance,
   journal,
   onJournalTask,
+  archivedGroups = [],
+  onRestoreGroup,
+  onDeleteGroupPermanent,
 }: BranchManagerWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<BranchTab>("dashboard");
   // Сворачивание бокового меню — раздел открывается на всю ширину.
@@ -288,6 +292,11 @@ export function BranchManagerWorkspace({
               onCreateLesson={onCreateLesson}
               onUpdateLesson={onUpdateLesson}
               onDeleteLesson={onDeleteLesson}
+              branches={branches}
+              archivedGroups={archivedGroups}
+              onDeleteGroup={onDeleteGroup}
+              onRestoreGroup={onRestoreGroup}
+              onDeleteGroupPermanent={onDeleteGroupPermanent}
             />
           )}
           {activeTab === "journal" && (
@@ -1058,14 +1067,14 @@ function formatMoney(value: number) {
   return `${Math.abs(value).toLocaleString("ru-RU")} ₸`;
 }
 
-function ScheduleView({ branchId, groups, teachers, halls, scheduleItems, scheduleLoading, onLoadSchedule, onCreateLesson, onUpdateLesson, onDeleteLesson }: any) {
+function ScheduleView({ branchId, groups, teachers, halls, scheduleItems, scheduleLoading, onLoadSchedule, onCreateLesson, onUpdateLesson, onDeleteLesson, branches = [], archivedGroups = [], onDeleteGroup, onRestoreGroup, onDeleteGroupPermanent }: any) {
   const today = new Date().toISOString().slice(0, 10);
   const weekAhead = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
 
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ groupId: "", startsAt: "", endsAt: "", teacherId: "", hallId: "", topic: "" });
   const [saving, setSaving] = useState(false);
-  const [schedMode, setSchedMode] = useState<"lessons" | "halls">("lessons");
+  const [schedMode, setSchedMode] = useState<"lessons" | "halls" | "list" | "archive">("lessons");
 
   useEffect(() => {
     if (onLoadSchedule) onLoadSchedule({ branchId, from: today, to: weekAhead });
@@ -1090,7 +1099,7 @@ function ScheduleView({ branchId, groups, teachers, halls, scheduleItems, schedu
         </div>
         <div className="flex gap-2">
           <div className="flex rounded-xl bg-white/5 border border-white/10 p-0.5">
-            {([["lessons", "Уроки"], ["halls", "По залам"]] as const).map(([m, label]) => (
+            {([["lessons", "Уроки"], ["halls", "По залам"], ["list", "Список групп"], ["archive", `Архив групп${archivedGroups.length ? ` (${archivedGroups.length})` : ""}`]] as const).map(([m, label]) => (
               <button key={m} onClick={() => setSchedMode(m)} className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${schedMode === m ? "bg-[#C5A059] text-black" : "text-slate-400 hover:text-white"}`}>{label}</button>
             ))}
           </div>
@@ -1151,8 +1160,17 @@ function ScheduleView({ branchId, groups, teachers, halls, scheduleItems, schedu
       )}
 
       {schedMode === "halls" && <GroupScheduleGrid groups={groups} halls={halls || []} />}
+      {schedMode === "list" && <GroupsTable groups={groups} branches={branches} teachers={teachers} halls={halls} onArchiveGroup={onDeleteGroup} />}
+      {schedMode === "archive" && (
+        <GroupsArchivePanel
+          archivedGroups={(archivedGroups || []).filter((g: any) => !branchId || g.branchId === branchId)}
+          branches={branches}
+          onRestoreGroup={onRestoreGroup}
+          onDeleteGroupPermanent={onDeleteGroupPermanent}
+        />
+      )}
 
-      <div className="space-y-3" hidden={schedMode === "halls"}>
+      <div className="space-y-3" hidden={schedMode !== "lessons"}>
         {scheduleLoading && <p className="text-sm text-slate-500 py-6 text-center">Загрузка расписания…</p>}
         {!scheduleLoading && upcoming.length === 0 && (
           <div className="rounded-3xl border border-white/5 bg-[#111] p-8 text-center">
