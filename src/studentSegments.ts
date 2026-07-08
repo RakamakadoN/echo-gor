@@ -289,6 +289,9 @@ export const getStudentState = (student: Student, now: Date = new Date()): Stude
   const debt = getDebt(student);
   const trial = getTrialInfo(student);
   const hasActiveSub = (student.subscriptions || []).some((s) => s.status === "active");
+  // Промис «…оплатит» считается ВЫПОЛНЕННЫМ, когда абонемент уже оплачен (есть
+  // активный) — тогда ручной статус не показываем, ученик идёт по авто-логике.
+  const promiseFulfilled = /оплат/i.test(student.manualStatus || "") && hasActiveSub;
 
   let statusKey = "active";
   let statusLabel = "Активный";
@@ -298,7 +301,7 @@ export const getStudentState = (student: Student, now: Date = new Date()): Stude
     statusKey = "left";
     statusLabel = "Ушедший ученик";
     tone = "gray";
-  } else if (student.manualStatus) {
+  } else if (student.manualStatus && !promiseFulfilled) {
     // Ручной статус (выставлен управляющим) приоритетнее авто-«паузы»:
     // «Каникулы»/«Медпауза» ставят status=paused, но показать надо сам ручной статус.
     statusKey = "manual";

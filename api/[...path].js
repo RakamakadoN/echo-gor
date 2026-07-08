@@ -2499,6 +2499,17 @@ function registerMvpApi(app2) {
           waitlistClosed = closed.length > 0;
         } catch {
         }
+        try {
+          const stu = (await supabaseFetch("students", `select=manual_status&id=eq.${studentId}&organization_id=eq.${session.organizationId}`))[0];
+          if (stu && /оплат/i.test(String(stu.manual_status || ""))) {
+            await supabaseFetch("students", `id=eq.${studentId}&organization_id=eq.${session.organizationId}`, {
+              method: "PATCH",
+              headers: { Prefer: "return=minimal" },
+              body: JSON.stringify({ manual_status: null, pay_promise_date: null })
+            });
+          }
+        } catch {
+        }
       }
       res.status(201).json({
         subscription: mapDbSubscription(insertedSub[0], plan.name),

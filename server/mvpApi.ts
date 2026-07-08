@@ -1533,6 +1533,16 @@ export function registerMvpApi(app: express.Express) {
           );
           waitlistClosed = closed.length > 0;
         } catch { /* лист ожидания не критичен для продажи */ }
+
+        // Оплатили — снимаем ручной промис «…оплатит» и дату обещанной оплаты.
+        try {
+          const stu = (await supabaseFetch<any[]>("students", `select=manual_status&id=eq.${studentId}&organization_id=eq.${session.organizationId}`))[0];
+          if (stu && /оплат/i.test(String(stu.manual_status || ""))) {
+            await supabaseFetch("students", `id=eq.${studentId}&organization_id=eq.${session.organizationId}`, {
+              method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ manual_status: null, pay_promise_date: null }),
+            });
+          }
+        } catch { /* очистка статуса не критична для продажи */ }
       }
 
       res.status(201).json({
