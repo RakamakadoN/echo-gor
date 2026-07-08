@@ -836,7 +836,7 @@ export function registerMvpApi(app: express.Express) {
       const periodMonth = `${monthPrefix}-01`;
       const [branches, students, payments, subs] = await Promise.all([
         supabaseFetch<any[]>("branches", `select=id&${orgFilter}&status=neq.archived`),
-        supabaseFetch<any[]>("students", `select=id,branch_id,status,created_at&${orgFilter}&status=neq.archived&archived_at=is.null`),
+        supabaseFetch<any[]>("students", `select=id,branch_id,status,computed_status,created_at&${orgFilter}&status=neq.archived&archived_at=is.null`),
         supabaseFetch<any[]>("payments", `select=amount,branch_id,paid_at,status&${orgFilter}`),
         supabaseFetch<any[]>("student_subscriptions", `select=branch_id,status`)
       ]);
@@ -847,7 +847,9 @@ export function registerMvpApi(app: express.Express) {
         const bsub = branchId ? subs.filter((s) => s.branch_id === branchId) : subs;
         const revenue = bp.reduce((s, p) => s + Number(p.amount || 0), 0);
         const activeSubs = bsub.filter((s) => s.status === "active").length;
-        const activeStud = bs.filter((s) => s.status === "active").length;
+        // §5–6: активность считаем по кэшу автостатуса (точнее сырого status);
+        // если кэш ещё не заполнен bootstrap'ом — откат на сырой status.
+        const activeStud = bs.filter((s) => (s.computed_status || s.status) === "active").length;
         return {
           organization_id: session.organizationId, branch_id: branchId, period_month: periodMonth,
           revenue, active_students: activeStud, active_subscriptions: activeSubs,

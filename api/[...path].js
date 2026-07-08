@@ -1876,7 +1876,7 @@ function registerMvpApi(app2) {
       const periodMonth = `${monthPrefix}-01`;
       const [branches, students, payments, subs] = await Promise.all([
         supabaseFetch("branches", `select=id&${orgFilter}&status=neq.archived`),
-        supabaseFetch("students", `select=id,branch_id,status,created_at&${orgFilter}&status=neq.archived&archived_at=is.null`),
+        supabaseFetch("students", `select=id,branch_id,status,computed_status,created_at&${orgFilter}&status=neq.archived&archived_at=is.null`),
         supabaseFetch("payments", `select=amount,branch_id,paid_at,status&${orgFilter}`),
         supabaseFetch("student_subscriptions", `select=branch_id,status`)
       ]);
@@ -1887,7 +1887,7 @@ function registerMvpApi(app2) {
         const bsub = branchId ? subs.filter((s) => s.branch_id === branchId) : subs;
         const revenue = bp.reduce((s, p) => s + Number(p.amount || 0), 0);
         const activeSubs = bsub.filter((s) => s.status === "active").length;
-        const activeStud = bs.filter((s) => s.status === "active").length;
+        const activeStud = bs.filter((s) => (s.computed_status || s.status) === "active").length;
         return {
           organization_id: session.organizationId,
           branch_id: branchId,
