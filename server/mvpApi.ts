@@ -1100,6 +1100,18 @@ export function registerMvpApi(app: express.Express) {
       return res.status(403).json({ error: "Branch access denied" });
     }
     try {
+      // Конфликт: нельзя в лист ожидания той же группы, где у ученика уже есть
+      // действующий абонемент. В другую группу/филиал — можно.
+      if (payload.groupId) {
+        const today = new Date().toISOString().slice(0, 10);
+        const activeInGroup = await supabaseFetch<any[]>(
+          "student_subscriptions",
+          `select=id&student_id=eq.${payload.studentId}&group_id=eq.${payload.groupId}&status=eq.active&or=(ends_on.is.null,ends_on.gte.${today})`
+        );
+        if (activeInGroup[0]) {
+          return res.status(409).json({ error: "У ученика уже есть активный абонемент в этой группе — в лист ожидания той же группы добавить нельзя. Выберите другую группу или филиал." });
+        }
+      }
       const existing = await supabaseFetch<any[]>(
         "student_waitlist",
         `select=id&${`organization_id=eq.${session.organizationId}`}&student_id=eq.${payload.studentId}&removed_at=is.null`

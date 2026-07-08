@@ -406,9 +406,10 @@ export default function StudentsRegistry({
     const count = (id: SegmentId) =>
       data.filter((s) => SEGMENTS.find((x) => x.id === id)!.match(s, now)).length;
     const noStatus = data.filter((s) => !isLeft(s) && getStudentState(s, now).statusKey === "lead").length;
-    const leftThisMonth = data.filter((s) => {
-      if (!isLeft(s)) return false;
-      const raw = (s as any).leftAt || (s as any).archivedAt || (s as any).left_at || (s as any).archived_at;
+    // «Ушли в этом месяце» — из РЕАЛЬНОГО архива (studentArchive), а не из активного
+    // списка: связка с окном «Архив». Дата ухода = left_on (иначе archived_at).
+    const leftThisMonth = studentArchive.filter((a: any) => {
+      const raw = a.leftOn || a.archivedAt;
       if (!raw) return false;
       const dt = new Date(raw);
       return !isNaN(dt.getTime()) && dt.getFullYear() === now.getFullYear() && dt.getMonth() === now.getMonth();
@@ -422,7 +423,7 @@ export default function StudentsRegistry({
       { kpiKey: "waitlist", label: "Лист ожидания", value: activeWaitlist.length, icon: Clock, color: "purple" },
       { kpiKey: "left", label: "Ушли в этом месяце", value: leftThisMonth, icon: UserMinus, color: "red" },
     ];
-  }, [data, now, activeWaitlist.length]);
+  }, [data, now, activeWaitlist.length, studentArchive]);
 
   /* ---------- Воронка продаж (по автоматическим статусам пробных уроков) ---------- */
   const funnel = useMemo(() => {
@@ -460,6 +461,12 @@ export default function StudentsRegistry({
       scrollToList();
       return;
     }
+    // «Ушли в этом месяце» связаны с архивом — открываем окно «Архив».
+    if (key === "left") {
+      setView("archive");
+      scrollToList();
+      return;
+    }
     setView("registry");
     setSegment("all");
     setStatusFilter("all");
@@ -477,13 +484,6 @@ export default function StudentsRegistry({
           if (key === "renewal") return SEGMENTS.find((x) => x.id === "renewal")!.match(s, now);
           if (key === "debtors") return SEGMENTS.find((x) => x.id === "debtors")!.match(s, now);
           if (key === "nostatus") return !isLeft(s) && getStudentState(s, now).statusKey === "lead";
-          if (key === "left") {
-            if (!isLeft(s)) return false;
-            const raw = (s as any).leftAt || (s as any).archivedAt || (s as any).left_at || (s as any).archived_at;
-            if (!raw) return false;
-            const dt = new Date(raw);
-            return !isNaN(dt.getTime()) && dt.getFullYear() === now.getFullYear() && dt.getMonth() === now.getMonth();
-          }
           return false;
         })
         .map((s) => s.id);
