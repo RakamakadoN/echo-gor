@@ -453,7 +453,7 @@ async function dbBootstrap(session: MvpSession) {
     supabaseFetch<any[]>("payments", `select=*&${orgFilter}&order=paid_at.desc`),
     supabaseFetch<any[]>("schedule_lessons", `select=*&order=starts_at.desc`), // Cross-org lessons are unlikely but we keep mapping safe
     supabaseFetch<any[]>("attendance", "select=*"),
-    supabaseFetch<any[]>("student_subscriptions", `select=*`),
+    supabaseFetch<any[]>("student_subscriptions", `select=*&status=neq.archived`),
     supabaseFetch<any[]>("subscription_plans", `select=*&${orgFilter}&status=eq.active`),
     supabaseFetch<any[]>("finance_transactions", `select=*&${orgFilter}&order=created_at.desc`),
     // tasks/lead_sources не имеют organization_id — фильтруем по филиалу в коде
@@ -1534,15 +1534,21 @@ export function registerMvpApi(app: express.Express) {
           waitlistClosed = closed.length > 0;
         } catch { /* лист ожидания не критичен для продажи */ }
 
-        // Оплатили — снимаем ручной промис «…оплатит» и дату обещанной оплаты.
+        // Оплата меняет статус ученика: снимаем промис «…оплатит», а лид/пробный
+        // становится действующим учеником (lead/trial → active).
         try {
-          const stu = (await supabaseFetch<any[]>("students", `select=manual_status&id=eq.${studentId}&organization_id=eq.${session.organizationId}`))[0];
-          if (stu && /оплат/i.test(String(stu.manual_status || ""))) {
-            await supabaseFetch("students", `id=eq.${studentId}&organization_id=eq.${session.organizationId}`, {
-              method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ manual_status: null, pay_promise_date: null }),
-            });
+          const stu = (await supabaseFetch<any[]>("students", `select=status,manual_status&id=eq.${studentId}&organization_id=eq.${session.organizationId}`))[0];
+          if (stu) {
+            const upd: Record<string, any> = {};
+            if (/оплат/i.test(String(stu.manual_status || ""))) { upd.manual_status = null; upd.pay_promise_date = null; }
+            if (["lead", "trial"].includes(String(stu.status))) upd.status = "active";
+            if (Object.keys(upd).length) {
+              await supabaseFetch("students", `id=eq.${studentId}&organization_id=eq.${session.organizationId}`, {
+                method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(upd),
+              });
+            }
           }
-        } catch { /* очистка статуса не критична для продажи */ }
+        } catch { /* смена статуса не критична для продажи */ }
       }
 
       res.status(201).json({

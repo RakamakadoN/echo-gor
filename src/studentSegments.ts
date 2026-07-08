@@ -161,16 +161,15 @@ export const isPartialDebt = (student: Student): boolean => {
   return price > 0 ? debt < price : false;
 };
 
-/** Куплен ли следующий месяц (есть абонемент, начинающийся/действующий за пределами текущего периода). */
+/** Куплен ли СЛЕДУЮЩИЙ месяц = есть отдельный абонемент, НАЧИНАЮЩИЙСЯ в следующем
+ *  месяце (предоплата будущего периода). Абонемент, проданный в середине текущего
+ *  месяца и просто заходящий в следующий, «предоплатой» НЕ считается. */
 export const hasNextMonthPaid = (student: Student, now: Date = new Date()): boolean => {
-  const subs = student.subscriptions || [];
-  const active = subs.filter((s) => s.status === "active");
-  if (active.length >= 2) return true; // куплено два периода вперёд
-  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  // абонемент с автопродлением или действующий заметно дольше текущего месяца
+  const active = (student.subscriptions || []).filter((s) => s.status === "active");
+  const startOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
   return active.some((s) => {
-    const until = parseDate(s.validUntil);
-    return Boolean(s.isAutoRenew) || (until ? until > endOfMonth : false);
+    const start = parseDate(s.startsOn);
+    return start ? start.getTime() >= startOfNextMonth.getTime() : false;
   });
 };
 
@@ -378,11 +377,11 @@ export const getStudentState = (student: Student, now: Date = new Date()): Stude
     statusKey = "partially_paid";
     statusLabel = "Частично оплачено";
     tone = "yellow";
-  } else if (student.status === "lead") {
+  } else if (student.status === "lead" && !hasActiveSub) {
     statusKey = "lead";
     statusLabel = "Новый лид";
     tone = "blue";
-  } else if (isTrial(student)) {
+  } else if (isTrial(student) && !hasActiveSub) {
     statusKey = "trial";
     statusLabel = "Записан на пробный урок";
     tone = "blue";

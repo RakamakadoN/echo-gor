@@ -1555,7 +1555,7 @@ async function dbBootstrap(session) {
     supabaseFetch("schedule_lessons", `select=*&order=starts_at.desc`),
     // Cross-org lessons are unlikely but we keep mapping safe
     supabaseFetch("attendance", "select=*"),
-    supabaseFetch("student_subscriptions", `select=*`),
+    supabaseFetch("student_subscriptions", `select=*&status=neq.archived`),
     supabaseFetch("subscription_plans", `select=*&${orgFilter}&status=eq.active`),
     supabaseFetch("finance_transactions", `select=*&${orgFilter}&order=created_at.desc`),
     // tasks/lead_sources не имеют organization_id — фильтруем по филиалу в коде
@@ -2500,13 +2500,21 @@ function registerMvpApi(app2) {
         } catch {
         }
         try {
-          const stu = (await supabaseFetch("students", `select=manual_status&id=eq.${studentId}&organization_id=eq.${session.organizationId}`))[0];
-          if (stu && /оплат/i.test(String(stu.manual_status || ""))) {
-            await supabaseFetch("students", `id=eq.${studentId}&organization_id=eq.${session.organizationId}`, {
-              method: "PATCH",
-              headers: { Prefer: "return=minimal" },
-              body: JSON.stringify({ manual_status: null, pay_promise_date: null })
-            });
+          const stu = (await supabaseFetch("students", `select=status,manual_status&id=eq.${studentId}&organization_id=eq.${session.organizationId}`))[0];
+          if (stu) {
+            const upd = {};
+            if (/оплат/i.test(String(stu.manual_status || ""))) {
+              upd.manual_status = null;
+              upd.pay_promise_date = null;
+            }
+            if (["lead", "trial"].includes(String(stu.status))) upd.status = "active";
+            if (Object.keys(upd).length) {
+              await supabaseFetch("students", `id=eq.${studentId}&organization_id=eq.${session.organizationId}`, {
+                method: "PATCH",
+                headers: { Prefer: "return=minimal" },
+                body: JSON.stringify(upd)
+              });
+            }
           }
         } catch {
         }
