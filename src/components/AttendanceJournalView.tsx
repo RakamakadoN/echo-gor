@@ -414,16 +414,35 @@ export default function AttendanceJournalView(props: Props) {
 }
 
 // Группа строк сегмента (активные / без оплаты / пробные).
+// Дата зачисления ученика: ранняя дата начала абонемента, иначе дата регистрации.
+// До неё педагог не должен ставить отметки (ТЗ: только за период абонемента).
+function enrolledFrom(s: Student): string | null {
+  const subStarts = (s.subscriptions || []).map((x) => (x as any).startsOn).filter(Boolean) as string[];
+  const created = (s as any).createdAt ? String((s as any).createdAt).slice(0, 10) : null;
+  const all = [...subStarts, ...(created ? [created] : [])].filter(Boolean).sort();
+  return all[0] || null;
+}
+
 function FragmentRows({ seg, lessonDates, saving, canEdit, onCell, cellMenu, onMark }: any) {
   return (
     <>
       <tr><td colSpan={lessonDates.length + 1} className={`sticky left-0 bg-[#0c0c0c] px-2 pt-3 pb-1 text-[10px] font-black uppercase tracking-wider ${seg.tone}`}>{seg.label}</td></tr>
-      {seg.list.map((s: Student) => (
+      {seg.list.map((s: Student) => {
+        const from = enrolledFrom(s);
+        return (
         <tr key={s.id} className="group">
           <td className="sticky left-0 z-10 bg-[#0c0c0c] px-2 py-1.5">
             <span className="block max-w-[220px] truncate text-sm font-semibold tracking-tight text-white" title={s.name}>{s.name}</span>
           </td>
           {lessonDates.map((d: string) => {
+            // До зачисления ученика — ячейка недоступна (отметок нет и ставить нельзя).
+            if (from && d < from) {
+              return (
+                <td key={d} className="px-1 py-1 text-center">
+                  <span className="mx-auto grid h-7 w-7 place-items-center rounded-lg bg-white/[0.02] text-[11px] text-slate-700" title={`Ученик зачислен ${new Date(from).toLocaleDateString("ru-RU")}`}>·</span>
+                </td>
+              );
+            }
             const st = (s.attendance?.[d]?.status || "unmarked") as string;
             const meta = STATUS_META[st] || STATUS_META.unmarked;
             const isSaving = saving === s.id + d;
@@ -438,7 +457,8 @@ function FragmentRows({ seg, lessonDates, saving, canEdit, onCell, cellMenu, onM
             );
           })}
         </tr>
-      ))}
+        );
+      })}
     </>
   );
 }
