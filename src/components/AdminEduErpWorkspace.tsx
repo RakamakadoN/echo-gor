@@ -34,6 +34,8 @@ import {
 import { Announcement, AnnouncementAudience, AuditLog, Branch, Group, Hall, Payment, Student, Teacher, AdminTask, AdminTaskStatus, AdminTaskPriority, SubscriptionPlan, LeadSource, WaitlistEntry } from "../types";
 import StudentManagementCard, { SellSubscriptionInput } from "./StudentManagementCard";
 import StudentsRegistry from "./StudentsRegistry";
+import GroupScheduleGrid from "./GroupScheduleGrid";
+import GroupScheduleFields from "./GroupScheduleFields";
 import AttendanceJournalView from "./AttendanceJournalView";
 import { ProductsView } from "./OwnerExecutiveWorkspace";
 
@@ -1116,6 +1118,7 @@ function CalendarView({ groups, teachers, branches, halls, scheduleItems, schedu
   const [groupForm, setGroupForm] = useState({ name: "", branchId: "", teacherId: "", hallId: "", ageFrom: "", ageTo: "", level: "Начинающие", scheduleDays: "", scheduleTime: "" });
   const [saving, setSaving] = useState(false);
   const [activeForm, setActiveForm] = useState<"lesson" | "group" | null>(null);
+  const [schedMode, setSchedMode] = useState<"list" | "halls">("list");
 
   useEffect(() => {
     if (onLoadSchedule) onLoadSchedule({ from: today, to: weekAhead });
@@ -1158,7 +1161,14 @@ function CalendarView({ groups, teachers, branches, halls, scheduleItems, schedu
         <button onClick={() => onLoadSchedule?.({ from: today, to: weekAhead })} className="flex items-center gap-2 rounded-xl bg-white/5 border border-white/10 px-4 py-2 text-sm font-bold text-slate-400 hover:bg-white/10 transition-colors">
           Обновить
         </button>
+        <div className="ml-auto flex rounded-xl bg-white/5 border border-white/10 p-0.5">
+          {([["list", "Список"], ["halls", "По залам"]] as const).map(([m, label]) => (
+            <button key={m} onClick={() => setSchedMode(m)} className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${schedMode === m ? "bg-[#C5A059] text-black" : "text-slate-400 hover:text-white"}`}>{label}</button>
+          ))}
+        </div>
       </div>
+
+      {schedMode === "halls" && <GroupScheduleGrid groups={groups} halls={halls || []} />}
 
       {activeForm === "lesson" && (
         <Panel title="Новый урок" kicker="Форма">
@@ -1248,14 +1258,13 @@ function CalendarView({ groups, teachers, branches, halls, scheduleItems, schedu
                 {["Начинающие", "Продолжающие", "Ансамбль", "Профи"].map((l) => <option key={l}>{l}</option>)}
               </select>
             </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Дни занятий</span>
-              <input type="text" value={groupForm.scheduleDays} onChange={(e) => setGroupForm(f => ({ ...f, scheduleDays: e.target.value }))} placeholder="Пн, Ср, Пт" className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder-slate-600" />
-            </label>
-            <label className="flex flex-col gap-1 sm:col-span-2">
-              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Время занятий</span>
-              <input type="text" value={groupForm.scheduleTime} onChange={(e) => setGroupForm(f => ({ ...f, scheduleTime: e.target.value }))} placeholder="18:30 – 20:00" className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder-slate-600" />
-            </label>
+            <GroupScheduleFields
+              days={groupForm.scheduleDays}
+              time={groupForm.scheduleTime}
+              onDays={(v) => setGroupForm(f => ({ ...f, scheduleDays: v }))}
+              onTime={(v) => setGroupForm(f => ({ ...f, scheduleTime: v }))}
+              dark
+            />
           </div>
           <div className="mt-4 flex gap-3">
             <button onClick={handleSaveGroup} disabled={saving || !groupForm.name || !groupForm.branchId} className="rounded-xl bg-[#C5A059] px-5 py-2 text-sm font-bold text-black disabled:opacity-40 hover:bg-[#D4AF70] transition-colors">
@@ -1266,7 +1275,7 @@ function CalendarView({ groups, teachers, branches, halls, scheduleItems, schedu
         </Panel>
       )}
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid gap-4 xl:grid-cols-2" hidden={schedMode === "halls"}>
         {/* Upcoming lessons */}
         <Panel title="Ближайшие уроки" kicker={scheduleLoading ? "Загрузка…" : `${upcoming.length} занятий`}>
           {upcoming.length === 0 ? (

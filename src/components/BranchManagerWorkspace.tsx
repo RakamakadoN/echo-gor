@@ -29,6 +29,8 @@ import {
 import { Announcement, AnnouncementAudience, Attendance, Branch, Competition, Group, Hall, Payment, Student, SubscriptionPlan, Teacher, LeadSource, WaitlistEntry } from "../types";
 import StudentManagementCard, { SellSubscriptionInput } from "./StudentManagementCard";
 import StudentsRegistry from "./StudentsRegistry";
+import GroupScheduleGrid from "./GroupScheduleGrid";
+import GroupScheduleFields from "./GroupScheduleFields";
 import AttendanceJournalView from "./AttendanceJournalView";
 import { PayrollView, ProductsView } from "./OwnerExecutiveWorkspace";
 
@@ -562,14 +564,13 @@ function GroupsView({ groups, teachers, students, halls = [], branchId, onCreate
               <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Возраст до</span>
               <input type="number" value={form.ageTo} onChange={(e) => setForm((f) => ({ ...f, ageTo: e.target.value }))} placeholder="12" className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-slate-600" />
             </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Дни</span>
-              <input value={form.scheduleDays} onChange={(e) => setForm((f) => ({ ...f, scheduleDays: e.target.value }))} placeholder="Пн, Ср, Пт" className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-slate-600" />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Время</span>
-              <input value={form.scheduleTime} onChange={(e) => setForm((f) => ({ ...f, scheduleTime: e.target.value }))} placeholder="18:30" className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-slate-600" />
-            </label>
+            <GroupScheduleFields
+              days={form.scheduleDays}
+              time={form.scheduleTime}
+              onDays={(v) => setForm((f) => ({ ...f, scheduleDays: v }))}
+              onTime={(v) => setForm((f) => ({ ...f, scheduleTime: v }))}
+              dark
+            />
           </div>
           <div className="flex gap-3">
             <button onClick={handleSave} disabled={saving || !form.name.trim()} className="rounded-xl bg-[#C5A059] px-5 py-2 text-sm font-bold text-black transition-colors hover:bg-[#D4AF70] disabled:opacity-40">
@@ -1058,6 +1059,7 @@ function ScheduleView({ branchId, groups, teachers, halls, scheduleItems, schedu
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ groupId: "", startsAt: "", endsAt: "", teacherId: "", hallId: "", topic: "" });
   const [saving, setSaving] = useState(false);
+  const [schedMode, setSchedMode] = useState<"lessons" | "halls">("lessons");
 
   useEffect(() => {
     if (onLoadSchedule) onLoadSchedule({ branchId, from: today, to: weekAhead });
@@ -1081,6 +1083,11 @@ function ScheduleView({ branchId, groups, teachers, halls, scheduleItems, schedu
           <h2 className="text-xl font-black text-white">Расписание занятий</h2>
         </div>
         <div className="flex gap-2">
+          <div className="flex rounded-xl bg-white/5 border border-white/10 p-0.5">
+            {([["lessons", "Уроки"], ["halls", "По залам"]] as const).map(([m, label]) => (
+              <button key={m} onClick={() => setSchedMode(m)} className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${schedMode === m ? "bg-[#C5A059] text-black" : "text-slate-400 hover:text-white"}`}>{label}</button>
+            ))}
+          </div>
           <button onClick={() => setShowForm((v) => !v)} className="flex items-center gap-2 rounded-xl bg-[#C5A059]/15 border border-[#C5A059]/30 px-4 py-2 text-sm font-bold text-[#C5A059] hover:bg-[#C5A059]/25 transition-colors">
             <Plus className="w-4 h-4" /> Новый урок
           </button>
@@ -1137,7 +1144,9 @@ function ScheduleView({ branchId, groups, teachers, halls, scheduleItems, schedu
         </div>
       )}
 
-      <div className="space-y-3">
+      {schedMode === "halls" && <GroupScheduleGrid groups={groups} halls={halls || []} />}
+
+      <div className="space-y-3" hidden={schedMode === "halls"}>
         {scheduleLoading && <p className="text-sm text-slate-500 py-6 text-center">Загрузка расписания…</p>}
         {!scheduleLoading && upcoming.length === 0 && (
           <div className="rounded-3xl border border-white/5 bg-[#111] p-8 text-center">

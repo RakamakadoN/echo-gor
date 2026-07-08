@@ -2092,7 +2092,11 @@ export function registerMvpApi(app: express.Express) {
       });
       res.status(201).json({ group: mapDbGroup(inserted[0]) });
     } catch (error: any) {
-      res.status(400).json({ error: error.message || "Не удалось создать группу" });
+      const raw = String(error?.message || "");
+      if (raw.includes("23505")) {
+        return res.status(409).json({ error: `Группа «${String(payload.name).trim()}» уже есть в этом филиале. Выберите другое название.` });
+      }
+      res.status(400).json({ error: raw || "Не удалось создать группу" });
     }
   });
 

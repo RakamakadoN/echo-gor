@@ -3011,7 +3011,11 @@ function registerMvpApi(app2) {
       });
       res.status(201).json({ group: mapDbGroup(inserted[0]) });
     } catch (error) {
-      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0437\u0434\u0430\u0442\u044C \u0433\u0440\u0443\u043F\u043F\u0443" });
+      const raw = String(error?.message || "");
+      if (raw.includes("23505")) {
+        return res.status(409).json({ error: `\u0413\u0440\u0443\u043F\u043F\u0430 \xAB${String(payload.name).trim()}\xBB \u0443\u0436\u0435 \u0435\u0441\u0442\u044C \u0432 \u044D\u0442\u043E\u043C \u0444\u0438\u043B\u0438\u0430\u043B\u0435. \u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0434\u0440\u0443\u0433\u043E\u0435 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435.` });
+      }
+      res.status(400).json({ error: raw || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0437\u0434\u0430\u0442\u044C \u0433\u0440\u0443\u043F\u043F\u0443" });
     }
   });
   app2.patch("/api/mvp/groups/:id", async (req, res) => {
