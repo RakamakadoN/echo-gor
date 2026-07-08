@@ -996,6 +996,19 @@ export default function App() {
       setArchivedGroups((await r.json()).groups || []);
     } catch { /* тихо */ }
   };
+  const handleDeleteGroupPermanent = async (id: string): Promise<boolean> => {
+    try {
+      const r = await fetch(`/api/mvp/groups/${id}/permanent`, { method: "DELETE", headers: { "x-demo-role": getMvpRoleHeader() } });
+      if (!r.ok) throw new Error(await r.text());
+      await loadArchivedGroups();
+      toast.success("Группа удалена навсегда");
+      return true;
+    } catch (error: any) {
+      const msg = error.message || "Не удалось удалить группу";
+      setMvpDataError(msg); toast.error(msg);
+      return false;
+    }
+  };
   const handleRestoreGroup = async (id: string): Promise<boolean> => {
     try {
       const r = await fetch(`/api/mvp/groups/${id}/restore`, { method: "POST", headers: { "x-demo-role": getMvpRoleHeader() } });
@@ -3387,6 +3400,7 @@ export default function App() {
               onDeleteGroup={handleDeleteGroup}
               archivedGroups={archivedGroups}
               onRestoreGroup={handleRestoreGroup}
+              onDeleteGroupPermanent={handleDeleteGroupPermanent}
               onCreateLesson={handleCreateLesson}
               onUpdateLesson={handleUpdateLesson}
               onDeleteLesson={handleDeleteLesson}
@@ -3465,6 +3479,7 @@ export default function App() {
               onDeleteGroup={handleDeleteGroup}
               archivedGroups={archivedGroups}
               onRestoreGroup={handleRestoreGroup}
+              onDeleteGroupPermanent={handleDeleteGroupPermanent}
               onCreateHall={handleCreateHall}
               onUpdateHall={handleUpdateHall}
               onDeleteHall={handleDeleteHall}
@@ -3494,6 +3509,7 @@ export default function App() {
               onDeleteGroup={handleDeleteGroup}
               archivedGroups={archivedGroups}
               onRestoreGroup={handleRestoreGroup}
+              onDeleteGroupPermanent={handleDeleteGroupPermanent}
               onCreateLesson={handleCreateLesson}
               onUpdateLesson={handleUpdateLesson}
               onDeleteLesson={handleDeleteLesson}

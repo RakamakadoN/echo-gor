@@ -194,6 +194,7 @@ interface OwnerExecutiveWorkspaceProps {
   onDeleteGroup?: (id: string) => Promise<boolean>;
   archivedGroups?: any[];
   onRestoreGroup?: (id: string) => Promise<boolean>;
+  onDeleteGroupPermanent?: (id: string) => Promise<boolean>;
   onCreateHall?: (data: any) => Promise<boolean>;
   onUpdateHall?: (id: string, data: any) => Promise<boolean>;
   onDeleteHall?: (id: string) => Promise<boolean>;
@@ -292,6 +293,7 @@ export function OwnerExecutiveWorkspace({
   onDeleteGroup,
   archivedGroups = [],
   onRestoreGroup,
+  onDeleteGroupPermanent,
   onCreateHall,
   onUpdateHall,
   onDeleteHall,
@@ -465,6 +467,7 @@ export function OwnerExecutiveWorkspace({
               halls={halls}
               archivedGroups={archivedGroups}
               onRestoreGroup={onRestoreGroup}
+              onDeleteGroupPermanent={onDeleteGroupPermanent}
               scheduleItems={scheduleItems}
               scheduleLoading={scheduleLoading}
               onLoadSchedule={onLoadSchedule}
@@ -9546,12 +9549,12 @@ function ScheduleAiWindows({ hallLoad, halls, teachers, todayStats }: any) {
   );
 }
 
-function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, scheduleLoading, onLoadSchedule, onCreateGroup, onUpdateGroup, onDeleteGroup, onCreateLesson, onUpdateLesson, onDeleteLesson, archivedGroups = [], onRestoreGroup }: any) {
+function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, scheduleLoading, onLoadSchedule, onCreateGroup, onUpdateGroup, onDeleteGroup, onCreateLesson, onUpdateLesson, onDeleteLesson, archivedGroups = [], onRestoreGroup, onDeleteGroupPermanent }: any) {
   const today = new Date();
   const todayIso = isoDate(today);
 
   // Mobile-first: на телефоне открываем «День» (неделя не влезает), на десктопе — «Неделю».
-  const [view, setView] = useState<"day" | "week" | "month" | "halls" | "archive">("halls");
+  const [view, setView] = useState<"day" | "week" | "month" | "halls" | "list" | "archive">("halls");
   const [anchor, setAnchor] = useState<Date>(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; });
   const [activeForm, setActiveForm] = useState<"lesson" | "group" | null>(null);
   const [showGroups, setShowGroups] = useState(false);
@@ -9771,7 +9774,7 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
         <div className="flex flex-wrap items-center gap-2">
           {/* Сегментный переключатель */}
           <div className="flex rounded-xl bg-white/5 border border-white/10 p-0.5">
-            {([["day", "День"], ["week", "Неделя"], ["month", "Месяц"], ["halls", "По залам"], ["archive", `Архив групп${archivedGroups.length ? ` (${archivedGroups.length})` : ""}`]] as const).map(([v, label]) => (
+            {([["day", "День"], ["week", "Неделя"], ["month", "Месяц"], ["halls", "По залам"], ["list", "Список групп"], ["archive", `Архив групп${archivedGroups.length ? ` (${archivedGroups.length})` : ""}`]] as const).map(([v, label]) => (
               <button key={v} onClick={() => setView(v)} className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${view === v ? "bg-[#C5A059] text-black" : "text-slate-400 hover:text-white"}`}>{label}</button>
             ))}
           </div>
@@ -9916,15 +9919,58 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
                       <p className="font-bold text-white">{g.name}</p>
                       <p className="text-xs text-slate-500">{(halls || []).find((h: any) => h.id === g.hallId)?.name || "Без зала"} · {g.scheduleText || "—"}</p>
                     </div>
-                    {onRestoreGroup && (
-                      <button onClick={() => onRestoreGroup(g.id)} className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-300 transition hover:bg-emerald-500/20">
-                        Восстановить
-                      </button>
-                    )}
+                    <div className="flex gap-2">
+                      {onRestoreGroup && (
+                        <button onClick={() => onRestoreGroup(g.id)} className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-300 transition hover:bg-emerald-500/20">
+                          Восстановить
+                        </button>
+                      )}
+                      {onDeleteGroupPermanent && (
+                        <button onClick={() => { if (window.confirm(`Удалить группу «${g.name}» НАВСЕГДА? Отменить нельзя. Ученики отвяжутся от группы.`)) onDeleteGroupPermanent(g.id); }} className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-bold text-rose-300 transition hover:bg-rose-500/20">
+                          Удалить
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))
               )}
             </div>
+          ) : view === "list" ? (
+            /* ───── Список групп (сортировка: филиал → педагог) ───── */
+            (() => {
+              const bName = (id: string) => { const b = (branches || []).find((x: any) => x.id === id); return b?.name || b?.city || "—"; };
+              const tName = (id: string) => (teachers || []).find((x: any) => x.id === id)?.name || "Не назначен";
+              const hName = (id: string) => (halls || []).find((x: any) => x.id === id)?.name || "—";
+              const sorted = [...(groups || [])]
+                .filter((g: any) => (!filterBranchId || g.branchId === filterBranchId) && (!filterTeacherId || g.teacherId === filterTeacherId) && (!filterHallId || g.hallId === filterHallId))
+                .sort((a: any, b: any) => bName(a.branchId).localeCompare(bName(b.branchId)) || tName(a.teacherId).localeCompare(tName(b.teacherId)) || String(a.name).localeCompare(String(b.name)));
+              return (
+                <div className="overflow-x-auto rounded-3xl border border-white/10 bg-[#111]">
+                  <table className="w-full min-w-[720px] text-sm">
+                    <thead><tr className="border-b border-white/10 text-left text-[10px] font-black uppercase tracking-widest text-slate-500">
+                      <th className="px-4 py-3">Группа</th><th className="px-3 py-3">Филиал</th><th className="px-3 py-3">Педагог</th><th className="px-3 py-3">Зал</th><th className="px-3 py-3">Расписание</th><th className="px-3 py-3 text-center">Учеников</th><th className="px-3 py-3" />
+                    </tr></thead>
+                    <tbody>
+                      {sorted.length === 0 ? (
+                        <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500">Активных групп нет.</td></tr>
+                      ) : sorted.map((g: any) => (
+                        <tr key={g.id} className="border-b border-white/5">
+                          <td className="px-4 py-2.5 font-bold text-white">{g.name}</td>
+                          <td className="px-3 py-2.5 text-slate-300">{bName(g.branchId)}</td>
+                          <td className="px-3 py-2.5 text-slate-300">{tName(g.teacherId)}</td>
+                          <td className="px-3 py-2.5 text-slate-400">{hName(g.hallId)}</td>
+                          <td className="px-3 py-2.5 text-slate-400">{[(g.days || []).join(", "), g.time].filter(Boolean).join(" · ") || "—"}</td>
+                          <td className="px-3 py-2.5 text-center text-slate-300">{g.studentCount ?? 0}</td>
+                          <td className="px-3 py-2.5 text-right">
+                            {onDeleteGroup && <button onClick={() => { if (window.confirm(`Архивировать группу «${g.name}»?`)) onDeleteGroup(g.id); }} className="rounded-lg border border-white/10 px-2.5 py-1 text-[11px] font-bold text-slate-400 hover:text-rose-300">В архив</button>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()
           ) : view === "halls" ? (
             /* ───── Весь график по залам (недельная сетка) ───── */
             <GroupScheduleGrid

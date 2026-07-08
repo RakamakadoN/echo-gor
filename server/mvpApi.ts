@@ -2284,6 +2284,26 @@ export function registerMvpApi(app: express.Express) {
     }
   });
 
+  // Удалить архивную группу НАВСЕГДА (только из архива). Отвязываем зависимости.
+  app.delete("/api/mvp/groups/:id/permanent", async (req, res) => {
+    const session = getSession(req);
+    if (!groupAccess(session, res)) return;
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      const existing = (await supabaseFetch<any[]>("groups", `select=id,status,branch_id&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`))[0];
+      if (!existing) return res.status(404).json({ error: "Группа не найдена" });
+      if (String(existing.status) !== "archived") return res.status(400).json({ error: "Удалить навсегда можно только группу из архива." });
+      // Отвязываем зависимости, чтобы удаление не упало на внешних ключах.
+      await supabaseFetch("schedule_lessons", `group_id=eq.${req.params.id}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }).catch(() => {});
+      await supabaseFetch("students", `group_id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ group_id: null }) }).catch(() => {});
+      await supabaseFetch("student_subscriptions", `group_id=eq.${req.params.id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ group_id: null }) }).catch(() => {});
+      await supabaseFetch("groups", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      res.json({ ok: true, deleted: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось удалить группу" });
+    }
+  });
+
   // ───────────────── Schedule (schedule_lessons) CRUD ──────────────────────────
 
   function mapDbLesson(row: any, extras: { groupName?: string; hallName?: string; teacherName?: string } = {}) {
