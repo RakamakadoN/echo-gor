@@ -160,6 +160,7 @@ interface OwnerExecutiveWorkspaceProps {
   onArchiveStudent?: (id: string, reason: string, comment: string, leftOn?: string) => Promise<boolean | void> | void;
   onUnarchiveStudent?: (id: string) => Promise<boolean>;
   onEditArchive?: (id: string, patch: { leftOn?: string; reason?: string; comment?: string }) => Promise<boolean | void> | void;
+  onBookTrial?: (id: string, payload: { date: string; time: string; note: string }) => Promise<boolean> | void;
   leadSources?: LeadSource[];
   waitlist?: WaitlistEntry[];
   onAddToWaitlist?: (payload: { studentId: string; branchId?: string | null; groupId?: string | null; comment?: string | null }) => Promise<boolean>;
@@ -260,6 +261,7 @@ export function OwnerExecutiveWorkspace({
   onArchiveStudent,
   onUnarchiveStudent,
   onEditArchive,
+  onBookTrial,
   leadSources = [],
   waitlist = [],
   onAddToWaitlist,
@@ -428,7 +430,7 @@ export function OwnerExecutiveWorkspace({
             />
           )}
           {activeTab === "branches" && <BranchesGroupsView branches={branchScorecards} rawBranches={branches} students={students} groups={groups} teachers={teachers} halls={halls} payments={payments} onCreateBranch={onCreateBranch} onUpdateBranch={onUpdateBranch} onDeleteBranch={onDeleteBranch} onCreateGroup={onCreateGroup} onUpdateGroup={onUpdateGroup} onDeleteGroup={onDeleteGroup} onCreateHall={onCreateHall} onUpdateHall={onUpdateHall} onDeleteHall={onDeleteHall} onOpenStudents={openStudentsWithPreset} />}
-          {activeTab === "students" && <StudentsNetworkView students={students} branches={branches} groups={groups} teachers={teachers} onCreateStudent={onCreateStudent} onUpdateStudent={onUpdateStudent} onDeleteStudent={onDeleteStudent} onOpenPayment={onOpenPayment} onSellSubscription={onSellSubscription} subscriptionPlans={subscriptionPlans} studentTrash={studentTrash} onRestoreStudent={onRestoreStudent} onConfirmDeleteStudent={onConfirmDeleteStudent} studentArchive={studentArchive} onArchiveStudent={onArchiveStudent} onUnarchiveStudent={onUnarchiveStudent} onEditArchive={onEditArchive} leadSources={leadSources} waitlist={waitlist} onAddToWaitlist={onAddToWaitlist} onRemoveFromWaitlist={onRemoveFromWaitlist} onCreateLeadSource={onCreateLeadSource} onUpdateLeadSource={onUpdateLeadSource} onDeleteLeadSource={onDeleteLeadSource} preset={studentsPreset} />}
+          {activeTab === "students" && <StudentsNetworkView students={students} branches={branches} groups={groups} teachers={teachers} onCreateStudent={onCreateStudent} onUpdateStudent={onUpdateStudent} onDeleteStudent={onDeleteStudent} onOpenPayment={onOpenPayment} onSellSubscription={onSellSubscription} subscriptionPlans={subscriptionPlans} studentTrash={studentTrash} onRestoreStudent={onRestoreStudent} onConfirmDeleteStudent={onConfirmDeleteStudent} studentArchive={studentArchive} onArchiveStudent={onArchiveStudent} onUnarchiveStudent={onUnarchiveStudent} onEditArchive={onEditArchive} onBookTrial={onBookTrial} leadSources={leadSources} waitlist={waitlist} onAddToWaitlist={onAddToWaitlist} onRemoveFromWaitlist={onRemoveFromWaitlist} onCreateLeadSource={onCreateLeadSource} onUpdateLeadSource={onUpdateLeadSource} onDeleteLeadSource={onDeleteLeadSource} preset={studentsPreset} />}
           {activeTab === "teachers" && <TeachersNetworkView teachers={teachers} metrics={metrics} branches={branches} students={students} groups={groups} payments={payments} onCreateTeacher={onCreateTeacher} onUpdateTeacher={onUpdateTeacher} onDeleteTeacher={onDeleteTeacher} />}
           {activeTab === "finance" && <BookkeepingView branches={branchScorecards} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
           {activeTab === "planning" && <PlanningView />}
@@ -2323,7 +2325,7 @@ function OwnerEduErpView({ branches, groups, students, teachers, payments, month
   );
 }
 
-function StudentsNetworkView({ students, branches, groups, teachers, onCreateStudent, onUpdateStudent, onDeleteStudent, onOpenPayment, onSellSubscription, subscriptionPlans = [], studentTrash = [], onRestoreStudent, onConfirmDeleteStudent, studentArchive = [], onArchiveStudent, onUnarchiveStudent, onEditArchive, leadSources = [], waitlist = [], onAddToWaitlist, onRemoveFromWaitlist, onCreateLeadSource, onUpdateLeadSource, onDeleteLeadSource, preset }: {
+function StudentsNetworkView({ students, branches, groups, teachers, onCreateStudent, onUpdateStudent, onDeleteStudent, onOpenPayment, onSellSubscription, subscriptionPlans = [], studentTrash = [], onRestoreStudent, onConfirmDeleteStudent, studentArchive = [], onArchiveStudent, onUnarchiveStudent, onEditArchive, onBookTrial, leadSources = [], waitlist = [], onAddToWaitlist, onRemoveFromWaitlist, onCreateLeadSource, onUpdateLeadSource, onDeleteLeadSource, preset }: {
   students: Student[];
   branches: Branch[];
   groups: Group[];
@@ -2341,6 +2343,7 @@ function StudentsNetworkView({ students, branches, groups, teachers, onCreateStu
   onArchiveStudent?: (id: string, reason: string, comment: string, leftOn?: string) => Promise<boolean | void> | void;
   onUnarchiveStudent?: (id: string) => Promise<boolean>;
   onEditArchive?: (id: string, patch: { leftOn?: string; reason?: string; comment?: string }) => Promise<boolean | void> | void;
+  onBookTrial?: (id: string, payload: { date: string; time: string; note: string }) => Promise<boolean> | void;
   leadSources?: LeadSource[];
   waitlist?: WaitlistEntry[];
   onAddToWaitlist?: (payload: { studentId: string; branchId?: string | null; groupId?: string | null; comment?: string | null }) => Promise<boolean>;
@@ -2383,7 +2386,7 @@ function StudentsNetworkView({ students, branches, groups, teachers, onCreateStu
         roleHeader="owner"
         studentArchive={studentArchive}
         onUnarchiveStudent={onUnarchiveStudent}
-        onEditArchive={onEditArchive}
+        onEditArchive={onEditArchive} onBookTrial={onBookTrial}
         students={students}
         groups={groups}
         branches={branches}

@@ -109,6 +109,7 @@ export interface StudentsRegistryProps {
   onArchiveStudent?: (id: string, reason: string, comment: string, leftOn?: string) => Promise<boolean | void> | void;
   onUnarchiveStudent?: (id: string) => Promise<unknown> | void;
   onEditArchive?: (id: string, patch: { leftOn?: string; reason?: string; comment?: string }) => Promise<unknown> | void;
+  onBookTrial?: (id: string, payload: { date: string; time: string; note: string }) => Promise<boolean> | void;
   studentArchive?: any[];
   onOpenPayment?: (student: Student) => void;
   plans?: SubscriptionPlan[];
@@ -248,6 +249,7 @@ export default function StudentsRegistry({
   onArchiveStudent,
   onUnarchiveStudent,
   onEditArchive,
+  onBookTrial,
   studentArchive = [],
   onOpenPayment,
   plans = [],
@@ -1161,6 +1163,7 @@ export default function StudentsRegistry({
                 onClose={() => setOpenId(null)}
                 onArchive={onArchiveStudent ? () => { setOpenId(null); setArchiveModal([openStudent]); } : undefined}
                 onSetStatus={onUpdateStudent ? (value) => setStudentStatus(openStudent.id, value) : undefined}
+                onTrial={onBookTrial ? (payload) => onBookTrial(openStudent.id, payload) : undefined}
                 statusOptions={[{ value: "active", label: "Активный" }, { value: "paused", label: "Заморозить абонемент" }, ...getManualStatuses().map((s) => ({ value: s, label: s }))]}
                 onEdit={canManage ? () => { setOpenId(null); openEdit(openStudent); } : undefined}
                 onDelete={onDeleteStudent ? async () => { await onDeleteStudent(openStudent.id); applyOverride(openStudent.id, { status: "left" }); setOpenId(null); } : undefined}

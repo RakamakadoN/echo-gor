@@ -112,6 +112,7 @@ interface AdminEduErpWorkspaceProps {
   onArchiveStudent?: (id: string, reason: string, comment: string) => Promise<boolean | void> | void;
   onUnarchiveStudent?: (id: string) => Promise<unknown> | void;
   onEditArchive?: (id: string, patch: { leftOn?: string; reason?: string; comment?: string }) => Promise<unknown> | void;
+  onBookTrial?: (id: string, payload: { date: string; time: string; note: string }) => Promise<boolean> | void;
   studentArchive?: any[];
   waitlist?: WaitlistEntry[];
   onAddToWaitlist?: (payload: { studentId: string; branchId?: string | null; groupId?: string | null; comment?: string | null }) => Promise<boolean>;
@@ -188,6 +189,7 @@ export function AdminEduErpWorkspace({
   onArchiveStudent,
   onUnarchiveStudent,
   onEditArchive,
+  onBookTrial,
   studentArchive = [],
   waitlist = [],
   onAddToWaitlist,
@@ -326,7 +328,7 @@ export function AdminEduErpWorkspace({
               onDeleteStudent={onDeleteStudent}
               onArchiveStudent={onArchiveStudent}
               onUnarchiveStudent={onUnarchiveStudent}
-              onEditArchive={onEditArchive}
+              onEditArchive={onEditArchive} onBookTrial={onBookTrial}
               studentArchive={studentArchive}
               onOpenPayment={onOpenPayment}
               onSellSubscription={onSellSubscription}
@@ -454,13 +456,13 @@ function DashboardView({ branches, groups, students, teachers, todayRevenue, mon
 }
 
 // Раздел «Ученики» (ТЗ): полноценный реестр клиентской базы.
-function VisitorsView({ students, groups, branches, teachers, adminBranchId, onCreateStudent, onUpdateStudent, onDeleteStudent, onArchiveStudent, onUnarchiveStudent, onEditArchive, studentArchive = [], onOpenPayment, onSellSubscription, plans, leadSources, waitlist, onAddToWaitlist, onRemoveFromWaitlist, onCreateLeadSource, onUpdateLeadSource, onDeleteLeadSource }: any) {
+function VisitorsView({ students, groups, branches, teachers, adminBranchId, onCreateStudent, onUpdateStudent, onDeleteStudent, onArchiveStudent, onUnarchiveStudent, onEditArchive, onBookTrial, studentArchive = [], onOpenPayment, onSellSubscription, plans, leadSources, waitlist, onAddToWaitlist, onRemoveFromWaitlist, onCreateLeadSource, onUpdateLeadSource, onDeleteLeadSource }: any) {
   return (
     <StudentsRegistry
       roleHeader="admin"
       studentArchive={studentArchive}
       onUnarchiveStudent={onUnarchiveStudent}
-      onEditArchive={onEditArchive}
+      onEditArchive={onEditArchive} onBookTrial={onBookTrial}
       students={students}
       groups={groups}
       branches={branches}

@@ -1591,6 +1591,58 @@ export function registerMvpApi(app: express.Express) {
     }
   });
 
+  // Запись ученика на пробный урок (ТЗ): создаёт/находит урок на дату в группе,
+  // ставит пробную отметку (is_trial) и меняет статус на «пробный» → авто-статус
+  // «Записан на пробный урок». Отсюда же он виден в журнале и карточке.
+  app.post("/api/mvp/students/:id/trial", async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const { date, time, note } = req.body || {};
+    if (!date) return res.status(400).json({ error: "Укажите дату пробного урока" });
+    const st = (await supabaseFetch<any[]>("students", `select=id,branch_id,group_id,teacher_id&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`))[0];
+    if (!st) return res.status(404).json({ error: "Ученик не найден" });
+    if (!canSeeBranch(session, st.branch_id)) return res.status(403).json({ error: "Branch access denied" });
+    if (!st.group_id) return res.status(400).json({ error: "Сначала назначьте ученику группу — пробный урок записывается в группу." });
+    try {
+      // Время «18:00–20:00» или «18:00» → начало/конец (по умолчанию +1 час).
+      const hm = (s: string) => /^\d{1,2}:\d{2}$/.test(s) ? s : "";
+      const [rawA, rawB] = String(time || "").split(/[–—-]/).map((s: string) => s.trim());
+      const start = hm(rawA) || "18:00";
+      const end = hm(rawB) || (() => { const [h, m] = start.split(":").map(Number); return `${String((h + 1) % 24).padStart(2, "0")}:${String(m).padStart(2, "0")}`; })();
+      const startsAt = new Date(`${date}T${start}:00`).toISOString();
+      const endsAt = new Date(`${date}T${end}:00`).toISOString();
+      // Найти урок группы на эту дату, иначе создать «Пробный урок».
+      const dayStart = new Date(`${date}T00:00:00.000Z`).toISOString();
+      const dayEndD = new Date(`${date}T00:00:00.000Z`); dayEndD.setUTCDate(dayEndD.getUTCDate() + 1);
+      const dayEnd = dayEndD.toISOString();
+      const ex = await supabaseFetch<any[]>("schedule_lessons", `select=id&group_id=eq.${st.group_id}&starts_at=gte.${encodeURIComponent(dayStart)}&starts_at=lt.${encodeURIComponent(dayEnd)}&limit=1`);
+      let lessonId = ex[0]?.id;
+      if (!lessonId) {
+        const ins = await supabaseFetch<any[]>("schedule_lessons", "", {
+          method: "POST",
+          body: JSON.stringify({
+            branch_id: st.branch_id, group_id: st.group_id, teacher_id: st.teacher_id || null,
+            starts_at: startsAt, ends_at: endsAt, status: "scheduled", topic: "Пробный урок",
+            created_by: session.userId.startsWith("demo-") ? null : session.userId,
+          }),
+        });
+        lessonId = ins[0]?.id;
+      }
+      // Пробная отметка (записан, урок ещё не проведён — status unknown).
+      await upsertAttendanceRows([{
+        lesson_id: lessonId, student_id: req.params.id, status: "unknown",
+        is_trial: true, comment: note || null, marked_at: new Date().toISOString(),
+      }]);
+      // Статус → пробный (getStudentState покажет «Записан на пробный урок»).
+      await supabaseFetch("students", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, {
+        method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ status: "trial" }),
+      });
+      res.json({ ok: true, lessonId, date, startsAt });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось записать на пробный урок" });
+    }
+  });
+
   app.post("/api/mvp/attendance", async (req, res) => {
     const session = getSession(req);
     const payload = req.body || {};

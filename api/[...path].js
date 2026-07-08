@@ -2550,6 +2550,65 @@ function registerMvpApi(app2) {
       res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0438\u0441\u0442\u043E\u0440\u0438\u044E" });
     }
   });
+  app2.post("/api/mvp/students/:id/trial", async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const { date, time, note } = req.body || {};
+    if (!date) return res.status(400).json({ error: "\u0423\u043A\u0430\u0436\u0438\u0442\u0435 \u0434\u0430\u0442\u0443 \u043F\u0440\u043E\u0431\u043D\u043E\u0433\u043E \u0443\u0440\u043E\u043A\u0430" });
+    const st = (await supabaseFetch("students", `select=id,branch_id,group_id,teacher_id&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`))[0];
+    if (!st) return res.status(404).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+    if (!canSeeBranch(session, st.branch_id)) return res.status(403).json({ error: "Branch access denied" });
+    if (!st.group_id) return res.status(400).json({ error: "\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u043D\u0430\u0437\u043D\u0430\u0447\u044C\u0442\u0435 \u0443\u0447\u0435\u043D\u0438\u043A\u0443 \u0433\u0440\u0443\u043F\u043F\u0443 \u2014 \u043F\u0440\u043E\u0431\u043D\u044B\u0439 \u0443\u0440\u043E\u043A \u0437\u0430\u043F\u0438\u0441\u044B\u0432\u0430\u0435\u0442\u0441\u044F \u0432 \u0433\u0440\u0443\u043F\u043F\u0443." });
+    try {
+      const hm = (s) => /^\d{1,2}:\d{2}$/.test(s) ? s : "";
+      const [rawA, rawB] = String(time || "").split(/[–—-]/).map((s) => s.trim());
+      const start = hm(rawA) || "18:00";
+      const end = hm(rawB) || (() => {
+        const [h, m] = start.split(":").map(Number);
+        return `${String((h + 1) % 24).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+      })();
+      const startsAt = (/* @__PURE__ */ new Date(`${date}T${start}:00`)).toISOString();
+      const endsAt = (/* @__PURE__ */ new Date(`${date}T${end}:00`)).toISOString();
+      const dayStart = (/* @__PURE__ */ new Date(`${date}T00:00:00.000Z`)).toISOString();
+      const dayEndD = /* @__PURE__ */ new Date(`${date}T00:00:00.000Z`);
+      dayEndD.setUTCDate(dayEndD.getUTCDate() + 1);
+      const dayEnd = dayEndD.toISOString();
+      const ex = await supabaseFetch("schedule_lessons", `select=id&group_id=eq.${st.group_id}&starts_at=gte.${encodeURIComponent(dayStart)}&starts_at=lt.${encodeURIComponent(dayEnd)}&limit=1`);
+      let lessonId = ex[0]?.id;
+      if (!lessonId) {
+        const ins = await supabaseFetch("schedule_lessons", "", {
+          method: "POST",
+          body: JSON.stringify({
+            branch_id: st.branch_id,
+            group_id: st.group_id,
+            teacher_id: st.teacher_id || null,
+            starts_at: startsAt,
+            ends_at: endsAt,
+            status: "scheduled",
+            topic: "\u041F\u0440\u043E\u0431\u043D\u044B\u0439 \u0443\u0440\u043E\u043A",
+            created_by: session.userId.startsWith("demo-") ? null : session.userId
+          })
+        });
+        lessonId = ins[0]?.id;
+      }
+      await upsertAttendanceRows([{
+        lesson_id: lessonId,
+        student_id: req.params.id,
+        status: "unknown",
+        is_trial: true,
+        comment: note || null,
+        marked_at: (/* @__PURE__ */ new Date()).toISOString()
+      }]);
+      await supabaseFetch("students", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, {
+        method: "PATCH",
+        headers: { Prefer: "return=minimal" },
+        body: JSON.stringify({ status: "trial" })
+      });
+      res.json({ ok: true, lessonId, date, startsAt });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u043F\u0438\u0441\u0430\u0442\u044C \u043D\u0430 \u043F\u0440\u043E\u0431\u043D\u044B\u0439 \u0443\u0440\u043E\u043A" });
+    }
+  });
   app2.post("/api/mvp/attendance", async (req, res) => {
     const session = getSession(req);
     const payload = req.body || {};

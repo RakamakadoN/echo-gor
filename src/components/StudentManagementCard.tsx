@@ -37,6 +37,7 @@ import {
 import QRCode from "qrcode";
 import { Branch, Group, LeadSource, Student, Subscription, SubscriptionPlan, Teacher } from "../types";
 import { getEnrollmentMonths, formatDuration, getLtvSegment, LTV_BADGE } from "../studentSegments";
+import { parseGroupDays } from "./GroupScheduleGrid";
 
 /** Полезная нагрузка продажи абонемента из инлайн-формы карточки. */
 export interface SellSubscriptionInput {
@@ -201,7 +202,8 @@ export default function StudentManagementCard({
   // Доступные слоты пробного урока из расписания группы (вперёд от сегодня).
   // Админ выбирает доступную дату — система подставляет дату и время занятия группы.
   const trialSlots = useMemo(() => {
-    const dayNums = (group?.days || [])
+    // Устойчиво к «Пн,Ср» и «Понедельник среда»: сводим к коротким кодам, затем к номерам.
+    const dayNums = parseGroupDays((group?.days || []).join(" "))
       .map((d) => SHORT_WD_TO_NUM[d])
       .filter((n) => n !== undefined);
     if (!dayNums.length) return [] as { iso: string; label: string; time: string }[];
@@ -1039,6 +1041,14 @@ function GeneralTab({
   subscription?: Student["subscriptions"][number];
   onOpenSub?: (sub: Subscription) => void;
 }) {
+  // Первый пробный урок ученика (по отметкам is_trial) — самая ранняя дата.
+  const firstTrialDate = (() => {
+    const dates = Object.entries(student.attendance || {})
+      .filter(([, r]: any) => r && r.isTrial)
+      .map(([d]) => d)
+      .sort();
+    return dates[0] || null;
+  })();
   return (
     <div>
       <SectionHeader title="Текущий абонемент" action="Все абонементы" />
@@ -1093,6 +1103,16 @@ function GeneralTab({
           </span>
         </div>
       </div>
+
+      {/* Первый пробный урок (ТЗ): рядом с абонементом. */}
+      {firstTrialDate && (
+        <div className="mt-3 flex items-center gap-2 rounded-2xl border border-sky-200 bg-sky-50/70 px-4 py-3">
+          <span className="text-[11px] font-bold uppercase tracking-wide text-sky-700/70">Первый пробный урок</span>
+          <span className="ml-auto font-black text-slate-800">
+            {new Date(firstTrialDate).toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" })}
+          </span>
+        </div>
+      )}
 
       <div className="mt-4">
         <Field label="Телефон родителя" value={student.parentPhone || "—"} />
