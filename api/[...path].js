@@ -1602,14 +1602,19 @@ async function dbBootstrap(session) {
     name: group.name,
     teacherId: group.teacher_id || "",
     hallId: group.hall_id || "",
-    scheduleText: "\u041F\u043E \u0440\u0430\u0441\u043F\u0438\u0441\u0430\u043D\u0438\u044E",
-    days: [],
-    time: "",
+    // Расписание группы из БД (раньше здесь было жёстко days:[], time:"" — из-за
+    // этого расписание не отображалось нигде: сетка, календарь, пробный, журнал).
+    scheduleText: [group.schedule_days, group.schedule_time].filter(Boolean).join(" ") || "\u041F\u043E \u0440\u0430\u0441\u043F\u0438\u0441\u0430\u043D\u0438\u044E",
+    days: group.schedule_days ? String(group.schedule_days).split(",").map((d) => d.trim()) : [],
+    time: group.schedule_time || "",
+    status: group.status || "active",
+    startDate: group.start_date || null,
+    endDate: group.end_date || null,
     ageGroup: group.age_from && group.age_to ? `${group.age_from}-${group.age_to} \u043B\u0435\u0442` : "\u0412\u0441\u0435 \u0432\u043E\u0437\u0440\u0430\u0441\u0442\u044B",
     ageFrom: group.age_from ?? null,
     ageTo: group.age_to ?? null,
     capacity: group.capacity ?? 0,
-    level: "MVP",
+    level: group.level || "MVP",
     studentCount: studentsRaw.filter((student) => student.group_id === group.id).length
   }));
   const isOwner = session.role === "owner";
