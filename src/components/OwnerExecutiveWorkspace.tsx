@@ -9835,17 +9835,18 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
             <label className={labelCls}><span className={kicCls}>Дата урока *</span>
               <input type="date" value={lessonForm.date} min={isoDate(today)} onChange={(e) => setLessonForm(f => ({ ...f, date: e.target.value }))} className={`${inputCls} [color-scheme:dark]`} />
             </label>
-            <label className={labelCls}><span className={kicCls}>Время с *</span>
-              <select value={lessonForm.startTime} onChange={(e) => setLessonForm(f => ({ ...f, startTime: e.target.value }))} className={inputCls}>
-                <option value="">—</option>
-                {LESSON_TIMES.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </label>
-            <label className={labelCls}><span className={kicCls}>Время до *</span>
-              <select value={lessonForm.endTime} onChange={(e) => setLessonForm(f => ({ ...f, endTime: e.target.value }))} className={inputCls}>
-                <option value="">—</option>
-                {LESSON_TIMES.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
+            <label className={labelCls}><span className={kicCls}>Время урока *</span>
+              <div className="flex items-center gap-2">
+                <select value={lessonForm.startTime} onChange={(e) => setLessonForm(f => ({ ...f, startTime: e.target.value }))} className={inputCls}>
+                  <option value="">с…</option>
+                  {LESSON_TIMES.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+                <span className="text-slate-500">–</span>
+                <select value={lessonForm.endTime} onChange={(e) => setLessonForm(f => ({ ...f, endTime: e.target.value }))} className={inputCls}>
+                  <option value="">до…</option>
+                  {LESSON_TIMES.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
             </label>
             <label className={labelCls}><span className={kicCls}>Причина / тип урока</span>
               <select value={lessonForm.reason} onChange={(e) => setLessonForm(f => ({ ...f, reason: e.target.value }))} className={inputCls}>
