@@ -304,6 +304,23 @@ function mapDbUserToTeacher(user: any) {
   };
 }
 
+// Автостатус ученика (ТЗ §5–6): вычисляется из реальных данных. Приоритет:
+// архив → корзина → ручной статус → активный абонемент → «абонемент закончился» →
+// пробный → без статуса. (Долг/пробный-детали расширяются отдельно.)
+function deriveStudentStatus(row: any, subs: any[]): string {
+  if (row.archived_at) return "archived";
+  if (row.deletion_requested_at) return "trash";
+  const manual = String(row.manual_status || "").trim();
+  if (manual) return manual; // ручной статус приоритетнее авто
+  const today = new Date().toISOString().slice(0, 10);
+  const active = (subs || []).filter((x) => x.status === "active" && (!x.ends_on || String(x.ends_on).slice(0, 10) >= today));
+  if (active.length) return "active";
+  const everHadSub = (subs || []).some((x) => x.status !== "archived");
+  if (everHadSub) return "expired"; // абонемент закончился
+  if (row.status === "trial") return "trial";
+  return "no_status";
+}
+
 function mapDbStudent(row: any, attendanceByStudent: Map<string, Record<string, Attendance>>, subsByStudent: Map<string, any[]>): Student {
   const name = [row.first_name, row.last_name].filter(Boolean).join(" ") || row.full_name || "Ученик";
   return {
@@ -318,6 +335,7 @@ function mapDbStudent(row: any, attendanceByStudent: Map<string, Record<string, 
     createdAt: row.created_at || undefined,
     status: row.status || undefined,
     manualStatus: row.manual_status || null,
+    computedStatus: deriveStudentStatus(row, subsByStudent.get(row.id) || []),
     returned: Boolean(row.returned_at),
     payLater: Boolean(row.pay_later),
     payPromiseDate: row.pay_promise_date || null,
@@ -491,6 +509,15 @@ async function dbBootstrap(session: MvpSession) {
       const group = groupById.get(student.group_id);
       return mapDbStudent({ ...student, teacher_id: student.teacher_id || group?.teacher_id, __waitlist_added_at: waitlistAddedByStudent.get(student.id) || null }, attendanceByStudent, subsByStudent);
     });
+
+  // Кэш автостатуса (§5–6): пишем computed_status обратно только для изменившихся
+  // учеников. Fire-and-forget — на ответ не влияет (в students уже есть computedStatus).
+  for (const s of studentsRaw) {
+    const next = deriveStudentStatus(s, subsByStudent.get(s.id) || []);
+    if (next !== (s.computed_status || null)) {
+      supabaseFetch("students", `id=eq.${s.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ computed_status: next }) }).catch(() => { /* кэш, не критично */ });
+    }
+  }
 
   const visibleStudentIds = new Set(students.map((student) => student.id));
   const waitlist = waitlistRaw

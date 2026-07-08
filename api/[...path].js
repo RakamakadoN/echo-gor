@@ -1417,6 +1417,19 @@ function mapDbUserToTeacher(user) {
     role: user.role || "teacher"
   };
 }
+function deriveStudentStatus(row, subs) {
+  if (row.archived_at) return "archived";
+  if (row.deletion_requested_at) return "trash";
+  const manual = String(row.manual_status || "").trim();
+  if (manual) return manual;
+  const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+  const active = (subs || []).filter((x) => x.status === "active" && (!x.ends_on || String(x.ends_on).slice(0, 10) >= today));
+  if (active.length) return "active";
+  const everHadSub = (subs || []).some((x) => x.status !== "archived");
+  if (everHadSub) return "expired";
+  if (row.status === "trial") return "trial";
+  return "no_status";
+}
 function mapDbStudent(row, attendanceByStudent, subsByStudent) {
   const name = [row.first_name, row.last_name].filter(Boolean).join(" ") || row.full_name || "\u0423\u0447\u0435\u043D\u0438\u043A";
   return {
@@ -1431,6 +1444,7 @@ function mapDbStudent(row, attendanceByStudent, subsByStudent) {
     createdAt: row.created_at || void 0,
     status: row.status || void 0,
     manualStatus: row.manual_status || null,
+    computedStatus: deriveStudentStatus(row, subsByStudent.get(row.id) || []),
     returned: Boolean(row.returned_at),
     payLater: Boolean(row.pay_later),
     payPromiseDate: row.pay_promise_date || null,
@@ -1592,6 +1606,13 @@ async function dbBootstrap(session) {
     const group = groupById.get(student.group_id);
     return mapDbStudent({ ...student, teacher_id: student.teacher_id || group?.teacher_id, __waitlist_added_at: waitlistAddedByStudent.get(student.id) || null }, attendanceByStudent, subsByStudent);
   });
+  for (const s of studentsRaw) {
+    const next = deriveStudentStatus(s, subsByStudent.get(s.id) || []);
+    if (next !== (s.computed_status || null)) {
+      supabaseFetch("students", `id=eq.${s.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ computed_status: next }) }).catch(() => {
+      });
+    }
+  }
   const visibleStudentIds = new Set(students.map((student) => student.id));
   const waitlist = waitlistRaw.filter((w) => visibleStudentIds.has(w.student_id)).map(mapDbWaitlist);
   const payments = paymentsRaw.filter((payment) => visibleStudentIds.has(payment.student_id)).map(mapDbPayment);
