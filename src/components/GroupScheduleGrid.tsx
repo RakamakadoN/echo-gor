@@ -11,15 +11,23 @@ import { useMemo } from "react";
 
 export const WEEK_DAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 
-const DAY_MAP: [string, string][] = [
-  ["пн", "Пн"], ["вт", "Вт"], ["ср", "Ср"], ["чт", "Чт"], ["пт", "Пт"], ["сб", "Сб"], ["вс", "Вс"],
+// Каждому дню — набор токенов (короткое + полное написание), чтобы распознавать
+// и «Пн,Ср», и «Понедельник среда».
+const DAY_TOKENS: [string[], string][] = [
+  [["понедельник", "пн"], "Пн"],
+  [["вторник", "вт"], "Вт"],
+  [["среда", "ср"], "Ср"],
+  [["четверг", "чт"], "Чт"],
+  [["пятниц", "пт"], "Пт"],
+  [["суббот", "сб"], "Сб"],
+  [["воскрес", "вс"], "Вс"],
 ];
 
 /** Разобрать строку дней в набор коротких названий (устойчиво к свободному тексту). */
 export function parseGroupDays(scheduleDays?: string | null): string[] {
   if (!scheduleDays) return [];
   const s = String(scheduleDays).toLowerCase();
-  return DAY_MAP.filter(([token]) => s.includes(token)).map(([, code]) => code);
+  return DAY_TOKENS.filter(([tokens]) => tokens.some((t) => s.includes(t))).map(([, code]) => code);
 }
 
 type Group = {
@@ -29,16 +37,10 @@ type Group = {
   teacherName?: string | null;
 };
 
-/** Дни группы: из массива days (нормализуем к Пн..Вс), иначе парсим строку. */
+/** Дни группы: из массива days или сырой строки — парсим устойчиво. */
 function groupDays(g: Group): string[] {
-  if (Array.isArray(g.days) && g.days.length) {
-    const codes = g.days.map((d) => {
-      const low = String(d).toLowerCase().trim();
-      return (DAY_MAP.find(([t]) => low.startsWith(t)) || [null, null])[1];
-    }).filter(Boolean) as string[];
-    if (codes.length) return codes;
-  }
-  return parseGroupDays(g.scheduleDays);
+  const joined = Array.isArray(g.days) && g.days.length ? g.days.join(" ") : (g.scheduleDays || "");
+  return parseGroupDays(joined);
 }
 const groupTime = (g: Group): string => (g.time || g.scheduleTime || "").toString().trim();
 
