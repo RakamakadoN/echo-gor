@@ -13,6 +13,8 @@ import type { SellSubscriptionInput } from "./components/StudentManagementCard";
 import { fetchStatusConfig } from "./statusConfig";
 import { AnimatedBarChartShowcase } from "./components/AnimatedBarChartShowcase";
 import { MagomedAssistant } from "./components/MagomedAssistant";
+import ToastHost from "./components/ToastHost";
+import { toast } from "./toast";
 // @ts-ignore
 import logoImg from "./assets/images/echogor_logo_1780297382250.png";
 // @ts-ignore
@@ -703,9 +705,11 @@ export default function App() {
       const result = await response.json().catch(() => ({}));
       await loadMvpBootstrap(activeRole);
       addAuditLog("Добавление ученика", `Добавлен ученик ${data.name || [data.firstName, data.lastName].filter(Boolean).join(" ")}`);
+      toast.success("Ученик добавлен");
       return result?.student?.id || null;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось добавить ученика");
+      const msg = error.message || "Не удалось добавить ученика";
+      setMvpDataError(msg); toast.error(msg);
       return null;
     }
   };
@@ -720,9 +724,11 @@ export default function App() {
       });
       if (!response.ok) throw new Error(await response.text());
       await loadMvpBootstrap(activeRole);
+      toast.success("Добавлено в лист ожидания");
       return true;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось добавить в лист ожидания");
+      const msg = error.message || "Не удалось добавить в лист ожидания";
+      setMvpDataError(msg); toast.error(msg);
       return false;
     }
   };
@@ -735,9 +741,11 @@ export default function App() {
       });
       if (!response.ok) throw new Error(await response.text());
       await loadMvpBootstrap(activeRole);
+      toast.success("Убрано из листа ожидания");
       return true;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось убрать из листа ожидания");
+      const msg = error.message || "Не удалось убрать из листа ожидания";
+      setMvpDataError(msg); toast.error(msg);
       return false;
     }
   };
@@ -751,9 +759,11 @@ export default function App() {
       if (!response.ok) throw new Error(await response.text());
       await loadMvpBootstrap(activeRole);
       addAuditLog("Изменение ученика", `Обновлён ученик ${data.name || id}`);
+      toast.success("Изменения сохранены");
       return true;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось обновить ученика");
+      const msg = error.message || "Не удалось обновить ученика";
+      setMvpDataError(msg); toast.error(msg);
       return false;
     }
   };
@@ -984,9 +994,11 @@ export default function App() {
       await loadStudentTrash();
       await loadMvpBootstrap(activeRole);
       addAuditLog("Архив ученика", `Ученик переведён в архив (${id}): ${reason}`);
+      toast.success("Ученик переведён в архив");
       return true;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось перевести ученика в архив");
+      const msg = error.message || "Не удалось перевести ученика в архив";
+      setMvpDataError(msg); toast.error(msg);
       return false;
     }
   };
@@ -1001,9 +1013,11 @@ export default function App() {
       });
       if (!response.ok) throw new Error(await response.text());
       await loadStudentArchive();
+      toast.success("Изменения архива сохранены");
       return true;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось изменить карточку архива");
+      const msg = error.message || "Не удалось изменить карточку архива";
+      setMvpDataError(msg); toast.error(msg);
       return false;
     }
   };
@@ -1019,9 +1033,11 @@ export default function App() {
       await loadStudentArchive();
       await loadMvpBootstrap(activeRole);
       addAuditLog("Возврат из архива", `Ученик возвращён из архива (${id})`);
+      toast.success("Ученик возвращён из архива");
       return true;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось вернуть ученика из архива");
+      const msg = error.message || "Не удалось вернуть ученика из архива";
+      setMvpDataError(msg); toast.error(msg);
       return false;
     }
   };
@@ -2345,7 +2361,8 @@ export default function App() {
 
   return (
     <div className={`flex flex-col h-screen w-screen overflow-hidden bg-[#0A0A0A] text-slate-200 font-sans ${themeMode === "day" ? "day-theme-app" : themeMode === "iman" ? "iman-theme-app" : ""}`}>
-      
+      <ToastHost />
+
       {/* Desktop login uses the supplied image as the visible UI, with real controls as transparent hotspots. */}
       {/* ═══ Экран входа «Эхогор» — фон-фото + логотип/тэглайн живой вёрсткой ═══
           Логика входа НЕ менялась: handleDesktopLogin, телефон +7, пароль,
