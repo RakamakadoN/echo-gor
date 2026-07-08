@@ -2,17 +2,28 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  *
- * StudentsArchiveView — отдельное окно «Архив» раздела «Ученики».
+ * StudentsArchiveView — окно «Архив» внутри раздела «Ученики» (пилюля «Архив»).
  * Две категории с фильтром:
  *   • Ушедшие      — купили ≥1 абонемент и ушли (реальный архив, archived_at).
  *   • Отказавшиеся — ушли на этапе пробных (вычисляется из воронки, в БД не переносится).
  * Показывает причину ухода, комментарий и СРОК (сколько прошло с ухода) —
- * основа для ИИ-реактивации на дашборде.
+ * основа для ИИ-реактивации на дашборде. Светлая тема — как реестр учеников.
  */
 import { useMemo, useState, type ElementType } from "react";
 import { Archive, Search, UserX, UserMinus } from "lucide-react";
 import { Student, Branch } from "../types";
 import { getStudentState } from "../studentSegments";
+
+// Палитра реестра учеников (StudentsRegistry) — чтобы окно не отличалось по стилю.
+const CLR = {
+  border: "#DCE2E8",
+  fill: "#F1F4F7",
+  text: "#222B33",
+  strong: "#11171D",
+  muted: "#6B7682",
+  second: "#46505B",
+  gold: "#947C51",
+};
 
 type ArchiveStudent = {
   id: string; name: string; branchId: string; phone?: string;
@@ -36,9 +47,7 @@ function sinceLabel(iso?: string): string {
     return `${days} ${w} назад`;
   }
   const months = Math.floor(days / 30);
-  const m1 = months % 10, m = months % 100;
-  const w = m > 10 && m < 20 ? "мес" : m1 === 1 ? "мес" : "мес"; // «мес» универсально
-  return `${months} ${w} назад`;
+  return `${months} мес назад`;
 }
 
 export default function StudentsArchiveView({
@@ -67,7 +76,6 @@ export default function StudentsArchiveView({
       leftAt: a.archivedAt,
       reason: a.archiveReason || "",
       comment: a.archiveComment || "",
-      statusLabel: "",
       canUnarchive: true,
     }));
     // Отказавшиеся из активного списка: провал воронки пробных (вычисляемо).
@@ -82,7 +90,6 @@ export default function StudentsArchiveView({
         leftAt: (s as any).createdAt || "",
         reason: st.statusLabel,
         comment: "",
-        statusLabel: st.statusLabel,
         canUnarchive: false,
       }));
     return [...fromArchive, ...declinedFromActive];
@@ -115,81 +122,89 @@ export default function StudentsArchiveView({
   ];
 
   return (
-    <div className="overflow-hidden rounded-[2rem] border border-amber-500/20 bg-[#14110d]">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-500/15 px-5 py-4">
+    <div className="rounded-[14px] bg-white shadow-sm" style={{ border: `1px solid ${CLR.border}`, color: CLR.text }}>
+      {/* Шапка + поиск */}
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4" style={{ borderBottom: `1px solid ${CLR.border}` }}>
         <div className="flex items-center gap-3">
-          <div className="rounded-2xl bg-amber-500/15 p-2.5 text-amber-300"><Archive className="h-5 w-5" /></div>
+          <div className="inline-flex h-9 w-9 items-center justify-center rounded-[10px]" style={{ background: "#F2EDE2", color: CLR.gold }}>
+            <Archive className="h-[18px] w-[18px]" />
+          </div>
           <div>
-            <h3 className="font-black text-white">Архив учеников</h3>
-            <p className="text-xs text-slate-500">Ушедшие и отказавшиеся с сохранёнными данными. Основа для рассылок и возврата.</p>
+            <h3 className="text-[15px] font-black" style={{ color: CLR.strong }}>Архив учеников</h3>
+            <p className="text-xs" style={{ color: CLR.muted }}>Ушедшие и отказавшиеся с сохранёнными данными — основа для рассылок и возврата.</p>
           </div>
         </div>
         <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: CLR.muted }} />
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Поиск по имени или причине"
-            className="w-64 rounded-xl border border-white/10 bg-[#0C0C0C] py-2 pl-9 pr-3 text-sm text-white outline-none focus:border-amber-500/40"
+            className="w-64 rounded-[10px] py-2 pl-9 pr-3 text-[13px] outline-none"
+            style={{ background: CLR.fill, border: `1px solid ${CLR.border}`, color: CLR.text }}
           />
         </div>
       </div>
 
       {/* Переключатель категорий */}
-      <div className="flex flex-wrap gap-2 border-b border-white/5 px-5 py-3">
+      <div className="flex flex-wrap gap-2 px-5 py-3" style={{ borderBottom: `1px solid ${CLR.border}` }}>
         {TABS.map((t) => {
           const active = cat === t.id;
-          const n = counts[t.id];
           const Icon = t.icon;
           return (
             <button
               key={t.id}
               onClick={() => setCat(t.id)}
-              className={`inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-xs font-bold transition ${active ? "bg-amber-500/20 text-amber-200" : "bg-white/5 text-slate-400 hover:bg-white/10"}`}
+              className="inline-flex items-center gap-2 rounded-full px-3.5 py-[7px] text-[13px] font-semibold transition"
+              style={active
+                ? { background: CLR.gold, border: `1px solid ${CLR.gold}`, color: "#fff" }
+                : { background: CLR.fill, border: `1px solid ${CLR.border}`, color: CLR.second }}
             >
               <Icon className="h-3.5 w-3.5" />
               {t.label}
-              <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${active ? "bg-amber-500/30 text-amber-100" : "bg-white/10 text-slate-500"}`}>{n}</span>
+              <span className="rounded-full px-[7px] py-px text-[11px] font-semibold" style={active ? { background: "rgba(0,0,0,.15)", color: "#fff" } : { background: "rgba(0,0,0,.06)", color: CLR.muted }}>{counts[t.id]}</span>
             </button>
           );
         })}
       </div>
 
       {filtered.length === 0 ? (
-        <p className="px-5 py-8 text-center text-sm text-slate-500">
+        <p className="px-5 py-10 text-center text-sm" style={{ color: CLR.muted }}>
           {cat === "left" ? "Нет ушедших учеников." : cat === "declined" ? "Нет отказавшихся." : "Архив пуст."}
         </p>
       ) : (
         filtered.map((r) => (
-          <div key={`${r.category}-${r.id}`} className="grid grid-cols-1 gap-3 border-b border-white/5 px-5 py-3 text-sm md:grid-cols-12 md:items-start">
+          <div key={`${r.category}-${r.id}`} className="grid grid-cols-1 gap-3 px-5 py-3 text-sm md:grid-cols-12 md:items-start" style={{ borderBottom: `1px solid ${CLR.border}` }}>
             <div className="md:col-span-3">
               <div className="flex items-center gap-2">
-                <p className="font-bold text-white">{r.name}</p>
-                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${r.category === "left" ? "bg-rose-500/15 text-rose-300" : "bg-sky-500/15 text-sky-300"}`}>
+                <p className="font-bold" style={{ color: CLR.strong }}>{r.name}</p>
+                <span className="rounded-full px-2 py-0.5 text-[10px] font-bold"
+                  style={r.category === "left" ? { background: "#F6E9E9", color: "#B14545" } : { background: "#EAF0F3", color: "#5E8194" }}>
                   {r.category === "left" ? "Ушедший" : "Отказавшийся"}
                 </span>
               </div>
-              <p className="text-xs text-slate-500">{branchName(r.branchId)}</p>
+              <p className="text-xs" style={{ color: CLR.muted }}>{branchName(r.branchId)}</p>
             </div>
             <div className="md:col-span-2">
-              <p className="text-[11px] uppercase tracking-wider text-slate-600">Ушёл</p>
-              <p className="text-slate-200">{sinceLabel(r.leftAt)}</p>
-              {r.leftAt && <p className="text-[11px] text-slate-600">{new Date(r.leftAt).toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric" })}</p>}
+              <p className="text-[11px] uppercase tracking-wider" style={{ color: CLR.muted }}>Ушёл</p>
+              <p style={{ color: CLR.text }}>{sinceLabel(r.leftAt)}</p>
+              {r.leftAt && <p className="text-[11px]" style={{ color: CLR.muted }}>{new Date(r.leftAt).toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric" })}</p>}
             </div>
             <div className="md:col-span-3">
-              <p className="text-[11px] uppercase tracking-wider text-slate-600">Причина</p>
-              <p className="text-slate-200">{r.reason || "—"}</p>
+              <p className="text-[11px] uppercase tracking-wider" style={{ color: CLR.muted }}>Причина</p>
+              <p style={{ color: CLR.text }}>{r.reason || "—"}</p>
             </div>
             <div className="md:col-span-3">
-              <p className="text-[11px] uppercase tracking-wider text-slate-600">Комментарий</p>
-              <p className="text-slate-300">{r.comment || "—"}</p>
+              <p className="text-[11px] uppercase tracking-wider" style={{ color: CLR.muted }}>Комментарий</p>
+              <p style={{ color: CLR.second }}>{r.comment || "—"}</p>
             </div>
             <div className="flex justify-end md:col-span-1">
               {r.canUnarchive && onUnarchive && (
                 <button
                   onClick={() => unarchive(r.id)}
                   disabled={busy === r.id}
-                  className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-400 transition hover:bg-emerald-500/20 disabled:opacity-40"
+                  className="rounded-[10px] px-3 py-1.5 text-xs font-bold transition disabled:opacity-40"
+                  style={{ background: "#E9F0E6", border: "1px solid #CADFCE", color: "#4F8A63" }}
                 >
                   {busy === r.id ? "…" : "Вернуть"}
                 </button>

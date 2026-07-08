@@ -73,7 +73,6 @@ import {
 import { ResponsiveContainer } from "./SafeResponsiveContainer";
 import StudentManagementCard, { SellSubscriptionInput } from "./StudentManagementCard";
 import StudentsRegistry, { type RegistryPreset } from "./StudentsRegistry";
-import StudentsArchiveView from "./StudentsArchiveView";
 import ReactivationPanel from "./ReactivationPanel";
 import { ArchiveReasonModal } from "./ArchiveReasonModal";
 import AttendanceJournalView from "./AttendanceJournalView";
@@ -204,13 +203,12 @@ interface OwnerExecutiveWorkspaceProps {
   onDeletePlan?: (id: string) => Promise<boolean>;
 }
 
-type OwnerTab = "dashboard" | "branches" | "students" | "archive" | "teachers" | "payroll" | "journal" | "schedule" | "finance" | "planning" | "meetings" | "reports" | "performances" | "products" | "documents" | "marketing" | "events" | "feed" | "announcements" | "analytics" | "ai" | "aihub" | "settings";
+type OwnerTab = "dashboard" | "branches" | "students" | "teachers" | "payroll" | "journal" | "schedule" | "finance" | "planning" | "meetings" | "reports" | "performances" | "products" | "documents" | "marketing" | "events" | "feed" | "announcements" | "analytics" | "ai" | "aihub" | "settings";
 
 const ownerTabs: { id: OwnerTab; label: string; short: string; icon: React.ElementType }[] = [
   { id: "dashboard", label: "Dashboard", short: "Главная", icon: Activity },
   { id: "branches", label: "Филиалы", short: "Филиалы", icon: Building2 },
   { id: "students", label: "Ученики", short: "Ученики", icon: Users },
-  { id: "archive", label: "Архив", short: "Архив", icon: Archive },
   { id: "teachers", label: "Преподаватели", short: "Педагоги", icon: GraduationCap },
   { id: "journal", label: "Журнал посещаемости", short: "Журнал", icon: ClipboardList },
   { id: "schedule", label: "Расписание", short: "Расписание", icon: CalendarDays },
@@ -427,11 +425,6 @@ export function OwnerExecutiveWorkspace({
           )}
           {activeTab === "branches" && <BranchesGroupsView branches={branchScorecards} rawBranches={branches} students={students} groups={groups} teachers={teachers} halls={halls} payments={payments} onCreateBranch={onCreateBranch} onUpdateBranch={onUpdateBranch} onDeleteBranch={onDeleteBranch} onCreateGroup={onCreateGroup} onUpdateGroup={onUpdateGroup} onDeleteGroup={onDeleteGroup} onCreateHall={onCreateHall} onUpdateHall={onUpdateHall} onDeleteHall={onDeleteHall} onOpenStudents={openStudentsWithPreset} />}
           {activeTab === "students" && <StudentsNetworkView students={students} branches={branches} groups={groups} teachers={teachers} onCreateStudent={onCreateStudent} onUpdateStudent={onUpdateStudent} onDeleteStudent={onDeleteStudent} onOpenPayment={onOpenPayment} onSellSubscription={onSellSubscription} subscriptionPlans={subscriptionPlans} studentTrash={studentTrash} onRestoreStudent={onRestoreStudent} onConfirmDeleteStudent={onConfirmDeleteStudent} studentArchive={studentArchive} onArchiveStudent={onArchiveStudent} onUnarchiveStudent={onUnarchiveStudent} leadSources={leadSources} waitlist={waitlist} onAddToWaitlist={onAddToWaitlist} onRemoveFromWaitlist={onRemoveFromWaitlist} onCreateLeadSource={onCreateLeadSource} onUpdateLeadSource={onUpdateLeadSource} onDeleteLeadSource={onDeleteLeadSource} preset={studentsPreset} />}
-          {activeTab === "archive" && (
-            <OwnerScreen title="Архив учеников" subtitle="Ушедшие и отказавшиеся с сохранёнными данными. Фильтр по категориям, причина и срок ухода — основа для рассылок и возврата.">
-              <StudentsArchiveView archive={studentArchive} students={students} branches={branches} onUnarchive={onUnarchiveStudent} />
-            </OwnerScreen>
-          )}
           {activeTab === "teachers" && <TeachersNetworkView teachers={teachers} metrics={metrics} branches={branches} students={students} groups={groups} payments={payments} onCreateTeacher={onCreateTeacher} onUpdateTeacher={onUpdateTeacher} onDeleteTeacher={onDeleteTeacher} />}
           {activeTab === "finance" && <BookkeepingView branches={branchScorecards} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
           {activeTab === "planning" && <PlanningView />}
@@ -866,10 +859,11 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
         locked open={sectionOpen("daily")} onToggle={() => toggleSection("daily")}>
         <DailyManagerReport report={m.dailyReport} scopeLabel={m.scope.label} periodLabel={m.ranges.cur.label}
           onOpenList={openList} onGo={go} onRevenue={openRevenue} />
+        {/* Рекомендация внутри отчёта: вернуть ушедших (ИИ-реактивация) */}
+        <div className="mt-4">
+          <ReactivationPanel archive={studentArchive} roleHeader="owner" minMonths={2} />
+        </div>
       </CollapsibleSection>
-
-      {/* 1.6 ВОЗВРАТ УЧЕНИКОВ (ИИ-реактивация) */}
-      <ReactivationPanel archive={studentArchive} roleHeader="owner" minMonths={2} />
 
       {/* 1.7 ВЫРУЧКА ПО НАПРАВЛЕНИЯМ */}
       <CollapsibleSection id="streams" icon={Coins} title="Основные показатели" hint="Абонементы · выступления · товары · общая выручка"
@@ -2365,6 +2359,8 @@ function StudentsNetworkView({ students, branches, groups, teachers, onCreateStu
     <OwnerScreen title="Ученики сети" subtitle="Вся база учеников: продления, долги, LTV-сегменты, коммуникации и массовые действия. Владелец видит все филиалы.">
       <StudentsRegistry
         roleHeader="owner"
+        studentArchive={studentArchive}
+        onUnarchiveStudent={onUnarchiveStudent}
         students={students}
         groups={groups}
         branches={branches}

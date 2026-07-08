@@ -42,6 +42,7 @@ import {
 } from "lucide-react";
 import { Branch, Group, LeadSource, Student, SubscriptionPlan, Teacher, WaitlistEntry } from "../types";
 import StudentManagementCard, { SellSubscriptionInput } from "./StudentManagementCard";
+import StudentsArchiveView from "./StudentsArchiveView";
 import {
   SEGMENTS,
   SegmentId,
@@ -106,6 +107,8 @@ export interface StudentsRegistryProps {
   onDeleteStudent?: (id: string) => Promise<boolean | void> | void;
   /** Перевод в архив с обязательными комментариями (причина + свободный). */
   onArchiveStudent?: (id: string, reason: string, comment: string) => Promise<boolean | void> | void;
+  onUnarchiveStudent?: (id: string) => Promise<unknown> | void;
+  studentArchive?: any[];
   onOpenPayment?: (student: Student) => void;
   plans?: SubscriptionPlan[];
   onSellSubscription?: (payload: SellSubscriptionInput) => Promise<boolean> | boolean;
@@ -242,6 +245,8 @@ export default function StudentsRegistry({
   onUpdateStudent,
   onDeleteStudent,
   onArchiveStudent,
+  onUnarchiveStudent,
+  studentArchive = [],
   onOpenPayment,
   plans = [],
   onSellSubscription,
@@ -273,7 +278,7 @@ export default function StudentsRegistry({
   );
   const waitlistStudentIds = useMemo(() => new Set(activeWaitlist.map((w) => w.studentId)), [activeWaitlist]);
 
-  const [view, setView] = useState<"registry" | "waitlist">("registry");
+  const [view, setView] = useState<"registry" | "waitlist" | "archive">("registry");
   // Модалка перевода в архив (массово). Хранит выбранных учеников и busy-состояние.
   const [archiveModal, setArchiveModal] = useState<Student[] | null>(null);
   const [archiveBusy, setArchiveBusy] = useState(false);
@@ -752,7 +757,7 @@ export default function StudentsRegistry({
 
       {/* Переключатель: Реестр / Лист ожидания — пилюли прототипа */}
       <div className="flex flex-wrap gap-2">
-        {([["registry", "Реестр", data.length], ["waitlist", "Лист ожидания", activeWaitlist.length]] as const).map(([id, label, cnt]) => {
+        {([["registry", "Реестр", data.length], ["waitlist", "Лист ожидания", activeWaitlist.length], ["archive", "Архив", studentArchive.length]] as const).map(([id, label, cnt]) => {
           const on = view === id;
           return (
             <button
@@ -822,7 +827,14 @@ export default function StudentsRegistry({
 
       <div ref={listRef} />
 
-      {view === "waitlist" ? (
+      {view === "archive" ? (
+        <StudentsArchiveView
+          archive={studentArchive}
+          students={data}
+          branches={branches}
+          onUnarchive={onUnarchiveStudent}
+        />
+      ) : view === "waitlist" ? (
         <WaitlistTable
           rows={waitlistRows}
           branches={branches}

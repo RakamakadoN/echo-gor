@@ -30,12 +30,10 @@ import {
   UserRound,
   Users,
   WalletCards,
-  Archive,
 } from "lucide-react";
 import { Announcement, AnnouncementAudience, AuditLog, Branch, Group, Hall, Payment, Student, Teacher, AdminTask, AdminTaskStatus, AdminTaskPriority, SubscriptionPlan, LeadSource, WaitlistEntry } from "../types";
 import StudentManagementCard, { SellSubscriptionInput } from "./StudentManagementCard";
 import StudentsRegistry from "./StudentsRegistry";
-import StudentsArchiveView from "./StudentsArchiveView";
 import AttendanceJournalView from "./AttendanceJournalView";
 import { ProductsView } from "./OwnerExecutiveWorkspace";
 
@@ -138,7 +136,6 @@ interface AdminEduErpWorkspaceProps {
 type AdminTab =
   | "dashboard"
   | "visitors"
-  | "archive"
   | "journal"
   | "calendar"
   | "billing"
@@ -152,7 +149,6 @@ type AdminTab =
 const tabs: { id: AdminTab; label: string; short: string; icon: React.ElementType }[] = [
   { id: "dashboard", label: "Дашборд", short: "Главная", icon: Activity },
   { id: "visitors", label: "Посетители", short: "Ученики", icon: Users },
-  { id: "archive", label: "Архив", short: "Архив", icon: Archive },
   { id: "journal", label: "Журнал", short: "Журнал", icon: ClipboardList },
   { id: "calendar", label: "Расписание", short: "Календарь", icon: CalendarDays },
   { id: "billing", label: "Счета и абонементы", short: "Оплата", icon: Receipt },
@@ -325,6 +321,8 @@ export function AdminEduErpWorkspace({
               onUpdateStudent={onUpdateStudent}
               onDeleteStudent={onDeleteStudent}
               onArchiveStudent={onArchiveStudent}
+              onUnarchiveStudent={onUnarchiveStudent}
+              studentArchive={studentArchive}
               onOpenPayment={onOpenPayment}
               onSellSubscription={onSellSubscription}
               plans={subscriptionPlans}
@@ -335,14 +333,6 @@ export function AdminEduErpWorkspace({
               onCreateLeadSource={onCreateLeadSource}
               onUpdateLeadSource={onUpdateLeadSource}
               onDeleteLeadSource={onDeleteLeadSource}
-            />
-          )}
-          {activeTab === "archive" && (
-            <StudentsArchiveView
-              archive={studentArchive}
-              students={students}
-              branches={branches}
-              onUnarchive={onUnarchiveStudent}
             />
           )}
           {activeTab === "journal" && (
@@ -459,10 +449,12 @@ function DashboardView({ branches, groups, students, teachers, todayRevenue, mon
 }
 
 // Раздел «Ученики» (ТЗ): полноценный реестр клиентской базы.
-function VisitorsView({ students, groups, branches, teachers, adminBranchId, onCreateStudent, onUpdateStudent, onDeleteStudent, onArchiveStudent, onOpenPayment, onSellSubscription, plans, leadSources, waitlist, onAddToWaitlist, onRemoveFromWaitlist, onCreateLeadSource, onUpdateLeadSource, onDeleteLeadSource }: any) {
+function VisitorsView({ students, groups, branches, teachers, adminBranchId, onCreateStudent, onUpdateStudent, onDeleteStudent, onArchiveStudent, onUnarchiveStudent, studentArchive = [], onOpenPayment, onSellSubscription, plans, leadSources, waitlist, onAddToWaitlist, onRemoveFromWaitlist, onCreateLeadSource, onUpdateLeadSource, onDeleteLeadSource }: any) {
   return (
     <StudentsRegistry
       roleHeader="admin"
+      studentArchive={studentArchive}
+      onUnarchiveStudent={onUnarchiveStudent}
       students={students}
       groups={groups}
       branches={branches}
