@@ -1241,13 +1241,24 @@ export function registerMvpApi(app: express.Express) {
   app.get("/api/mvp/students/archive", ah(async (req, res) => {
     const session = getSession(req);
     if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
-    const rows = await supabaseFetch<any[]>(
+    const rows = (await supabaseFetch<any[]>(
       "students",
       `select=*&organization_id=eq.${session.organizationId}&archived_at=not.is.null&order=archived_at.desc`
-    );
-    const students = rows
-      .filter((row) => canSeeBranch(session, row.branch_id))
-      .map((row) => ({
+    )).filter((row) => canSeeBranch(session, row.branch_id));
+    // Число абонементов на каждого архивного — чтобы отличить «ушедших»
+    // (купили ≥1 абонемент) от «отказавшихся» (ушли, ничего не купив).
+    const ids = rows.map((r) => r.id);
+    const subsCount = new Map<string, number>();
+    if (ids.length) {
+      const subs = await supabaseFetch<any[]>(
+        "student_subscriptions",
+        `select=student_id&student_id=in.(${ids.join(",")})`
+      ).catch(() => [] as any[]);
+      for (const s of subs) subsCount.set(s.student_id, (subsCount.get(s.student_id) || 0) + 1);
+    }
+    const students = rows.map((row) => {
+      const subscriptionsCount = subsCount.get(row.id) || 0;
+      return {
         id: row.id,
         name: [row.first_name, row.last_name].filter(Boolean).join(" ") || row.full_name || "Ученик",
         branchId: row.branch_id,
@@ -1257,8 +1268,13 @@ export function registerMvpApi(app: express.Express) {
         archivedAt: row.archived_at,
         archivedBy: row.archived_by || "—",
         archiveReason: row.archive_reason || "",
-        archiveComment: row.archive_comment || ""
-      }));
+        archiveComment: row.archive_comment || "",
+        subscriptionsCount,
+        // «Ушедший» = был реальным учеником (купил ≥1 абонемент);
+        // иначе «Отказавшийся» (ушёл на этапе пробных, ничего не купив).
+        category: subscriptionsCount >= 1 ? "left" : "declined",
+      };
+    });
     res.json({ students });
   }));
 

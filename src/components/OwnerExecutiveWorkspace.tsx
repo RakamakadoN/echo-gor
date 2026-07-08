@@ -73,6 +73,8 @@ import {
 import { ResponsiveContainer } from "./SafeResponsiveContainer";
 import StudentManagementCard, { SellSubscriptionInput } from "./StudentManagementCard";
 import StudentsRegistry, { type RegistryPreset } from "./StudentsRegistry";
+import StudentsArchiveView from "./StudentsArchiveView";
+import ReactivationPanel from "./ReactivationPanel";
 import { ArchiveReasonModal } from "./ArchiveReasonModal";
 import AttendanceJournalView from "./AttendanceJournalView";
 import { BranchesGroupsView } from "./BranchesGroupsView";
@@ -118,7 +120,7 @@ const STATUS_LABEL: Record<string, string> = {
 
 type StudentInput = { name?: string; firstName?: string; lastName?: string; branchId?: string; groupId?: string; teacherId?: string; parentName?: string; parentPhone?: string; phone?: string; gender?: string | null; birthday?: string | null; sourceId?: string | null; comment?: string; status?: string; manualStatus?: string | null };
 type TrashStudent = { id: string; name: string; branchId: string; parentName: string; parentPhone: string; requestedBy: string; requestedAt: string; reason: string };
-type ArchiveStudent = { id: string; name: string; branchId: string; phone?: string; parentName?: string; parentPhone?: string; archivedAt: string; archivedBy: string; archiveReason: string; archiveComment: string };
+type ArchiveStudent = { id: string; name: string; branchId: string; phone?: string; parentName?: string; parentPhone?: string; archivedAt: string; archivedBy: string; archiveReason: string; archiveComment: string; subscriptionsCount?: number; category?: "left" | "declined" };
 type TeacherInput = { name?: string; phone?: string; specialization?: string; branchId?: string | null; role?: string };
 type CompetitionInput = {
   title?: string;
@@ -202,12 +204,13 @@ interface OwnerExecutiveWorkspaceProps {
   onDeletePlan?: (id: string) => Promise<boolean>;
 }
 
-type OwnerTab = "dashboard" | "branches" | "students" | "teachers" | "payroll" | "journal" | "schedule" | "finance" | "planning" | "meetings" | "reports" | "performances" | "products" | "documents" | "marketing" | "events" | "feed" | "announcements" | "analytics" | "ai" | "aihub" | "settings";
+type OwnerTab = "dashboard" | "branches" | "students" | "archive" | "teachers" | "payroll" | "journal" | "schedule" | "finance" | "planning" | "meetings" | "reports" | "performances" | "products" | "documents" | "marketing" | "events" | "feed" | "announcements" | "analytics" | "ai" | "aihub" | "settings";
 
 const ownerTabs: { id: OwnerTab; label: string; short: string; icon: React.ElementType }[] = [
   { id: "dashboard", label: "Dashboard", short: "Главная", icon: Activity },
   { id: "branches", label: "Филиалы", short: "Филиалы", icon: Building2 },
   { id: "students", label: "Ученики", short: "Ученики", icon: Users },
+  { id: "archive", label: "Архив", short: "Архив", icon: Archive },
   { id: "teachers", label: "Преподаватели", short: "Педагоги", icon: GraduationCap },
   { id: "journal", label: "Журнал посещаемости", short: "Журнал", icon: ClipboardList },
   { id: "schedule", label: "Расписание", short: "Расписание", icon: CalendarDays },
@@ -413,6 +416,7 @@ export function OwnerExecutiveWorkspace({
               rawTeachers={teachers}
               rawPayments={payments}
               rawWaitlist={waitlist}
+              studentArchive={studentArchive}
               branchScorecards={branchScorecards}
               onNavigate={(tab: OwnerTab) => setActiveTab(tab)}
               onOpenStudents={openStudentsWithPreset}
@@ -423,6 +427,11 @@ export function OwnerExecutiveWorkspace({
           )}
           {activeTab === "branches" && <BranchesGroupsView branches={branchScorecards} rawBranches={branches} students={students} groups={groups} teachers={teachers} halls={halls} payments={payments} onCreateBranch={onCreateBranch} onUpdateBranch={onUpdateBranch} onDeleteBranch={onDeleteBranch} onCreateGroup={onCreateGroup} onUpdateGroup={onUpdateGroup} onDeleteGroup={onDeleteGroup} onCreateHall={onCreateHall} onUpdateHall={onUpdateHall} onDeleteHall={onDeleteHall} onOpenStudents={openStudentsWithPreset} />}
           {activeTab === "students" && <StudentsNetworkView students={students} branches={branches} groups={groups} teachers={teachers} onCreateStudent={onCreateStudent} onUpdateStudent={onUpdateStudent} onDeleteStudent={onDeleteStudent} onOpenPayment={onOpenPayment} onSellSubscription={onSellSubscription} subscriptionPlans={subscriptionPlans} studentTrash={studentTrash} onRestoreStudent={onRestoreStudent} onConfirmDeleteStudent={onConfirmDeleteStudent} studentArchive={studentArchive} onArchiveStudent={onArchiveStudent} onUnarchiveStudent={onUnarchiveStudent} leadSources={leadSources} waitlist={waitlist} onAddToWaitlist={onAddToWaitlist} onRemoveFromWaitlist={onRemoveFromWaitlist} onCreateLeadSource={onCreateLeadSource} onUpdateLeadSource={onUpdateLeadSource} onDeleteLeadSource={onDeleteLeadSource} preset={studentsPreset} />}
+          {activeTab === "archive" && (
+            <OwnerScreen title="Архив учеников" subtitle="Ушедшие и отказавшиеся с сохранёнными данными. Фильтр по категориям, причина и срок ухода — основа для рассылок и возврата.">
+              <StudentsArchiveView archive={studentArchive} students={students} branches={branches} onUnarchive={onUnarchiveStudent} />
+            </OwnerScreen>
+          )}
           {activeTab === "teachers" && <TeachersNetworkView teachers={teachers} metrics={metrics} branches={branches} students={students} groups={groups} payments={payments} onCreateTeacher={onCreateTeacher} onUpdateTeacher={onUpdateTeacher} onDeleteTeacher={onDeleteTeacher} />}
           {activeTab === "finance" && <BookkeepingView branches={branchScorecards} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
           {activeTab === "planning" && <PlanningView />}
@@ -518,7 +527,7 @@ export function OwnerExecutiveWorkspace({
   );
 }
 
-function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawPayments, rawWaitlist, branchScorecards, onNavigate, onOpenStudents, onTriggerAiReport, aiResult, aiGenerating }: any) {
+function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawPayments, rawWaitlist, studentArchive = [], branchScorecards, onNavigate, onOpenStudents, onTriggerAiReport, aiResult, aiGenerating }: any) {
   const go = (tab: string) => onNavigate?.(tab);
   const [period, setPeriod] = useState<PeriodKey>("month");
   const [level, setLevel] = useState<LevelKey>("network");
@@ -858,6 +867,9 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
         <DailyManagerReport report={m.dailyReport} scopeLabel={m.scope.label} periodLabel={m.ranges.cur.label}
           onOpenList={openList} onGo={go} onRevenue={openRevenue} />
       </CollapsibleSection>
+
+      {/* 1.6 ВОЗВРАТ УЧЕНИКОВ (ИИ-реактивация) */}
+      <ReactivationPanel archive={studentArchive} roleHeader="owner" minMonths={2} />
 
       {/* 1.7 ВЫРУЧКА ПО НАПРАВЛЕНИЯМ */}
       <CollapsibleSection id="streams" icon={Coins} title="Основные показатели" hint="Абонементы · выступления · товары · общая выручка"
@@ -2409,44 +2421,7 @@ function StudentsNetworkView({ students, branches, groups, teachers, onCreateStu
         )}
       </div>
 
-      {/* Архив учеников — сохранённая база для будущих рассылок и возврата. */}
-      <div className="mt-6 overflow-hidden rounded-[2rem] border border-amber-500/20 bg-[#14110d]">
-        <div className="flex items-center justify-between gap-3 border-b border-amber-500/15 px-5 py-4">
-          <div className="flex items-center gap-3">
-            <div className="rounded-2xl bg-amber-500/15 p-2.5 text-amber-300"><Archive className="h-5 w-5" /></div>
-            <div>
-              <h3 className="font-black text-white">Архив учеников</h3>
-              <p className="text-xs text-slate-500">Ушедшие ученики с сохранёнными данными. Основа для маркетинговых рассылок и возврата.</p>
-            </div>
-          </div>
-          <span className={`rounded-full px-3 py-1 text-xs font-black ${studentArchive.length ? "bg-amber-500/15 text-amber-300" : "bg-white/5 text-slate-500"}`}>{studentArchive.length}</span>
-        </div>
-
-        {studentArchive.length === 0 ? (
-          <p className="px-5 py-6 text-center text-sm text-slate-500">Архив пуст.</p>
-        ) : (
-          studentArchive.map((a) => (
-            <div key={a.id} className="grid grid-cols-1 gap-3 border-b border-white/5 px-5 py-3 text-sm md:grid-cols-12 md:items-start">
-              <div className="md:col-span-3">
-                <p className="font-bold text-white">{a.name}</p>
-                <p className="text-xs text-slate-500">{branchNameById(a.branchId)} · {a.phone || a.parentPhone || "—"}</p>
-              </div>
-              <div className="md:col-span-3">
-                <p className="text-[11px] uppercase tracking-wider text-slate-600">Почему ушёл</p>
-                <p className="text-slate-200">{a.archiveReason || "—"}</p>
-              </div>
-              <div className="md:col-span-4">
-                <p className="text-[11px] uppercase tracking-wider text-slate-600">Комментарий</p>
-                <p className="text-slate-300">{a.archiveComment || "—"}</p>
-                <p className="mt-1 text-[11px] text-slate-600">{a.archivedBy} · {a.archivedAt ? new Date(a.archivedAt).toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric" }) : ""}</p>
-              </div>
-              <div className="flex justify-end md:col-span-2">
-                <button onClick={() => unarchive(a)} disabled={unarchiveBusy === a.id || !onUnarchiveStudent} className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-400 transition hover:bg-emerald-500/20 disabled:opacity-40">{unarchiveBusy === a.id ? "…" : "Вернуть"}</button>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
+      {/* Архив вынесен в отдельную вкладку «Архив» (StudentsArchiveView). */}
 
       {archiveTarget && (
         <ArchiveReasonModal

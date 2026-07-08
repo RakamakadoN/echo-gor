@@ -879,7 +879,7 @@ export default function StudentsRegistry({
             <FilterSelect value={branchFilter} onChange={(v) => { clearPreset(); setBranchFilter(v); }} options={[{ value: "all", label: "Все филиалы" }, ...branches.map((b) => ({ value: b.id, label: b.name || b.city }))]} />
             <FilterSelect value={presetIds ? "all" : groupFilter} onChange={(v) => { clearPreset(); setGroupFilter(v); }} options={[{ value: "all", label: "Все группы" }, ...visibleGroups.map((g) => ({ value: g.id, label: g.name }))]} />
             <FilterSelect value={presetIds ? "all" : ltvFilter} onChange={(v) => { clearPreset(); setLtvFilter(v); }} options={[{ value: "all", label: "Все LTV" }, ...LTV_SEGMENTS.map((s) => ({ value: s, label: s }))]} />
-            <FilterSelect value={archiveFilter} onChange={(v) => { clearPreset(); setArchiveFilter(v as any); }} options={[{ value: "active", label: "Активные" }, { value: "archive", label: "Архив" }, { value: "all", label: "Все" }]} />
+            {/* Архив вынесен в отдельную вкладку «Архив» — список показывает только активных. */}
             <button onClick={() => setShowColumnConfig((v) => !v)} className="inline-flex items-center justify-center gap-2 rounded-[10px] px-3.5 py-2 text-[13px] font-semibold transition" style={showColumnConfig ? { background: "#F2EDE2", border: `1px solid ${CLR.gold}`, color: CLR.gold } : { background: CLR.fill, border: `1px solid ${CLR.border}`, color: CLR.second }}>
               <SlidersHorizontal className="h-4 w-4" /> Настроить таблицу
             </button>

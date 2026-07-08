@@ -2248,22 +2248,38 @@ function registerMvpApi(app2) {
   app2.get("/api/mvp/students/archive", ah(async (req, res) => {
     const session = getSession(req);
     if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
-    const rows = await supabaseFetch(
+    const rows = (await supabaseFetch(
       "students",
       `select=*&organization_id=eq.${session.organizationId}&archived_at=not.is.null&order=archived_at.desc`
-    );
-    const students = rows.filter((row) => canSeeBranch(session, row.branch_id)).map((row) => ({
-      id: row.id,
-      name: [row.first_name, row.last_name].filter(Boolean).join(" ") || row.full_name || "\u0423\u0447\u0435\u043D\u0438\u043A",
-      branchId: row.branch_id,
-      phone: row.phone || row.parent_phone || "",
-      parentName: row.parent_name || "",
-      parentPhone: row.parent_phone || "",
-      archivedAt: row.archived_at,
-      archivedBy: row.archived_by || "\u2014",
-      archiveReason: row.archive_reason || "",
-      archiveComment: row.archive_comment || ""
-    }));
+    )).filter((row) => canSeeBranch(session, row.branch_id));
+    const ids = rows.map((r) => r.id);
+    const subsCount = /* @__PURE__ */ new Map();
+    if (ids.length) {
+      const subs = await supabaseFetch(
+        "student_subscriptions",
+        `select=student_id&student_id=in.(${ids.join(",")})`
+      ).catch(() => []);
+      for (const s of subs) subsCount.set(s.student_id, (subsCount.get(s.student_id) || 0) + 1);
+    }
+    const students = rows.map((row) => {
+      const subscriptionsCount = subsCount.get(row.id) || 0;
+      return {
+        id: row.id,
+        name: [row.first_name, row.last_name].filter(Boolean).join(" ") || row.full_name || "\u0423\u0447\u0435\u043D\u0438\u043A",
+        branchId: row.branch_id,
+        phone: row.phone || row.parent_phone || "",
+        parentName: row.parent_name || "",
+        parentPhone: row.parent_phone || "",
+        archivedAt: row.archived_at,
+        archivedBy: row.archived_by || "\u2014",
+        archiveReason: row.archive_reason || "",
+        archiveComment: row.archive_comment || "",
+        subscriptionsCount,
+        // «Ушедший» = был реальным учеником (купил ≥1 абонемент);
+        // иначе «Отказавшийся» (ушёл на этапе пробных, ничего не купив).
+        category: subscriptionsCount >= 1 ? "left" : "declined"
+      };
+    });
     res.json({ students });
   }));
   app2.post("/api/mvp/payments", async (req, res) => {
@@ -6619,6 +6635,21 @@ child=${JSON.stringify({ childName, childAge, attendanceRate: attendanceRate2 })
 title=${JSON.stringify(title ?? "")}
 participants=${JSON.stringify(participants ?? [])}
 transcript=${JSON.stringify(String(transcript).slice(0, 24e3))}`;
+    try {
+      res.json(await generateJson(prompt));
+    } catch (e) {
+      res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
+  app2.post("/api/gemini/reactivation", async (req, res) => {
+    if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });
+    const { students } = req.body || {};
+    const list = Array.isArray(students) ? students.slice(0, 40) : [];
+    if (!list.length) return res.status(400).json({ error: "\u041D\u0435\u0442 \u043A\u0430\u043D\u0434\u0438\u0434\u0430\u0442\u043E\u0432 \u0434\u043B\u044F \u0430\u043D\u0430\u043B\u0438\u0437\u0430" });
+    const prompt = `\u0422\u044B \u2014 \u043C\u0430\u0440\u043A\u0435\u0442\u043E\u043B\u043E\u0433 \u0441\u0435\u0442\u0438 \u0448\u043A\u043E\u043B \u043A\u0430\u0432\u043A\u0430\u0437\u0441\u043A\u043E\u0433\u043E \u0442\u0430\u043D\u0446\u0430 \xAB\u042D\u0445\u043E \u0413\u043E\u0440\xBB. \u0422\u0435\u0431\u0435 \u0434\u0430\u043D \u0441\u043F\u0438\u0441\u043E\u043A \u0423\u0428\u0415\u0414\u0428\u0418\u0425 \u0443\u0447\u0435\u043D\u0438\u043A\u043E\u0432: \u043F\u0440\u0438\u0447\u0438\u043D\u0430 \u0443\u0445\u043E\u0434\u0430, \u0441\u0432\u043E\u0431\u043E\u0434\u043D\u044B\u0439 \u043A\u043E\u043C\u043C\u0435\u043D\u0442\u0430\u0440\u0438\u0439 \u0438 \u0441\u043A\u043E\u043B\u044C\u043A\u043E \u043C\u0435\u0441\u044F\u0446\u0435\u0432 \u043F\u0440\u043E\u0448\u043B\u043E \u0441 \u0443\u0445\u043E\u0434\u0430. \u0414\u043B\u044F \u041A\u0410\u0416\u0414\u041E\u0413\u041E \u043F\u0440\u0435\u0434\u043B\u043E\u0436\u0438, \u0441\u0442\u043E\u0438\u0442 \u043B\u0438 \u0435\u0433\u043E \u0432\u043E\u0437\u0432\u0440\u0430\u0449\u0430\u0442\u044C \u0441\u0435\u0439\u0447\u0430\u0441 \u0438 \u043A\u0430\u043A\u0438\u043C \u043E\u0444\u0444\u0435\u0440\u043E\u043C, \u0441 \u0433\u043E\u0442\u043E\u0432\u044B\u043C \u043A\u043E\u0440\u043E\u0442\u043A\u0438\u043C \u0442\u0435\u043A\u0441\u0442\u043E\u043C \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F \u0440\u043E\u0434\u0438\u0442\u0435\u043B\u044E. \u0412\u0435\u0440\u043D\u0438 \u0421\u0422\u0420\u041E\u0413\u041E JSON \u043F\u043E \u0441\u0445\u0435\u043C\u0435:
+{"candidates": [{"id": string, "recommend": boolean, "offerType": string, "message": string, "reasoning": string}]}
+\u041F\u0440\u0430\u0432\u0438\u043B\u0430: \u043F\u0438\u0448\u0438 \u043F\u043E-\u0440\u0443\u0441\u0441\u043A\u0438, \u0442\u0435\u043F\u043B\u043E \u0438 \u043F\u043E-\u0447\u0435\u043B\u043E\u0432\u0435\u0447\u0435\u0441\u043A\u0438, \u0431\u0435\u0437 \u043D\u0430\u0432\u044F\u0437\u0447\u0438\u0432\u043E\u0441\u0442\u0438. offerType \u2014 \u043A\u043E\u0440\u043E\u0442\u043A\u043E\u0435 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u043E\u0444\u0444\u0435\u0440\u0430 (\u043D\u0430\u043F\u0440\u0438\u043C\u0435\u0440: \xAB\u0411\u0435\u0441\u043F\u043B\u0430\u0442\u043D\u043E\u0435 \u043F\u0440\u043E\u0431\u043D\u043E\u0435 \u0432\u043E\u0437\u0432\u0440\u0430\u0449\u0435\u043D\u0438\u0435\xBB, \xAB\u0421\u043A\u0438\u0434\u043A\u0430 30% \u043D\u0430 \u043F\u0435\u0440\u0432\u044B\u0439 \u043C\u0435\u0441\u044F\u0446\xBB, \xAB\u0418\u043D\u0434\u0438\u0432\u0438\u0434\u0443\u0430\u043B\u044C\u043D\u044B\u0439 \u0433\u0440\u0430\u0444\u0438\u043A\xBB). message \u2014 \u0433\u043E\u0442\u043E\u0432\u044B\u0439 \u0442\u0435\u043A\u0441\u0442 \u0434\u043B\u044F \u0440\u043E\u0434\u0438\u0442\u0435\u043B\u044F (2-4 \u043F\u0440\u0435\u0434\u043B\u043E\u0436\u0435\u043D\u0438\u044F), \u0443\u0447\u0438\u0442\u044B\u0432\u0430\u0439 \u043F\u0440\u0438\u0447\u0438\u043D\u0443 \u0443\u0445\u043E\u0434\u0430. reasoning \u2014 1 \u043F\u0440\u0435\u0434\u043B\u043E\u0436\u0435\u043D\u0438\u0435, \u043F\u043E\u0447\u0435\u043C\u0443 \u0442\u0430\u043A\u043E\u0439 \u043E\u0444\u0444\u0435\u0440. recommend=false, \u0435\u0441\u043B\u0438 \u0432\u043E\u0437\u0432\u0440\u0430\u0449\u0430\u0442\u044C \u0441\u0435\u0439\u0447\u0430\u0441 \u043D\u0435 \u0441\u0442\u043E\u0438\u0442 (\u043D\u0430\u043F\u0440\u0438\u043C\u0435\u0440, \u0443\u0448\u043B\u0438 \u0438\u0437-\u0437\u0430 \u043F\u0435\u0440\u0435\u0435\u0437\u0434\u0430). id \u2014 \u0432\u0435\u0440\u043D\u0438 \u0440\u043E\u0432\u043D\u043E \u043A\u0430\u043A \u0432\u043E \u0432\u0445\u043E\u0434\u043D\u044B\u0445 \u0434\u0430\u043D\u043D\u044B\u0445.
+students=${JSON.stringify(list)}`;
     try {
       res.json(await generateJson(prompt));
     } catch (e) {

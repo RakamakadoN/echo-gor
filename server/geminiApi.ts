@@ -133,6 +133,25 @@ transcript=${JSON.stringify(String(transcript).slice(0, 24000))}`;
     }
   });
 
+  // Реактивация ушедших: по причине ухода и сроку в архиве ИИ предлагает,
+  // кого стоит вернуть, каким оффером и с каким текстом сообщения.
+  // Используется панелью «Можно вернуть» на дашборде владельца.
+  app.post("/api/gemini/reactivation", async (req, res) => {
+    if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });
+    const { students } = req.body || {};
+    const list = Array.isArray(students) ? students.slice(0, 40) : [];
+    if (!list.length) return res.status(400).json({ error: "Нет кандидатов для анализа" });
+    const prompt = `Ты — маркетолог сети школ кавказского танца «Эхо Гор». Тебе дан список УШЕДШИХ учеников: причина ухода, свободный комментарий и сколько месяцев прошло с ухода. Для КАЖДОГО предложи, стоит ли его возвращать сейчас и каким оффером, с готовым коротким текстом сообщения родителю. Верни СТРОГО JSON по схеме:
+{"candidates": [{"id": string, "recommend": boolean, "offerType": string, "message": string, "reasoning": string}]}
+Правила: пиши по-русски, тепло и по-человечески, без навязчивости. offerType — короткое название оффера (например: «Бесплатное пробное возвращение», «Скидка 30% на первый месяц», «Индивидуальный график»). message — готовый текст для родителя (2-4 предложения), учитывай причину ухода. reasoning — 1 предложение, почему такой оффер. recommend=false, если возвращать сейчас не стоит (например, ушли из-за переезда). id — верни ровно как во входных данных.
+students=${JSON.stringify(list)}`;
+    try {
+      res.json(await generateJson(prompt));
+    } catch (e: any) {
+      res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
+
   // Генерация красивого фото товара нейросетью (для каталога и магазина родителя).
   // Возвращает data-URL (base64 PNG), который фронт кладёт в photoUrl товара.
   app.post("/api/gemini/product-image", async (req, res) => {
