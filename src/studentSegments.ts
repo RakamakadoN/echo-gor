@@ -451,6 +451,7 @@ export type SegmentId =
   | "waitlist"
   | "vacation"
   | "left"
+  | "partially_paid"
   | "loyal"
   | "core"
   | "legends";
@@ -478,6 +479,7 @@ export const SEGMENTS: SegmentDef[] = [
   { id: "waitlist", label: "Лист ожидания", match: (s) => !isLeft(s) && isWaitlist(s) },
   { id: "vacation", label: "Каникулы", match: (s) => !isLeft(s) && isVacation(s) },
   { id: "left", label: "Ушедшие", match: (s) => isLeft(s) },
+  { id: "partially_paid", label: "Частично оплачено", match: (s, now) => !isLeft(s) && isPartiallyPaid(s, now) },
   { id: "loyal", label: "Лояльные", match: (s, now) => !isLeft(s) && getLtvSegment(s, now) === "Лояльный" },
   { id: "core", label: "Ядро студии", match: (s, now) => !isLeft(s) && getLtvSegment(s, now) === "Ядро студии" },
   { id: "legends", label: "Легенды Эхо Гор", match: (s, now) => !isLeft(s) && getLtvSegment(s, now) === "Легенда Эхо Гор" },
@@ -493,6 +495,7 @@ export const STATUS_FILTER_OPTIONS: { value: string; label: string }[] = [
   { value: "new", label: "Новый ученик" },
   { value: "returned", label: "Вернувшийся" },
   { value: "next_month", label: "Куплен следующий месяц" },
+  { value: "partially_paid", label: "Частично оплачено" },
   { value: "vacation", label: "Каникулы" },
   { value: "waitlist", label: "Лист ожидания" },
   { value: "left", label: "Ушедшие" },
