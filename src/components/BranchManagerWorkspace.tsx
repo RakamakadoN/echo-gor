@@ -1072,7 +1072,9 @@ function ScheduleView({ branchId, groups, teachers, halls, scheduleItems, schedu
   const weekAhead = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
 
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ groupId: "", startsAt: "", endsAt: "", teacherId: "", hallId: "", topic: "" });
+  const [form, setForm] = useState({ groupId: "", teacherId: "", hallId: "", date: "", startTime: "", endTime: "", reason: "", topic: "" });
+  // Список времени (08:00–22:00, шаг 30 мин) — как в кабинете владельца.
+  const LESSON_TIMES = useMemo(() => { const o: string[] = []; for (let h = 8; h <= 22; h++) for (const m of [0, 30]) o.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`); return o; }, []);
   const [saving, setSaving] = useState(false);
   const [schedMode, setSchedMode] = useState<"lessons" | "halls" | "list" | "archive">("lessons");
 
@@ -1082,12 +1084,24 @@ function ScheduleView({ branchId, groups, teachers, halls, scheduleItems, schedu
 
   const upcoming = (scheduleItems || []).filter((l: any) => l.status !== "cancelled");
 
+  const lessonReady = Boolean(form.groupId && form.hallId && form.date && form.startTime && form.endTime && form.startTime < form.endTime);
   const handleSave = async () => {
-    if (!form.groupId || !form.startsAt || !form.endsAt) return;
+    if (!lessonReady) return;
     setSaving(true);
-    const ok = await onCreateLesson?.({ ...form, branchId });
+    const topic = [form.reason, form.topic].filter(Boolean).join(" — ");
+    const ok = await onCreateLesson?.({
+      branchId, groupId: form.groupId, teacherId: form.teacherId, hallId: form.hallId,
+      startsAt: new Date(`${form.date}T${form.startTime}`).toISOString(),
+      endsAt: new Date(`${form.date}T${form.endTime}`).toISOString(),
+      topic,
+    });
     setSaving(false);
-    if (ok) { setForm({ groupId: "", startsAt: "", endsAt: "", teacherId: "", hallId: "", topic: "" }); setShowForm(false); }
+    if (ok) {
+      const from = form.date;
+      setForm({ groupId: "", teacherId: "", hallId: "", date: "", startTime: "", endTime: "", reason: "", topic: "" });
+      setShowForm(false);
+      onLoadSchedule?.({ branchId, from, to: from });
+    }
   };
 
   return (
@@ -1131,27 +1145,44 @@ function ScheduleView({ branchId, groups, teachers, halls, scheduleItems, schedu
               </select>
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Начало *</span>
-              <input type="datetime-local" value={form.startsAt} onChange={(e) => setForm(f => ({ ...f, startsAt: e.target.value }))} className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white" />
+              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Дата урока *</span>
+              <input type="date" value={form.date} min={today} onChange={(e) => setForm(f => ({ ...f, date: e.target.value }))} className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white [color-scheme:dark]" />
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Конец *</span>
-              <input type="datetime-local" value={form.endsAt} onChange={(e) => setForm(f => ({ ...f, endsAt: e.target.value }))} className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white" />
+              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Время урока *</span>
+              <div className="flex items-center gap-2">
+                <select value={form.startTime} onChange={(e) => setForm(f => ({ ...f, startTime: e.target.value }))} className="w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white">
+                  <option value="">с…</option>
+                  {LESSON_TIMES.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+                <span className="text-slate-500">–</span>
+                <select value={form.endTime} onChange={(e) => setForm(f => ({ ...f, endTime: e.target.value }))} className="w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white">
+                  <option value="">до…</option>
+                  {LESSON_TIMES.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Зал</span>
+              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Зал *</span>
               <select value={form.hallId} onChange={(e) => setForm(f => ({ ...f, hallId: e.target.value }))} className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white">
-                <option value="">Без зала</option>
+                <option value="">Выберите зал</option>
                 {(halls || []).map((h: Hall) => <option key={h.id} value={h.id}>{h.name}</option>)}
               </select>
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Тема</span>
-              <input type="text" value={form.topic} onChange={(e) => setForm(f => ({ ...f, topic: e.target.value }))} placeholder="Напр. «Базовые движения»" className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder-slate-600" />
+              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Причина / тип урока</span>
+              <select value={form.reason} onChange={(e) => setForm(f => ({ ...f, reason: e.target.value }))} className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white">
+                <option value="">— не указано —</option>
+                {["Разовый урок", "Перенос урока", "Болезнь ученика", "Отсутствие педагога", "Индивидуальное занятие", "Замена педагога", "Другое"].map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Тема / комментарий</span>
+              <input type="text" value={form.topic} onChange={(e) => setForm(f => ({ ...f, topic: e.target.value }))} placeholder="Напр. «перенос с пятницы»" className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder-slate-600" />
             </label>
           </div>
           <div className="flex gap-3">
-            <button onClick={handleSave} disabled={saving || !form.groupId || !form.startsAt || !form.endsAt} className="rounded-xl bg-[#C5A059] px-5 py-2 text-sm font-bold text-black disabled:opacity-40 hover:bg-[#D4AF70] transition-colors">
+            <button onClick={handleSave} disabled={saving || !lessonReady} title={!lessonReady ? "Заполните группу, зал, дату и время (конец позже начала)" : undefined} className="rounded-xl bg-[#C5A059] px-5 py-2 text-sm font-bold text-black disabled:opacity-40 hover:bg-[#D4AF70] transition-colors">
               {saving ? "Сохранение…" : "Создать урок"}
             </button>
             <button onClick={() => setShowForm(false)} className="rounded-xl bg-white/5 px-5 py-2 text-sm font-bold text-slate-400 hover:bg-white/10 transition-colors">Отмена</button>
