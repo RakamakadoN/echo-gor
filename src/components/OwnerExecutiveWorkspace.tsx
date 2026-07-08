@@ -192,6 +192,8 @@ interface OwnerExecutiveWorkspaceProps {
   onCreateGroup?: (data: any) => Promise<boolean>;
   onUpdateGroup?: (id: string, data: any) => Promise<boolean>;
   onDeleteGroup?: (id: string) => Promise<boolean>;
+  archivedGroups?: any[];
+  onRestoreGroup?: (id: string) => Promise<boolean>;
   onCreateHall?: (data: any) => Promise<boolean>;
   onUpdateHall?: (id: string, data: any) => Promise<boolean>;
   onDeleteHall?: (id: string) => Promise<boolean>;
@@ -288,6 +290,8 @@ export function OwnerExecutiveWorkspace({
   onCreateGroup,
   onUpdateGroup,
   onDeleteGroup,
+  archivedGroups = [],
+  onRestoreGroup,
   onCreateHall,
   onUpdateHall,
   onDeleteHall,
@@ -459,6 +463,8 @@ export function OwnerExecutiveWorkspace({
               groups={groups}
               teachers={teachers}
               halls={halls}
+              archivedGroups={archivedGroups}
+              onRestoreGroup={onRestoreGroup}
               scheduleItems={scheduleItems}
               scheduleLoading={scheduleLoading}
               onLoadSchedule={onLoadSchedule}
@@ -9540,12 +9546,12 @@ function ScheduleAiWindows({ hallLoad, halls, teachers, todayStats }: any) {
   );
 }
 
-function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, scheduleLoading, onLoadSchedule, onCreateGroup, onUpdateGroup, onDeleteGroup, onCreateLesson, onUpdateLesson, onDeleteLesson }: any) {
+function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, scheduleLoading, onLoadSchedule, onCreateGroup, onUpdateGroup, onDeleteGroup, onCreateLesson, onUpdateLesson, onDeleteLesson, archivedGroups = [], onRestoreGroup }: any) {
   const today = new Date();
   const todayIso = isoDate(today);
 
   // Mobile-first: на телефоне открываем «День» (неделя не влезает), на десктопе — «Неделю».
-  const [view, setView] = useState<"day" | "week" | "month" | "halls">(() => (typeof window !== "undefined" && window.innerWidth < 768 ? "day" : "week"));
+  const [view, setView] = useState<"day" | "week" | "month" | "halls" | "archive">(() => (typeof window !== "undefined" && window.innerWidth < 768 ? "day" : "week"));
   const [anchor, setAnchor] = useState<Date>(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; });
   const [activeForm, setActiveForm] = useState<"lesson" | "group" | null>(null);
   const [showGroups, setShowGroups] = useState(false);
@@ -9763,7 +9769,7 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
         <div className="flex flex-wrap items-center gap-2">
           {/* Сегментный переключатель */}
           <div className="flex rounded-xl bg-white/5 border border-white/10 p-0.5">
-            {([["day", "День"], ["week", "Неделя"], ["month", "Месяц"], ["halls", "По залам"]] as const).map(([v, label]) => (
+            {([["day", "День"], ["week", "Неделя"], ["month", "Месяц"], ["halls", "По залам"], ["archive", `Архив групп${archivedGroups.length ? ` (${archivedGroups.length})` : ""}`]] as const).map(([v, label]) => (
               <button key={v} onClick={() => setView(v)} className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${view === v ? "bg-[#C5A059] text-black" : "text-slate-400 hover:text-white"}`}>{label}</button>
             ))}
           </div>
@@ -9880,7 +9886,32 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
       {/* Календарь + правая колонка */}
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0">
-          {view === "halls" ? (
+          {view === "archive" ? (
+            /* ───── Архив групп ───── */
+            <div className="overflow-hidden rounded-3xl border border-white/10 bg-[#111]">
+              <div className="border-b border-white/10 px-5 py-4">
+                <h3 className="font-black text-white">Архив групп</h3>
+                <p className="text-xs text-slate-500">Заархивированные группы. Ученики и история сохранены — можно восстановить.</p>
+              </div>
+              {archivedGroups.length === 0 ? (
+                <p className="px-5 py-8 text-center text-sm text-slate-500">Архив групп пуст.</p>
+              ) : (
+                archivedGroups.map((g: any) => (
+                  <div key={g.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-white/5 px-5 py-3">
+                    <div>
+                      <p className="font-bold text-white">{g.name}</p>
+                      <p className="text-xs text-slate-500">{(halls || []).find((h: any) => h.id === g.hallId)?.name || "Без зала"} · {g.scheduleText || "—"}</p>
+                    </div>
+                    {onRestoreGroup && (
+                      <button onClick={() => onRestoreGroup(g.id)} className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-300 transition hover:bg-emerald-500/20">
+                        Восстановить
+                      </button>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          ) : view === "halls" ? (
             /* ───── Весь график по залам (недельная сетка) ───── */
             <GroupScheduleGrid
               groups={(groups || []).filter((g: any) =>

@@ -102,6 +102,8 @@ interface AdminEduErpWorkspaceProps {
   onCreateGroup?: (data: any) => Promise<boolean>;
   onUpdateGroup?: (id: string, data: any) => Promise<boolean>;
   onDeleteGroup?: (id: string) => Promise<boolean>;
+  archivedGroups?: any[];
+  onRestoreGroup?: (id: string) => Promise<boolean>;
   onCreateLesson?: (data: any) => Promise<boolean>;
   onUpdateLesson?: (id: string, data: any) => Promise<boolean>;
   onDeleteLesson?: (id: string) => Promise<boolean>;

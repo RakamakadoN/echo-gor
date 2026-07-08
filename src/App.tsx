@@ -987,6 +987,30 @@ export default function App() {
   // перерисовать компоненты, читающие статусы синхронно из кэша.
   const [, setStatusCfgVersion] = useState(0);
 
+  // --- Архив групп (скрыты из bootstrap; отдельная вкладка + восстановление) ---
+  const [archivedGroups, setArchivedGroups] = useState<any[]>([]);
+  const loadArchivedGroups = async () => {
+    try {
+      const r = await fetch("/api/mvp/groups/archived", { headers: { "x-demo-role": getMvpRoleHeader() } });
+      if (!r.ok) return;
+      setArchivedGroups((await r.json()).groups || []);
+    } catch { /* тихо */ }
+  };
+  const handleRestoreGroup = async (id: string): Promise<boolean> => {
+    try {
+      const r = await fetch(`/api/mvp/groups/${id}/restore`, { method: "POST", headers: { "x-demo-role": getMvpRoleHeader() } });
+      if (!r.ok) throw new Error(await r.text());
+      await loadMvpBootstrap(activeRole);
+      await loadArchivedGroups();
+      toast.success("Группа восстановлена из архива");
+      return true;
+    } catch (error: any) {
+      const msg = error.message || "Не удалось восстановить группу";
+      setMvpDataError(msg); toast.error(msg);
+      return false;
+    }
+  };
+
   const loadStudentArchive = async () => {
     try {
       const response = await fetch("/api/mvp/students/archive", {
@@ -1110,7 +1134,7 @@ export default function App() {
 
   useEffect(() => {
     if (activeRole === "owner") loadStudentTrash();
-    if (["owner", "branch_manager", "admin"].includes(activeRole)) loadStudentArchive();
+    if (["owner", "branch_manager", "admin"].includes(activeRole)) { loadStudentArchive(); loadArchivedGroups(); }
     // Общий конфиг статусов организации — в кэш, затем перерисовка.
     fetchStatusConfig(getMvpRoleHeader()).then(() => setStatusCfgVersion((v) => v + 1));
   }, [activeRole]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1266,9 +1290,12 @@ export default function App() {
       });
       if (!response.ok) throw new Error(await response.text());
       await loadMvpBootstrap(activeRole);
+      await loadArchivedGroups();
+      toast.success("Группа перенесена в архив");
       return true;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось удалить группу");
+      const msg = error.message || "Не удалось удалить группу";
+      setMvpDataError(msg); toast.error(msg);
       return false;
     }
   };
@@ -3358,6 +3385,8 @@ export default function App() {
               onCreateGroup={handleCreateGroup}
               onUpdateGroup={handleUpdateGroup}
               onDeleteGroup={handleDeleteGroup}
+              archivedGroups={archivedGroups}
+              onRestoreGroup={handleRestoreGroup}
               onCreateLesson={handleCreateLesson}
               onUpdateLesson={handleUpdateLesson}
               onDeleteLesson={handleDeleteLesson}
@@ -3434,6 +3463,8 @@ export default function App() {
               onCreateGroup={handleCreateGroup}
               onUpdateGroup={handleUpdateGroup}
               onDeleteGroup={handleDeleteGroup}
+              archivedGroups={archivedGroups}
+              onRestoreGroup={handleRestoreGroup}
               onCreateHall={handleCreateHall}
               onUpdateHall={handleUpdateHall}
               onDeleteHall={handleDeleteHall}
@@ -3461,6 +3492,8 @@ export default function App() {
               onCreateGroup={handleCreateGroup}
               onUpdateGroup={handleUpdateGroup}
               onDeleteGroup={handleDeleteGroup}
+              archivedGroups={archivedGroups}
+              onRestoreGroup={handleRestoreGroup}
               onCreateLesson={handleCreateLesson}
               onUpdateLesson={handleUpdateLesson}
               onDeleteLesson={handleDeleteLesson}

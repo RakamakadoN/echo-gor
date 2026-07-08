@@ -2224,6 +2224,40 @@ export function registerMvpApi(app: express.Express) {
     }
   });
 
+  // Список архивных групп (вкладка «Архив групп»).
+  app.get("/api/mvp/groups/archived", async (req, res) => {
+    const session = getSession(req);
+    if (!groupAccess(session, res)) return;
+    if (!supabaseEnabled) return res.json({ groups: [] });
+    try {
+      const rows = await supabaseFetch<any[]>(
+        "groups",
+        `select=*&organization_id=eq.${session.organizationId}&status=eq.archived&order=created_at.desc`
+      );
+      res.json({ groups: rows.filter((r) => canSeeBranch(session, r.branch_id)).map((r) => mapDbGroup(r)) });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось загрузить архив групп" });
+    }
+  });
+
+  // Восстановить группу из архива.
+  app.post("/api/mvp/groups/:id/restore", async (req, res) => {
+    const session = getSession(req);
+    if (!groupAccess(session, res)) return;
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      const rows = await supabaseFetch<any[]>(
+        "groups",
+        `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
+        { method: "PATCH", body: JSON.stringify({ status: "active" }) }
+      );
+      if (!rows[0]) return res.status(404).json({ error: "Группа не найдена" });
+      res.json({ group: mapDbGroup(rows[0]), restored: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось восстановить группу" });
+    }
+  });
+
   // ───────────────── Schedule (schedule_lessons) CRUD ──────────────────────────
 
   function mapDbLesson(row: any, extras: { groupName?: string; hallName?: string; teacherName?: string } = {}) {

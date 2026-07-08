@@ -3147,6 +3147,36 @@ function registerMvpApi(app2) {
       res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u0433\u0440\u0443\u043F\u043F\u0443" });
     }
   });
+  app2.get("/api/mvp/groups/archived", async (req, res) => {
+    const session = getSession(req);
+    if (!groupAccess(session, res)) return;
+    if (!supabaseEnabled) return res.json({ groups: [] });
+    try {
+      const rows = await supabaseFetch(
+        "groups",
+        `select=*&organization_id=eq.${session.organizationId}&status=eq.archived&order=created_at.desc`
+      );
+      res.json({ groups: rows.filter((r) => canSeeBranch(session, r.branch_id)).map((r) => mapDbGroup(r)) });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0430\u0440\u0445\u0438\u0432 \u0433\u0440\u0443\u043F\u043F" });
+    }
+  });
+  app2.post("/api/mvp/groups/:id/restore", async (req, res) => {
+    const session = getSession(req);
+    if (!groupAccess(session, res)) return;
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      const rows = await supabaseFetch(
+        "groups",
+        `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
+        { method: "PATCH", body: JSON.stringify({ status: "active" }) }
+      );
+      if (!rows[0]) return res.status(404).json({ error: "\u0413\u0440\u0443\u043F\u043F\u0430 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430" });
+      res.json({ group: mapDbGroup(rows[0]), restored: true });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0432\u043E\u0441\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0442\u044C \u0433\u0440\u0443\u043F\u043F\u0443" });
+    }
+  });
   function mapDbLesson(row, extras = {}) {
     return {
       id: row.id,
