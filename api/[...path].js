@@ -3136,12 +3136,33 @@ function registerMvpApi(app2) {
     const session = getSession(req);
     if (!groupAccess(session, res)) return;
     try {
+      const activeStudents = await supabaseFetch(
+        "students",
+        `select=id&group_id=eq.${req.params.id}&organization_id=eq.${session.organizationId}&status=neq.archived&status=neq.left&archived_at=is.null`
+      );
+      if (activeStudents.length) {
+        return res.status(409).json({ error: `\u041D\u0435\u043B\u044C\u0437\u044F \u0430\u0440\u0445\u0438\u0432\u0438\u0440\u043E\u0432\u0430\u0442\u044C: \u0432 \u0433\u0440\u0443\u043F\u043F\u0435 ${activeStudents.length} \u0434\u0435\u0439\u0441\u0442\u0432\u0443\u044E\u0449\u0438\u0445 \u0443\u0447\u0435\u043D\u0438\u043A\u043E\u0432. \u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u043F\u0435\u0440\u0435\u0432\u0435\u0434\u0438\u0442\u0435 \u0438\u0445 \u0432 \u0434\u0440\u0443\u0433\u0443\u044E \u0433\u0440\u0443\u043F\u043F\u0443.` });
+      }
+      const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+      const activeSubs = await supabaseFetch(
+        "student_subscriptions",
+        `select=id&group_id=eq.${req.params.id}&status=eq.active&or=(ends_on.is.null,ends_on.gte.${today})`
+      );
+      if (activeSubs.length) {
+        return res.status(409).json({ error: `\u041D\u0435\u043B\u044C\u0437\u044F \u0430\u0440\u0445\u0438\u0432\u0438\u0440\u043E\u0432\u0430\u0442\u044C: \u0432 \u0433\u0440\u0443\u043F\u043F\u0435 ${activeSubs.length} \u0434\u0435\u0439\u0441\u0442\u0432\u0443\u044E\u0449\u0438\u0445 \u0430\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442\u043E\u0432.` });
+      }
       const rows = await supabaseFetch(
         "groups",
         `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
         { method: "PATCH", body: JSON.stringify({ status: "archived" }) }
       );
       if (!rows[0]) return res.status(404).json({ error: "\u0413\u0440\u0443\u043F\u043F\u0430 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430" });
+      await supabaseFetch("schedule_lessons", `group_id=eq.${req.params.id}&starts_at=gte.${(/* @__PURE__ */ new Date()).toISOString()}`, {
+        method: "PATCH",
+        headers: { Prefer: "return=minimal" },
+        body: JSON.stringify({ status: "cancelled" })
+      }).catch(() => {
+      });
       res.json({ group: mapDbGroup(rows[0]), archived: true });
     } catch (error) {
       res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u0433\u0440\u0443\u043F\u043F\u0443" });
@@ -3197,7 +3218,7 @@ function registerMvpApi(app2) {
     const session = getSession(req);
     if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
     const { branchId, groupId, from, to } = req.query;
-    const parts = ["select=*,groups(name),halls(name),users!schedule_lessons_teacher_id_fkey(full_name)", "order=starts_at.asc"];
+    const parts = ["select=*,groups(name,status),halls(name),users!schedule_lessons_teacher_id_fkey(full_name)", "order=starts_at.asc"];
     if (branchId) parts.push(`branch_id=eq.${branchId}`);
     else if (session.role !== "owner" && session.dbBranchId) parts.push(`branch_id=eq.${session.dbBranchId}`);
     if (groupId) parts.push(`group_id=eq.${groupId}`);
@@ -3206,7 +3227,7 @@ function registerMvpApi(app2) {
     if (session.role === "teacher") parts.push(`teacher_id=eq.${session.userId}`);
     try {
       const rows = await supabaseFetch("schedule_lessons", parts.join("&"));
-      const lessons = rows.map(
+      const lessons = rows.filter((row) => row.groups?.status !== "archived").map(
         (row) => mapDbLesson(row, {
           groupName: row.groups?.name,
           hallName: row.halls?.name,

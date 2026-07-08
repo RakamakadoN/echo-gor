@@ -2212,12 +2212,33 @@ export function registerMvpApi(app: express.Express) {
     const session = getSession(req);
     if (!groupAccess(session, res)) return;
     try {
+      // Нельзя архивировать группу с действующими учениками.
+      const activeStudents = await supabaseFetch<any[]>(
+        "students",
+        `select=id&group_id=eq.${req.params.id}&organization_id=eq.${session.organizationId}&status=neq.archived&status=neq.left&archived_at=is.null`
+      );
+      if (activeStudents.length) {
+        return res.status(409).json({ error: `Нельзя архивировать: в группе ${activeStudents.length} действующих учеников. Сначала переведите их в другую группу.` });
+      }
+      // Нельзя архивировать группу с действующими (проданными) абонементами.
+      const today = new Date().toISOString().slice(0, 10);
+      const activeSubs = await supabaseFetch<any[]>(
+        "student_subscriptions",
+        `select=id&group_id=eq.${req.params.id}&status=eq.active&or=(ends_on.is.null,ends_on.gte.${today})`
+      );
+      if (activeSubs.length) {
+        return res.status(409).json({ error: `Нельзя архивировать: в группе ${activeSubs.length} действующих абонементов.` });
+      }
       const rows = await supabaseFetch<any[]>(
         "groups",
         `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`,
         { method: "PATCH", body: JSON.stringify({ status: "archived" }) }
       );
       if (!rows[0]) return res.status(404).json({ error: "Группа не найдена" });
+      // Отменяем будущие уроки архивной группы, чтобы они не висели в расписании.
+      await supabaseFetch("schedule_lessons", `group_id=eq.${req.params.id}&starts_at=gte.${new Date().toISOString()}`, {
+        method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ status: "cancelled" }),
+      }).catch(() => { /* не критично */ });
       res.json({ group: mapDbGroup(rows[0]), archived: true });
     } catch (error: any) {
       res.status(400).json({ error: error.message || "Не удалось удалить группу" });
@@ -2284,7 +2305,7 @@ export function registerMvpApi(app: express.Express) {
     const { branchId, groupId, from, to } = req.query as Record<string, string>;
     // У schedule_lessons ДВА FK на users (created_by и teacher_id) — встраивание
     // users(...) неоднозначно и даёт 400. Явно указываем связь по teacher_id.
-    const parts = ["select=*,groups(name),halls(name),users!schedule_lessons_teacher_id_fkey(full_name)", "order=starts_at.asc"];
+    const parts = ["select=*,groups(name,status),halls(name),users!schedule_lessons_teacher_id_fkey(full_name)", "order=starts_at.asc"];
     if (branchId) parts.push(`branch_id=eq.${branchId}`);
     else if (session.role !== "owner" && session.dbBranchId) parts.push(`branch_id=eq.${session.dbBranchId}`);
     if (groupId) parts.push(`group_id=eq.${groupId}`);
@@ -2294,7 +2315,8 @@ export function registerMvpApi(app: express.Express) {
     if (session.role === "teacher") parts.push(`teacher_id=eq.${session.userId}`);
     try {
       const rows = await supabaseFetch<any[]>("schedule_lessons", parts.join("&"));
-      const lessons = rows.map((row) =>
+      // Уроки архивных групп в расписании не показываем.
+      const lessons = rows.filter((row) => row.groups?.status !== "archived").map((row) =>
         mapDbLesson(row, {
           groupName: row.groups?.name,
           hallName: row.halls?.name,
