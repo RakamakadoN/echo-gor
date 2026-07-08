@@ -2282,7 +2282,9 @@ export function registerMvpApi(app: express.Express) {
     const session = getSession(req);
     if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
     const { branchId, groupId, from, to } = req.query as Record<string, string>;
-    const parts = ["select=*,groups(name),halls(name),users(full_name)", "order=starts_at.asc"];
+    // У schedule_lessons ДВА FK на users (created_by и teacher_id) — встраивание
+    // users(...) неоднозначно и даёт 400. Явно указываем связь по teacher_id.
+    const parts = ["select=*,groups(name),halls(name),users!schedule_lessons_teacher_id_fkey(full_name)", "order=starts_at.asc"];
     if (branchId) parts.push(`branch_id=eq.${branchId}`);
     else if (session.role !== "owner" && session.dbBranchId) parts.push(`branch_id=eq.${session.dbBranchId}`);
     if (groupId) parts.push(`group_id=eq.${groupId}`);
