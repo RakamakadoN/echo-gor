@@ -174,16 +174,14 @@ export const hasNextMonthPaid = (student: Student, now: Date = new Date()): bool
   });
 };
 
-/** Требует ли продления: заканчивается в ближайшие N дней или мало занятий. */
-export const needsRenewal = (student: Student, now: Date = new Date(), days = 7): boolean => {
+/** Требуют продления (ТЗ, уточнение заказчика) = НЕТ активного абонемента,
+ *  покрывающего текущий месяц. Без «скоро закончится»/«мало занятий». */
+export const needsRenewal = (student: Student, now: Date = new Date()): boolean => {
   if (isLeft(student) || isPaused(student)) return false;
-  const sub = getPrimarySubscription(student);
-  if (!sub) return true; // нет активного абонемента — нужно продлить
-  if (sub.status === "expired") return true;
-  if (sub.lessonsLeft <= 2) return true;
-  const until = parseDate(sub.validUntil);
-  if (!until) return false;
-  return until.getTime() - now.getTime() <= days * MS_DAY;
+  const active = (student.subscriptions || []).filter((s) => s.status === "active");
+  // Покрыт ли текущий момент действующим абонементом (без даты окончания = бессрочный).
+  const covered = active.some((s) => { const u = parseDate(s.validUntil); return !u || u.getTime() >= now.getTime(); });
+  return !covered;
 };
 
 /* ============================ Флаги статуса (по БД) ============================ */

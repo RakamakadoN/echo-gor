@@ -301,6 +301,8 @@ export default function App() {
   const [studentLoginError, setStudentLoginError] = useState<string | null>(null);
   const [mvpDataMode, setMvpDataMode] = useState<"mock" | "supabase">("mock");
   const [mvpDataError, setMvpDataError] = useState<string | null>(null);
+  // Единая точка ошибки: баннер + всплывающий тост с причиной.
+  const notifyError = (m: string) => { setMvpDataError(m); toast.error(m); };
 
   // Mobile App Simulator state
   const [isMobileSimulatorOpen, setIsMobileSimulatorOpen] = useState<boolean>(false);
@@ -447,7 +449,7 @@ export default function App() {
       setMvpDataError(payload.error || null);
     } catch (error: any) {
       setMvpDataMode("mock");
-      setMvpDataError(error.message || "MVP API недоступен");
+      notifyError(error.message || "MVP API недоступен");
     } finally {
       setIsLoading(false);
     }
@@ -687,7 +689,7 @@ export default function App() {
       setNewStudentPhone("");
       setShowAddStudentModal(false);
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось создать ученика");
+      notifyError(error.message || "Не удалось создать ученика");
     }
   };
 
@@ -798,7 +800,7 @@ export default function App() {
       addAuditLog("Заявка на удаление", `Ученик перемещён в корзину (${id})`);
       return true;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось переместить ученика в корзину");
+      notifyError(error.message || "Не удалось переместить ученика в корзину");
       return false;
     }
   };
@@ -816,7 +818,7 @@ export default function App() {
       addAuditLog("Создание задачи", `Добавлена задача «${data.title}»`);
       return true;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось создать задачу");
+      notifyError(error.message || "Не удалось создать задачу");
       return false;
     }
   };
@@ -831,7 +833,7 @@ export default function App() {
       await loadMvpBootstrap(activeRole);
       return true;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось обновить задачу");
+      notifyError(error.message || "Не удалось обновить задачу");
       return false;
     }
   };
@@ -845,7 +847,7 @@ export default function App() {
       await loadMvpBootstrap(activeRole);
       return true;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось удалить задачу");
+      notifyError(error.message || "Не удалось удалить задачу");
       return false;
     }
   };
@@ -863,7 +865,7 @@ export default function App() {
       addAuditLog("Справочник: абонемент", `Добавлен абонемент «${data.name}»`);
       return true;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось создать абонемент");
+      notifyError(error.message || "Не удалось создать абонемент");
       return false;
     }
   };
@@ -878,7 +880,7 @@ export default function App() {
       await loadMvpBootstrap(activeRole);
       return true;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось обновить абонемент");
+      notifyError(error.message || "Не удалось обновить абонемент");
       return false;
     }
   };
@@ -892,7 +894,7 @@ export default function App() {
       await loadMvpBootstrap(activeRole);
       return true;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось удалить абонемент");
+      notifyError(error.message || "Не удалось удалить абонемент");
       return false;
     }
   };
@@ -910,7 +912,7 @@ export default function App() {
       addAuditLog("Справочник: источник", `Добавлен источник «${data.name}»`);
       return true;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось создать источник");
+      notifyError(error.message || "Не удалось создать источник");
       return false;
     }
   };
@@ -925,7 +927,7 @@ export default function App() {
       await loadMvpBootstrap(activeRole);
       return true;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось обновить источник");
+      notifyError(error.message || "Не удалось обновить источник");
       return false;
     }
   };
@@ -939,7 +941,7 @@ export default function App() {
       await loadMvpBootstrap(activeRole);
       return true;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось удалить источник");
+      notifyError(error.message || "Не удалось удалить источник");
       return false;
     }
   };
@@ -972,9 +974,10 @@ export default function App() {
         "Продажа абонемента",
         `Абонемент продан ученику (${payload.studentId}) на сумму ${payload.price} тг`
       );
+      toast.success("Абонемент продан");
       return true;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось продать абонемент");
+      notifyError(error.message || "Не удалось продать абонемент");
       return false;
     }
   };
@@ -1123,7 +1126,7 @@ export default function App() {
       addAuditLog("Восстановление ученика", `Ученик возвращён из корзины (${id})`);
       return true;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось восстановить ученика");
+      notifyError(error.message || "Не удалось восстановить ученика");
       return false;
     }
   };
@@ -1140,7 +1143,7 @@ export default function App() {
       addAuditLog("Удаление ученика", `Владелец подтвердил удаление (${id})`);
       return true;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось удалить ученика");
+      notifyError(error.message || "Не удалось удалить ученика");
       return false;
     }
   };
@@ -1166,7 +1169,7 @@ export default function App() {
       addAuditLog("Добавление преподавателя", `Добавлен ${data.name} (роль: ${data.role || "teacher"})`);
       return true;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось добавить преподавателя");
+      notifyError(error.message || "Не удалось добавить преподавателя");
       return false;
     }
   };
@@ -1182,7 +1185,7 @@ export default function App() {
       addAuditLog("Изменение преподавателя", `Обновлён ${data.name || id}`);
       return true;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось обновить преподавателя");
+      notifyError(error.message || "Не удалось обновить преподавателя");
       return false;
     }
   };
@@ -1197,7 +1200,7 @@ export default function App() {
       addAuditLog("Удаление преподавателя", `Сотрудник архивирован (${id})`);
       return true;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось удалить преподавателя");
+      notifyError(error.message || "Не удалось удалить преподавателя");
       return false;
     }
   };
@@ -1215,7 +1218,7 @@ export default function App() {
       addAuditLog("Создание филиала", `Добавлен филиал ${data.name} (${data.city})`);
       return true;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось создать филиал");
+      notifyError(error.message || "Не удалось создать филиал");
       return false;
     }
   };
@@ -1232,7 +1235,7 @@ export default function App() {
       addAuditLog("Изменение филиала", `Обновлён филиал ${data.name || id}`);
       return true;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось обновить филиал");
+      notifyError(error.message || "Не удалось обновить филиал");
       return false;
     }
   };
@@ -1248,7 +1251,7 @@ export default function App() {
       addAuditLog("Удаление филиала", `Филиал архивирован (${id})`);
       return true;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось удалить филиал");
+      notifyError(error.message || "Не удалось удалить филиал");
       return false;
     }
   };
@@ -1268,9 +1271,10 @@ export default function App() {
       });
       if (!response.ok) throw new Error(await response.text());
       await loadMvpBootstrap(activeRole);
+      toast.success("Группа создана");
       return true;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось создать группу");
+      notifyError(error.message || "Не удалось создать группу");
       return false;
     }
   };
@@ -1288,9 +1292,10 @@ export default function App() {
       });
       if (!response.ok) throw new Error(await response.text());
       await loadMvpBootstrap(activeRole);
+      toast.success("Группа обновлена");
       return true;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось обновить группу");
+      notifyError(error.message || "Не удалось обновить группу");
       return false;
     }
   };
@@ -1326,7 +1331,7 @@ export default function App() {
       await loadMvpBootstrap(activeRole);
       return true;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось создать зал");
+      notifyError(error.message || "Не удалось создать зал");
       return false;
     }
   };
@@ -1342,7 +1347,7 @@ export default function App() {
       await loadMvpBootstrap(activeRole);
       return true;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось обновить зал");
+      notifyError(error.message || "Не удалось обновить зал");
       return false;
     }
   };
@@ -1357,7 +1362,7 @@ export default function App() {
       await loadMvpBootstrap(activeRole);
       return true;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось удалить зал");
+      notifyError(error.message || "Не удалось удалить зал");
       return false;
     }
   };
@@ -1400,9 +1405,10 @@ export default function App() {
       if (!response.ok) throw new Error(await response.text());
       const { lesson } = await response.json();
       setScheduleItems((prev) => [...prev, lesson].sort((a, b) => a.startsAt.localeCompare(b.startsAt)));
+      toast.success("Урок создан");
       return true;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось создать урок");
+      notifyError(error.message || "Не удалось создать урок");
       return false;
     }
   };
@@ -1421,7 +1427,7 @@ export default function App() {
       setScheduleItems((prev) => prev.map((item) => (item.id === id ? lesson : item)));
       return true;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось обновить урок");
+      notifyError(error.message || "Не удалось обновить урок");
       return false;
     }
   };
@@ -1436,7 +1442,7 @@ export default function App() {
       setScheduleItems((prev) => prev.map((item) => (item.id === id ? { ...item, status: "cancelled" } : item)));
       return true;
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось отменить урок");
+      notifyError(error.message || "Не удалось отменить урок");
       return false;
     }
   };
@@ -1494,9 +1500,10 @@ export default function App() {
       if (!response.ok) throw new Error(await response.text());
       await loadMvpBootstrap(activeRole);
       setShowAddPaymentModal(false);
+      toast.success("Оплата зарегистрирована");
       addAuditLog("Регистрация оплаты", `Студент ${activeStud.name} оплатил ${paymentAmount} ₸. Способ: ${paymentMethod}`);
     } catch (error: any) {
-      setMvpDataError(error.message || "Не удалось зарегистрировать оплату");
+      notifyError(error.message || "Не удалось зарегистрировать оплату");
     }
   };
 
@@ -1596,7 +1603,7 @@ export default function App() {
         await loadMvpBootstrap(activeRole);
         return;
       } catch (error: any) {
-        setMvpDataError(error.message || "Не удалось отметить посещаемость в Supabase");
+        notifyError(error.message || "Не удалось отметить посещаемость в Supabase");
       }
     }
 
@@ -1664,7 +1671,7 @@ export default function App() {
         addAuditLog("Заметка преподавателя", `${kind === "praise" ? "Похвала" : "Заметка"} для ученика (${studentId})`);
         return;
       } catch (error: any) {
-        setMvpDataError(error.message || "Не удалось сохранить заметку в Supabase");
+        notifyError(error.message || "Не удалось сохранить заметку в Supabase");
       }
     }
     const note: StudentProgressNote = {
@@ -1705,7 +1712,7 @@ export default function App() {
         addAuditLog("Домашнее задание", `Выдано «${data.title}»`);
         return hw;
       } catch (error: any) {
-        setMvpDataError(error.message || "Не удалось выдать задание в Supabase");
+        notifyError(error.message || "Не удалось выдать задание в Supabase");
       }
     }
     const hw: Homework = {
@@ -1734,7 +1741,7 @@ export default function App() {
         });
         if (!response.ok) throw new Error(await response.text());
       } catch (error: any) {
-        setMvpDataError(error.message || "Не удалось обновить задание");
+        notifyError(error.message || "Не удалось обновить задание");
       }
     }
     setTeacherHomework((prev) => prev.map((h) => (h.id === id ? { ...h, ...patch } as Homework : h)));
@@ -1760,7 +1767,7 @@ export default function App() {
         addAuditLog("Массовая посещаемость", `Группа ${groupId}: отмечено ${payload.marked} учеников (${status})`);
         return payload.marked || 0;
       } catch (error: any) {
-        setMvpDataError(error.message || "Не удалось отметить группу в Supabase");
+        notifyError(error.message || "Не удалось отметить группу в Supabase");
       }
     }
     let count = 0;
@@ -1883,7 +1890,7 @@ export default function App() {
         addAuditLog("Безопасная реакция", `Записана реакция «${reactionKey}»`);
         return true;
       } catch (error: any) {
-        setMvpDataError(error.message || "Не удалось сохранить реакцию");
+        notifyError(error.message || "Не удалось сохранить реакцию");
         return false;
       }
     }
@@ -2286,7 +2293,7 @@ export default function App() {
             body: notifFormContent,
             channel: notifChannels.sms ? "sms" : "whatsapp"
           })
-        }).catch((error) => setMvpDataError(error.message || "Не удалось сохранить уведомление"));
+        }).catch((error) => notifyError(error.message || "Не удалось сохранить уведомление"));
 
         // 3. Queue in-app simulated alerts for parent/student simulation
         const liveAlert = {
