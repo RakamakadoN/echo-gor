@@ -267,6 +267,9 @@ export default function StudentsRegistry({
 
   // Оптимистичные правки (статус/ручной статус) — переживают перезагрузку bootstrap.
   const [overrides, setOverrides] = useState<Record<string, Partial<Student>>>({});
+  // Модалка «дата обещанной оплаты» (для ручного статуса «… оплатит»).
+  const [promptPromise, setPromptPromise] = useState<{ ids: string[]; value: string } | null>(null);
+  const [promiseDateVal, setPromiseDateVal] = useState("");
   const data: Student[] = useMemo(
     () => students.map((s) => (overrides[s.id] ? { ...s, ...overrides[s.id] } : s)),
     [students, overrides]
@@ -526,45 +529,46 @@ export default function StudentsRegistry({
   const applyOverride = (id: string, patch: Partial<Student>) =>
     setOverrides((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
 
-  const massSetStatus = async (value: string) => {
-    if (!value) return;
+  // Применить статус к ученикам (общая логика). Ручной «оплатит» несёт дату дожима.
+  const applyStatus = async (ids: string[], value: string, promiseDate: string | null) => {
     const manual = getManualStatuses().includes(value);
-    // Статус «… оплатит» — спрашиваем дату обещанной оплаты для контроля дожима.
-    let promiseDate: string | null = null;
-    if (manual && /оплат/i.test(value)) {
-      const today = new Date().toISOString().slice(0, 10);
-      const input = window.prompt("Дата обещанной оплаты (ГГГГ-ММ-ДД):", today);
-      if (input === null) return; // отмена
-      promiseDate = input.trim() || null;
-    }
     const payload: StudentInput = manual
       ? { manualStatus: value, status: value === "Каникулы" || value === "Медицинская пауза" ? "paused" : undefined, ...(promiseDate !== null ? { payPromiseDate: promiseDate } : {}) }
       : { status: value, manualStatus: null, payPromiseDate: null };
-    for (const s of selectedStudents) {
-      applyOverride(s.id, manual ? { manualStatus: value, ...(promiseDate ? { payPromiseDate: promiseDate } : {}) } : { status: value, manualStatus: null, payPromiseDate: null });
-      if (onUpdateStudent) await onUpdateStudent(s.id, payload);
+    for (const id of ids) {
+      applyOverride(id, manual ? { manualStatus: value, ...(promiseDate ? { payPromiseDate: promiseDate } : {}) } : { status: value, manualStatus: null, payPromiseDate: null });
+      if (onUpdateStudent) await onUpdateStudent(id, payload);
     }
-    setMassNote(`Статус «${value}» применён к ${selectedStudents.length} ученикам`);
+  };
+
+  // Ручной статус «… оплатит» требует дату обещанной оплаты (спрашиваем календарём).
+  const needsPromiseDate = (value: string) => getManualStatuses().includes(value) && /оплат/i.test(value);
+
+  const massSetStatus = async (value: string) => {
+    if (!value) return;
+    const ids = selectedStudents.map((s) => s.id);
+    if (needsPromiseDate(value)) { setPromiseDateVal(new Date().toISOString().slice(0, 10)); setPromptPromise({ ids, value }); return; }
+    await applyStatus(ids, value, null);
+    setMassNote(`Статус «${value}» применён к ${ids.length} ученикам`);
     clearSelection();
   };
 
   // Смена статуса одного ученика (для карточки).
   const setStudentStatus = async (id: string, value: string) => {
     if (!value || !onUpdateStudent) return;
-    const manual = getManualStatuses().includes(value);
-    let promiseDate: string | null = null;
-    if (manual && /оплат/i.test(value)) {
-      const today = new Date().toISOString().slice(0, 10);
-      const input = window.prompt("Дата обещанной оплаты (ГГГГ-ММ-ДД):", today);
-      if (input === null) return;
-      promiseDate = input.trim() || null;
-    }
-    const payload: StudentInput = manual
-      ? { manualStatus: value, status: value === "Каникулы" || value === "Медицинская пауза" ? "paused" : undefined, ...(promiseDate !== null ? { payPromiseDate: promiseDate } : {}) }
-      : { status: value, manualStatus: null, payPromiseDate: null };
-    applyOverride(id, manual ? { manualStatus: value, ...(promiseDate ? { payPromiseDate: promiseDate } : {}) } : { status: value, manualStatus: null, payPromiseDate: null });
-    await onUpdateStudent(id, payload);
+    if (needsPromiseDate(value)) { setPromiseDateVal(new Date().toISOString().slice(0, 10)); setPromptPromise({ ids: [id], value }); return; }
+    await applyStatus([id], value, null);
     setMassNote(`Статус «${value}» обновлён`);
+  };
+
+  // Подтверждение даты обещанной оплаты из модалки-календаря → применяем статус.
+  const confirmPromiseDate = async () => {
+    if (!promptPromise) return;
+    const { ids, value } = promptPromise;
+    setPromptPromise(null);
+    await applyStatus(ids, value, promiseDateVal || null);
+    setMassNote(`Статус «${value}» применён`);
+    if (ids.length > 1) clearSelection();
   };
 
   const massTransferGroup = async (groupId: string) => {
@@ -1185,6 +1189,29 @@ export default function StudentsRegistry({
           onConfirm={confirmArchive}
           onCancel={() => setArchiveModal(null)}
         />
+      )}
+
+      {/* Дата обещанной оплаты — всплывающий календарь (заменяет window.prompt). */}
+      {promptPromise && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 p-4" onClick={() => setPromptPromise(null)}>
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl" style={{ border: `1px solid ${CLR.border}` }} onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-base font-black" style={{ color: CLR.strong }}>Дата обещанной оплаты</h3>
+            <p className="mt-1 text-xs" style={{ color: CLR.muted }}>Статус «{promptPromise.value}» — до какого числа ученик обещал оплатить.</p>
+            <input
+              type="date"
+              value={promiseDateVal}
+              min={new Date().toISOString().slice(0, 10)}
+              onChange={(e) => setPromiseDateVal(e.target.value)}
+              autoFocus
+              className="mt-3 w-full rounded-[10px] px-3 py-2 text-sm outline-none"
+              style={{ background: CLR.fill, border: `1px solid ${CLR.border}`, color: CLR.text }}
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => setPromptPromise(null)} className="rounded-[10px] px-4 py-2 text-sm font-bold" style={{ border: `1px solid ${CLR.border}`, color: CLR.second }}>Отмена</button>
+              <button onClick={confirmPromiseDate} className="rounded-[10px] px-4 py-2 text-sm font-black text-white" style={{ background: CLR.gold }}>Сохранить статус</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
