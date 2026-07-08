@@ -3407,6 +3407,8 @@ export default function App() {
               onUpdateStudent={handleUpdateStudent}
               onDeleteStudent={handleDeleteStudent}
               onArchiveStudent={handleArchiveStudent}
+              onUnarchiveStudent={handleUnarchiveStudent}
+              studentArchive={studentArchive}
               onCreateAnnouncement={handleCreateAnnouncement}
               onOpenPayment={openPaymentForStudent}
               onSellSubscription={handleSellSubscription}

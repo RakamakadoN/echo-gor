@@ -24,11 +24,13 @@ import {
   Sparkles,
   TrendingUp,
   Users,
-  WalletCards
+  WalletCards,
+  Archive,
 } from "lucide-react";
 import { Announcement, AnnouncementAudience, Attendance, Branch, Competition, Group, Hall, Payment, Student, SubscriptionPlan, Teacher, LeadSource, WaitlistEntry } from "../types";
 import StudentManagementCard, { SellSubscriptionInput } from "./StudentManagementCard";
 import StudentsRegistry from "./StudentsRegistry";
+import StudentsArchiveView from "./StudentsArchiveView";
 import AttendanceJournalView from "./AttendanceJournalView";
 import { PayrollView, ProductsView } from "./OwnerExecutiveWorkspace";
 
@@ -55,6 +57,8 @@ interface BranchManagerWorkspaceProps {
   onUpdateStudent?: (id: string, data: any) => Promise<boolean>;
   onDeleteStudent?: (id: string) => Promise<boolean>;
   onArchiveStudent?: (id: string, reason: string, comment: string) => Promise<boolean | void> | void;
+  onUnarchiveStudent?: (id: string) => Promise<unknown> | void;
+  studentArchive?: any[];
   leadSources?: LeadSource[];
   waitlist?: WaitlistEntry[];
   onAddToWaitlist?: (payload: { studentId: string; branchId?: string | null; groupId?: string | null; comment?: string | null }) => Promise<boolean>;
@@ -69,11 +73,12 @@ interface BranchManagerWorkspaceProps {
   onJournalTask?: (p: { studentId: string; studentName: string; title: string }) => void;
 }
 
-type BranchTab = "dashboard" | "students" | "teachers" | "groups" | "schedule" | "journal" | "finance" | "payroll" | "products" | "announcements" | "quality" | "ai" | "settings";
+type BranchTab = "dashboard" | "students" | "archive" | "teachers" | "groups" | "schedule" | "journal" | "finance" | "payroll" | "products" | "announcements" | "quality" | "ai" | "settings";
 
 const branchTabs: { id: BranchTab; label: string; short: string; icon: React.ElementType }[] = [
   { id: "dashboard", label: "Dashboard", short: "Главная", icon: Activity },
   { id: "students", label: "Ученики", short: "Ученики", icon: Users },
+  { id: "archive", label: "Архив", short: "Архив", icon: Archive },
   { id: "teachers", label: "Преподаватели", short: "Педагоги", icon: GraduationCap },
   { id: "groups", label: "Группы", short: "Группы", icon: BookOpen },
   { id: "schedule", label: "Расписание", short: "Расписание", icon: CalendarDays },
@@ -110,6 +115,8 @@ export function BranchManagerWorkspace({
   onUpdateStudent,
   onDeleteStudent,
   onArchiveStudent,
+  onUnarchiveStudent,
+  studentArchive = [],
   waitlist = [],
   onAddToWaitlist,
   onRemoveFromWaitlist,
@@ -245,6 +252,14 @@ export function BranchManagerWorkspace({
               waitlist={waitlist}
               onAddToWaitlist={onAddToWaitlist}
               onRemoveFromWaitlist={onRemoveFromWaitlist}
+            />
+          )}
+          {activeTab === "archive" && (
+            <StudentsArchiveView
+              archive={studentArchive}
+              students={branchStudents}
+              branches={branch ? [branch] : []}
+              onUnarchive={onUnarchiveStudent}
             />
           )}
           {activeTab === "teachers" && <TeachersView teachers={branchTeachers} groups={branchGroups} students={branchStudents} />}
