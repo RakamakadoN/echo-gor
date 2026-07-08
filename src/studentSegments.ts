@@ -184,6 +184,19 @@ export const needsRenewal = (student: Student, now: Date = new Date()): boolean 
   return !covered;
 };
 
+/** Частично оплачено: ученик занимается И в группе, И индивидуально (в истории есть
+ *  оба типа абонемента), но сейчас оплачен/действует только один из них. */
+export const isPartiallyPaid = (student: Student, now: Date = new Date()): boolean => {
+  if (isLeft(student) || isPaused(student)) return false;
+  const subs = student.subscriptions || [];
+  const hasHistory = (kind: string) => subs.some((s) => (s.kind || "group") === kind);
+  if (!(hasHistory("group") && hasHistory("individual"))) return false; // нет обоих типов — не про частичную оплату
+  const activeCovering = (kind: string) => subs.some((s) => s.status === "active" && (s.kind || "group") === kind
+    && (() => { const u = parseDate(s.validUntil); return !u || u.getTime() >= now.getTime(); })());
+  const g = activeCovering("group"), i = activeCovering("individual");
+  return (g && !i) || (!g && i); // один оплачен, другой — нет
+};
+
 /* ============================ Флаги статуса (по БД) ============================ */
 /* status в БД: lead | trial | active | paused | debt | left | archived
    + опционально вернувшийся (поле returned / manualStatus). */
@@ -357,6 +370,11 @@ export const getStudentState = (student: Student, now: Date = new Date()): Stude
       statusLabel = "Не оплачен текущий месяц";
       tone = "red";
     }
+  } else if (isPartiallyPaid(student, now)) {
+    // Занимается в группе и индивидуально — оплачен только один тип.
+    statusKey = "partially_paid";
+    statusLabel = "Частично оплачено";
+    tone = "yellow";
   } else if (student.status === "lead") {
     statusKey = "lead";
     statusLabel = "Новый лид";

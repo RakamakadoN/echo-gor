@@ -54,6 +54,7 @@ export interface SellSubscriptionInput {
   method: "cash" | "card" | "transfer" | "kaspi" | "other";
   description?: string;
   paid: boolean;
+  kind?: "group" | "individual";
 }
 
 export interface StudentManagementCardProps {
@@ -1209,6 +1210,7 @@ function SellSubscriptionPanel({
   const [disabledDates, setDisabledDates] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState<null | "save" | "sell">(null);
   const [error, setError] = useState<string | null>(null);
+  const [kind, setKind] = useState<"group" | "individual">("group");
 
   const plan = activePlans.find((p) => p.id === planId);
   const basePrice = plan?.price || 0;
@@ -1265,7 +1267,7 @@ function SellSubscriptionPanel({
       const ok = await onSubmit({
         studentId: student.id,
         branchId: student.branchId,
-        groupId: student.groupIds?.[0],
+        groupId: kind === "individual" ? undefined : student.groupIds?.[0],
         planId: plan.id,
         startsOn,
         endsOn,
@@ -1274,8 +1276,9 @@ function SellSubscriptionPanel({
         discountAmount,
         recalc: recalcAmount,
         method: SELL_METHODS[methodIdx].value,
-        description: `Абонемент: ${plan.name}`,
+        description: `${kind === "individual" ? "Индивидуальный абонемент" : "Абонемент"}: ${plan.name}`,
         paid,
+        kind,
       });
       if (ok !== false) onClose();
       else setError("Не удалось сохранить абонемент");
@@ -1325,7 +1328,14 @@ function SellSubscriptionPanel({
           {/* Параметры */}
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-1">
-              <span className="text-xs font-semibold text-slate-500">Тип абонемента</span>
+              <span className="text-xs font-semibold text-slate-500">Форма занятий</span>
+              <select value={kind} onChange={(e) => setKind(e.target.value as "group" | "individual")} className={fieldCls}>
+                <option value="group">Групповой</option>
+                <option value="individual">Индивидуальный</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-semibold text-slate-500">Тариф</span>
               <select value={planId} onChange={(e) => setPlanId(e.target.value)} className={fieldCls}>
                 {activePlans.map((p) => (
                   <option key={p.id} value={p.id}>

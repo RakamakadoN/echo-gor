@@ -217,6 +217,7 @@ export interface Subscription {
   startsOn?: string; // YYYY-MM-DD, дата начала
   discountAmount?: number; // скидка + перерасчёт, тг
   groupId?: string | null;
+  kind?: 'group' | 'individual'; // групповой | индивидуальный абонемент
 }
 
 export interface Achievement {
