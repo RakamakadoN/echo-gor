@@ -287,13 +287,10 @@ export const getStudentState = (student: Student, now: Date = new Date()): Stude
     statusKey = "left";
     statusLabel = "Ушедший ученик";
     tone = "gray";
-  } else if (isPaused(student)) {
-    statusKey = "paused";
-    statusLabel = "Замороженный абонемент";
-    tone = "neutral";
   } else if (student.manualStatus) {
+    // Ручной статус (выставлен управляющим) приоритетнее авто-«паузы»:
+    // «Каникулы»/«Медпауза» ставят status=paused, но показать надо сам ручной статус.
     statusKey = "manual";
-    // Ручной статус «… оплатит» — показываем дату дожима и подсвечиваем просрочку.
     const promise = parseDate(student.payPromiseDate);
     if (promise && /оплат/i.test(student.manualStatus)) {
       const overdue = promise.getTime() < now.getTime();
@@ -303,6 +300,10 @@ export const getStudentState = (student: Student, now: Date = new Date()): Stude
       statusLabel = student.manualStatus;
       tone = isReturned(student) ? "purple" : "neutral";
     }
+  } else if (isPaused(student)) {
+    statusKey = "paused";
+    statusLabel = "Замороженный абонемент";
+    tone = "neutral";
   } else if (
     !hasActiveSub &&
     !trial.converted &&
@@ -484,7 +485,9 @@ export const STATUS_FILTER_OPTIONS: { value: string; label: string }[] = [
 export const matchStatusFilter = (student: Student, value: string, now: Date = new Date()): boolean => {
   if (value === "all") return true;
   const seg = SEGMENTS.find((x) => x.id === (value as SegmentId));
-  return seg ? seg.match(student, now) : true;
+  if (seg) return seg.match(student, now);
+  // Ручной статус: точное совпадение (фильтр по любому ручному статусу).
+  return (student.manualStatus || "") === value;
 };
 
 /* ============================ Справочные данные UI ============================ */

@@ -894,7 +894,7 @@ export default function StudentsRegistry({
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: CLR.muted }} />
               <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Поиск по имени, телефону…" className="w-full rounded-[10px] py-2 pl-9 pr-3 text-[13px] outline-none" style={{ background: CLR.fill, border: `1px solid ${CLR.border}`, color: CLR.text }} />
             </div>
-            <FilterSelect value={presetIds ? "all" : statusFilter} onChange={(v) => { clearPreset(); setStatusFilter(v); }} options={STATUS_FILTER_OPTIONS} />
+            <FilterSelect value={presetIds ? "all" : statusFilter} onChange={(v) => { clearPreset(); setStatusFilter(v); }} options={[...STATUS_FILTER_OPTIONS, ...getManualStatuses().map((s) => ({ value: s, label: s }))]} />
             <FilterSelect value={branchFilter} onChange={(v) => { clearPreset(); setBranchFilter(v); }} options={[{ value: "all", label: "Все филиалы" }, ...branches.map((b) => ({ value: b.id, label: b.name || b.city }))]} />
             <FilterSelect value={presetIds ? "all" : groupFilter} onChange={(v) => { clearPreset(); setGroupFilter(v); }} options={[{ value: "all", label: "Все группы" }, ...visibleGroups.map((g) => ({ value: g.id, label: g.name }))]} />
             <FilterSelect value={presetIds ? "all" : ltvFilter} onChange={(v) => { clearPreset(); setLtvFilter(v); }} options={[{ value: "all", label: "Все LTV" }, ...LTV_SEGMENTS.map((s) => ({ value: s, label: s }))]} />
