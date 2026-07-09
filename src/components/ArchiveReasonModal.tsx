@@ -11,12 +11,15 @@ export function ArchiveReasonModal({
   title,
   subtitle,
   busy = false,
+  warning,
   onConfirm,
   onCancel
 }: {
   title: string;
   subtitle?: string;
   busy?: boolean;
+  /** Предупреждение о последствиях (напр. у ученика есть действующий абонемент). */
+  warning?: string;
   onConfirm: (reason: string, comment: string, leftOn: string) => void;
   onCancel: () => void;
 }) {
@@ -59,6 +62,12 @@ export function ArchiveReasonModal({
             <X className="h-5 w-5" />
           </button>
         </div>
+
+        {warning && (
+          <p className="mt-4 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-300">
+            ⚠️ {warning}
+          </p>
+        )}
 
         <p className="mt-4 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-400">
           Данные ученика сохранятся в базе — история оплат, посещений и групп. Архив нужен для будущих

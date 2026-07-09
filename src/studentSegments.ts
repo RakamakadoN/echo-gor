@@ -173,15 +173,17 @@ export const hasNextMonthPaid = (student: Student, now: Date = new Date()): bool
   });
 };
 
-/** Абонемент действует ПРЯМО СЕЙЧАС: активный, уже начался (startsOn ≤ сегодня)
- *  и ещё не закончился (validUntil ≥ сегодня, либо бессрочный). Предоплата
- *  будущего месяца (startsOn в будущем) сейчас НЕ покрывает. */
+/** Абонемент покрывает ТЕКУЩИЙ месяц: активный, не истёк (validUntil ≥ сегодня)
+ *  и начинается НЕ в следующем месяце. Абонемент, стартующий позже, но в этом же
+ *  месяце (первый урок ещё впереди), считается действующим — ученик уже оплатил и
+ *  зачислен. Предоплата СЛЕДУЮЩЕГО месяца сюда НЕ входит — это статус next_paid. */
 const subCoversNow = (s: Subscription, now: Date): boolean => {
   if (s.status !== "active") return false;
-  const start = parseDate(s.startsOn);
-  if (start && start.getTime() > now.getTime()) return false;
   const end = parseDate(s.validUntil);
-  if (end && end.getTime() < now.getTime()) return false;
+  if (end && end.getTime() < now.getTime()) return false;               // уже закончился
+  const start = parseDate(s.startsOn);
+  const startOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  if (start && start.getTime() >= startOfNextMonth.getTime()) return false; // стартует в след. месяце → next_paid
   return true;
 };
 

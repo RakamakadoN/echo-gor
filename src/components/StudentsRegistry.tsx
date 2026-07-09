@@ -1213,15 +1213,23 @@ export default function StudentsRegistry({
 
       {showStatusSettings && <StatusSettings roleHeader={roleHeader} onClose={() => setShowStatusSettings(false)} />}
 
-      {archiveModal && (
+      {archiveModal && (() => {
+        const withSub = archiveModal.filter((s) => hasCoveringSubscription(s));
+        const warning = withSub.length === 0 ? undefined
+          : archiveModal.length === 1
+            ? "У ученика есть действующий абонемент. В архив переводят ушедших — убедитесь, что он действительно перестал ходить (или сначала завершите/удалите абонемент)."
+            : `У ${withSub.length} из ${archiveModal.length} выбранных есть действующий абонемент. Обычно в архив переводят ушедших — проверьте список.`;
+        return (
         <ArchiveReasonModal
           title={archiveModal.length === 1 ? `В архив: ${archiveModal[0].name}` : `В архив: ${archiveModal.length} учеников`}
           subtitle="Укажите причину ухода и комментарий"
           busy={archiveBusy}
+          warning={warning}
           onConfirm={confirmArchive}
           onCancel={() => setArchiveModal(null)}
         />
-      )}
+        );
+      })()}
 
       {/* Дата обещанной оплаты — всплывающий календарь (заменяет window.prompt). */}
       {promptPromise && (

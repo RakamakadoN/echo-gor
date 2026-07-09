@@ -73,6 +73,7 @@ import {
 import { ResponsiveContainer } from "./SafeResponsiveContainer";
 import StudentManagementCard, { SellSubscriptionInput } from "./StudentManagementCard";
 import { statusSwatch } from "../statusConfig";
+import { hasCoveringSubscription } from "../studentSegments";
 import StudentsRegistry, { type RegistryPreset } from "./StudentsRegistry";
 import ReactivationPanel from "./ReactivationPanel";
 import GroupScheduleGrid from "./GroupScheduleGrid";
@@ -2465,6 +2466,9 @@ function StudentsNetworkView({ students, branches, groups, teachers, onCreateStu
           title={`В архив: ${archiveTarget.name}`}
           subtitle="Укажите причину ухода и комментарий"
           busy={archiveBusy}
+          warning={hasCoveringSubscription(archiveTarget)
+            ? "У ученика есть действующий абонемент. В архив переводят ушедших — убедитесь, что он действительно перестал ходить (или сначала завершите/удалите абонемент)."
+            : undefined}
           onConfirm={confirmArchive}
           onCancel={() => setArchiveTarget(null)}
         />
