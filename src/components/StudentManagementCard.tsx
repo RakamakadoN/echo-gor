@@ -37,6 +37,7 @@ import {
 import QRCode from "qrcode";
 import { Branch, Group, LeadSource, Student, Subscription, SubscriptionPlan, Teacher } from "../types";
 import { getEnrollmentMonths, formatDuration, getLtvSegment, LTV_BADGE } from "../studentSegments";
+import { requestDataRefresh } from "../dataRefresh";
 import { parseGroupDays } from "./GroupScheduleGrid";
 
 /** Полезная нагрузка продажи абонемента из инлайн-формы карточки. */
@@ -171,6 +172,9 @@ export default function StudentManagementCard({
     const res = await fetch(`/api/mvp/student-subscriptions/${subId}`, { method: "DELETE", headers: accessHeaders(), body: JSON.stringify({ reason, comment }) });
     if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as any).error || "Не удалось удалить абонемент");
     setSubDeletes((m) => ({ ...m, [subId]: { status: "deleted", cancelReason: reason, cancelComment: comment || null, deletedAt: new Date().toISOString(), deletedBy: "вы" } }));
+    // Перезагрузить глобальный список — иначе после закрытия карточки удалённый
+    // абонемент «воскресает» активным и статус ученика не пересчитывается.
+    requestDataRefresh();
   };
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);

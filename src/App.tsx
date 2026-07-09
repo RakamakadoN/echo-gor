@@ -13,8 +13,11 @@ import type { SellSubscriptionInput } from "./components/StudentManagementCard";
 import { fetchStatusConfig } from "./statusConfig";
 import { AnimatedBarChartShowcase } from "./components/AnimatedBarChartShowcase";
 import { MagomedAssistant } from "./components/MagomedAssistant";
+import { EchoOrderNotifier } from "./components/EchoOrderNotifier";
 import ToastHost from "./components/ToastHost";
 import { toast } from "./toast";
+import { subscribeDataRefresh } from "./dataRefresh";
+import { formatPhoneInput, isValidPhone, normalizePhone } from "./phone";
 // @ts-ignore
 import logoImg from "./assets/images/echogor_logo_1780297382250.png";
 // @ts-ignore
@@ -465,6 +468,11 @@ export default function App() {
     loadMvpBootstrap(activeRole);
   }, [activeRole]);
 
+  // Прямые API-мутации в глубине дерева (напр. удаление абонемента в карточке
+  // ученика) просят перезагрузить bootstrap — иначе изменение «воскресает» при
+  // повторном открытии карточки, т.к. глобальный список остаётся прежним.
+  useEffect(() => subscribeDataRefresh(() => { loadMvpBootstrap(activeRole); }), [activeRole]);
+
   // Применить успешный вход ученика (общий путь для ссылки/QR и кода).
   const applyStudentAuth = (data: any, fallbackToken?: string) => {
     setStudentAccessToken(data?.token || fallbackToken || "");
@@ -664,6 +672,10 @@ export default function App() {
   const registerNewStudent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newStudentName) return;
+    if (!isValidPhone(newStudentPhone)) {
+      notifyError("Укажите корректный телефон контакта: +7 и 10 цифр");
+      return;
+    }
 
     try {
       const response = await fetch("/api/mvp/students", {
@@ -678,7 +690,7 @@ export default function App() {
           branchId: newStudentBranch,
           groupIds: newStudentGroup ? [newStudentGroup] : [],
           parentName: newStudentParent,
-          parentPhone: newStudentPhone
+          parentPhone: normalizePhone(newStudentPhone)
         })
       });
       if (!response.ok) throw new Error(await response.text());
@@ -6484,11 +6496,15 @@ export default function App() {
                   <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Телефон контакта</label>
                   <input
                     type="tel"
+                    inputMode="tel"
                     value={newStudentPhone}
-                    onChange={(e) => setNewStudentPhone(e.target.value)}
-                    placeholder="+7 (928) 001-11-22"
-                    className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white"
+                    onChange={(e) => setNewStudentPhone(formatPhoneInput(e.target.value))}
+                    placeholder="+7 (701) 001-11-22"
+                    className={`w-full bg-black/40 border rounded-xl px-3 py-2 text-xs text-white ${newStudentPhone && !isValidPhone(newStudentPhone) ? "border-rose-500/60" : "border-white/10"}`}
                   />
+                  {newStudentPhone && !isValidPhone(newStudentPhone) && (
+                    <p className="mt-1 text-[10px] text-rose-400">Введите номер полностью: +7 и 10 цифр</p>
+                  )}
                 </div>
               </div>
 
@@ -7416,6 +7432,12 @@ export default function App() {
             roleHeader={getMvpRoleHeader()}
             roleLabel={roles.find((r) => r.id === activeRole)?.name}
           />
+        )}
+
+      {/* ИИ-уведомление о новых заявках магазина (ТЗ §3.5) — персонал, обрабатывающий заявки */}
+      {!isPlayingPromo &&
+        ["owner", "branch", "admin"].includes(activeRole) && (
+          <EchoOrderNotifier roleHeader={getMvpRoleHeader()} />
         )}
 
     </div>

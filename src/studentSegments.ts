@@ -173,6 +173,34 @@ export const hasNextMonthPaid = (student: Student, now: Date = new Date()): bool
   });
 };
 
+/** Абонемент действует ПРЯМО СЕЙЧАС: активный, уже начался (startsOn ≤ сегодня)
+ *  и ещё не закончился (validUntil ≥ сегодня, либо бессрочный). Предоплата
+ *  будущего месяца (startsOn в будущем) сейчас НЕ покрывает. */
+const subCoversNow = (s: Subscription, now: Date): boolean => {
+  if (s.status !== "active") return false;
+  const start = parseDate(s.startsOn);
+  if (start && start.getTime() > now.getTime()) return false;
+  const end = parseDate(s.validUntil);
+  if (end && end.getTime() < now.getTime()) return false;
+  return true;
+};
+
+/** Есть ли у ученика действующий сейчас абонемент. */
+export const hasCoveringSubscription = (student: Student, now: Date = new Date()): boolean =>
+  (student.subscriptions || []).some((s) => subCoversNow(s, now));
+
+/** Куплен ли абонемент ВПЕРВЫЕ в текущем месяце: самая ранняя покупка в истории
+ *  (по дате продажи soldOn, иначе по дате начала) приходится на текущий месяц.
+ *  Так «Новый ученик» = тот, кто впервые оплатил абонемент в этом месяце. */
+export const isFirstPurchaseThisMonth = (student: Student, now: Date = new Date()): boolean => {
+  const dates = (student.subscriptions || [])
+    .map((s) => parseDate(s.soldOn) || parseDate(s.startsOn))
+    .filter((d): d is Date => Boolean(d));
+  if (!dates.length) return false;
+  const first = new Date(Math.min(...dates.map((d) => d.getTime())));
+  return first.getFullYear() === now.getFullYear() && first.getMonth() === now.getMonth();
+};
+
 /** Требуют продления (ТЗ, уточнение заказчика) = НЕТ активного абонемента,
  *  покрывающего текущий месяц. Без «скоро закончится»/«мало занятий». */
 export const needsRenewal = (student: Student, now: Date = new Date()): boolean => {
@@ -288,6 +316,8 @@ export const getStudentState = (student: Student, now: Date = new Date()): Stude
   const debt = getDebt(student);
   const trial = getTrialInfo(student);
   const hasActiveSub = (student.subscriptions || []).some((s) => s.status === "active");
+  const hasAnySub = (student.subscriptions || []).length > 0;
+  const coveredNow = hasCoveringSubscription(student, now);
   // Промис «…оплатит» считается ВЫПОЛНЕННЫМ, когда абонемент уже оплачен (есть
   // активный) — тогда ручной статус не показываем, ученик идёт по авто-логике.
   const promiseFulfilled = /оплат/i.test(student.manualStatus || "") && hasActiveSub;
@@ -385,15 +415,26 @@ export const getStudentState = (student: Student, now: Date = new Date()): Stude
     statusKey = "trial";
     statusLabel = "Записан на пробный урок";
     tone = "blue";
-  } else if (!getPrimarySubscription(student) || getPrimarySubscription(student)?.status === "expired") {
-    statusKey = "not_renewed";
-    statusLabel = "Не продлил абонемент";
-    tone = "red";
-  } else if (hasNextMonthPaid(student, now)) {
+  } else if (!coveredNow && hasNextMonthPaid(student, now)) {
+    // Действующего абонемента в этом месяце нет, но следующий уже оплачен
+    // (предоплата будущего периода). Если абонемент этого месяца ЕСТЬ —
+    // сюда не попадаем и статус остаётся обычным (Активный/Новый).
     statusKey = "next_paid";
     statusLabel = "Куплен следующий месяц";
     tone = "green";
-  } else if (enrollmentMonths < 1) {
+  } else if (!hasAnySub) {
+    // Ни одного абонемента в истории (в т.ч. после отката/удаления) — это ещё
+    // потенциальный клиент, а не «не продлил».
+    statusKey = "lead";
+    statusLabel = "Новый лид";
+    tone = "blue";
+  } else if (!coveredNow) {
+    // Абонементы были, но сейчас ни один не действует — не продлил.
+    statusKey = "not_renewed";
+    statusLabel = "Не продлил абонемент";
+    tone = "red";
+  } else if (isFirstPurchaseThisMonth(student, now)) {
+    // Впервые оплатил абонемент в этом месяце.
     statusKey = "new";
     statusLabel = "Новый ученик";
     tone = "blue";

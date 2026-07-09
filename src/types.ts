@@ -214,7 +214,9 @@ export interface Subscription {
   cancelComment?: string | null;
   deletedBy?: string | null;
   deletedAt?: string | null;
-  startsOn?: string; // YYYY-MM-DD, дата начала
+  startsOn?: string; // YYYY-MM-DD, дата начала (первый урок абонемента)
+  soldOn?: string;   // ISO, дата продажи (когда абонемент оформлен) — для «первой покупки в этом месяце» и истории
+  amountPaid?: number; // внесено, тг (может быть меньше цены — тогда долг)
   discountAmount?: number; // скидка + перерасчёт, тг
   groupId?: string | null;
   kind?: 'group' | 'individual'; // групповой | индивидуальный абонемент

@@ -410,6 +410,8 @@ function mapDbStudent(row: any, attendanceByStudent: Map<string, Record<string, 
       isAutoRenew: false,
       status: sub.status === "active" ? "active" : sub.status === "archived" ? "deleted" : "expired",
       startsOn: sub.starts_on,
+      soldOn: sub.created_at || null,
+      amountPaid: sub.amount_paid != null ? Number(sub.amount_paid) : null,
       discountAmount: Number(sub.discount_amount || 0),
       groupId: sub.group_id || null,
       kind: sub.kind || "group",
@@ -448,6 +450,8 @@ function mapDbSubscription(row: any, planName?: string) {
     isAutoRenew: false,
     status: row.status === "active" ? "active" : row.status === "archived" ? "deleted" : "expired",
     startsOn: row.starts_on,
+    soldOn: row.created_at || null,
+    amountPaid: row.amount_paid != null ? Number(row.amount_paid) : null,
     discountAmount: Number(row.discount_amount || 0),
     groupId: row.group_id || null,
     kind: row.kind || "group",
@@ -1598,6 +1602,21 @@ export function registerMvpApi(app: express.Express) {
         body: JSON.stringify({ status: "archived", cancel_reason: reason, cancel_comment: comment, deleted_by: session.fullName || session.role, deleted_at: new Date().toISOString() }),
       });
       if (!rows[0]) return res.status(404).json({ error: "Абонемент не найден" });
+      // Откат (уточнение заказчика): если после удаления у ученика не осталось
+      // действующего абонемента — снимаем устаревший промис «…оплатит» и
+      // возвращаем его в воронку «Новый лид». Другой активный абонемент — не трогаем.
+      try {
+        const sid = rows[0].student_id;
+        const remain = await supabaseFetch<any[]>("student_subscriptions", `select=status&student_id=eq.${sid}&status=neq.archived`).catch(() => [] as any[]);
+        if (!remain.some((r) => String(r.status) === "active")) {
+          const stu = (await supabaseFetch<any[]>("students", `select=manual_status&id=eq.${sid}&organization_id=eq.${session.organizationId}`).catch(() => [] as any[]))[0];
+          const upd: Record<string, any> = { status: "lead" };
+          if (/оплат/i.test(String(stu?.manual_status || ""))) { upd.manual_status = null; upd.pay_promise_date = null; }
+          await supabaseFetch("students", `id=eq.${sid}&organization_id=eq.${session.organizationId}`, {
+            method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(upd),
+          }).catch(() => {});
+        }
+      } catch { /* коррекция статуса не критична для удаления */ }
       res.json({ ok: true, subscription: mapDbSubscription(rows[0]) });
     } catch (error: any) {
       res.status(400).json({ error: error.message || "Не удалось удалить абонемент" });
@@ -1645,7 +1664,7 @@ export function registerMvpApi(app: express.Express) {
     if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
     const { date, time, note } = req.body || {};
     if (!date) return res.status(400).json({ error: "Укажите дату пробного урока" });
-    const st = (await supabaseFetch<any[]>("students", `select=id,branch_id,group_id,teacher_id&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`))[0];
+    const st = (await supabaseFetch<any[]>("students", `select=id,branch_id,group_id,teacher_id,manual_status&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`))[0];
     if (!st) return res.status(404).json({ error: "Ученик не найден" });
     if (!canSeeBranch(session, st.branch_id)) return res.status(403).json({ error: "Branch access denied" });
     if (!st.group_id) return res.status(400).json({ error: "Сначала назначьте ученику группу — пробный урок записывается в группу." });
@@ -1680,8 +1699,12 @@ export function registerMvpApi(app: express.Express) {
         is_trial: true, comment: note || null, marked_at: new Date().toISOString(),
       }]);
       // Статус → пробный (getStudentState покажет «Записан на пробный урок»).
+      // Снимаем устаревший ручной промис «…оплатит», иначе он (приоритетный)
+      // заслонит новый статус записи на пробный.
+      const trialUpd: Record<string, any> = { status: "trial" };
+      if (/оплат/i.test(String(st.manual_status || ""))) { trialUpd.manual_status = null; trialUpd.pay_promise_date = null; }
       await supabaseFetch("students", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, {
-        method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ status: "trial" }),
+        method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(trialUpd),
       });
       res.json({ ok: true, lessonId, date, startsAt });
     } catch (error: any) {
@@ -4135,6 +4158,30 @@ export function registerMvpApi(app: express.Express) {
     createdAt: t.createdAt ?? t.created_at,
   });
 
+  // ЭхоБаксы: педагог работает только со «своими» учениками — из его групп
+  // (groups.teacher_id === session.userId) или закреплёнными за ним напрямую
+  // (students.teacher_id). Прочий персонал (owner/BM/admin) скоупится по филиалу
+  // через canSeeBranch — здесь возвращаем null (ограничивать не нужно). Для педагога
+  // возвращаем Set разрешённых studentId (пустой, если групп нет).
+  const teacherStudentScope = async (session: MvpSession): Promise<Set<string> | null> => {
+    if (session.role !== "teacher") return null;
+    const ids = new Set<string>();
+    if (!supabaseEnabled) {
+      const gids = new Set(initialGroups.filter((g: any) => g.teacherId === session.userId).map((g: any) => g.id));
+      for (const s of initialStudents as any[]) {
+        if (s.teacherId === session.userId || (Array.isArray(s.groupIds) && s.groupIds.some((id: string) => gids.has(id)))) ids.add(s.id);
+      }
+      return ids;
+    }
+    const groups = await supabaseFetch<any[]>("groups", `select=id&teacher_id=eq.${session.userId}&organization_id=eq.${session.organizationId}`).catch(() => [] as any[]);
+    const gids = new Set(groups.map((g) => g.id));
+    const rows = await supabaseFetch<any[]>("students", `select=id,group_id,teacher_id&organization_id=eq.${session.organizationId}`).catch(() => [] as any[]);
+    for (const s of rows) {
+      if (s.teacher_id === session.userId || (s.group_id && gids.has(s.group_id))) ids.add(s.id);
+    }
+    return ids;
+  };
+
   // Применить движение ЭхоБаксов. amount>0 — начислить, amount<0 — списать.
   // Возвращает {balance} или бросает Error("INSUFFICIENT").
   const applyEcho = async (session: MvpSession, studentId: string, amount: number, kind: string, reason: string | null, productId: string | null) => {
@@ -4178,9 +4225,14 @@ export function registerMvpApi(app: express.Express) {
     const session = getSession(req);
     const studentId = String((req.query as any).studentId || "");
     if (!studentId) return res.status(400).json({ error: "Не указан ученик" });
-    // Ученик видит только свой кошелёк; персонал — любой.
+    // Ученик видит только свой кошелёк; педагог — только учеников своих групп;
+    // прочий персонал — любой.
     if (session.role === "student" && session.studentId !== studentId) {
       return res.status(403).json({ error: "Нет доступа к чужому кошельку" });
+    }
+    const walletScope = await teacherStudentScope(session);
+    if (walletScope && !walletScope.has(studentId)) {
+      return res.status(403).json({ error: "Кошелёк доступен только по ученикам своих групп" });
     }
     if (!supabaseEnabled) {
       return res.json({ balance: mockEchoBalances[studentId] ?? 0, transactions: mockEchoTx.filter((t) => t.studentId === studentId).slice(0, 50).map(echoTxOut) });
@@ -4195,14 +4247,16 @@ export function registerMvpApi(app: express.Express) {
   app.get("/api/mvp/shop/echo/students", ah(async (req, res) => {
     const session = getSession(req);
     if (!echoStaff.includes(session.role)) return res.status(403).json({ error: "Недостаточно прав" });
+    const listScope = await teacherStudentScope(session);
     if (!supabaseEnabled) {
       const list = initialStudents
         .filter((s: any) => session.role === "owner" || canSeeBranch(session, s.branchId))
+        .filter((s: any) => !listScope || listScope.has(s.id))
         .map((s: any) => ({ id: s.id, name: s.name, balance: mockEchoBalances[s.id] ?? 0 }));
       return res.json({ students: list });
     }
     const rows = await supabaseFetch<any[]>("students", `select=id,first_name,last_name,echo_balance,branch_id&organization_id=eq.${session.organizationId}&status=neq.archived&order=first_name.asc`);
-    const scoped = rows.filter((r) => canSeeBranch(session, r.branch_id));
+    const scoped = rows.filter((r) => canSeeBranch(session, r.branch_id)).filter((r) => !listScope || listScope.has(r.id));
     res.json({ students: scoped.map((r) => ({ id: r.id, name: [r.first_name, r.last_name].filter(Boolean).join(" ") || r.full_name || "Ученик", balance: Number(r.echo_balance) || 0 })) });
   }));
 
@@ -4215,6 +4269,10 @@ export function registerMvpApi(app: express.Express) {
     const amount = Math.trunc(Number(b.amount) || 0);
     if (!studentId) return res.status(400).json({ error: "Не указан ученик" });
     if (!amount) return res.status(400).json({ error: "Укажите количество ЭхоБаксов (со знаком минус — списание)" });
+    const grantScope = await teacherStudentScope(session);
+    if (grantScope && !grantScope.has(studentId)) {
+      return res.status(403).json({ error: "Начислять ЭхоБаксы можно только ученикам своих групп" });
+    }
     try {
       const { balance, tx } = await applyEcho(session, studentId, amount, "grant", (b.reason || "").toString().trim() || null, null);
       res.json({ balance, transaction: tx });

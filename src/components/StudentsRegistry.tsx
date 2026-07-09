@@ -43,6 +43,7 @@ import {
 import { Branch, Group, LeadSource, Student, SubscriptionPlan, Teacher, WaitlistEntry } from "../types";
 import StudentManagementCard, { SellSubscriptionInput } from "./StudentManagementCard";
 import StudentsArchiveView from "./StudentsArchiveView";
+import { formatPhoneInput, isValidPhone, normalizePhone } from "../phone";
 import {
   SEGMENTS,
   SegmentId,
@@ -684,7 +685,7 @@ export default function StudentsRegistry({
     return a == null ? null : a;
   }, [form.birthday]);
 
-  const formValid = form.firstName.trim() && form.lastName.trim() && form.phone.trim() && form.branchId;
+  const formValid = form.firstName.trim() && form.lastName.trim() && isValidPhone(form.phone) && form.branchId;
 
   const saveForm = async () => {
     if (!formValid) return;
@@ -696,8 +697,8 @@ export default function StudentsRegistry({
       name: fullName,
       firstName: form.firstName.trim(),
       lastName: form.lastName.trim(),
-      phone: form.phone.trim() || undefined,
-      parentPhone: form.phone.trim() || undefined,
+      phone: normalizePhone(form.phone) || undefined,
+      parentPhone: normalizePhone(form.phone) || undefined,
       gender: form.gender || null,
       birthday: form.birthday || null,
       branchId: form.branchId || adminBranchId || branches[0]?.id,
@@ -1401,7 +1402,7 @@ function StudentFormModal({
         <div className="grid gap-4 p-6 sm:grid-cols-2">
           <FInput label="Имя *" value={form.firstName} onChange={(v) => setField({ firstName: v })} placeholder="Имя" />
           <FInput label="Фамилия *" value={form.lastName} onChange={(v) => setField({ lastName: v })} placeholder="Фамилия" />
-          <FInput label="Телефон *" value={form.phone} onChange={(v) => setField({ phone: v })} placeholder="+7 ..." />
+          <FInput label="Телефон *" value={form.phone} onChange={(v) => setField({ phone: formatPhoneInput(v) })} placeholder="+7 (701) 001-11-22" invalid={Boolean(form.phone) && !isValidPhone(form.phone)} hint={Boolean(form.phone) && !isValidPhone(form.phone) ? "Введите номер полностью: +7 и 10 цифр" : undefined} />
           <div className="flex flex-col gap-1">
             <span className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Пол</span>
             <div className="flex gap-2">
@@ -1559,11 +1560,12 @@ function SourcesManagerModal({
 }
 
 /* ---------- мелкие UI ---------- */
-function FInput({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
+function FInput({ label, value, onChange, placeholder, invalid, hint }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; invalid?: boolean; hint?: string }) {
   return (
     <label className="flex flex-col gap-1">
       <span className="text-[11px] font-bold uppercase tracking-wide text-slate-400">{label}</span>
-      <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400" />
+      <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className={`rounded-xl border px-3 py-2 text-sm outline-none ${invalid ? "border-rose-400 focus:border-rose-500" : "border-slate-200 focus:border-amber-400"}`} />
+      {hint && <span className="text-[10px] text-rose-500">{hint}</span>}
     </label>
   );
 }
