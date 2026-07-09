@@ -63,6 +63,7 @@ import {
   getWaitPriority,
   formatWaitDuration,
   WAIT_PRIORITY_META,
+  hasCoveringSubscription,
 } from "../studentSegments";
 
 type StudentInput = {
@@ -547,9 +548,33 @@ export default function StudentsRegistry({
   // Ручной статус «… оплатит» требует дату обещанной оплаты (спрашиваем календарём).
   const needsPromiseDate = (value: string) => getManualStatuses().includes(value) && /оплат/i.test(value);
 
+  // Статус воронки «пробный/оплатит/вводный» подразумевает, что ученик ещё НЕ
+  // оплатил. Вешать его на ученика с действующим абонементом нельзя — это ломает
+  // реальность (и раньше приводило к путанице с абонементами). Блокируем и
+  // объясняем последствие (система-помощник).
+  const isTrialPromiseStatus = (value: string) => /оплат|пробн|вводн/i.test(value);
+  const statusBlockReason = (student: Student, value: string): string | null => {
+    if (isTrialPromiseStatus(value) && hasCoveringSubscription(student)) {
+      return `У ученика есть действующий абонемент — статус «${value}» для тех, кто ещё не оплатил, поэтому назначить его нельзя. Сначала удалите/завершите абонемент, если ученик действительно вернулся в воронку.`;
+    }
+    return null;
+  };
+  // Модалка-предупреждение о последствиях (показываем ТОЛЬКО когда они есть).
+  const [statusWarn, setStatusWarn] = useState<{ names: string; reason: string } | null>(null);
+
   const massSetStatus = async (value: string) => {
     if (!value) return;
-    const ids = selectedStudents.map((s) => s.id);
+    // Отсекаем учеников с действующим абонементом от «пробный/оплатит»-статусов.
+    const blocked = selectedStudents.filter((s) => statusBlockReason(s, value));
+    const allowed = selectedStudents.filter((s) => !statusBlockReason(s, value));
+    if (blocked.length) {
+      setStatusWarn({
+        names: blocked.map((s) => s.name).join(", "),
+        reason: `У этих учеников есть действующий абонемент — статус «${value}» (для ещё не оплативших) им не назначается. ${allowed.length ? `Применю к остальным (${allowed.length}).` : "Применять некому."}`,
+      });
+      if (!allowed.length) return;
+    }
+    const ids = allowed.map((s) => s.id);
     if (needsPromiseDate(value)) { setPromiseDateVal(new Date().toISOString().slice(0, 10)); setPromptPromise({ ids, value }); return; }
     await applyStatus(ids, value, null);
     setMassNote(`Статус «${value}» применён к ${ids.length} ученикам`);
@@ -559,6 +584,9 @@ export default function StudentsRegistry({
   // Смена статуса одного ученика (для карточки).
   const setStudentStatus = async (id: string, value: string) => {
     if (!value || !onUpdateStudent) return;
+    const student = students.find((s) => s.id === id);
+    const reason = student ? statusBlockReason(student, value) : null;
+    if (reason) { setStatusWarn({ names: student!.name, reason }); return; }
     if (needsPromiseDate(value)) { setPromiseDateVal(new Date().toISOString().slice(0, 10)); setPromptPromise({ ids: [id], value }); return; }
     await applyStatus([id], value, null);
     setMassNote(`Статус «${value}» обновлён`);
@@ -1213,6 +1241,20 @@ export default function StudentsRegistry({
             <div className="mt-4 flex justify-end gap-2">
               <button onClick={() => setPromptPromise(null)} className="rounded-[10px] px-4 py-2 text-sm font-bold" style={{ border: `1px solid ${CLR.border}`, color: CLR.second }}>Отмена</button>
               <button onClick={confirmPromiseDate} className="rounded-[10px] px-4 py-2 text-sm font-black text-white" style={{ background: CLR.gold }}>Сохранить статус</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Предупреждение о последствиях смены статуса (показываем только когда они есть) */}
+      {statusWarn && (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/40 p-4" onClick={() => setStatusWarn(null)}>
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl" style={{ border: `1px solid ${CLR.border}` }} onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-base font-black" style={{ color: "#B14545" }}>Так статус поставить нельзя</h3>
+            <p className="mt-1 text-xs font-bold" style={{ color: CLR.strong }}>{statusWarn.names}</p>
+            <p className="mt-2 text-sm" style={{ color: CLR.second }}>{statusWarn.reason}</p>
+            <div className="mt-4 flex justify-end">
+              <button onClick={() => setStatusWarn(null)} className="rounded-[10px] px-4 py-2 text-sm font-black text-white" style={{ background: CLR.gold }}>Понятно</button>
             </div>
           </div>
         </div>

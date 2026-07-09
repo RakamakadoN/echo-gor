@@ -72,6 +72,7 @@ import {
 } from "recharts";
 import { ResponsiveContainer } from "./SafeResponsiveContainer";
 import StudentManagementCard, { SellSubscriptionInput } from "./StudentManagementCard";
+import { statusSwatch } from "../statusConfig";
 import StudentsRegistry, { type RegistryPreset } from "./StudentsRegistry";
 import ReactivationPanel from "./ReactivationPanel";
 import GroupScheduleGrid from "./GroupScheduleGrid";
@@ -1067,13 +1068,18 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
           <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">Авто-статусы учеников</p>
           <p className="mt-1 text-[11px] text-slate-500">Система считает из посещаемости и абонементов (не пришёл на пробный, был не купил, требуют продления…) — то же, что видят управляющие в списке.</p>
           <div className="mt-3 flex flex-wrap gap-2">
-            {m.autoStatuses.map((s: { key: string; label: string; count: number }) => (
+            {m.autoStatuses.map((s: { key: string; label: string; count: number }) => {
+              const c = statusSwatch(s.key);
+              return (
               <button key={s.key} onClick={() => go("students")}
-                className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-bold text-slate-200 transition hover:border-[#C5A059]/40">
+                style={{ borderColor: `${c}66` }}
+                className="inline-flex items-center gap-2 rounded-xl border bg-white/[0.04] px-3 py-1.5 text-xs font-bold text-slate-200 transition hover:bg-white/[0.07]">
+                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: c }} />
                 {s.label}
-                <span className="rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] text-slate-300">{s.count}</span>
+                <span className="rounded-full px-1.5 py-0.5 text-[10px] font-black" style={{ background: `${c}22`, color: c }}>{s.count}</span>
               </button>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

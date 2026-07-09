@@ -729,13 +729,26 @@ export default function App() {
   };
 
   // Запись ученика на пробный урок (создаёт урок+пробную отметку, статус «пробный»).
-  const handleBookTrial = async (studentId: string, payload: { date: string; time: string; note: string }): Promise<boolean> => {
+  // Подтверждение повторного пробного (когда прежний ещё не закрыт отметкой).
+  const [trialConfirm, setTrialConfirm] = useState<{ studentId: string; payload: { date: string; time: string; note: string }; message: string } | null>(null);
+
+  const handleBookTrial = async (
+    studentId: string,
+    payload: { date: string; time: string; note: string },
+    confirm = false,
+  ): Promise<boolean> => {
     try {
       const response = await fetch(`/api/mvp/students/${studentId}/trial`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({ ...payload, confirm })
       });
+      if (response.status === 409) {
+        const data = await response.json().catch(() => ({}));
+        // Незакрытый прошлый пробный — спрашиваем подтверждение (in-app модалка).
+        if (data.needsConfirm && !confirm) { setTrialConfirm({ studentId, payload, message: data.error }); return false; }
+        throw new Error(data.error || "Не удалось записать на пробный урок");
+      }
       if (!response.ok) throw new Error(await response.text());
       await loadMvpBootstrap(activeRole);
       toast.success("Ученик записан на пробный урок");
@@ -7439,6 +7452,22 @@ export default function App() {
         ["owner", "branch", "admin"].includes(activeRole) && (
           <EchoOrderNotifier roleHeader={getMvpRoleHeader()} />
         )}
+
+      {/* Подтверждение повторной записи на пробный (прошлый ещё не закрыт отметкой) */}
+      {trialConfirm && (
+        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/50 p-4" onClick={() => setTrialConfirm(null)}>
+          <div className="w-full max-w-sm rounded-2xl bg-[#15161c] p-5 shadow-2xl border border-white/10" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-base font-black text-white">Записать ещё один пробный?</h3>
+            <p className="mt-2 text-sm text-slate-300">{trialConfirm.message}</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => setTrialConfirm(null)} className="rounded-xl border border-white/10 px-4 py-2 text-sm font-bold text-slate-300 hover:text-white">Отмена</button>
+              <button
+                onClick={() => { const t = trialConfirm; setTrialConfirm(null); if (t) handleBookTrial(t.studentId, t.payload, true); }}
+                className="rounded-xl bg-[#C5A059] px-4 py-2 text-sm font-black text-black hover:bg-[#d4af6a]">Да, записать</button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

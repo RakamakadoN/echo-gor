@@ -12,6 +12,7 @@ import {
   STATUS_TONES,
   BASE_KPI_STATUSES,
   BASE_FUNNEL_STATUSES,
+  AUTO_STATUS_LIST,
   loadStatusConfig,
   saveStatusConfig,
   getManualStatuses,
@@ -112,14 +113,23 @@ export default function StatusSettings({ onClose, roleHeader = "owner" }: { onCl
               </button>
             </div>
             <div className="space-y-2">
-              {manual.map((s, i) => (
-                <div key={i} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
+              {manual.map((s, i) => {
+                const curTone = tones[s] || "gray";
+                return (
+                <div key={i} className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
                   <input
                     value={s}
                     onChange={(e) => setManual((m) => m.map((x, j) => (j === i ? e.target.value : x)))}
                     placeholder="Название статуса"
-                    className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 outline-none focus:border-slate-400"
+                    className="min-w-[160px] flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 outline-none focus:border-slate-400"
                   />
+                  <div className="flex items-center gap-1.5">
+                    {STATUS_TONES.map((t) => (
+                      <button key={t.id} title={t.label} onClick={() => s.trim() && setTone(s, t.id)}
+                        className={`h-6 w-6 rounded-full border-2 transition ${curTone === t.id ? "border-slate-800" : "border-transparent"}`}
+                        style={{ background: t.swatch }} />
+                    ))}
+                  </div>
                   <button
                     onClick={() => setManual((m) => m.filter((_, j) => j !== i))}
                     className="rounded-lg p-1.5 text-rose-500 hover:bg-rose-50"
@@ -127,8 +137,19 @@ export default function StatusSettings({ onClose, roleHeader = "owner" }: { onCl
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
-              ))}
+                );
+              })}
               {manual.length === 0 && <p className="text-sm text-slate-400">Список пуст — добавьте статус.</p>}
+            </div>
+          </section>
+
+          <section>
+            <p className="mb-2 text-[11px] font-black uppercase tracking-wider text-slate-500">Авто-статусы (дашборд)</p>
+            <p className="mb-2 text-[11px] text-slate-400">Система считает их сама из посещаемости и абонементов. Цвет применяется на дашборде «Авто-статусы учеников» и в бейджах списка.</p>
+            <div className="space-y-2">
+              {AUTO_STATUS_LIST.map((it) => (
+                <Row key={it.key} item={it} />
+              ))}
             </div>
           </section>
         </div>

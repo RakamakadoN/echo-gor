@@ -48,6 +48,8 @@ export interface SellSubscriptionInput {
   planId: string;
   startsOn: string;
   endsOn: string;
+  soldOn?: string;      // дата продажи (день оформления)
+  amountPaid?: number;  // внесено (тг); меньше price → долг
   lessonsTotal: number;
   price: number;
   discountAmount: number;
@@ -1207,7 +1209,9 @@ function SellSubscriptionPanel({
   const [customDiscount, setCustomDiscount] = useState(0);
   const [recalc, setRecalc] = useState(0);
   const [methodIdx, setMethodIdx] = useState(DEFAULT_METHOD_IDX);
-  const [startDate, setStartDate] = useState(isoOf(new Date()));
+  const [saleDate, setSaleDate] = useState(isoOf(new Date()));   // дата ПРОДАЖИ (день оформления)
+  const [amountPaid, setAmountPaid] = useState("");               // внесено (пусто = полная оплата)
+  const [startDate, setStartDate] = useState(isoOf(new Date()));  // дата НАЧАЛА = первый урок абонемента
   const [enabledDays, setEnabledDays] = useState<Record<number, boolean>>(
     () => Object.fromEntries(scheduleDayNums.map((d) => [d, true]))
   );
@@ -1252,6 +1256,9 @@ function SellSubscriptionPanel({
       : 0;
   const recalcAmount = Math.max(0, Math.round(recalc) || 0);
   const finalPrice = Math.max(0, basePrice - discountAmount - recalcAmount);
+  // Внесено: пусто = полная оплата. Меньше стоимости → долг.
+  const paidNum = amountPaid === "" ? finalPrice : Math.min(finalPrice, Math.max(0, Math.round(Number(amountPaid) || 0)));
+  const debtLeft = Math.max(0, finalPrice - paidNum);
 
   const toggleDay = (d: number) => setEnabledDays((prev) => ({ ...prev, [d]: !prev[d] }));
   const toggleDate = (key: string) => setDisabledDates((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -1275,6 +1282,8 @@ function SellSubscriptionPanel({
         planId: plan.id,
         startsOn,
         endsOn,
+        soldOn: saleDate,
+        amountPaid: paidNum,
         lessonsTotal,
         price: finalPrice,
         discountAmount,
@@ -1369,7 +1378,11 @@ function SellSubscriptionPanel({
               <input type="number" min={0} step={500} value={recalc || ""} placeholder="0" onChange={(e) => setRecalc(Number(e.target.value))} className={fieldCls} />
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-xs font-semibold text-slate-500">Дата начала</span>
+              <span className="text-xs font-semibold text-slate-500">Дата продажи</span>
+              <input type="date" value={saleDate} onChange={(e) => setSaleDate(e.target.value)} className={fieldCls} />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-semibold text-slate-500">Первый урок (дата начала)</span>
               <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className={fieldCls} />
             </label>
             <label className="flex flex-col gap-1">
@@ -1444,12 +1457,25 @@ function SellSubscriptionPanel({
               <SellRow k="Скидка" v={discountAmount > 0 ? `−${money(discountAmount)}` : "—"} tone={discountAmount > 0 ? "rose" : undefined} />
               <SellRow k="Перерасчёт" v={recalcAmount > 0 ? `−${money(recalcAmount)}` : "—"} tone={recalcAmount > 0 ? "rose" : undefined} />
               <SellRow k="Способ оплаты" v={SELL_METHODS[methodIdx].label} />
-              <SellRow k="Дата начала" v={ddmmyyyyFromIso(startsOn)} />
+              <SellRow k="Дата продажи" v={ddmmyyyyFromIso(saleDate)} />
+              <SellRow k="Первый урок" v={ddmmyyyyFromIso(startsOn)} />
               <SellRow k="Дата окончания" v={ddmmyyyyFromIso(endsOn)} />
             </div>
             <div className="mt-3 flex items-center justify-between border-t-2 border-violet-200/60 pt-3">
               <span className="text-sm font-black text-slate-700">Итоговая цена</span>
               <span className="text-xl font-black text-violet-700">{money(finalPrice)}</span>
+            </div>
+            <div className="mt-3 grid gap-3 border-t border-violet-200/40 pt-3 sm:grid-cols-[1fr_auto] sm:items-center">
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-slate-500">Внесено (тг)</span>
+                <input type="number" min={0} max={finalPrice} step={500} value={amountPaid}
+                  placeholder={`Полностью — ${money(finalPrice)}`}
+                  onChange={(e) => setAmountPaid(e.target.value)} className={fieldCls} />
+              </label>
+              <div className="text-right">
+                <p className="text-xs font-semibold text-slate-500">Долг</p>
+                <p className={`text-lg font-black ${debtLeft > 0 ? "text-rose-600" : "text-emerald-600"}`}>{debtLeft > 0 ? money(debtLeft) : "нет"}</p>
+              </div>
             </div>
           </div>
 

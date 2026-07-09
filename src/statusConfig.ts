@@ -50,6 +50,37 @@ export const BASE_FUNNEL_STATUSES: { key: string; label: string; tone: StatusTon
   { key: "funnel:visitor_new", label: "Купили абонемент", tone: "green" },
 ];
 
+/** Авто-статусы ученика (то, что система считает сама) — для перекраски на
+ *  дашборде «Авто-статусы учеников». Ключи = statusKey из getStudentState. */
+export const AUTO_STATUS_LIST: { key: string; label: string; tone: StatusTone }[] = [
+  { key: "lead", label: "Новый лид", tone: "purple" },
+  { key: "trial", label: "Записан на пробный", tone: "blue" },
+  { key: "trial_missed", label: "Не пришёл на пробный", tone: "red" },
+  { key: "trial_rebooked", label: "Перезаписан на пробный", tone: "orange" },
+  { key: "trial_lost", label: "Был на пробном, не купил", tone: "orange" },
+  { key: "visitor_new", label: "Новый посетитель", tone: "green" },
+  { key: "not_renewed", label: "Требуют продления", tone: "red" },
+  { key: "debt_current", label: "Не оплачен текущий месяц", tone: "red" },
+  { key: "debt_prev", label: "Не оплачен прошлый месяц", tone: "red" },
+  { key: "debt_partial", label: "Частичный долг", tone: "orange" },
+  { key: "next_paid", label: "Куплен следующий месяц", tone: "green" },
+  { key: "new", label: "Новый ученик", tone: "blue" },
+  { key: "active", label: "Активный", tone: "green" },
+  { key: "returned", label: "Вернувшийся", tone: "purple" },
+  { key: "paused", label: "Замороженный абонемент", tone: "gray" },
+  { key: "manual", label: "Ручной статус", tone: "gray" },
+];
+
+const AUTO_STATUS_DEFAULT_TONE: Record<string, StatusTone> = Object.fromEntries(
+  AUTO_STATUS_LIST.map((s) => [s.key, s.tone])
+);
+
+/** Тон-цвет (hex) статуса по ключу: переопределение из конфига, иначе дефолт. */
+export function statusSwatch(key: string, fallbackTone: StatusTone = "gray"): string {
+  const tone = getStatusToneRaw(key) || AUTO_STATUS_DEFAULT_TONE[key] || fallbackTone;
+  return STATUS_TONES.find((t) => t.id === tone)?.swatch || "#5C6772";
+}
+
 export interface StatusConfig {
   labels: Record<string, string>;
   tones: Record<string, StatusTone>;

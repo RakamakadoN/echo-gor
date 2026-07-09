@@ -448,15 +448,22 @@ function FragmentRows({ seg, lessonDates, saving, canEdit, onCell, cellMenu, onM
                 </td>
               );
             }
-            const st = (s.attendance?.[d]?.status || "unmarked") as string;
+            const cell = s.attendance?.[d];
+            const st = (cell?.status || "unmarked") as string;
             const meta = STATUS_META[st] || STATUS_META.unmarked;
+            const isTrial = Boolean(cell?.isTrial);
             const isSaving = saving === s.id + d;
             const open = cellMenu?.studentId === s.id && cellMenu?.date === d;
+            // Пробный урок выделяем фиолетовым (тон воронки пробных), чтобы дата
+            // пробного была видна в журнале с первого взгляда.
+            const ring = open ? "ring-2 ring-[#C5A059]" : isTrial ? "ring-2 ring-violet-400/80" : "";
             return (
               <td key={d} className="px-1 py-1 text-center">
                 <button disabled={!canEdit || isSaving} onClick={() => onCell(s.id, d)}
-                  className={`mx-auto grid h-7 w-7 place-items-center rounded-lg text-[11px] font-black transition-all ${meta.cell} ${open ? "ring-2 ring-[#C5A059]" : ""} ${canEdit ? "hover:opacity-80" : "cursor-default"} ${isSaving ? "opacity-40" : ""}`}>
+                  title={isTrial ? "Пробный урок" : undefined}
+                  className={`relative mx-auto grid h-7 w-7 place-items-center rounded-lg text-[11px] font-black transition-all ${isTrial ? "bg-violet-500/15 text-violet-200" : meta.cell} ${ring} ${canEdit ? "hover:opacity-80" : "cursor-default"} ${isSaving ? "opacity-40" : ""}`}>
                   {meta.short}
+                  {isTrial && <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-violet-400" />}
                 </button>
               </td>
             );

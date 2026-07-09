@@ -392,7 +392,7 @@ function mapDbStudent(row: any, attendanceByStudent: Map<string, Record<string, 
     waitlistAddedAt: row.__waitlist_added_at || null,
     parentName: row.parent_name || "Родитель",
     parentPhone: row.parent_phone || "",
-    balance: row.status === "debt" ? -1 : 0,
+    balance: computeStudentBalance(subsByStudent.get(row.id) || [], row.status),
     artistLevel: ArtistLevel.FIRST_STEP,
     artistLevelPoints: 0,
     achievements: [],
@@ -410,7 +410,7 @@ function mapDbStudent(row: any, attendanceByStudent: Map<string, Record<string, 
       isAutoRenew: false,
       status: sub.status === "active" ? "active" : sub.status === "archived" ? "deleted" : "expired",
       startsOn: sub.starts_on,
-      soldOn: sub.created_at || null,
+      soldOn: sub.sold_on || sub.created_at || null,
       amountPaid: sub.amount_paid != null ? Number(sub.amount_paid) : null,
       discountAmount: Number(sub.discount_amount || 0),
       groupId: sub.group_id || null,
@@ -450,7 +450,7 @@ function mapDbSubscription(row: any, planName?: string) {
     isAutoRenew: false,
     status: row.status === "active" ? "active" : row.status === "archived" ? "deleted" : "expired",
     startsOn: row.starts_on,
-    soldOn: row.created_at || null,
+    soldOn: row.sold_on || row.created_at || null,
     amountPaid: row.amount_paid != null ? Number(row.amount_paid) : null,
     discountAmount: Number(row.discount_amount || 0),
     groupId: row.group_id || null,
@@ -668,6 +668,24 @@ async function upsertAttendanceRows(rows: Record<string, any>[]): Promise<any[]>
     const base = rows.map(({ absence_reason, is_trial, trial_outcome, ...rest }) => rest);
     return await supabaseFetch<any[]>("attendance", "on_conflict=lesson_id,student_id", opts(base));
   }
+}
+
+// Баланс ученика в тенге (отрицательный = долг). Считаем недоплату по активным
+// абонементам: price − amount_paid. amount_paid = null → данных нет (легаси), по
+// такому абонементу долг не считаем. Если данных о внесении нет вовсе — откат к
+// старому флагу status='debt' (−1), чтобы не терять ранее помеченные долги.
+function computeStudentBalance(subs: any[], rawStatus: string): number {
+  let debt = 0;
+  let hasData = false;
+  for (const s of subs || []) {
+    if (s.status !== "active") continue;
+    if (s.amount_paid == null) continue;
+    hasData = true;
+    const shortfall = (Number(s.price) || 0) - Number(s.amount_paid);
+    if (shortfall > 0) debt += shortfall;
+  }
+  if (hasData) return debt > 0 ? -debt : 0;
+  return rawStatus === "debt" ? -1 : 0;
 }
 
 // Активный абонемент: статус active и (остались занятия ИЛИ срок не истёк).
@@ -1483,6 +1501,14 @@ export function registerMvpApi(app: express.Express) {
       // «Продать абонемент» (paid=true) → активный + платёж.
       const paid = payload.paid !== false;
 
+      // Внесено: сколько реально оплатил ученик. По умолчанию — полная стоимость.
+      // Если меньше — разница уходит в долг (считается по amount_paid в bootstrap).
+      const amountPaid = payload.amountPaid !== undefined
+        ? Math.min(finalPrice, Math.max(0, Number(payload.amountPaid) || 0))
+        : finalPrice;
+      // Дата продажи (день оформления) — отдельно от starts_on (первый урок).
+      const soldOn = String(payload.soldOn || today).slice(0, 10);
+
       // Запрет двойной продажи (ТЗ §4): блокируем только если у ученика уже есть
       // активный абонемент в ТОЙ ЖЕ группе с пересекающимся периодом. Другая группа,
       // индивидуальное/мини-группа (group_id пуст) или другой период — разрешено.
@@ -1510,24 +1536,29 @@ export function registerMvpApi(app: express.Express) {
           lessons_total: lessonsTotal,
           lessons_left: lessonsTotal,
           price: finalPrice,
+          amount_paid: paid ? amountPaid : null,
+          sold_on: soldOn,
           discount_amount: discountAmount + recalc,
           status: paid ? "active" : "inactive"
         })
       });
 
-      // Платёж и проводка ДДС — только если оплата принята.
+      // Платёж и проводка ДДС — на фактически ВНЕСЁННУЮ сумму (может быть меньше
+      // стоимости; недоплата = долг, считается по amount_paid в bootstrap).
+      const debtLeft = Math.max(0, finalPrice - amountPaid);
       let payment = null;
-      if (paid && finalPrice > 0) {
+      if (paid && amountPaid > 0) {
+        const payComment = payload.description || `Абонемент: ${plan.name}`;
         const insertedPayment = await supabaseFetch<any[]>("payments", "", {
           method: "POST",
           body: JSON.stringify({
             organization_id: session.organizationId,
             branch_id: branchId,
             student_id: studentId,
-            amount: finalPrice,
+            amount: amountPaid,
             method: payload.method || "kaspi",
             status: "paid",
-            comment: payload.description || `Абонемент: ${plan.name}`,
+            comment: debtLeft > 0 ? `${payComment} (частично, долг ${Math.round(debtLeft)} тг)` : payComment,
             created_by: session.userId.startsWith("demo-") ? null : session.userId
           })
         });
@@ -1539,7 +1570,7 @@ export function registerMvpApi(app: express.Express) {
             branch_id: branchId,
             student_id: studentId,
             payment_id: insertedPayment[0].id,
-            amount: finalPrice,
+            amount: amountPaid,
             type: "income",
             category: "tuition",
             description: payload.description || `Абонемент: ${plan.name}`
@@ -1682,6 +1713,17 @@ export function registerMvpApi(app: express.Express) {
       const dayEnd = dayEndD.toISOString();
       const ex = await supabaseFetch<any[]>("schedule_lessons", `select=id&group_id=eq.${st.group_id}&starts_at=gte.${encodeURIComponent(dayStart)}&starts_at=lt.${encodeURIComponent(dayEnd)}&limit=1`);
       let lessonId = ex[0]?.id;
+      // Нельзя записать пробный на ту же дату дважды.
+      if (lessonId) {
+        const already = await supabaseFetch<any[]>("attendance", `select=id,is_trial&lesson_id=eq.${lessonId}&student_id=eq.${req.params.id}&limit=1`).catch(() => [] as any[]);
+        if (already[0]?.is_trial) return res.status(409).json({ error: "Ученик уже записан на пробный урок на эту дату" });
+      }
+      // Повторный пробный при незакрытом предыдущем (нет отметки «был/не был») —
+      // только с явным подтверждением действия (confirm=true от клиента).
+      if (!Boolean((req.body || {}).confirm)) {
+        const pending = await supabaseFetch<any[]>("attendance", `select=id&student_id=eq.${req.params.id}&is_trial=eq.true&status=eq.unknown&limit=1`).catch(() => [] as any[]);
+        if (pending.length) return res.status(409).json({ error: "У ученика уже есть незакрытый пробный урок (нет отметки «был/не был»). Записать ещё один?", needsConfirm: true });
+      }
       if (!lessonId) {
         const ins = await supabaseFetch<any[]>("schedule_lessons", "", {
           method: "POST",
