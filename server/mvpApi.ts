@@ -1087,6 +1087,23 @@ export function registerMvpApi(app: express.Express) {
       return res.status(400).json({ error: "Нет полей для обновления" });
     }
     try {
+      // Гардрейл (и на сервере, не только в UI): «пробный/оплатит»-статус — для
+      // ещё не оплативших; ученику с действующим абонементом его ставить нельзя.
+      const wantsTrialPromise =
+        (typeof payload.manualStatus === "string" && /оплат|пробн|вводн/i.test(payload.manualStatus)) ||
+        payload.status === "trial" || payload.status === "lead";
+      if (wantsTrialPromise) {
+        const today = new Date().toISOString().slice(0, 10);
+        const startNextMonth = new Date(); startNextMonth.setDate(1); startNextMonth.setMonth(startNextMonth.getMonth() + 1);
+        const nextMonthStr = startNextMonth.toISOString().slice(0, 10);
+        const activeSubs = await supabaseFetch<any[]>(
+          "student_subscriptions",
+          `select=id&student_id=eq.${req.params.id}&status=eq.active&or=(ends_on.is.null,ends_on.gte.${today})&starts_on=lt.${nextMonthStr}&limit=1`
+        ).catch(() => [] as any[]);
+        if (activeSubs.length > 0) {
+          return res.status(409).json({ error: "У ученика есть действующий абонемент — статус для неоплативших (пробный/оплатит/лид) назначить нельзя. Сначала завершите или удалите абонемент." });
+        }
+      }
       // Прежний статус — чтобы зафиксировать переход в журнале воронки.
       let prevStatus: string | undefined;
       if (payload.status !== undefined) {
