@@ -37,6 +37,8 @@ interface Props {
   currentTeacherId?: string | null;  // педагог видит только свои группы
   canEdit?: boolean;                 // можно ли проставлять/корректировать отметки
   onToggleAttendance?: (studentId: string, date: string, status: AttendanceStatus, opts?: { absenceReason?: AbsenceReason | null; isTrial?: boolean }) => void | Promise<unknown>;
+  /** Пакетное сохранение отметок одним заходом (одна перезагрузка данных вместо N). */
+  onBatchAttendance?: (marks: { studentId: string; date: string; status: AttendanceStatus; isTrial?: boolean }[]) => Promise<unknown>;
   onBulkAttendance?: (groupId: string, date: string, status: AttendanceStatus) => Promise<number> | void;
   onCreateTask?: (payload: { studentId: string; studentName: string; title: string }) => void;
   journal: JournalApi;
@@ -110,7 +112,7 @@ function MetricCard({ icon: Icon, tone, value, label, active, onClick }: any) {
 }
 
 export default function AttendanceJournalView(props: Props) {
-  const { role, branches, groups, students, teachers = [], currentBranchId, currentTeacherId, canEdit = true, onToggleAttendance, onBulkAttendance, onCreateTask, journal } = props;
+  const { role, branches, groups, students, teachers = [], currentBranchId, currentTeacherId, canEdit = true, onToggleAttendance, onBatchAttendance, onBulkAttendance, onCreateTask, journal } = props;
 
   const now = new Date();
   const [branchId, setBranchId] = useState<string | null>(role === "owner" ? null : currentBranchId || null);
@@ -173,16 +175,38 @@ export default function AttendanceJournalView(props: Props) {
   const [detail, setDetail] = useState<null | "visited" | "unpaid" | "trialNotBought" | "trialBought">(null);
   // «Развернуть журнал»: скрывает дашборд и боковые панели, оставляя группу + таблицу на всю ширину.
   const [expanded, setExpanded] = useState(false);
+  // Режим «Редактировать → Сохранить»: отметки копятся локально и уходят на сервер
+  // одним пакетом по кнопке «Сохранить» (вне режима ячейки заблокированы).
+  const [editing, setEditing] = useState(false);
+  const [pending, setPending] = useState<Record<string, AttendanceStatus>>({});
+  const [savingAll, setSavingAll] = useState(false);
+  const pendingCount = Object.keys(pending).length;
 
-  const mark = async (studentId: string, date: string, status: AttendanceStatus, opts?: { absenceReason?: AbsenceReason | null }) => {
-    if (!onToggleAttendance) return;
-    // Педагог ставит только «был/не был». Пробный определяется автоматически по
-    // статусу ученика «Пробный урок» — система сама помечает посещение пробным.
-    const st = students.find((s) => s.id === studentId);
-    const isTrial = st?.status === "trial" ? true : undefined;
-    setSaving(studentId + date);
-    try { await onToggleAttendance(studentId, date, status, { ...(opts || {}), isTrial }); } finally { setSaving(null); refreshDash(); }
+  // Отметка в режиме редактирования — только локально; сервер увидит её при «Сохранить».
+  const mark = (studentId: string, date: string, status: AttendanceStatus) => {
+    setPending((prev) => ({ ...prev, [`${studentId}|${date}`]: status }));
     setCellMenu(null);
+  };
+
+  const cancelEditing = () => { setPending({}); setEditing(false); setCellMenu(null); };
+
+  const saveAll = async () => {
+    const entries = Object.entries(pending) as [string, AttendanceStatus][];
+    if (entries.length === 0) { setEditing(false); return; }
+    setSavingAll(true);
+    try {
+      // Педагог ставит только «был/не был». Пробный определяется автоматически по
+      // статусу ученика «Пробный урок» — система сама помечает посещение пробным.
+      const marks = entries.map(([key, status]) => {
+        const [studentId, date] = key.split("|");
+        const st = students.find((s) => s.id === studentId);
+        return { studentId, date, status, isTrial: st?.status === "trial" ? true : undefined };
+      });
+      if (onBatchAttendance) await onBatchAttendance(marks);
+      else if (onToggleAttendance) for (const m of marks) await onToggleAttendance(m.studentId, m.date, m.status, { isTrial: m.isTrial });
+      setPending({});
+      setEditing(false);
+    } finally { setSavingAll(false); refreshDash(); }
   };
 
   const massMark = async (status: AttendanceStatus, date: string) => {
@@ -233,7 +257,7 @@ export default function AttendanceJournalView(props: Props) {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-xl font-black text-white">Журнал посещаемости</h2>
-          <p className="mt-1 text-xs text-slate-500">Отметка «был / не был». Пробные и статус «не оплатили, но ходят» система определяет сама.</p>
+          <p className="mt-1 text-xs text-slate-500">Нажмите «Редактировать отметки», проставьте «был / не был» и сохраните. Пробные и статус «не оплатили, но ходят» система определяет сама.</p>
         </div>
         <div className="flex flex-wrap items-end gap-2">
           <button onClick={() => setExpanded((v) => !v)} className="flex items-center gap-1.5 self-stretch rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white hover:bg-white/10">
@@ -353,11 +377,31 @@ export default function AttendanceJournalView(props: Props) {
               <h3 className="truncate text-sm font-black text-white">Журнал группы: {selectedGroup?.name || "—"}</h3>
               <p className="text-[11px] text-slate-500">{lessonDates.length} занятий · {groupStudents.length} учеников</p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <button onClick={() => setShowStats(true)} className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white hover:bg-white/10"><BarChart3 className="h-4 w-4" /> Статистика</button>
               {canEdit && <button onClick={() => setShowMass(true)} className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white hover:bg-white/10"><ListChecks className="h-4 w-4" /> Массовая отметка</button>}
+              {canEdit && !editing && (
+                <button onClick={() => setEditing(true)} className="flex items-center gap-1.5 rounded-xl bg-[#C5A059] px-3 py-2 text-xs font-black text-black hover:opacity-90">
+                  <ClipboardCheck className="h-4 w-4" /> Редактировать отметки
+                </button>
+              )}
+              {canEdit && editing && (
+                <>
+                  <button onClick={cancelEditing} disabled={savingAll} className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-slate-300 hover:bg-white/10 disabled:opacity-50">
+                    <X className="h-4 w-4" /> Отмена
+                  </button>
+                  <button onClick={saveAll} disabled={savingAll} className="flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3 py-2 text-xs font-black text-black hover:opacity-90 disabled:opacity-50">
+                    <CheckCircle2 className="h-4 w-4" /> {savingAll ? "Сохраняем…" : `Сохранить${pendingCount ? ` (${pendingCount})` : ""}`}
+                  </button>
+                </>
+              )}
             </div>
           </div>
+          {canEdit && editing && (
+            <p className="mb-2 rounded-xl bg-[#C5A059]/10 px-3 py-2 text-[11px] font-semibold text-[#C5A059]">
+              Режим редактирования: кликайте по ячейкам и проставляйте «Был / Не был», затем нажмите «Сохранить». Несохранённые отметки подсвечены янтарной рамкой.
+            </p>
+          )}
 
           {groupStudents.length === 0 || lessonDates.length === 0 ? (
             <div className="rounded-xl border border-white/10 bg-white/5 p-8 text-center text-sm text-slate-500">
@@ -378,8 +422,8 @@ export default function AttendanceJournalView(props: Props) {
                 </thead>
                 <tbody>
                   {[{ label: "Активные ученики", list: segActive, tone: "text-emerald-300" }, { label: "Не оплатили, но ходят", list: segUnpaid, tone: "text-amber-300" }, { label: "Пробные уроки", list: segTrial, tone: "text-violet-300" }].map((seg) => seg.list.length === 0 ? null : (
-                    <FragmentRows key={seg.label} seg={seg} lessonDates={lessonDates} saving={saving} canEdit={canEdit}
-                      onCell={(studentId, date) => canEdit && setCellMenu(cellMenu?.studentId === studentId && cellMenu?.date === date ? null : { studentId, date })}
+                    <FragmentRows key={seg.label} seg={seg} lessonDates={lessonDates} saving={saving} canEdit={canEdit && editing} pending={pending}
+                      onCell={(studentId, date) => canEdit && editing && setCellMenu(cellMenu?.studentId === studentId && cellMenu?.date === date ? null : { studentId, date })}
                       cellMenu={cellMenu} onMark={mark} />
                   ))}
                 </tbody>
@@ -428,7 +472,7 @@ function enrolledFrom(s: Student): string | null {
   return all[0] || null;
 }
 
-function FragmentRows({ seg, lessonDates, saving, canEdit, onCell, cellMenu, onMark }: any) {
+function FragmentRows({ seg, lessonDates, saving, canEdit, pending, onCell, cellMenu, onMark }: any) {
   return (
     <>
       <tr><td colSpan={lessonDates.length + 1} className={`sticky left-0 bg-[#0c0c0c] px-2 pt-3 pb-1 text-[10px] font-black uppercase tracking-wider ${seg.tone}`}>{seg.label}</td></tr>
@@ -449,19 +493,21 @@ function FragmentRows({ seg, lessonDates, saving, canEdit, onCell, cellMenu, onM
               );
             }
             const cell = s.attendance?.[d];
-            const st = (cell?.status || "unmarked") as string;
+            // Несохранённая локальная отметка (режим редактирования) поверх серверной.
+            const pendingSt = pending?.[`${s.id}|${d}`];
+            const st = (pendingSt || cell?.status || "unmarked") as string;
             const meta = STATUS_META[st] || STATUS_META.unmarked;
             const isTrial = Boolean(cell?.isTrial);
             const isSaving = saving === s.id + d;
             const open = cellMenu?.studentId === s.id && cellMenu?.date === d;
             // Пробный урок выделяем фиолетовым (тон воронки пробных), чтобы дата
-            // пробного была видна в журнале с первого взгляда.
-            const ring = open ? "ring-2 ring-[#C5A059]" : isTrial ? "ring-2 ring-violet-400/80" : "";
+            // пробного была видна в журнале с первого взгляда. Несохранённое — янтарным.
+            const ring = open ? "ring-2 ring-[#C5A059]" : pendingSt ? "ring-2 ring-amber-400" : isTrial ? "ring-2 ring-violet-400/80" : "";
             return (
               <td key={d} className="px-1 py-1 text-center">
                 <button disabled={!canEdit || isSaving} onClick={() => onCell(s.id, d)}
                   title={isTrial ? "Пробный урок" : undefined}
-                  className={`relative mx-auto grid h-7 w-7 place-items-center rounded-lg text-[11px] font-black transition-all ${isTrial ? "bg-violet-500/15 text-violet-200" : meta.cell} ${ring} ${canEdit ? "hover:opacity-80" : "cursor-default"} ${isSaving ? "opacity-40" : ""}`}>
+                  className={`relative mx-auto grid h-7 w-7 place-items-center rounded-lg text-[11px] font-black transition-all ${!pendingSt && isTrial ? "bg-violet-500/15 text-violet-200" : meta.cell} ${ring} ${canEdit ? "hover:opacity-80" : "cursor-default"} ${isSaving ? "opacity-40" : ""}`}>
                   {meta.short}
                   {isTrial && <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-violet-400" />}
                 </button>

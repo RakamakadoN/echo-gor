@@ -1209,7 +1209,8 @@ function SellSubscriptionPanel({
   const [customDiscount, setCustomDiscount] = useState(0);
   const [recalc, setRecalc] = useState(0);
   const [methodIdx, setMethodIdx] = useState(DEFAULT_METHOD_IDX);
-  const [saleDate, setSaleDate] = useState(isoOf(new Date()));   // дата ПРОДАЖИ (день оформления)
+  // Дата продажи не вводится вручную — система сама ставит день оформления.
+  const saleDate = isoOf(new Date());
   const [amountPaid, setAmountPaid] = useState("");               // внесено (пусто = полная оплата)
   const [startDate, setStartDate] = useState(isoOf(new Date()));  // дата НАЧАЛА = первый урок абонемента
   const [enabledDays, setEnabledDays] = useState<Record<number, boolean>>(
@@ -1224,20 +1225,31 @@ function SellSubscriptionPanel({
   const basePrice = plan?.price || 0;
   const targetLessons = plan?.lessonsCount && plan.lessonsCount > 0 ? plan.lessonsCount : 12;
 
-  // Генерируем даты занятий вперёд от стартовой по выбранным дням недели до нужного количества.
+  // Абонемент действует РОВНО один месяц с первого урока: даты занятий генерируются
+  // по выбранным дням недели только внутри этого месячного окна (и не больше числа
+  // занятий тарифа).
+  const subEndIso = useMemo(() => {
+    if (!startDate) return startDate;
+    const [y, m, d] = startDate.split("-").map(Number);
+    const end = new Date(y, (m || 1) - 1, d || 1);
+    end.setMonth(end.getMonth() + 1);
+    end.setDate(end.getDate() - 1);
+    return isoOf(end);
+  }, [startDate]);
+
   const candidates = useMemo(() => {
     const out: { key: string; label: string }[] = [];
     const days = SELL_WEEKDAYS.filter((w) => enabledDays[w.d]).map((w) => w.d);
     if (days.length === 0 || !startDate) return out;
     const [y, m, d] = startDate.split("-").map(Number);
     const cursor = new Date(y, (m || 1) - 1, d || 1);
-    let guard = 0;
-    while (out.length < targetLessons && guard < 400) {
+    const limit = new Date(y, (m || 1) - 1, d || 1);
+    limit.setMonth(limit.getMonth() + 1); // не включая — ровно месяц от старта
+    while (cursor < limit && out.length < targetLessons) {
       if (days.includes(cursor.getDay())) {
         out.push({ key: isoOf(cursor), label: ddmm(cursor) });
       }
       cursor.setDate(cursor.getDate() + 1);
-      guard += 1;
     }
     return out;
   }, [enabledDays, startDate, targetLessons]);
@@ -1245,7 +1257,7 @@ function SellSubscriptionPanel({
   const activeDates = candidates.filter((c) => !disabledDates[c.key]);
   const lessonsTotal = activeDates.length;
   const startsOn = activeDates[0]?.key || startDate;
-  const endsOn = activeDates[activeDates.length - 1]?.key || startDate;
+  const endsOn = subEndIso; // срок абонемента — календарный месяц, не дата последнего занятия
 
   const disc = SELL_DISCOUNTS[discountIdx];
   const discountAmount =
@@ -1378,10 +1390,6 @@ function SellSubscriptionPanel({
               <input type="number" min={0} step={500} value={recalc || ""} placeholder="0" onChange={(e) => setRecalc(Number(e.target.value))} className={fieldCls} />
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-xs font-semibold text-slate-500">Дата продажи</span>
-              <input type="date" value={saleDate} onChange={(e) => setSaleDate(e.target.value)} className={fieldCls} />
-            </label>
-            <label className="flex flex-col gap-1">
               <span className="text-xs font-semibold text-slate-500">Первый урок (дата начала)</span>
               <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className={fieldCls} />
             </label>
@@ -1457,9 +1465,9 @@ function SellSubscriptionPanel({
               <SellRow k="Скидка" v={discountAmount > 0 ? `−${money(discountAmount)}` : "—"} tone={discountAmount > 0 ? "rose" : undefined} />
               <SellRow k="Перерасчёт" v={recalcAmount > 0 ? `−${money(recalcAmount)}` : "—"} tone={recalcAmount > 0 ? "rose" : undefined} />
               <SellRow k="Способ оплаты" v={SELL_METHODS[methodIdx].label} />
-              <SellRow k="Дата продажи" v={ddmmyyyyFromIso(saleDate)} />
+              <SellRow k="Дата продажи" v={`${ddmmyyyyFromIso(saleDate)} (сегодня)`} />
               <SellRow k="Первый урок" v={ddmmyyyyFromIso(startsOn)} />
-              <SellRow k="Дата окончания" v={ddmmyyyyFromIso(endsOn)} />
+              <SellRow k="Действует до" v={`${ddmmyyyyFromIso(endsOn)} (1 месяц)`} />
             </div>
             <div className="mt-3 flex items-center justify-between border-t-2 border-violet-200/60 pt-3">
               <span className="text-sm font-black text-slate-700">Итоговая цена</span>

@@ -4,11 +4,20 @@
  */
 
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { TeacherWorkspace } from "./components/TeacherWorkspace";
-import { StudentArtistCabinet } from "./components/StudentArtistCabinet";
-import { BranchManagerWorkspace } from "./components/BranchManagerWorkspace";
-import { OwnerExecutiveWorkspace } from "./components/OwnerExecutiveWorkspace";
-import { AdminEduErpWorkspace } from "./components/AdminEduErpWorkspace";
+// Рабочие места ролей подгружаются лениво (code splitting): каждый — отдельный
+// чанк, первый экран не тянет весь 2-мегабайтный бандл целиком.
+const TeacherWorkspace = React.lazy(() => import("./components/TeacherWorkspace").then((m) => ({ default: m.TeacherWorkspace })));
+const StudentArtistCabinet = React.lazy(() => import("./components/StudentArtistCabinet").then((m) => ({ default: m.StudentArtistCabinet })));
+const BranchManagerWorkspace = React.lazy(() => import("./components/BranchManagerWorkspace").then((m) => ({ default: m.BranchManagerWorkspace })));
+const OwnerExecutiveWorkspace = React.lazy(() => import("./components/OwnerExecutiveWorkspace").then((m) => ({ default: m.OwnerExecutiveWorkspace })));
+const AdminEduErpWorkspace = React.lazy(() => import("./components/AdminEduErpWorkspace").then((m) => ({ default: m.AdminEduErpWorkspace })));
+
+// Заглушка на время загрузки чанка рабочего места.
+const WorkspaceLoader = () => (
+  <div className="flex h-64 w-full items-center justify-center">
+    <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#C5A059] border-t-transparent" />
+  </div>
+);
 import type { SellSubscriptionInput } from "./components/StudentManagementCard";
 import { fetchStatusConfig } from "./statusConfig";
 import { AnimatedBarChartShowcase } from "./components/AnimatedBarChartShowcase";
@@ -1681,6 +1690,39 @@ export default function App() {
       "Контроль посещаемости",
       `Выставлен статус ${status} для ${students.find((std) => std.id === studId)?.name} на дату ${date}`
     );
+  };
+
+  // Пакетное сохранение отметок журнала (кнопка «Сохранить» в журнале):
+  // N POST-запросов и ОДНА перезагрузка bootstrap в конце вместо N перезагрузок.
+  const batchAttendance = async (
+    marks: { studentId: string; date: string; status: AttendanceStatus; isTrial?: boolean }[]
+  ) => {
+    if (mvpDataMode !== "supabase") {
+      for (const m of marks) await toggleAttendance(m.studentId, m.date, m.status, { isTrial: m.isTrial });
+      return;
+    }
+    const failed: string[] = [];
+    for (const m of marks) {
+      try {
+        const response = await fetch("/api/mvp/attendance", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+          body: JSON.stringify({
+            studentId: m.studentId,
+            date: m.date,
+            status: m.status,
+            isTrial: m.isTrial ?? undefined,
+          }),
+        });
+        if (!response.ok) throw new Error(await response.text());
+      } catch {
+        const name = students.find((s) => s.id === m.studentId)?.name || m.studentId;
+        failed.push(`${name} · ${m.date}`);
+      }
+    }
+    await loadMvpBootstrap(activeRole);
+    if (failed.length) notifyError(`Не сохранились отметки: ${failed.join(", ")}`);
+    else toast.success(`Отметки сохранены (${marks.length})`);
   };
 
   // ============================================================
@@ -3412,6 +3454,7 @@ export default function App() {
           {activeRole === "chart" ? (
             <AnimatedBarChartShowcase />
           ) : activeRole === "teacher" ? (
+            <React.Suspense fallback={<WorkspaceLoader />}>
              <TeacherWorkspace
                groups={groups}
                students={students}
@@ -3422,6 +3465,7 @@ export default function App() {
                scheduleLoading={scheduleLoading}
                onLoadSchedule={loadSchedule}
                onToggleAttendance={toggleAttendance}
+               onBatchAttendance={batchAttendance}
                homeworks={teacherHomework}
                onAddNote={addTeacherNote}
                onAssignHomework={assignHomework}
@@ -3436,7 +3480,9 @@ export default function App() {
                onSubmitReaction={submitReaction}
                onLoadReactions={loadReactionSummary}
              />
+            </React.Suspense>
           ) : activeRole === "branch" ? (
+            <React.Suspense fallback={<WorkspaceLoader />}>
             <BranchManagerWorkspace
               branchId={branches[0]?.id || "branch-magas"}
               branches={branches}
@@ -3475,11 +3521,14 @@ export default function App() {
               onRemoveFromWaitlist={handleRemoveFromWaitlist}
               onCreateAnnouncement={handleCreateAnnouncement}
               onToggleAttendance={toggleAttendance}
+              onBatchAttendance={batchAttendance}
               onBulkAttendance={bulkMarkAttendance}
               journal={journalApi}
               onJournalTask={handleJournalTask}
             />
+            </React.Suspense>
           ) : activeRole === "owner" ? (
+            <React.Suspense fallback={<WorkspaceLoader />}>
             <OwnerExecutiveWorkspace
               branches={branches}
               groups={groups}
@@ -3545,11 +3594,14 @@ export default function App() {
               onUpdateLesson={handleUpdateLesson}
               onDeleteLesson={handleDeleteLesson}
               onToggleAttendance={toggleAttendance}
+              onBatchAttendance={batchAttendance}
               onBulkAttendance={bulkMarkAttendance}
               journal={journalApi}
               onJournalTask={handleJournalTask}
             />
+            </React.Suspense>
           ) : activeRole === "admin" ? (
+            <React.Suspense fallback={<WorkspaceLoader />}>
             <AdminEduErpWorkspace
               branches={branches}
               groups={groups}
@@ -3572,6 +3624,7 @@ export default function App() {
               onUpdateLesson={handleUpdateLesson}
               onDeleteLesson={handleDeleteLesson}
               onToggleAttendance={toggleAttendance}
+              onBatchAttendance={batchAttendance}
               onBulkAttendance={bulkMarkAttendance}
               journal={journalApi}
               onJournalTask={handleJournalTask}
@@ -3602,12 +3655,14 @@ export default function App() {
               onUpdateLeadSource={handleUpdateLeadSource}
               onDeleteLeadSource={handleDeleteLeadSource}
             />
+            </React.Suspense>
           ) : (
             <>
               {activeRole === "student" && (() => {
                 const currentStudent = students.find((std) => std.id === selectedStudentId) || students[0];
                 if (!currentStudent) return null;
                 return (
+                  <React.Suspense fallback={<WorkspaceLoader />}>
                   <StudentArtistCabinet
                     student={currentStudent}
                     group={groups.find((group) => group.id === currentStudent.groupId)}
@@ -3618,6 +3673,7 @@ export default function App() {
                     accessLevel={studentAccessLevel ?? undefined}
                     readOnlyPreview={!studentAccessLevel}
                   />
+                  </React.Suspense>
                 );
               })()}
 

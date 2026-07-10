@@ -1493,7 +1493,7 @@ function mapDbStudent(row, attendanceByStudent, subsByStudent) {
     waitlistAddedAt: row.__waitlist_added_at || null,
     parentName: row.parent_name || "\u0420\u043E\u0434\u0438\u0442\u0435\u043B\u044C",
     parentPhone: row.parent_phone || "",
-    balance: row.status === "debt" ? -1 : 0,
+    balance: computeStudentBalance(subsByStudent.get(row.id) || [], row.status),
     artistLevel: "\u041F\u0435\u0440\u0432\u044B\u0439 \u0448\u0430\u0433" /* FIRST_STEP */,
     artistLevelPoints: 0,
     achievements: [],
@@ -1511,6 +1511,8 @@ function mapDbStudent(row, attendanceByStudent, subsByStudent) {
       isAutoRenew: false,
       status: sub.status === "active" ? "active" : sub.status === "archived" ? "deleted" : "expired",
       startsOn: sub.starts_on,
+      soldOn: sub.sold_on || sub.created_at || null,
+      amountPaid: sub.amount_paid != null ? Number(sub.amount_paid) : null,
       discountAmount: Number(sub.discount_amount || 0),
       groupId: sub.group_id || null,
       kind: sub.kind || "group",
@@ -1547,6 +1549,8 @@ function mapDbSubscription(row, planName) {
     isAutoRenew: false,
     status: row.status === "active" ? "active" : row.status === "archived" ? "deleted" : "expired",
     startsOn: row.starts_on,
+    soldOn: row.sold_on || row.created_at || null,
+    amountPaid: row.amount_paid != null ? Number(row.amount_paid) : null,
     discountAmount: Number(row.discount_amount || 0),
     groupId: row.group_id || null,
     kind: row.kind || "group",
@@ -1730,6 +1734,19 @@ async function upsertAttendanceRows(rows) {
     const base = rows.map(({ absence_reason, is_trial, trial_outcome, ...rest }) => rest);
     return await supabaseFetch("attendance", "on_conflict=lesson_id,student_id", opts(base));
   }
+}
+function computeStudentBalance(subs, rawStatus) {
+  let debt = 0;
+  let hasData = false;
+  for (const s of subs || []) {
+    if (s.status !== "active") continue;
+    if (s.amount_paid == null) continue;
+    hasData = true;
+    const shortfall = (Number(s.price) || 0) - Number(s.amount_paid);
+    if (shortfall > 0) debt += shortfall;
+  }
+  if (hasData) return debt > 0 ? -debt : 0;
+  return rawStatus === "debt" ? -1 : 0;
 }
 function hasActiveSubscription(subs, todayStr) {
   return subs.some(
@@ -2085,6 +2102,21 @@ function registerMvpApi(app2) {
       return res.status(400).json({ error: "\u041D\u0435\u0442 \u043F\u043E\u043B\u0435\u0439 \u0434\u043B\u044F \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F" });
     }
     try {
+      const wantsTrialPromise = typeof payload.manualStatus === "string" && /оплат|пробн|вводн/i.test(payload.manualStatus) || payload.status === "trial" || payload.status === "lead";
+      if (wantsTrialPromise) {
+        const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+        const startNextMonth = /* @__PURE__ */ new Date();
+        startNextMonth.setDate(1);
+        startNextMonth.setMonth(startNextMonth.getMonth() + 1);
+        const nextMonthStr = startNextMonth.toISOString().slice(0, 10);
+        const activeSubs = await supabaseFetch(
+          "student_subscriptions",
+          `select=id&student_id=eq.${req.params.id}&status=eq.active&or=(ends_on.is.null,ends_on.gte.${today})&starts_on=lt.${nextMonthStr}&limit=1`
+        ).catch(() => []);
+        if (activeSubs.length > 0) {
+          return res.status(409).json({ error: "\u0423 \u0443\u0447\u0435\u043D\u0438\u043A\u0430 \u0435\u0441\u0442\u044C \u0434\u0435\u0439\u0441\u0442\u0432\u0443\u044E\u0449\u0438\u0439 \u0430\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442 \u2014 \u0441\u0442\u0430\u0442\u0443\u0441 \u0434\u043B\u044F \u043D\u0435\u043E\u043F\u043B\u0430\u0442\u0438\u0432\u0448\u0438\u0445 (\u043F\u0440\u043E\u0431\u043D\u044B\u0439/\u043E\u043F\u043B\u0430\u0442\u0438\u0442/\u043B\u0438\u0434) \u043D\u0430\u0437\u043D\u0430\u0447\u0438\u0442\u044C \u043D\u0435\u043B\u044C\u0437\u044F. \u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u0437\u0430\u0432\u0435\u0440\u0448\u0438\u0442\u0435 \u0438\u043B\u0438 \u0443\u0434\u0430\u043B\u0438\u0442\u0435 \u0430\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442." });
+        }
+      }
       let prevStatus;
       if (payload.status !== void 0) {
         const before = await supabaseFetch("students", `select=status,branch_id&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`);
@@ -2415,6 +2447,44 @@ function registerMvpApi(app2) {
         description: payload.description || "\u041E\u043F\u043B\u0430\u0442\u0430 \u0430\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442\u0430"
       })
     });
+    try {
+      let rest = Math.max(0, Number(payload.amount) || 0);
+      const subs = await supabaseFetch(
+        "student_subscriptions",
+        `select=id,price,amount_paid&student_id=eq.${payload.studentId}&status=eq.active&amount_paid=not.is.null&order=starts_on.asc`
+      );
+      let remainingDebt = 0;
+      let hasData = false;
+      for (const s of subs) {
+        hasData = true;
+        let shortfall = Math.max(0, (Number(s.price) || 0) - Number(s.amount_paid));
+        if (shortfall > 0 && rest > 0) {
+          const add = Math.min(shortfall, rest);
+          await supabaseFetch("student_subscriptions", `id=eq.${s.id}`, {
+            method: "PATCH",
+            headers: { Prefer: "return=minimal" },
+            body: JSON.stringify({ amount_paid: Number(s.amount_paid) + add })
+          });
+          rest -= add;
+          shortfall -= add;
+        }
+        remainingDebt += shortfall;
+      }
+      if (!hasData || remainingDebt <= 0) {
+        const stu = (await supabaseFetch(
+          "students",
+          `select=id,status&id=eq.${payload.studentId}&organization_id=eq.${session.organizationId}`
+        ))[0];
+        if (stu && stu.status === "debt") {
+          await supabaseFetch("students", `id=eq.${payload.studentId}&organization_id=eq.${session.organizationId}`, {
+            method: "PATCH",
+            headers: { Prefer: "return=minimal" },
+            body: JSON.stringify({ status: "active" })
+          });
+        }
+      }
+    } catch {
+    }
     res.status(201).json({ payment: mapDbPayment(insertedPayment[0]) });
   });
   app2.post("/api/mvp/student-subscriptions", async (req, res) => {
@@ -2449,6 +2519,8 @@ function registerMvpApi(app2) {
       const recalc = Math.max(0, Number(payload.recalc) || 0);
       const finalPrice = payload.price !== void 0 ? Math.max(0, Number(payload.price) || 0) : Math.max(0, basePrice - discountAmount - recalc);
       const paid = payload.paid !== false;
+      const amountPaid = payload.amountPaid !== void 0 ? Math.min(finalPrice, Math.max(0, Number(payload.amountPaid) || 0)) : finalPrice;
+      const soldOn = String(payload.soldOn || today).slice(0, 10);
       if (paid && payload.groupId) {
         const overlap = await supabaseFetch(
           "student_subscriptions",
@@ -2471,22 +2543,26 @@ function registerMvpApi(app2) {
           lessons_total: lessonsTotal,
           lessons_left: lessonsTotal,
           price: finalPrice,
+          amount_paid: paid ? amountPaid : null,
+          sold_on: soldOn,
           discount_amount: discountAmount + recalc,
           status: paid ? "active" : "inactive"
         })
       });
+      const debtLeft = Math.max(0, finalPrice - amountPaid);
       let payment = null;
-      if (paid && finalPrice > 0) {
+      if (paid && amountPaid > 0) {
+        const payComment = payload.description || `\u0410\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442: ${plan.name}`;
         const insertedPayment = await supabaseFetch("payments", "", {
           method: "POST",
           body: JSON.stringify({
             organization_id: session.organizationId,
             branch_id: branchId,
             student_id: studentId,
-            amount: finalPrice,
+            amount: amountPaid,
             method: payload.method || "kaspi",
             status: "paid",
-            comment: payload.description || `\u0410\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442: ${plan.name}`,
+            comment: debtLeft > 0 ? `${payComment} (\u0447\u0430\u0441\u0442\u0438\u0447\u043D\u043E, \u0434\u043E\u043B\u0433 ${Math.round(debtLeft)} \u0442\u0433)` : payComment,
             created_by: session.userId.startsWith("demo-") ? null : session.userId
           })
         });
@@ -2498,7 +2574,7 @@ function registerMvpApi(app2) {
             branch_id: branchId,
             student_id: studentId,
             payment_id: insertedPayment[0].id,
-            amount: finalPrice,
+            amount: amountPaid,
             type: "income",
             category: "tuition",
             description: payload.description || `\u0410\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442: ${plan.name}`
@@ -2535,6 +2611,14 @@ function registerMvpApi(app2) {
           }
         } catch {
         }
+        try {
+          await supabaseFetch("attendance", `student_id=eq.${studentId}&is_trial=eq.true&trial_outcome=is.null`, {
+            method: "PATCH",
+            headers: { Prefer: "return=minimal" },
+            body: JSON.stringify({ trial_outcome: "converted" })
+          });
+        } catch {
+        }
       }
       res.status(201).json({
         subscription: mapDbSubscription(insertedSub[0], plan.name),
@@ -2559,6 +2643,25 @@ function registerMvpApi(app2) {
         body: JSON.stringify({ status: "archived", cancel_reason: reason, cancel_comment: comment, deleted_by: session.fullName || session.role, deleted_at: (/* @__PURE__ */ new Date()).toISOString() })
       });
       if (!rows[0]) return res.status(404).json({ error: "\u0410\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+      try {
+        const sid = rows[0].student_id;
+        const remain = await supabaseFetch("student_subscriptions", `select=status&student_id=eq.${sid}&status=neq.archived`).catch(() => []);
+        if (!remain.some((r) => String(r.status) === "active")) {
+          const stu = (await supabaseFetch("students", `select=manual_status&id=eq.${sid}&organization_id=eq.${session.organizationId}`).catch(() => []))[0];
+          const upd = { status: "lead" };
+          if (/оплат/i.test(String(stu?.manual_status || ""))) {
+            upd.manual_status = null;
+            upd.pay_promise_date = null;
+          }
+          await supabaseFetch("students", `id=eq.${sid}&organization_id=eq.${session.organizationId}`, {
+            method: "PATCH",
+            headers: { Prefer: "return=minimal" },
+            body: JSON.stringify(upd)
+          }).catch(() => {
+          });
+        }
+      } catch {
+      }
       res.json({ ok: true, subscription: mapDbSubscription(rows[0]) });
     } catch (error) {
       res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u0430\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442" });
@@ -2599,7 +2702,7 @@ function registerMvpApi(app2) {
     if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
     const { date, time, note } = req.body || {};
     if (!date) return res.status(400).json({ error: "\u0423\u043A\u0430\u0436\u0438\u0442\u0435 \u0434\u0430\u0442\u0443 \u043F\u0440\u043E\u0431\u043D\u043E\u0433\u043E \u0443\u0440\u043E\u043A\u0430" });
-    const st = (await supabaseFetch("students", `select=id,branch_id,group_id,teacher_id&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`))[0];
+    const st = (await supabaseFetch("students", `select=id,branch_id,group_id,teacher_id,manual_status&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`))[0];
     if (!st) return res.status(404).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
     if (!canSeeBranch(session, st.branch_id)) return res.status(403).json({ error: "Branch access denied" });
     if (!st.group_id) return res.status(400).json({ error: "\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u043D\u0430\u0437\u043D\u0430\u0447\u044C\u0442\u0435 \u0443\u0447\u0435\u043D\u0438\u043A\u0443 \u0433\u0440\u0443\u043F\u043F\u0443 \u2014 \u043F\u0440\u043E\u0431\u043D\u044B\u0439 \u0443\u0440\u043E\u043A \u0437\u0430\u043F\u0438\u0441\u044B\u0432\u0430\u0435\u0442\u0441\u044F \u0432 \u0433\u0440\u0443\u043F\u043F\u0443." });
@@ -2619,6 +2722,14 @@ function registerMvpApi(app2) {
       const dayEnd = dayEndD.toISOString();
       const ex = await supabaseFetch("schedule_lessons", `select=id&group_id=eq.${st.group_id}&starts_at=gte.${encodeURIComponent(dayStart)}&starts_at=lt.${encodeURIComponent(dayEnd)}&limit=1`);
       let lessonId = ex[0]?.id;
+      if (lessonId) {
+        const already = await supabaseFetch("attendance", `select=id,is_trial&lesson_id=eq.${lessonId}&student_id=eq.${req.params.id}&limit=1`).catch(() => []);
+        if (already[0]?.is_trial) return res.status(409).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u0443\u0436\u0435 \u0437\u0430\u043F\u0438\u0441\u0430\u043D \u043D\u0430 \u043F\u0440\u043E\u0431\u043D\u044B\u0439 \u0443\u0440\u043E\u043A \u043D\u0430 \u044D\u0442\u0443 \u0434\u0430\u0442\u0443" });
+      }
+      if (!Boolean((req.body || {}).confirm)) {
+        const pending = await supabaseFetch("attendance", `select=id&student_id=eq.${req.params.id}&is_trial=eq.true&status=eq.unknown&limit=1`).catch(() => []);
+        if (pending.length) return res.status(409).json({ error: "\u0423 \u0443\u0447\u0435\u043D\u0438\u043A\u0430 \u0443\u0436\u0435 \u0435\u0441\u0442\u044C \u043D\u0435\u0437\u0430\u043A\u0440\u044B\u0442\u044B\u0439 \u043F\u0440\u043E\u0431\u043D\u044B\u0439 \u0443\u0440\u043E\u043A (\u043D\u0435\u0442 \u043E\u0442\u043C\u0435\u0442\u043A\u0438 \xAB\u0431\u044B\u043B/\u043D\u0435 \u0431\u044B\u043B\xBB). \u0417\u0430\u043F\u0438\u0441\u0430\u0442\u044C \u0435\u0449\u0451 \u043E\u0434\u0438\u043D?", needsConfirm: true });
+      }
       if (!lessonId) {
         const ins = await supabaseFetch("schedule_lessons", "", {
           method: "POST",
@@ -2643,10 +2754,15 @@ function registerMvpApi(app2) {
         comment: note || null,
         marked_at: (/* @__PURE__ */ new Date()).toISOString()
       }]);
+      const trialUpd = { status: "trial" };
+      if (/оплат/i.test(String(st.manual_status || ""))) {
+        trialUpd.manual_status = null;
+        trialUpd.pay_promise_date = null;
+      }
       await supabaseFetch("students", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, {
         method: "PATCH",
         headers: { Prefer: "return=minimal" },
-        body: JSON.stringify({ status: "trial" })
+        body: JSON.stringify(trialUpd)
       });
       res.json({ ok: true, lessonId, date, startsAt });
     } catch (error) {
@@ -2674,12 +2790,37 @@ function registerMvpApi(app2) {
       const endDate = /* @__PURE__ */ new Date(`${payload.date}T00:00:00.000Z`);
       endDate.setUTCDate(endDate.getUTCDate() + 1);
       const end = endDate.toISOString();
+      if (!student.group_id) return res.status(400).json({ error: "\u0423 \u0443\u0447\u0435\u043D\u0438\u043A\u0430 \u043D\u0435 \u0443\u043A\u0430\u0437\u0430\u043D\u0430 \u0433\u0440\u0443\u043F\u043F\u0430 \u2014 \u043E\u0442\u043C\u0435\u0442\u043A\u0430 \u0441\u0442\u0430\u0432\u0438\u0442\u0441\u044F \u043F\u043E \u0443\u0440\u043E\u043A\u0443 \u0433\u0440\u0443\u043F\u043F\u044B" });
       const lessons = await supabaseFetch(
         "schedule_lessons",
         `select=*&group_id=eq.${student.group_id}&starts_at=gte.${encodeURIComponent(start)}&starts_at=lt.${encodeURIComponent(end)}&limit=1`
       );
-      if (!lessons[0]) return res.status(404).json({ error: "Lesson not found for student group and date" });
-      lessonId = lessons[0].id;
+      lessonId = lessons[0]?.id;
+      if (!lessonId) {
+        const grp = (await supabaseFetch("groups", `select=id,branch_id,teacher_id,schedule_time&id=eq.${student.group_id}&limit=1`))[0];
+        const hm = (s) => /^\d{1,2}:\d{2}$/.test(s || "") ? `${s.split(":")[0].padStart(2, "0")}:${s.split(":")[1]}` : "";
+        const [rawA, rawB] = String(grp?.schedule_time || "").split(/[–—-]/).map((s) => s.trim());
+        const startHm = hm(rawA) || "18:00";
+        let endHm = hm(rawB) || "";
+        if (!endHm || endHm <= startHm) {
+          const [h, m] = startHm.split(":").map(Number);
+          endHm = `${String(Math.min(h + 1, 23)).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+        }
+        const created = await supabaseFetch("schedule_lessons", "", {
+          method: "POST",
+          body: JSON.stringify({
+            branch_id: student.branch_id,
+            group_id: student.group_id,
+            teacher_id: student.teacher_id || grp?.teacher_id || null,
+            starts_at: `${payload.date}T${startHm}:00.000Z`,
+            ends_at: `${payload.date}T${endHm}:00.000Z`,
+            status: "scheduled",
+            created_by: session.userId.startsWith("demo-") ? null : session.userId
+          })
+        });
+        lessonId = created[0]?.id;
+        if (!lessonId) return res.status(500).json({ error: "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0437\u0434\u0430\u0442\u044C \u0443\u0440\u043E\u043A \u0434\u043B\u044F \u043E\u0442\u043C\u0435\u0442\u043A\u0438" });
+      }
     }
     const rows = await upsertAttendanceRows([{
       lesson_id: lessonId,
@@ -4989,6 +5130,24 @@ function registerMvpApi(app2) {
     createdBy: t.createdBy ?? t.created_by ?? null,
     createdAt: t.createdAt ?? t.created_at
   });
+  const teacherStudentScope = async (session) => {
+    if (session.role !== "teacher") return null;
+    const ids = /* @__PURE__ */ new Set();
+    if (!supabaseEnabled) {
+      const gids2 = new Set(initialGroups.filter((g2) => g2.teacherId === session.userId).map((g2) => g2.id));
+      for (const s of initialStudents) {
+        if (s.teacherId === session.userId || Array.isArray(s.groupIds) && s.groupIds.some((id) => gids2.has(id))) ids.add(s.id);
+      }
+      return ids;
+    }
+    const groups = await supabaseFetch("groups", `select=id&teacher_id=eq.${session.userId}&organization_id=eq.${session.organizationId}`).catch(() => []);
+    const gids = new Set(groups.map((g2) => g2.id));
+    const rows = await supabaseFetch("students", `select=id,group_id,teacher_id&organization_id=eq.${session.organizationId}`).catch(() => []);
+    for (const s of rows) {
+      if (s.teacher_id === session.userId || s.group_id && gids.has(s.group_id)) ids.add(s.id);
+    }
+    return ids;
+  };
   const applyEcho = async (session, studentId, amount, kind, reason, productId) => {
     if (!supabaseEnabled) {
       const cur2 = mockEchoBalances[studentId] ?? 0;
@@ -5025,6 +5184,10 @@ function registerMvpApi(app2) {
     if (session.role === "student" && session.studentId !== studentId) {
       return res.status(403).json({ error: "\u041D\u0435\u0442 \u0434\u043E\u0441\u0442\u0443\u043F\u0430 \u043A \u0447\u0443\u0436\u043E\u043C\u0443 \u043A\u043E\u0448\u0435\u043B\u044C\u043A\u0443" });
     }
+    const walletScope = await teacherStudentScope(session);
+    if (walletScope && !walletScope.has(studentId)) {
+      return res.status(403).json({ error: "\u041A\u043E\u0448\u0435\u043B\u0451\u043A \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0442\u043E\u043B\u044C\u043A\u043E \u043F\u043E \u0443\u0447\u0435\u043D\u0438\u043A\u0430\u043C \u0441\u0432\u043E\u0438\u0445 \u0433\u0440\u0443\u043F\u043F" });
+    }
     if (!supabaseEnabled) {
       return res.json({ balance: mockEchoBalances[studentId] ?? 0, transactions: mockEchoTx.filter((t) => t.studentId === studentId).slice(0, 50).map(echoTxOut) });
     }
@@ -5036,12 +5199,13 @@ function registerMvpApi(app2) {
   app2.get("/api/mvp/shop/echo/students", ah(async (req, res) => {
     const session = getSession(req);
     if (!echoStaff.includes(session.role)) return res.status(403).json({ error: "\u041D\u0435\u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E \u043F\u0440\u0430\u0432" });
+    const listScope = await teacherStudentScope(session);
     if (!supabaseEnabled) {
-      const list = initialStudents.filter((s) => session.role === "owner" || canSeeBranch(session, s.branchId)).map((s) => ({ id: s.id, name: s.name, balance: mockEchoBalances[s.id] ?? 0 }));
+      const list = initialStudents.filter((s) => session.role === "owner" || canSeeBranch(session, s.branchId)).filter((s) => !listScope || listScope.has(s.id)).map((s) => ({ id: s.id, name: s.name, balance: mockEchoBalances[s.id] ?? 0 }));
       return res.json({ students: list });
     }
     const rows = await supabaseFetch("students", `select=id,first_name,last_name,echo_balance,branch_id&organization_id=eq.${session.organizationId}&status=neq.archived&order=first_name.asc`);
-    const scoped = rows.filter((r) => canSeeBranch(session, r.branch_id));
+    const scoped = rows.filter((r) => canSeeBranch(session, r.branch_id)).filter((r) => !listScope || listScope.has(r.id));
     res.json({ students: scoped.map((r) => ({ id: r.id, name: [r.first_name, r.last_name].filter(Boolean).join(" ") || r.full_name || "\u0423\u0447\u0435\u043D\u0438\u043A", balance: Number(r.echo_balance) || 0 })) });
   }));
   app2.post("/api/mvp/shop/echo/grant", ah(async (req, res) => {
@@ -5052,6 +5216,10 @@ function registerMvpApi(app2) {
     const amount = Math.trunc(Number(b.amount) || 0);
     if (!studentId) return res.status(400).json({ error: "\u041D\u0435 \u0443\u043A\u0430\u0437\u0430\u043D \u0443\u0447\u0435\u043D\u0438\u043A" });
     if (!amount) return res.status(400).json({ error: "\u0423\u043A\u0430\u0436\u0438\u0442\u0435 \u043A\u043E\u043B\u0438\u0447\u0435\u0441\u0442\u0432\u043E \u042D\u0445\u043E\u0411\u0430\u043A\u0441\u043E\u0432 (\u0441\u043E \u0437\u043D\u0430\u043A\u043E\u043C \u043C\u0438\u043D\u0443\u0441 \u2014 \u0441\u043F\u0438\u0441\u0430\u043D\u0438\u0435)" });
+    const grantScope = await teacherStudentScope(session);
+    if (grantScope && !grantScope.has(studentId)) {
+      return res.status(403).json({ error: "\u041D\u0430\u0447\u0438\u0441\u043B\u044F\u0442\u044C \u042D\u0445\u043E\u0411\u0430\u043A\u0441\u044B \u043C\u043E\u0436\u043D\u043E \u0442\u043E\u043B\u044C\u043A\u043E \u0443\u0447\u0435\u043D\u0438\u043A\u0430\u043C \u0441\u0432\u043E\u0438\u0445 \u0433\u0440\u0443\u043F\u043F" });
+    }
     try {
       const { balance, tx } = await applyEcho(session, studentId, amount, "grant", (b.reason || "").toString().trim() || null, null);
       res.json({ balance, transaction: tx });

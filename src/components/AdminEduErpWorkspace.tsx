@@ -137,6 +137,7 @@ interface AdminEduErpWorkspaceProps {
   onUpdateLeadSource?: (id: string, data: any) => Promise<boolean>;
   onDeleteLeadSource?: (id: string) => Promise<boolean>;
   onBulkAttendance?: any;
+  onBatchAttendance?: any;
   journal?: any;
   onJournalTask?: (p: { studentId: string; studentName: string; title: string }) => void;
 }
@@ -214,6 +215,7 @@ export function AdminEduErpWorkspace({
   onUpdateLeadSource,
   onDeleteLeadSource,
   onBulkAttendance,
+  onBatchAttendance,
   journal,
   onJournalTask,
   archivedGroups = [],
@@ -359,6 +361,7 @@ export function AdminEduErpWorkspace({
               currentBranchId={branches?.[0]?.id}
               canEdit={true}
               onToggleAttendance={onToggleAttendance as any}
+              onBatchAttendance={onBatchAttendance as any}
               onBulkAttendance={onBulkAttendance as any}
               onCreateTask={onJournalTask}
               journal={journal}

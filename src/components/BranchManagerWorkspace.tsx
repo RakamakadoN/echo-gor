@@ -75,6 +75,7 @@ interface BranchManagerWorkspaceProps {
   subscriptionPlans?: SubscriptionPlan[];
   onToggleAttendance?: (studentId: string, date: string, status: "present" | "absent" | "sick") => void;
   onBulkAttendance?: any;
+  onBatchAttendance?: any;
   journal?: any;
   onJournalTask?: (p: { studentId: string; studentName: string; title: string }) => void;
 }
@@ -132,6 +133,7 @@ export function BranchManagerWorkspace({
   onSellSubscription,
   subscriptionPlans = [],
   onToggleAttendance,
+  onBatchAttendance,
   onBulkAttendance,
   journal,
   onJournalTask,
@@ -309,6 +311,7 @@ export function BranchManagerWorkspace({
               currentBranchId={branchId}
               canEdit={false}
               onToggleAttendance={onToggleAttendance as any}
+              onBatchAttendance={onBatchAttendance as any}
               onBulkAttendance={onBulkAttendance as any}
               onCreateTask={onJournalTask}
               journal={journal}

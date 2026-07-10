@@ -1470,6 +1470,49 @@ export function registerMvpApi(app: express.Express) {
       })
     });
 
+    // Погашение долга: долг считается как price − amount_paid по активным
+    // абонементам (computeStudentBalance), поэтому платёж обязан увеличивать
+    // amount_paid — иначе доплата «не видна» и долг не гасится.
+    try {
+      let rest = Math.max(0, Number(payload.amount) || 0);
+      const subs = await supabaseFetch<any[]>(
+        "student_subscriptions",
+        `select=id,price,amount_paid&student_id=eq.${payload.studentId}&status=eq.active&amount_paid=not.is.null&order=starts_on.asc`
+      );
+      let remainingDebt = 0;
+      let hasData = false;
+      for (const s of subs) {
+        hasData = true;
+        let shortfall = Math.max(0, (Number(s.price) || 0) - Number(s.amount_paid));
+        if (shortfall > 0 && rest > 0) {
+          const add = Math.min(shortfall, rest);
+          await supabaseFetch("student_subscriptions", `id=eq.${s.id}`, {
+            method: "PATCH",
+            headers: { Prefer: "return=minimal" },
+            body: JSON.stringify({ amount_paid: Number(s.amount_paid) + add })
+          });
+          rest -= add;
+          shortfall -= add;
+        }
+        remainingDebt += shortfall;
+      }
+      // Легаси-флаг status='debt' (абонементы без amount_paid): без данных о
+      // недоплате любой платёж снимает флаг; с данными — только когда долга нет.
+      if (!hasData || remainingDebt <= 0) {
+        const stu = (await supabaseFetch<any[]>(
+          "students",
+          `select=id,status&id=eq.${payload.studentId}&organization_id=eq.${session.organizationId}`
+        ))[0];
+        if (stu && stu.status === "debt") {
+          await supabaseFetch("students", `id=eq.${payload.studentId}&organization_id=eq.${session.organizationId}`, {
+            method: "PATCH",
+            headers: { Prefer: "return=minimal" },
+            body: JSON.stringify({ status: "active" })
+          });
+        }
+      }
+    } catch { /* погашение долга не должно ронять регистрацию платежа */ }
+
     res.status(201).json({ payment: mapDbPayment(insertedPayment[0]) });
   });
 
@@ -1623,6 +1666,16 @@ export function registerMvpApi(app: express.Express) {
             }
           }
         } catch { /* смена статуса не критична для продажи */ }
+
+        // Пробный закрыт покупкой: помечаем пробные отметки converted — по этому
+        // полю считают дашборд журнала («Купили после ПУ») и воронка статусов.
+        try {
+          await supabaseFetch("attendance", `student_id=eq.${studentId}&is_trial=eq.true&trial_outcome=is.null`, {
+            method: "PATCH",
+            headers: { Prefer: "return=minimal" },
+            body: JSON.stringify({ trial_outcome: "converted" }),
+          });
+        } catch { /* не критично для продажи */ }
       }
 
       res.status(201).json({
@@ -1793,12 +1846,37 @@ export function registerMvpApi(app: express.Express) {
       const endDate = new Date(`${payload.date}T00:00:00.000Z`);
       endDate.setUTCDate(endDate.getUTCDate() + 1);
       const end = endDate.toISOString();
+      if (!student.group_id) return res.status(400).json({ error: "У ученика не указана группа — отметка ставится по уроку группы" });
       const lessons = await supabaseFetch<any[]>(
         "schedule_lessons",
         `select=*&group_id=eq.${student.group_id}&starts_at=gte.${encodeURIComponent(start)}&starts_at=lt.${encodeURIComponent(end)}&limit=1`
       );
-      if (!lessons[0]) return res.status(404).json({ error: "Lesson not found for student group and date" });
-      lessonId = lessons[0].id;
+      lessonId = lessons[0]?.id;
+      if (!lessonId) {
+        // Журнал показывает даты по расписанию группы, а строки уроков заведены не
+        // на все даты — раньше отметка падала с 404 и «не сохранялась». Создаём урок
+        // сами, время берём из расписания группы («09:00–11:00»).
+        const grp = (await supabaseFetch<any[]>("groups", `select=id,branch_id,teacher_id,schedule_time&id=eq.${student.group_id}&limit=1`))[0];
+        const hm = (s: string) => /^\d{1,2}:\d{2}$/.test(s || "") ? `${s.split(":")[0].padStart(2, "0")}:${s.split(":")[1]}` : "";
+        const [rawA, rawB] = String(grp?.schedule_time || "").split(/[–—-]/).map((s: string) => s.trim());
+        const startHm = hm(rawA) || "18:00";
+        let endHm = hm(rawB) || "";
+        if (!endHm || endHm <= startHm) { const [h, m] = startHm.split(":").map(Number); endHm = `${String(Math.min(h + 1, 23)).padStart(2, "0")}:${String(m).padStart(2, "0")}`; }
+        const created = await supabaseFetch<any[]>("schedule_lessons", "", {
+          method: "POST",
+          body: JSON.stringify({
+            branch_id: student.branch_id,
+            group_id: student.group_id,
+            teacher_id: student.teacher_id || grp?.teacher_id || null,
+            starts_at: `${payload.date}T${startHm}:00.000Z`,
+            ends_at: `${payload.date}T${endHm}:00.000Z`,
+            status: "scheduled",
+            created_by: session.userId.startsWith("demo-") ? null : session.userId,
+          }),
+        });
+        lessonId = created[0]?.id;
+        if (!lessonId) return res.status(500).json({ error: "Не удалось создать урок для отметки" });
+      }
     }
 
     const rows = await upsertAttendanceRows([{

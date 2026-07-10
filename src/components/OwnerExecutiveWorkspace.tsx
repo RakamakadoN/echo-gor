@@ -204,6 +204,7 @@ interface OwnerExecutiveWorkspaceProps {
   onUpdateLesson?: (id: string, data: any) => Promise<boolean>;
   onDeleteLesson?: (id: string) => Promise<boolean>;
   onToggleAttendance?: any;
+  onBatchAttendance?: any;
   onBulkAttendance?: any;
   journal?: any;
   onJournalTask?: (p: { studentId: string; studentName: string; title: string }) => void;
@@ -303,6 +304,7 @@ export function OwnerExecutiveWorkspace({
   onUpdateLesson,
   onDeleteLesson,
   onToggleAttendance,
+  onBatchAttendance,
   onBulkAttendance,
   journal,
   onJournalTask,
@@ -456,6 +458,7 @@ export function OwnerExecutiveWorkspace({
               teachers={teachers}
               canEdit={true}
               onToggleAttendance={onToggleAttendance}
+              onBatchAttendance={onBatchAttendance}
               onBulkAttendance={onBulkAttendance}
               onCreateTask={onJournalTask}
               journal={journal}

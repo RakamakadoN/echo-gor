@@ -271,8 +271,9 @@ export const getTrialInfo = (student: Student): TrialInfo => {
   let converted = false;
   let lost = false;
   for (const a of records) {
-    if (a.status === "absent") missed += 1;
-    else attended += 1; // present / trial / excused — фактически пришёл
+    if (a.status === "absent" || a.status === "sick") missed += 1;
+    else if (a.status === "present" || a.status === "excused" || a.status === "trial") attended += 1;
+    // status 'unmarked' — записан, урок ещё не закрыт: ни «был», ни «пропустил».
     if (a.trialOutcome === "converted") converted = true;
     if (a.trialOutcome === "lost") lost = true;
   }
@@ -355,7 +356,9 @@ export const getStudentState = (student: Student, now: Date = new Date()): Stude
     (student.status === "lead" || student.status === "trial" || isTrial(student) || trial.count > 0)
   ) {
     // ── Воронка пробных уроков (автоматические статусы) ──
-    if (trial.attended > 0 && trial.lost) {
+    // «Был, но не купил» выводится автоматически: есть отметка «Был» на пробном,
+    // а абонемента нет (ручной trialOutcome='lost' не требуется — его никто не ставит).
+    if (trial.attended > 0) {
       statusKey = "trial_lost";
       statusLabel = "Пришёл на пробный, не купил";
       tone = "yellow";

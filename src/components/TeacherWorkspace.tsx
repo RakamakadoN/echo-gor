@@ -35,6 +35,7 @@ interface TeacherWorkspaceProps {
   onAssignHomework?: (data: { studentId?: string; groupId?: string; title: string; description?: string; dueAt?: string; videoUrl?: string }) => Promise<Homework | null>;
   onUpdateHomework?: (id: string, patch: { status?: Homework["status"]; gradeComment?: string }) => Promise<void>;
   onBulkAttendance?: (groupId: string, date: string, status?: "present" | "absent" | "sick") => Promise<number>;
+  onBatchAttendance?: any;
   onGenerateLessonPlan?: (prompt: string, ctx?: { groupName?: string; groupLevel?: string; studentCount?: number }) => Promise<LessonPlan>;
   onGenerateStudentPlan?: (student: Student) => Promise<DevPlan>;
   onSubmitReaction?: (reactionKey: string, opts?: { studentId?: string; groupId?: string; teacherId?: string }) => Promise<boolean>;
@@ -66,6 +67,7 @@ export function TeacherWorkspace({
   scheduleLoading = false,
   onLoadSchedule,
   onToggleAttendance,
+  onBatchAttendance,
   homeworks = [],
   onAddNote,
   onAssignHomework,
@@ -261,6 +263,7 @@ export function TeacherWorkspace({
               teachers={teachers}
               canEdit={true}
               onToggleAttendance={onToggleAttendance as any}
+              onBatchAttendance={onBatchAttendance as any}
               onBulkAttendance={onBulkAttendance as any}
               onCreateTask={onJournalTask}
               journal={journal}
