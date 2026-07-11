@@ -1698,14 +1698,15 @@ export function registerMvpApi(app: express.Express) {
           waitlistClosed = closed.length > 0;
         } catch { /* лист ожидания не критичен для продажи */ }
 
-        // Оплата меняет статус ученика: снимаем промис «…оплатит», а лид/пробный
-        // становится действующим учеником (lead/trial → active).
+        // Продажа АКТУАЛИЗИРУЕТ статус (ТЗ: каждое действие обновляет статус):
+        // снимаем ЛЮБОЙ устаревший ручной статус («Каникулы», «…оплатит» и т.п.) —
+        // купивший ученик идёт по авто-логике; лид/пробный/пауза → active.
         try {
           const stu = (await supabaseFetch<any[]>("students", `select=status,manual_status&id=eq.${studentId}&organization_id=eq.${session.organizationId}`))[0];
           if (stu) {
             const upd: Record<string, any> = {};
-            if (/оплат/i.test(String(stu.manual_status || ""))) { upd.manual_status = null; upd.pay_promise_date = null; }
-            if (["lead", "trial"].includes(String(stu.status))) upd.status = "active";
+            if (String(stu.manual_status || "").trim()) { upd.manual_status = null; upd.pay_promise_date = null; }
+            if (["lead", "trial", "paused"].includes(String(stu.status))) upd.status = "active";
             if (Object.keys(upd).length) {
               await supabaseFetch("students", `id=eq.${studentId}&organization_id=eq.${session.organizationId}`, {
                 method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(upd),
@@ -1907,7 +1908,7 @@ export function registerMvpApi(app: express.Express) {
     if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
     const { date, time, note } = req.body || {};
     if (!date) return res.status(400).json({ error: "Укажите дату пробного урока" });
-    const st = (await supabaseFetch<any[]>("students", `select=id,branch_id,group_id,teacher_id,manual_status&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`))[0];
+    const st = (await supabaseFetch<any[]>("students", `select=id,branch_id,group_id,teacher_id,manual_status,status&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`))[0];
     if (!st) return res.status(404).json({ error: "Ученик не найден" });
     if (!canSeeBranch(session, st.branch_id)) return res.status(403).json({ error: "Branch access denied" });
     if (!st.group_id) return res.status(400).json({ error: "Сначала назначьте ученику группу — пробный урок записывается в группу." });
@@ -1952,11 +1953,14 @@ export function registerMvpApi(app: express.Express) {
         lesson_id: lessonId, student_id: req.params.id, status: "unknown",
         is_trial: true, comment: note || null, marked_at: new Date().toISOString(),
       }]);
-      // Статус → пробный (getStudentState покажет «Записан на пробный урок»).
-      // Снимаем устаревший ручной промис «…оплатит», иначе он (приоритетный)
-      // заслонит новый статус записи на пробный.
-      const trialUpd: Record<string, any> = { status: "trial" };
-      if (/оплат/i.test(String(st.manual_status || ""))) { trialUpd.manual_status = null; trialUpd.pay_promise_date = null; }
+      // Запись на пробный АКТУАЛИЗИРУЕТ статус (ТЗ): снимаем ЛЮБОЙ ручной статус
+      // («Каникулы», «…оплатит» и т.п.) — иначе он (приоритетный) заслонит запись.
+      // Статус → trial, но НЕ затираем active у ученика с действующим абонементом
+      // (пробный в другую группу/направление не делает активного «пробным»).
+      const trialUpd: Record<string, any> = {};
+      if (st.status !== "active") trialUpd.status = "trial";
+      if (String(st.manual_status || "").trim()) { trialUpd.manual_status = null; trialUpd.pay_promise_date = null; }
+      if (!Object.keys(trialUpd).length) trialUpd.status = st.status; // PATCH не пустой
       await supabaseFetch("students", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, {
         method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(trialUpd),
       });
