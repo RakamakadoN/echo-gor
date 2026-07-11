@@ -1546,30 +1546,35 @@ export function registerMvpApi(app: express.Express) {
     res.status(201).json({ payment: mapDbPayment(insertedPayment[0]) });
   });
 
-  // Продать абонемент: создаём student_subscriptions + (по флагу paid) платёж и проводку ДДС.
-  app.post("/api/mvp/student-subscriptions", async (req, res) => {
-    const session = getSession(req);
-    const payload = req.body || {};
+  // Ошибка бизнес-логики продажи с HTTP-статусом (для createSubscriptionSale).
+  class SaleError extends Error {
+    status: number;
+    constructor(status: number, message: string) { super(message); this.status = status; }
+  }
+
+  // Продажа абонемента — общая логика для одиночного и пакетного эндпоинтов.
+  // Извлечено 1:1 из POST /api/mvp/student-subscriptions (денежный путь!).
+  async function createSubscriptionSale(session: MvpSession, payload: any) {
     const studentId = payload.studentId;
     const branchId = payload.branchId;
     const planId = payload.planId;
     if (!studentId || !branchId || !planId) {
-      return res.status(400).json({ error: "studentId, branchId and planId are required" });
+      throw new SaleError(400, "studentId, branchId and planId are required");
     }
     if (!canSeeBranch(session, branchId)) {
-      return res.status(403).json({ error: "Branch access denied" });
+      throw new SaleError(403, "Branch access denied");
     }
     if (!supabaseEnabled) {
-      return res.status(503).json({ error: "Supabase is not configured" });
+      throw new SaleError(503, "Supabase is not configured");
     }
-    try {
+    {
       // План нужен для названия и значений по умолчанию.
       const plans = await supabaseFetch<any[]>(
         "subscription_plans",
         `select=*&id=eq.${planId}&organization_id=eq.${session.organizationId}`
       );
       const plan = plans[0];
-      if (!plan) return res.status(404).json({ error: "План абонемента не найден" });
+      if (!plan) throw new SaleError(404, "План абонемента не найден");
 
       const lessonsTotal = Number(payload.lessonsTotal) > 0
         ? Math.round(Number(payload.lessonsTotal))
@@ -1609,7 +1614,7 @@ export function registerMvpApi(app: express.Express) {
           `select=id,starts_on,ends_on&student_id=eq.${studentId}&group_id=eq.${payload.groupId}&status=eq.active&starts_on=lte.${endsOn}&ends_on=gte.${startsOn}`
         ).catch(() => [] as any[]);
         if (overlap.length > 0) {
-          return res.status(409).json({ error: "У ученика уже есть активный абонемент в этой группе на пересекающийся период. Выберите другую группу, период или индивидуальное занятие." });
+          throw new SaleError(409, "У ученика уже есть активный абонемент в этой группе на пересекающийся период. Выберите другую группу, период или индивидуальное занятие.");
         }
       }
 
@@ -1708,13 +1713,22 @@ export function registerMvpApi(app: express.Express) {
         } catch { /* не критично для продажи */ }
       }
 
-      res.status(201).json({
+      return {
         subscription: mapDbSubscription(insertedSub[0], plan.name),
         payment,
         waitlistClosed
-      });
+      };
+    }
+  }
+
+  // Продать абонемент: создаём student_subscriptions + (по флагу paid) платёж и проводку ДДС.
+  app.post("/api/mvp/student-subscriptions", async (req, res) => {
+    const session = getSession(req);
+    try {
+      const result = await createSubscriptionSale(session, req.body || {});
+      res.status(201).json(result);
     } catch (error: any) {
-      res.status(400).json({ error: error.message || "Не удалось продать абонемент" });
+      res.status(error instanceof SaleError ? error.status : 400).json({ error: error.message || "Не удалось продать абонемент" });
     }
   });
 
