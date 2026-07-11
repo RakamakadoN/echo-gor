@@ -4241,10 +4241,12 @@ export function registerMvpApi(app: express.Express) {
         return res.json({ studentId: s.id, name: s.name, level, token: null, tabs: tabsForLevel(level) });
       }
       const tail7 = phoneDigits.slice(-7);
-      const rows = await supabaseFetch<any[]>("students", `select=id,first_name,last_name,full_name,birthday,branch_id,access_level,phone,parent_phone&or=(phone.like.*${tail7}*,parent_phone.like.*${tail7}*)&limit=20`).catch(() => [] as any[]);
+      // Внимание: колонки full_name в students НЕТ — её наличие в select ломает
+      // весь запрос PostgREST (400), .catch() превращал это в «ученик не найден».
+      const rows = await supabaseFetch<any[]>("students", `select=id,first_name,last_name,birthday,branch_id,access_level,phone,parent_phone&or=(phone.like.*${tail7}*,parent_phone.like.*${tail7}*)&limit=20`).catch(() => [] as any[]);
       const r = rows.find((x) => last10(x.phone) === phoneDigits || last10(x.parent_phone) === phoneDigits);
       if (!r) return res.status(404).json({ error: "Ученик с таким номером не найден" });
-      const name = [r.first_name, r.last_name].filter(Boolean).join(" ") || r.full_name || "Ученик";
+      const name = [r.first_name, r.last_name].filter(Boolean).join(" ") || "Ученик";
       const level = effectiveAccessLevel(r.access_level, ageFromBirthday(r.birthday));
       return res.json({ studentId: r.id, name, level, token: null, tabs: tabsForLevel(level) });
     }
