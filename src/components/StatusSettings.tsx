@@ -29,8 +29,10 @@ export default function StatusSettings({ onClose, roleHeader = "owner" }: { onCl
     getManualStatuses().map((s) => ({ name: s, initialName: s }))
   );
 
-  const setLabel = (key: string, v: string) => setLabels((m) => ({ ...m, [key]: v }));
   const setTone = (key: string, t: StatusTone) => setTones((m) => ({ ...m, [key]: t }));
+  // «Был на пробном, оплатит» — системный ручной статус: на него завязана логика
+  // промиса оплаты (regex /оплат/), переименовывать и удалять нельзя.
+  const isProtectedManual = (name: string) => name.trim() === "Был на пробном, оплатит";
 
   const save = () => {
     const cleanLabels: Record<string, string> = {};
@@ -55,16 +57,13 @@ export default function StatusSettings({ onClose, roleHeader = "owner" }: { onCl
     onClose();
   };
 
+  // Авто-статусы (ТЗ заказчика): название системное и НЕ редактируется — можно
+  // менять только ЦВЕТ. Переименовывать разрешено только ручные статусы.
   const Row = ({ item }: { item: { key: string; label: string; tone: StatusTone } }) => {
     const curTone = tones[item.key] || item.tone;
     return (
       <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
-        <input
-          value={labels[item.key] ?? ""}
-          onChange={(e) => setLabel(item.key, e.target.value)}
-          placeholder={item.label}
-          className="min-w-[160px] flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 outline-none focus:border-slate-400"
-        />
+        <span className="min-w-[160px] flex-1 px-1 text-sm font-semibold text-slate-700">{item.label}</span>
         <div className="flex items-center gap-1.5">
           {STATUS_TONES.map((t) => (
             <button
@@ -102,6 +101,7 @@ export default function StatusSettings({ onClose, roleHeader = "owner" }: { onCl
         <div className="space-y-6 px-5 py-5">
           <section>
             <p className="mb-2 text-[11px] font-black uppercase tracking-wider text-slate-500">Основные показатели</p>
+            <p className="mb-2 text-[11px] text-slate-400">Названия авто-статусов системные и не редактируются — настраивается только цвет.</p>
             <div className="space-y-2">
               {BASE_KPI_STATUSES.map((it) => (
                 <Row key={it.key} item={it} />
@@ -131,14 +131,21 @@ export default function StatusSettings({ onClose, roleHeader = "owner" }: { onCl
             <div className="space-y-2">
               {manual.map((row, i) => {
                 const curTone = tones[row.name] || tones[row.initialName] || "gray";
+                const locked = isProtectedManual(row.initialName);
                 return (
                 <div key={i} className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
-                  <input
-                    value={row.name}
-                    onChange={(e) => setManual((m) => m.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))}
-                    placeholder="Название статуса"
-                    className="min-w-[160px] flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 outline-none focus:border-slate-400"
-                  />
+                  {locked ? (
+                    <span className="min-w-[160px] flex-1 px-1 text-sm font-semibold text-slate-700" title="Системный статус: на него завязана логика оплаты, переименовать нельзя">
+                      {row.name} <span className="text-[10px] font-bold text-slate-400">· системный</span>
+                    </span>
+                  ) : (
+                    <input
+                      value={row.name}
+                      onChange={(e) => setManual((m) => m.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))}
+                      placeholder="Название статуса"
+                      className="min-w-[160px] flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 outline-none focus:border-slate-400"
+                    />
+                  )}
                   <div className="flex items-center gap-1.5">
                     {STATUS_TONES.map((t) => (
                       <button key={t.id} title={t.label} onClick={() => row.name.trim() && setTone(row.name.trim(), t.id)}
@@ -146,12 +153,14 @@ export default function StatusSettings({ onClose, roleHeader = "owner" }: { onCl
                         style={{ background: t.swatch }} />
                     ))}
                   </div>
-                  <button
-                    onClick={() => setManual((m) => m.filter((_, j) => j !== i))}
-                    className="rounded-lg p-1.5 text-rose-500 hover:bg-rose-50"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                  {!locked && (
+                    <button
+                      onClick={() => setManual((m) => m.filter((_, j) => j !== i))}
+                      className="rounded-lg p-1.5 text-rose-500 hover:bg-rose-50"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
                 </div>
                 );
               })}
@@ -179,7 +188,7 @@ export default function StatusSettings({ onClose, roleHeader = "owner" }: { onCl
             }}
             className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-500 transition hover:text-rose-600"
           >
-            <RotateCcw className="h-4 w-4" /> Сбросить цвета и названия
+            <RotateCcw className="h-4 w-4" /> Сбросить цвета
           </button>
           <div className="flex items-center gap-2">
             <button

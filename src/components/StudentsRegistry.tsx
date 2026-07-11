@@ -79,6 +79,7 @@ type StudentInput = {
   gender?: string | null;
   birthday?: string | null;
   sourceId?: string | null;
+  sourceName?: string;
   comment?: string;
   status?: string;
   manualStatus?: string | null;
@@ -104,7 +105,7 @@ export interface StudentsRegistryProps {
   branches: Branch[];
   teachers: Teacher[];
   adminBranchId?: string;
-  onCreateStudent?: (data: StudentInput) => Promise<string | boolean | null>;
+  onCreateStudent?: (data: StudentInput) => Promise<string | boolean | null | { archivedId: string; message: string }>;
   onUpdateStudent?: (id: string, data: StudentInput) => Promise<boolean>;
   onDeleteStudent?: (id: string) => Promise<boolean | void> | void;
   /** Перевод в архив с обязательными комментариями (причина + свободный). */
@@ -207,11 +208,19 @@ const KPI_ICON: Record<string, { bg: string; color: string }> = {
 const PILL_TONE: Record<string, string> = {
   red: "bg-[#F6E9E9] text-[#B14545]",
   yellow: "bg-[#FFFBEB] text-[#92400E]",
+  orange: "bg-[#FFF7ED] text-[#C2410C]",
   green: "bg-[#E9F0E6] text-[#166534]",
   blue: "bg-[#EAF0F3] text-[#1E40AF]",
-  purple: "bg-[#F2EDE2] text-[#7E6840]",
+  purple: "bg-[#F3E8FF] text-[#7E22CE]",
   gray: "bg-[#EDF1F5] text-[#5C6772]",
   neutral: "bg-[#EDF1F5] text-[#5C6772]",
+};
+
+// Цвет пилюли с учётом настроек «Статусы»: переопределение из org_status_config
+// (ключ = statusKey авто-статуса или ТЕКСТ ручного статуса), иначе тон из getStudentState.
+const pillToneOf = (s: Student, st: { statusKey: string; tone: string }): string => {
+  const key = st.statusKey === "manual" ? (s.manualStatus || "") : st.statusKey;
+  return getStatusToneRaw(key) || st.tone;
 };
 
 // Этапы воронки продаж — снято с прототипа (порядок, названия, подсказки, цвета).
@@ -442,7 +451,11 @@ export default function StudentsRegistry({
     for (const s of data) {
       if (isLeft(s)) continue;
       const st = getStudentState(s, now);
-      if (buckets[st.statusKey]) buckets[st.statusKey].push(s.id);
+      // «Купили абонемент» = все купившие: сразу после пробного (visitor_new),
+      // новый ученик этого месяца (new) и купившие на БУДУЩИЙ месяц (next_paid) —
+      // покупка на следующий период тоже покупка (ТЗ заказчика).
+      const key = ["next_paid", "new"].includes(st.statusKey) ? "visitor_new" : st.statusKey;
+      if (buckets[key]) buckets[key].push(s.id);
     }
     return buckets;
   }, [data, now]);
@@ -720,8 +733,10 @@ export default function StudentsRegistry({
     if (!formValid) return;
     setSaving(true);
     const fullName = `${form.firstName.trim()} ${form.lastName.trim()}`.trim();
-    // Источник: реальный id справочника или null (ярлыки "name:" из дефолтного списка не персистим).
+    // Источник: реальный id справочника, а ярлык "name:…" из дефолтного списка
+    // передаём именем — сервер сам найдёт/создаст источник в справочнике (раньше терялся).
     const realSourceId = form.sourceId && !form.sourceId.startsWith("name:") ? form.sourceId : null;
+    const sourceName = form.sourceId.startsWith("name:") ? form.sourceId.slice(5) : undefined;
     const payload: StudentInput = {
       name: fullName,
       firstName: form.firstName.trim(),
@@ -733,6 +748,7 @@ export default function StudentsRegistry({
       branchId: form.branchId || adminBranchId || branches[0]?.id,
       groupId: form.groupId || undefined,
       sourceId: realSourceId,
+      sourceName,
       parentName: form.parentName || undefined,
       comment: form.comment || undefined,
       status: editingId ? undefined : "lead", // ТЗ: новый ученик → 🟢 Новый лид
@@ -745,6 +761,11 @@ export default function StudentsRegistry({
     }
     const result = await onCreateStudent?.(payload);
     setSaving(false);
+    // Тёзка найден в архиве: предлагаем восстановить вместо создания дубля (ТЗ).
+    if (result && typeof result === "object" && "archivedId" in result) {
+      setRestoreCandidate({ id: result.archivedId, message: result.message, name: fullName });
+      return;
+    }
     if (result) {
       closeForm();
       // ТЗ: после сохранения сразу открыть карточку нового ученика.
@@ -753,6 +774,19 @@ export default function StudentsRegistry({
         setOpenId(result);
       }
     }
+  };
+
+  // Восстановление тёзки из архива вместо создания дубля + открытие его карточки.
+  const [restoreCandidate, setRestoreCandidate] = useState<{ id: string; message: string; name: string } | null>(null);
+  const restoreFromArchive = async () => {
+    if (!restoreCandidate || !onUnarchiveStudent) return;
+    const id = restoreCandidate.id;
+    setRestoreCandidate(null);
+    await onUnarchiveStudent(id);
+    closeForm();
+    // ТЗ: после восстановления сразу открыть карточку, чтобы не искать по списку.
+    setView("registry");
+    setOpenId(id);
   };
 
   const openStudent = data.find((s) => s.id === openId) || null;
@@ -870,7 +904,12 @@ export default function StudentsRegistry({
           archive={studentArchive}
           students={data}
           branches={branches}
-          onUnarchive={onUnarchiveStudent}
+          onUnarchive={onUnarchiveStudent ? async (id: string) => {
+            await onUnarchiveStudent(id);
+            // ТЗ: после восстановления сразу открыть карточку ученика.
+            setView("registry");
+            setOpenId(id);
+          } : undefined}
           onEditLeftOn={onEditArchive}
         />
       ) : view === "waitlist" ? (
@@ -1016,7 +1055,7 @@ export default function StudentsRegistry({
                       </div>
                       <div className="mt-0.5 truncate text-[12px]" style={{ color: CLR.muted }}>{branchName(s.branchId)} · {groupName(studentGroupId(s))}</div>
                     </button>
-                    <span className={`inline-flex shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${PILL_TONE[st.tone] || PILL_TONE.gray}`}>{st.statusLabel}</span>
+                    <span className={`inline-flex shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${PILL_TONE[pillToneOf(s, st)] || PILL_TONE.gray}`}>{st.statusLabel}</span>
                   </div>
                   <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px]" style={{ color: CLR.second }}>
                     <span>{phone}</span>
@@ -1095,7 +1134,7 @@ export default function StudentsRegistry({
                         {colOn("status") && (
                           <td className="px-3.5 py-3">
                             <div className="flex flex-wrap items-center gap-1">
-                              <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[12px] font-semibold ${PILL_TONE[st.tone] || PILL_TONE.gray}`}>{st.statusLabel}</span>
+                              <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[12px] font-semibold ${PILL_TONE[pillToneOf(s, st)] || PILL_TONE.gray}`}>{st.statusLabel}</span>
                               {st.trialCount > 0 && (
                                 <span
                                   title={st.trialOverLimit ? "Превышен регламент: более 2 пробных уроков" : "Количество пробных уроков"}
@@ -1234,6 +1273,32 @@ export default function StudentsRegistry({
       )}
 
       {showStatusSettings && <StatusSettings roleHeader={roleHeader} onClose={() => setShowStatusSettings(false)} />}
+
+      {/* Тёзка в архиве: восстановить вместо создания дубля (ТЗ). */}
+      {restoreCandidate && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm" onClick={() => setRestoreCandidate(null)}>
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <p className="text-sm font-black text-slate-900">Ученик уже есть в архиве</p>
+            <p className="mt-2 text-sm text-slate-600">{restoreCandidate.message}</p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {onUnarchiveStudent && (
+                <button
+                  onClick={restoreFromArchive}
+                  className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700"
+                >
+                  Восстановить из архива
+                </button>
+              )}
+              <button
+                onClick={() => setRestoreCandidate(null)}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-50"
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {archiveModal && (() => {
         const withSub = archiveModal.filter((s) => hasCoveringSubscription(s));

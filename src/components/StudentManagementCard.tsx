@@ -1157,8 +1157,9 @@ function GeneralTab({
         </div>
       </div>
 
-      {/* Пробный урок (ТЗ): актуальная дата записи + удаление, если записали неправильно. */}
-      {trialDate && (
+      {/* Пробный урок (ТЗ): актуальная дата записи + удаление, если записали неправильно.
+          У оплатившего (есть активный абонемент) блок не показывается — воронка пройдена. */}
+      {trialDate && !(student.subscriptions || []).some((x) => x.status === "active") && (
         <div className="mt-3 rounded-2xl border border-sky-200 bg-sky-50/70 px-4 py-3">
           <div className="flex items-center gap-2">
             <span className="text-[11px] font-bold uppercase tracking-wide text-sky-700/70">Пробный урок</span>
@@ -1316,6 +1317,11 @@ function SellSubscriptionPanel({
   const plan = activePlans.find((p) => p.id === planId);
   const basePrice = plan?.price || 0;
   const targetLessons = plan?.lessonsCount && plan.lessonsCount > 0 ? plan.lessonsCount : 12;
+  // Режим тарифа (ТЗ): месячный — в абонемент входят ВСЕ занятия календарного
+  // месяца без доплаты (групповые); по количеству — строго lessonsCount
+  // (индивидуальные всегда по количеству).
+  const monthMode = kind !== "individual" && plan?.billingMode !== "lessons";
+  const lessonsCap = monthMode ? 999 : targetLessons;
 
   // ТЗ: один абонемент = один КАЛЕНДАРНЫЙ месяц. Срок — до последнего дня
   // месяца первого урока (не «месяц от старта», который пересекал границу).
@@ -1332,14 +1338,29 @@ function SellSubscriptionPanel({
     const [y, m, d] = startDate.split("-").map(Number);
     const cursor = new Date(y, (m || 1) - 1, d || 1);
     const limit = new Date(y, m || 1, 1); // не включая — до конца календарного месяца
-    while (cursor < limit && out.length < targetLessons) {
+    while (cursor < limit && out.length < lessonsCap) {
       if (days.includes(cursor.getDay())) {
         out.push({ key: isoOf(cursor), label: ddmm(cursor) });
       }
       cursor.setDate(cursor.getDate() + 1);
     }
     return out;
-  }, [enabledDays, startDate, targetLessons]);
+  }, [enabledDays, startDate, lessonsCap]);
+
+  // Сколько занятий в ПОЛНОМ месяце по выбранным дням — база пропорции месячного тарифа.
+  const fullMonthLessons = useMemo(() => {
+    const days = SELL_WEEKDAYS.filter((w) => enabledDays[w.d]).map((w) => w.d);
+    if (!days.length || !startDate) return 0;
+    const [y, m] = startDate.split("-").map(Number);
+    let count = 0;
+    const cursor = new Date(y, (m || 1) - 1, 1);
+    const limit = new Date(y, m || 1, 1);
+    while (cursor < limit && count < 999) {
+      if (days.includes(cursor.getDay())) count += 1;
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return count;
+  }, [enabledDays, startDate]);
 
   const activeDates = candidates.filter((c) => !disabledDates[c.key]);
   const lessonsTotal = activeDates.length;
@@ -1347,10 +1368,12 @@ function SellSubscriptionPanel({
   const endsOn = subEndIso; // срок абонемента — до конца календарного месяца
 
   const disc = SELL_DISCOUNTS[discountIdx];
-  // Пропорциональный авторасчёт неполного месяца (ТЗ §3): цена за фактические
-  // занятия по цене занятия тарифа; менеджер может исправить в поле «Стоимость».
-  const proratedBase = lessonsTotal < targetLessons && targetLessons > 0
-    ? Math.round((basePrice * lessonsTotal) / targetLessons)
+  // Пропорциональный авторасчёт неполного месяца (ТЗ §3). База пропорции:
+  // месячный тариф — занятия ПОЛНОГО месяца (9 из 9 = полная цена, доплаты нет);
+  // тариф по количеству — lessonsCount тарифа. Менеджер может исправить сумму.
+  const prorationBase = monthMode ? fullMonthLessons : targetLessons;
+  const proratedBase = prorationBase > 0 && lessonsTotal < prorationBase
+    ? Math.round((basePrice * lessonsTotal) / prorationBase)
     : basePrice;
   const effectiveBase = priceEdit !== "" ? Math.max(0, Math.round(Number(priceEdit) || 0)) : proratedBase;
   const discountAmount =
@@ -1381,7 +1404,7 @@ function SellSubscriptionPanel({
       const segEnd = monthEnd < endD ? monthEnd : endD;
       const dates: string[] = [];
       const c2 = new Date(cursor);
-      while (c2 <= segEnd && dates.length < targetLessons) {
+      while (c2 <= segEnd && dates.length < lessonsCap) {
         if (days.includes(c2.getDay())) dates.push(isoOf(c2));
         c2.setDate(c2.getDate() + 1);
       }
@@ -1389,10 +1412,22 @@ function SellSubscriptionPanel({
       cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
     }
     return out;
-  }, [mode, startDate, periodEnd, enabledDays, targetLessons]);
+  }, [mode, startDate, periodEnd, enabledDays, lessonsCap]);
 
-  const segAutoPrice = (seg: { dates: string[] }) =>
-    seg.dates.length >= targetLessons ? basePrice : Math.round((basePrice * seg.dates.length) / targetLessons);
+  // Занятий в полном месяце (для пропорции месячного тарифа в разбивке периода).
+  const monthFullLessons = (monthKey: string) => {
+    const days = SELL_WEEKDAYS.filter((w) => enabledDays[w.d]).map((w) => w.d);
+    const [y, m] = monthKey.split("-").map(Number);
+    let n = 0;
+    const cur = new Date(y, (m || 1) - 1, 1);
+    const lim = new Date(y, m || 1, 1);
+    while (cur < lim) { if (days.includes(cur.getDay())) n += 1; cur.setDate(cur.getDate() + 1); }
+    return n;
+  };
+  const segAutoPrice = (seg: { monthKey: string; dates: string[] }) => {
+    const full = monthMode ? monthFullLessons(seg.monthKey) : targetLessons;
+    return full > 0 && seg.dates.length < full ? Math.round((basePrice * seg.dates.length) / full) : basePrice;
+  };
   const segPrice = (seg: { monthKey: string; dates: string[] }) => {
     const manual = segPrices[seg.monthKey];
     return manual !== undefined && manual !== "" ? Math.max(0, Math.round(Number(manual) || 0)) : segAutoPrice(seg);
@@ -1409,6 +1444,11 @@ function SellSubscriptionPanel({
     }
     if (lessonsTotal === 0) {
       setError("Выберите хотя бы одно занятие");
+      return;
+    }
+    // Строгий запрет переплаты (ТЗ): внести больше стоимости нельзя.
+    if (amountPaid !== "" && Math.round(Number(amountPaid) || 0) > finalPrice) {
+      setError(`«Внесено» больше стоимости абонемента (${money(finalPrice)}) — уменьшите сумму.`);
       return;
     }
     setError(null);
@@ -1663,7 +1703,7 @@ function SellSubscriptionPanel({
               <SellRow k="Действует до" v={`${ddmmyyyyFromIso(endsOn)} (конец месяца)`} />
             </div>
             {/* Неполный месяц: пропорциональный авторасчёт, редактируется вручную (ТЗ §3) */}
-            {lessonsTotal < targetLessons && (
+            {prorationBase > 0 && lessonsTotal < prorationBase && (
               <div className="mt-3 grid gap-3 border-t border-violet-200/40 pt-3 sm:grid-cols-[1fr_auto] sm:items-center">
                 <label className="flex flex-col gap-1">
                   <span className="text-xs font-semibold text-slate-500">
@@ -2104,59 +2144,66 @@ function SubscriptionsTab({
   onDeleteTrial?: (date: string) => Promise<boolean> | boolean | void;
 }) {
   const subs = props_subs ?? (student.subscriptions || []);
-  // Пробный урок отображается вместе с абонементами (ТЗ заказчика).
-  const trial = getTrialInfo(student);
-  const trialDate = trial.upcoming ?? trial.lastPast;
-  const [confirmTrialDel, setConfirmTrialDel] = useState(false);
-  const trialStatusLabel = trial.converted
-    ? "Купил после пробного"
-    : trial.latest?.status === "unmarked"
-    ? "Записан"
-    : trial.latest && ["present", "excused", "trial"].includes(trial.latest.status)
-    ? "Пришёл, не купил"
+  // Пробные уроки отображаются вместе с абонементами — ВСЯ история (ТЗ заказчика),
+  // свежие сверху; каждый можно удалить (если записали/продали неправильно).
+  const trials = Object.entries(student.attendance || {})
+    .filter(([, r]: any) => r && (r.isTrial || r.status === "trial"))
+    .sort(([a], [b]) => b.localeCompare(a));
+  const [confirmTrialDel, setConfirmTrialDel] = useState<string | null>(null);
+  const trialRowLabel = (status: string) =>
+    status === "unmarked" ? "Записан"
+    : ["present", "excused", "trial"].includes(status) ? "Был"
     : "Не пришёл";
   return (
     <div>
       <SectionHeader title="Абонементы" action="Продать" onAction={onSell} />
-      {trial.count > 0 && trialDate && (
+      {trials.length > 0 && (
         <div className="mb-3 rounded-2xl border border-sky-200 bg-sky-50/70 p-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[11px] font-bold uppercase tracking-wide text-sky-700/70">Пробный урок</span>
-            <span className="font-black text-slate-800">
-              {new Date(trialDate).toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" })}
-            </span>
-            <span className="rounded-full bg-sky-100 px-2.5 py-0.5 text-xs font-bold text-sky-700">{trialStatusLabel}</span>
-            {onDeleteTrial && (
-              <button
-                type="button"
-                onClick={() => setConfirmTrialDel(true)}
-                className="ml-auto inline-flex items-center gap-1 rounded-xl border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-bold text-rose-600 hover:bg-rose-100"
-              >
-                <Trash2 className="h-3.5 w-3.5" /> Удалить
-              </button>
-            )}
-          </div>
-          {confirmTrialDel && (
-            <div className="mt-3 rounded-xl border border-rose-200 bg-white p-3">
-              <p className="text-sm font-bold text-slate-700">Удалить запись на пробный урок {new Date(trialDate).toLocaleDateString("ru-RU")}?</p>
-              <div className="mt-2 flex gap-2">
-                <button
-                  type="button"
-                  onClick={async () => { setConfirmTrialDel(false); await onDeleteTrial?.(trialDate); }}
-                  className="rounded-xl bg-rose-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-rose-700"
-                >
-                  Да, удалить
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmTrialDel(false)}
-                  className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-500 hover:bg-slate-50"
-                >
-                  Отмена
-                </button>
+          <p className="text-[11px] font-bold uppercase tracking-wide text-sky-700/70">
+            Пробные уроки ({trials.length}){getTrialInfo(student).converted ? " · купил после пробного" : ""}
+          </p>
+          <div className="mt-2 space-y-1.5">
+            {trials.map(([date, rec]: any) => (
+              <div key={date}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-black text-slate-800">
+                    {new Date(date).toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" })}
+                  </span>
+                  <span className="rounded-full bg-sky-100 px-2.5 py-0.5 text-xs font-bold text-sky-700">{trialRowLabel(rec.status)}</span>
+                  {onDeleteTrial && (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmTrialDel(date)}
+                      className="ml-auto inline-flex items-center gap-1 rounded-xl border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-bold text-rose-600 hover:bg-rose-100"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" /> Удалить
+                    </button>
+                  )}
+                </div>
+                {confirmTrialDel === date && (
+                  <div className="mt-2 rounded-xl border border-rose-200 bg-white p-3">
+                    <p className="text-sm font-bold text-slate-700">Удалить запись на пробный урок {new Date(date).toLocaleDateString("ru-RU")}?</p>
+                    <div className="mt-2 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={async () => { setConfirmTrialDel(null); await onDeleteTrial?.(date); }}
+                        className="rounded-xl bg-rose-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-rose-700"
+                      >
+                        Да, удалить
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmTrialDel(null)}
+                        className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-500 hover:bg-slate-50"
+                      >
+                        Отмена
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
-          )}
+            ))}
+          </div>
         </div>
       )}
       {subs.length === 0 && (

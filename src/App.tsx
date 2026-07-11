@@ -714,15 +714,21 @@ export default function App() {
   };
 
   // --- Owner: student management ---
-  type StudentInput = { name?: string; firstName?: string; lastName?: string; branchId?: string; groupId?: string; teacherId?: string; parentName?: string; parentPhone?: string; phone?: string; gender?: string | null; birthday?: string | null; sourceId?: string | null; comment?: string; status?: string; manualStatus?: string | null; payPromiseDate?: string | null };
+  type StudentInput = { name?: string; firstName?: string; lastName?: string; branchId?: string; groupId?: string; teacherId?: string; parentName?: string; parentPhone?: string; phone?: string; gender?: string | null; birthday?: string | null; sourceId?: string | null; sourceName?: string; comment?: string; status?: string; manualStatus?: string | null; payPromiseDate?: string | null };
   // Возвращает id созданного ученика (или null) — нужно, чтобы сразу открыть карточку (ТЗ).
-  const handleCreateStudent = async (data: StudentInput): Promise<string | null> => {
+  const handleCreateStudent = async (data: StudentInput): Promise<string | { archivedId: string; message: string } | null> => {
     try {
       const response = await fetch("/api/mvp/students", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
         body: JSON.stringify(data)
       });
+      if (response.status === 409) {
+        const body = await response.json().catch(() => ({}));
+        // Тёзка в архиве: возвращаем реестру кандидата на восстановление (модалка там).
+        if (body.archivedId) return { archivedId: body.archivedId, message: body.error || "Такой ученик уже есть в архиве" };
+        throw new Error(body.error || "Такой ученик уже есть в базе");
+      }
       if (!response.ok) throw new Error(await response.text());
       const result = await response.json().catch(() => ({}));
       await loadMvpBootstrap(activeRole);

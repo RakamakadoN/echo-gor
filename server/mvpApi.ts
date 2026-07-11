@@ -285,12 +285,33 @@ function mapDbPlan(row: any) {
     lessonsCount: row.lessons_count ?? 0,
     durationDays: row.duration_days ?? 0,
     price: Number(row.price || 0),
-    status: row.status || "active"
+    status: row.status || "active",
+    // 'month' — все занятия календарного месяца без доплаты; 'lessons' — строго по числу занятий.
+    billingMode: row.billing_mode === "lessons" ? "lessons" : "month"
   };
 }
 
 function mapDbLeadSource(row: any) {
   return { id: row.id, name: row.name, status: row.status || "active" };
+}
+
+// Источник рекламы: id из справочника, либо НАЙТИ/СОЗДАТЬ по имени (sourceName).
+// Раньше выбор из дефолтного списка (пустой справочник) молча терялся — «не указан».
+async function resolveSourceId(session: MvpSession, payload: any): Promise<string | null> {
+  if (payload.sourceId) return payload.sourceId;
+  const name = String(payload.sourceName || "").trim();
+  if (!name) return null;
+  // В lead_sources НЕТ organization_id (общий справочник) — не добавлять его в запросы.
+  const found = await supabaseFetch<any[]>(
+    "lead_sources",
+    `select=id&name=ilike.${encodeURIComponent(name)}&limit=1`
+  ).catch(() => [] as any[]);
+  if (found[0]) return found[0].id;
+  const ins = await supabaseFetch<any[]>("lead_sources", "", {
+    method: "POST",
+    body: JSON.stringify({ name, status: "active" }),
+  }).catch(() => [] as any[]);
+  return ins[0]?.id || null;
 }
 
 function mapDbWaitlist(row: any) {
@@ -1030,13 +1051,42 @@ export function registerMvpApi(app: express.Express) {
     const [splitFirst, ...splitRest] = String(payload.name).trim().split(/\s+/);
     const firstName = payload.firstName || splitFirst || payload.name;
     const lastName = payload.lastName || splitRest.join(" ") || "-";
+
+    // ТЗ заказчика: две карточки с одинаковыми именем+фамилией создавать нельзя.
+    // Если тёзка в АРХИВЕ — подсказываем восстановить его вместо дубля.
+    // Валидационное чтение без .catch — ошибка не должна пропускать дубли.
+    if (String(firstName).trim() && String(lastName).trim() && lastName !== "-") {
+      const dupes = await supabaseFetch<any[]>(
+        "students",
+        `select=id,status,archived_at&organization_id=eq.${session.organizationId}` +
+        `&first_name=ilike.${encodeURIComponent(String(firstName).trim())}` +
+        `&last_name=ilike.${encodeURIComponent(String(lastName).trim())}&limit=5`
+      );
+      const fullName = `${String(firstName).trim()} ${String(lastName).trim()}`;
+      const isArchived = (d: any) => d.status === "archived" || Boolean(d.archived_at);
+      const activeDup = dupes.find((d) => !isArchived(d));
+      if (activeDup) {
+        return res.status(409).json({
+          error: `Ученик «${fullName}» уже есть в базе — дубль создавать нельзя. Откройте его карточку в реестре.`,
+          duplicateId: activeDup.id,
+        });
+      }
+      const archivedDup = dupes.find(isArchived);
+      if (archivedDup) {
+        return res.status(409).json({
+          error: `Ученик «${fullName}» уже есть в АРХИВЕ. Восстановить его вместо создания новой карточки?`,
+          archivedId: archivedDup.id,
+        });
+      }
+    }
+
     const inserted = await supabaseFetch<any[]>("students", "", {
       method: "POST",
       body: JSON.stringify({
         organization_id: session.organizationId,
         branch_id: payload.branchId,
         group_id: payload.groupId || null,
-        source_id: payload.sourceId || null,
+        source_id: await resolveSourceId(session, payload),
         first_name: firstName,
         last_name: lastName,
         gender: payload.gender || null,
@@ -1074,7 +1124,9 @@ export function registerMvpApi(app: express.Express) {
     }
     if (payload.branchId !== undefined) updates.branch_id = payload.branchId;
     if (payload.groupId !== undefined) updates.group_id = payload.groupId || null;
-    if (payload.sourceId !== undefined) updates.source_id = payload.sourceId || null;
+    if (payload.sourceId !== undefined || payload.sourceName !== undefined) {
+      updates.source_id = await resolveSourceId(session, payload);
+    }
     if (payload.teacherId !== undefined) updates.teacher_id = payload.teacherId || null;
     if (payload.gender !== undefined) updates.gender = payload.gender || null;
     if (payload.birthday !== undefined) updates.birthday = payload.birthday || null;
@@ -1605,6 +1657,10 @@ export function registerMvpApi(app: express.Express) {
 
       // Внесено: сколько реально оплатил ученик. По умолчанию — полная стоимость.
       // Если меньше — разница уходит в долг (считается по amount_paid в bootstrap).
+      // Больше стоимости — СТРОГИЙ запрет (ТЗ), а не молчаливая обрезка.
+      if (payload.amountPaid !== undefined && Number(payload.amountPaid) > finalPrice) {
+        throw new SaleError(400, `«Внесено» (${Math.round(Number(payload.amountPaid)).toLocaleString("ru-RU")} тг) больше стоимости абонемента (${Math.round(finalPrice).toLocaleString("ru-RU")} тг) — переплата запрещена.`);
+      }
       const amountPaid = payload.amountPaid !== undefined
         ? Math.min(finalPrice, Math.max(0, Number(payload.amountPaid) || 0))
         : finalPrice;
@@ -1846,9 +1902,10 @@ export function registerMvpApi(app: express.Express) {
         body: JSON.stringify({ status: "archived", cancel_reason: reason, cancel_comment: comment, deleted_by: session.fullName || session.role, deleted_at: new Date().toISOString() }),
       });
       if (!rows[0]) return res.status(404).json({ error: "Абонемент не найден" });
-      // Откат (уточнение заказчика): если после удаления у ученика не осталось
-      // действующего абонемента — снимаем устаревший промис «…оплатит» и
-      // возвращаем его в воронку «Новый лид». Другой активный абонемент — не трогаем.
+      // Откат (ТЗ заказчика): если после удаления у ученика не осталось
+      // действующего абонемента — полный откат: статус «Новый лид», снятие
+      // промиса «…оплатит», сброс «купил после пробного» (trial_outcome) и
+      // удаление события продажи из воронки (source='sale' за день продажи).
       try {
         const sid = rows[0].student_id;
         const remain = await supabaseFetch<any[]>("student_subscriptions", `select=status&student_id=eq.${sid}&status=neq.archived`).catch(() => [] as any[]);
@@ -1858,6 +1915,19 @@ export function registerMvpApi(app: express.Express) {
           if (/оплат/i.test(String(stu?.manual_status || ""))) { upd.manual_status = null; upd.pay_promise_date = null; }
           await supabaseFetch("students", `id=eq.${sid}&organization_id=eq.${session.organizationId}`, {
             method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(upd),
+          }).catch(() => {});
+          // «Купил после пробного» больше не правда — пробные снова «был, не купил».
+          await supabaseFetch("attendance", `student_id=eq.${sid}&is_trial=eq.true&trial_outcome=eq.converted`, {
+            method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ trial_outcome: null }),
+          }).catch(() => {});
+        }
+        // Компенсация воронки: убираем событие продажи за день оформления
+        // удалённого абонемента (иначе дашборд продолжит считать его «Купил»).
+        const soldOn = String(rows[0].sold_on || "").slice(0, 10);
+        if (soldOn) {
+          await supabaseFetch("student_status_events",
+            `student_id=eq.${sid}&source=eq.sale&occurred_at=gte.${soldOn}T00:00:00&occurred_at=lte.${soldOn}T23:59:59`, {
+            method: "DELETE", headers: { Prefer: "return=minimal" },
           }).catch(() => {});
         }
       } catch { /* коррекция статуса не критична для удаления */ }
@@ -2947,7 +3017,8 @@ export function registerMvpApi(app: express.Express) {
           lessons_count: Number(payload.lessonsCount) || 0,
           duration_days: Number(payload.durationDays) || 30,
           price: Number(payload.price) || 0,
-          status: payload.status || "active"
+          status: payload.status || "active",
+          billing_mode: payload.billingMode === "lessons" ? "lessons" : "month"
         })
       });
       res.status(201).json({ plan: mapDbPlan(inserted[0]) });
@@ -2966,6 +3037,7 @@ export function registerMvpApi(app: express.Express) {
     if (payload.durationDays !== undefined) updates.duration_days = Number(payload.durationDays) || 0;
     if (payload.price !== undefined) updates.price = Number(payload.price) || 0;
     if (payload.status !== undefined) updates.status = payload.status;
+    if (payload.billingMode !== undefined) updates.billing_mode = payload.billingMode === "lessons" ? "lessons" : "month";
     if (Object.keys(updates).length === 0) return res.status(400).json({ error: "Нет полей для обновления" });
     try {
       const rows = await supabaseFetch<any[]>("subscription_plans", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", body: JSON.stringify(updates) });

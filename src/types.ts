@@ -399,6 +399,9 @@ export interface SubscriptionPlan {
   durationDays: number;
   price: number;
   status: DirectoryStatus;
+  /** 'month' — все занятия календарного месяца без доплаты (групповые);
+   *  'lessons' — строго по количеству занятий тарифа (индивидуальные). */
+  billingMode?: "month" | "lessons";
 }
 
 export interface LeadSource {

@@ -412,6 +412,7 @@ export function computeOwnerDashboard(
   // активных: продление/повторная покупка тоже видна в воронке (ТЗ заказчика).
   const bought = students.filter((s) =>
     (s.subscriptions || []).some((sub) => {
+      if (sub.status === "deleted") return false; // удалённый абонемент — покупка откатилась
       const sold = (sub.soldOn || sub.startsOn || "").slice(0, 10);
       return sold && inRange(sold, ranges.cur);
     })
@@ -431,7 +432,10 @@ export function computeOwnerDashboard(
     if (s.status === "archived" || (s as any).archivedAt) continue;
     const st = getStudentState(s);
     if (st.statusKey === "left") continue;
-    autoStatusMap.set(st.statusKey, (autoStatusMap.get(st.statusKey) || 0) + 1);
+    // Ручные статусы показываем ПО НАЗВАНИЯМ («Был на пробном, оплатит»,
+    // «Каникулы», …), а не одной строкой «Ручной статус» (ТЗ заказчика).
+    const key = st.statusKey === "manual" ? (s.manualStatus || "Ручной статус") : st.statusKey;
+    autoStatusMap.set(key, (autoStatusMap.get(key) || 0) + 1);
   }
   const autoStatuses = Array.from(autoStatusMap, ([key, count]) => ({
     key,
