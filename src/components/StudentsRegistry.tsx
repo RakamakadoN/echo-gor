@@ -157,7 +157,7 @@ const DEFAULT_SOURCE_NAMES = [
 /* ---------- настройка отображения столбцов ---------- */
 type ColKey =
   | "phone" | "gender" | "age" | "branch" | "group" | "source"
-  | "duration" | "subEnd" | "debt" | "ltv" | "status";
+  | "duration" | "subEnd" | "debt" | "ltv" | "status" | "skill";
 
 const ALL_COLUMNS: { key: ColKey; label: string; defaultOn: boolean }[] = [
   { key: "phone", label: "Телефон", defaultOn: true },
@@ -165,6 +165,7 @@ const ALL_COLUMNS: { key: ColKey; label: string; defaultOn: boolean }[] = [
   { key: "age", label: "Возраст", defaultOn: true },
   { key: "branch", label: "Филиал", defaultOn: true },
   { key: "group", label: "Группа", defaultOn: true },
+  { key: "skill", label: "Уровень подготовки", defaultOn: false },
   { key: "source", label: "Источник", defaultOn: false },
   { key: "duration", label: "Продолжительность обучения", defaultOn: false },
   { key: "subEnd", label: "Дата окончания абонемента", defaultOn: true },
@@ -1111,7 +1112,7 @@ export default function StudentsRegistry({
                       <input key="chk" type="checkbox" checked={allOnPageSelected} onChange={toggleAll} className="h-4 w-4" style={{ accentColor: CLR.gold }} />,
                       "№", "Имя и фамилия",
                       colOn("phone") && "Телефон", colOn("gender") && "Пол", colOn("age") && "Возраст",
-                      colOn("branch") && "Филиал", colOn("group") && "Группа", colOn("source") && "Источник",
+                      colOn("branch") && "Филиал", colOn("group") && "Группа", colOn("skill") && "Уровень", colOn("source") && "Источник",
                       colOn("duration") && "Продолжительность", colOn("subEnd") && "Окончание",
                       colOn("debt") && "Долг", colOn("ltv") && "LTV-сегмент", colOn("status") && "Статус", "Действия",
                     ].filter((v) => v !== false).map((label, idx) => (
@@ -1143,6 +1144,7 @@ export default function StudentsRegistry({
                         {colOn("age") && <td className="px-3.5 py-3 text-[13px]" style={{ color: CLR.second }}>{formatAge(s)}</td>}
                         {colOn("branch") && <td className="px-3.5 py-3 text-[13px]" style={{ color: CLR.second }}>{branchName(s.branchId)}</td>}
                         {colOn("group") && <td className="px-3.5 py-3 text-[13px]" style={{ color: CLR.second }}>{groupName(studentGroupId(s))}</td>}
+                        {colOn("skill") && <td className="px-3.5 py-3 text-[13px]" style={{ color: CLR.second }}>{s.skillLevel || "—"}</td>}
                         {colOn("source") && <td className="px-3.5 py-3 text-[13px]" style={{ color: CLR.second }}>{sourceName(s.sourceId)}</td>}
                         {colOn("duration") && <td className="px-3.5 py-3 text-[13px]" style={{ color: CLR.second }}>{st.durationLabel}</td>}
                         {colOn("subEnd") && <td className="px-3.5 py-3 text-[13px]" style={{ color: CLR.second }}>{st.subscriptionEndLabel}</td>}

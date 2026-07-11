@@ -828,7 +828,18 @@ export default function StudentManagementCard({
         {/* Форма: перевод ученика */}
         {panel === "transfer" && onTransfer && (
           <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <p className="mb-3 text-sm font-bold text-slate-700">Перевод ученика</p>
+            <p className="mb-1 text-sm font-bold text-slate-700">Перевод ученика</p>
+            {/* Актуальная группа — от чего переводим (ТЗ заказчика). */}
+            <p className="mb-3 text-xs font-semibold text-slate-500">
+              Сейчас: <span className="font-black text-slate-700">{group?.name || "без группы"}</span>
+              {branch ? <> · {branch.name || branch.city}</> : null}
+            </p>
+            {/* Активный абонемент привязан к текущей группе — перевод заблокирован сервером (ТЗ). */}
+            {(student.subscriptions || []).some((x) => x.status === "active") && transferForm.groupId !== (student.groupIds?.[0] || "") && (
+              <p className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-600">
+                У ученика активный абонемент в текущей группе — система не пропустит перевод. Удалите абонемент или дождитесь его окончания.
+              </p>
+            )}
             <div className="grid gap-3 sm:grid-cols-3">
               <label className="flex flex-col gap-1">
                 <span className="text-xs font-semibold text-slate-500">Группа</span>
@@ -840,7 +851,7 @@ export default function StudentManagementCard({
                   <option value="">Без группы</option>
                   {allGroups.map((g) => (
                     <option key={g.id} value={g.id}>
-                      {g.name}
+                      {g.name}{g.id === (student.groupIds?.[0] || "") ? " (текущая)" : ""}
                     </option>
                   ))}
                 </select>
