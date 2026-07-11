@@ -390,8 +390,7 @@ export default function StudentsRegistry({
       }
       const seg = SEGMENTS.find((x) => x.id === segment);
       if (seg && !seg.match(s, now, { waitlistIds: waitlistStudentIds })) return false;
-      // Спец-чипы прототипа (нет прямого SegmentId): по авто-статусу воронки.
-      if (segment === "trial" && getStudentState(s, now).statusKey !== "trial") return false;
+      // «Записаны на пробный» — обычный сегмент (trial + trial_rebooked), спец-кейс убран.
       if (!matchStatusFilter(s, statusFilter, now, { waitlistIds: waitlistStudentIds })) return false;
       if (branchFilter !== "all" && s.branchId !== branchFilter) return false;
       if (groupFilter !== "all" && studentGroupId(s) !== groupFilter) return false;

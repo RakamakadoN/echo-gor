@@ -225,10 +225,18 @@ const monthCovered = (student: Student, year: number, month0: number): boolean =
 };
 
 /** «Не оплачен прошлый месяц» (доп. ТЗ заказчика): есть история абонементов,
- *  но прошлый календарный месяц не был покрыт ни одним из них. */
+ *  но прошлый календарный месяц не был покрыт ни одним из них.
+ *  Новичок этого месяца (первая покупка в текущем месяце) сюда НЕ попадает —
+ *  прошлый месяц он ещё не занимался. */
 export const prevMonthUnpaid = (student: Student, now: Date = new Date()): boolean => {
   if (isLeft(student) || isPaused(student)) return false;
-  if (!(student.subscriptions || []).length) return false;
+  const dates = (student.subscriptions || [])
+    .map((s) => parseDate(s.soldOn) || parseDate(s.startsOn))
+    .filter((d): d is Date => Boolean(d));
+  if (!dates.length) return false;
+  const first = new Date(Math.min(...dates.map((d) => d.getTime())));
+  const curMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  if (first.getTime() >= curMonthStart.getTime()) return false;
   const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   return !monthCovered(student, prev.getFullYear(), prev.getMonth());
 };
@@ -545,6 +553,7 @@ export type SegmentId =
   | "active"
   | "renewal"
   | "prev_unpaid"
+  | "trial"
   | "debtors"
   | "new"
   | "returned"
@@ -585,8 +594,13 @@ export const SEGMENTS: SegmentDef[] = [
   { id: "active", label: "Активные", match: (s, now, ctx) => !isLeft(s) && !isPaused(s) && hasCoveringSubscription(s, now) && !isWaitlist(s, ctx) },
   { id: "renewal", label: "Не оплачен текущий месяц", match: (s, now) => !isLeft(s) && needsRenewal(s, now) },
   { id: "prev_unpaid", label: "Не оплачен прошлый месяц", match: (s, now) => !isLeft(s) && prevMonthUnpaid(s, now) },
+  // «Записаны на пробный» включает и перезаписанных (ТЗ заказчика): оба состояния —
+  // открытая запись на пробный урок, разница только в количестве попыток.
+  { id: "trial", label: "Записаны на пробный", match: (s, now) => !isLeft(s) && ["trial", "trial_rebooked"].includes(getStudentState(s, now).statusKey) },
   { id: "debtors", label: "Должники", match: (s) => !isLeft(s) && getDebt(s) > 0 },
-  { id: "new", label: "Новые", match: (s, now) => !isLeft(s) && (isTrial(s) || getEnrollmentMonths(s, now) < 1) },
+  // «Новый ученик» = первая покупка абонемента в текущем месяце (statusKey new) —
+  // синхронизировано с семантикой статусов (ТЗ заказчика 2026-07-11).
+  { id: "new", label: "Новый ученик", match: (s, now) => !isLeft(s) && getStudentState(s, now).statusKey === "new" },
   { id: "returned", label: "Вернувшиеся", match: (s) => !isLeft(s) && isReturned(s) },
   { id: "next_month", label: "Купили следующий", match: (s, now) => !isLeft(s) && hasNextMonthPaid(s, now) },
   { id: "waitlist", label: "Лист ожидания", match: (s, now, ctx) => !isLeft(s) && isWaitlist(s, ctx) },
@@ -605,6 +619,7 @@ export const STATUS_FILTER_OPTIONS: { value: string; label: string }[] = [
   { value: "active", label: "Активные" },
   { value: "renewal", label: "Не оплачен текущий месяц" },
   { value: "prev_unpaid", label: "Не оплачен прошлый месяц" },
+  { value: "trial", label: "Записаны на пробный" },
   { value: "debtors", label: "Должники" },
   { value: "new", label: "Новый ученик" },
   { value: "returned", label: "Вернувшийся" },

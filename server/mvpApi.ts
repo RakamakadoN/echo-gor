@@ -1931,6 +1931,13 @@ export function registerMvpApi(app: express.Express) {
         const already = await supabaseFetch<any[]>("attendance", `select=id,is_trial&lesson_id=eq.${lessonId}&student_id=eq.${req.params.id}&limit=1`).catch(() => [] as any[]);
         if (already[0]?.is_trial) return res.status(409).json({ error: "Ученик уже записан на пробный урок на эту дату" });
       }
+      // Запись задним числом (дата в прошлом) — только с явным подтверждением (ТЗ).
+      if (!Boolean((req.body || {}).confirm)) {
+        const todayIso = new Date().toISOString().slice(0, 10);
+        if (String(date).slice(0, 10) < todayIso) {
+          return res.status(409).json({ error: `Дата пробного урока уже прошла (${String(date).slice(0, 10)}) — это запись задним числом. Записать всё равно?`, needsConfirm: true });
+        }
+      }
       // Повторный пробный при незакрытом предыдущем (нет отметки «был/не был») —
       // только с явным подтверждением действия (confirm=true от клиента).
       if (!Boolean((req.body || {}).confirm)) {
