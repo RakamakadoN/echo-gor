@@ -1155,12 +1155,14 @@ export function registerMvpApi(app: express.Express) {
         const newGroup = payload.groupId || null;
         if (oldGroup && newGroup !== oldGroup) {
           const today = new Date().toISOString().slice(0, 10);
+          // Любой НЕ закончившийся активный абонемент группы блокирует перевод —
+          // включая купленный на будущий месяц (starts_on в будущем).
           const activeInOld = await supabaseFetch<any[]>(
             "student_subscriptions",
-            `select=ends_on&student_id=eq.${req.params.id}&group_id=eq.${oldGroup}&status=eq.active&starts_on=lte.${today}&or=(ends_on.is.null,ends_on.gte.${today})&limit=1`
+            `select=ends_on,starts_on&student_id=eq.${req.params.id}&group_id=eq.${oldGroup}&status=eq.active&or=(ends_on.is.null,ends_on.gte.${today})&limit=1`
           );
           if (activeInOld.length > 0) {
-            const until = activeInOld[0].ends_on ? ` (действует до ${activeInOld[0].ends_on})` : "";
+            const until = activeInOld[0].ends_on ? ` (до ${activeInOld[0].ends_on})` : "";
             return res.status(409).json({
               error: `У ученика активный абонемент в текущей группе${until}. Удалите абонемент или дождитесь его окончания, чтобы перевести в другую группу.`,
             });

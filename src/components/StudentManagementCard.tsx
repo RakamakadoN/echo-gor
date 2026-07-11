@@ -401,8 +401,19 @@ export default function StudentManagementCard({
     }
   };
 
+  // Активный (не закончившийся) абонемент, привязанный к ТЕКУЩЕЙ группе, —
+  // перевод в другую группу заблокирован (клиент + сервер, ТЗ заказчика).
+  const transferBlocked = (() => {
+    const curGroup = student.groupIds?.[0] || "";
+    if (!curGroup || transferForm.groupId === curGroup) return false;
+    const today = new Date().toISOString().slice(0, 10);
+    return (student.subscriptions || []).some((x: any) =>
+      x.status === "active" && (x.groupId || "") === curGroup && (!x.validUntil || String(x.validUntil).slice(0, 10) >= today)
+    );
+  })();
+
   const submitTransfer = async () => {
-    if (!onTransfer) return;
+    if (!onTransfer || transferBlocked) return;
     setBusy(true);
     try {
       // Педагог закреплён за группой: подтягиваем его автоматически по выбранной группе.
@@ -834,10 +845,10 @@ export default function StudentManagementCard({
               Сейчас: <span className="font-black text-slate-700">{group?.name || "без группы"}</span>
               {branch ? <> · {branch.name || branch.city}</> : null}
             </p>
-            {/* Активный абонемент привязан к текущей группе — перевод заблокирован сервером (ТЗ). */}
-            {(student.subscriptions || []).some((x) => x.status === "active") && transferForm.groupId !== (student.groupIds?.[0] || "") && (
+            {/* Активный абонемент привязан к текущей группе — перевод ЗАБЛОКИРОВАН (кнопка выключена + сервер откажет). */}
+            {transferBlocked && (
               <p className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-600">
-                У ученика активный абонемент в текущей группе — система не пропустит перевод. Удалите абонемент или дождитесь его окончания.
+                У ученика активный абонемент в текущей группе — перевод недоступен. Удалите абонемент или дождитесь его окончания.
               </p>
             )}
             <div className="grid gap-3 sm:grid-cols-3">
@@ -887,10 +898,10 @@ export default function StudentManagementCard({
             <div className="mt-3 flex gap-2">
               <button
                 onClick={submitTransfer}
-                disabled={busy}
+                disabled={busy || transferBlocked}
                 className="rounded-xl bg-rose-500 px-4 py-2 text-sm font-bold text-white transition hover:bg-rose-600 disabled:opacity-40"
               >
-                {busy ? "Перевод…" : "Перевести"}
+                {busy ? "Перевод…" : transferBlocked ? "Перевод недоступен" : "Перевести"}
               </button>
               <button
                 onClick={() => setPanel(null)}
