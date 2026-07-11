@@ -408,7 +408,14 @@ export function computeOwnerDashboard(
   const active = students.filter((s) => s.status === "active").length;
   const signed = trials + active; // дошли до пробного и дальше
   const came = active + trials;   // упрощение при отсутствии событий
-  const bought = active;
+  // «Купили» = ПОКУПКИ за период (по дате продажи sold_on), а не снапшот
+  // активных: продление/повторная покупка тоже видна в воронке (ТЗ заказчика).
+  const bought = students.filter((s) =>
+    (s.subscriptions || []).some((sub) => {
+      const sold = (sub.soldOn || sub.startsOn || "").slice(0, 10);
+      return sold && inRange(sold, ranges.cur);
+    })
+  ).length;
   const month = {
     leads, signed, came: trials + active, bought,
     convSigned: leads ? Math.round((signed / Math.max(leads, signed)) * 100) : null,

@@ -1048,6 +1048,29 @@ export default function App() {
     }
   };
 
+  // Пакетная продажа периода: N месячных абонементов одним запросом (ТЗ §5).
+  const handleSellSubscriptionBatch = async (items: SellSubscriptionInput[]): Promise<boolean> => {
+    try {
+      const response = await fetch("/api/mvp/student-subscriptions/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+        body: JSON.stringify({ items }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Не удалось оформить пакет абонементов");
+      await loadMvpBootstrap(activeRole);
+      addAuditLog(
+        "Пакетная продажа абонементов",
+        `Оформлено ${data.createdCount ?? items.length} абонементов ученику (${items[0]?.studentId})`
+      );
+      toast.success(`Оформлено абонементов: ${data.createdCount ?? items.length}`);
+      return true;
+    } catch (error: any) {
+      notifyError(error.message || "Не удалось оформить пакет абонементов");
+      return false;
+    }
+  };
+
   // --- Корзина учеников (владелец подтверждает удаление) ---
   const [studentTrash, setStudentTrash] = useState<any[]>([]);
   // --- Архив учеников (сохранение базы для маркетинга) ---
@@ -3519,6 +3542,7 @@ export default function App() {
               payments={payments}
               onOpenPayment={openPaymentForStudent}
               onSellSubscription={handleSellSubscription}
+              onSellSubscriptionBatch={handleSellSubscriptionBatch}
               subscriptionPlans={subscriptionPlans}
               announcements={announcements}
               competitions={competitions}
@@ -3574,6 +3598,7 @@ export default function App() {
               onDeleteStudent={handleDeleteStudent}
               onOpenPayment={openPaymentForStudent}
               onSellSubscription={handleSellSubscription}
+              onSellSubscriptionBatch={handleSellSubscriptionBatch}
               subscriptionPlans={subscriptionPlans}
               onCreatePlan={handleCreatePlan}
               onUpdatePlan={handleUpdatePlan}
@@ -3669,6 +3694,7 @@ export default function App() {
               onCreateAnnouncement={handleCreateAnnouncement}
               onOpenPayment={openPaymentForStudent}
               onSellSubscription={handleSellSubscription}
+              onSellSubscriptionBatch={handleSellSubscriptionBatch}
               tasks={adminTasks}
               subscriptionPlans={subscriptionPlans}
               leadSources={leadSources}

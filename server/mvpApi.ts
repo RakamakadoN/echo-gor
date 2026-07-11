@@ -860,8 +860,8 @@ export function registerMvpApi(app: express.Express) {
       const dayEnd = (d: string) => `${d}T23:59:59`;
       const [snapsRaw, evToday, evYest, invoicesRaw, futureSubs, studentsLite] = await Promise.all([
         supabaseFetch<any[]>("metrics_snapshots", `select=*&${orgFilter}&order=period_month.asc`),
-        supabaseFetch<any[]>("student_status_events", `select=to_status&${orgFilter}&occurred_at=gte.${dayStart(today)}&occurred_at=lte.${dayEnd(today)}`),
-        supabaseFetch<any[]>("student_status_events", `select=to_status&${orgFilter}&occurred_at=gte.${dayStart(yesterday)}&occurred_at=lte.${dayEnd(yesterday)}`),
+        supabaseFetch<any[]>("student_status_events", `select=to_status,source&${orgFilter}&occurred_at=gte.${dayStart(today)}&occurred_at=lte.${dayEnd(today)}`),
+        supabaseFetch<any[]>("student_status_events", `select=to_status,source&${orgFilter}&occurred_at=gte.${dayStart(yesterday)}&occurred_at=lte.${dayEnd(yesterday)}`),
         supabaseFetch<any[]>("invoices", `select=due_on,status&${orgFilter}&due_on=lt.${today}&status=in.(sent,overdue)`),
         supabaseFetch<any[]>("student_subscriptions", `select=student_id,branch_id,starts_on&starts_on=gt.${today}`),
         supabaseFetch<any[]>("students", `select=id,branch_id,birthday&${orgFilter}&status=neq.archived&archived_at=is.null`)
@@ -876,7 +876,9 @@ export function registerMvpApi(app: express.Express) {
         leads: rows.filter((r) => r.to_status === "lead").length,
         trialBooked: rows.filter((r) => r.to_status === "trial").length,
         trialCame: rows.filter((r) => r.to_status === "trial").length,
-        bought: rows.filter((r) => r.to_status === "active").length
+        // «Купили» = только события ПРОДАЖИ (source='sale' пишет createSubscriptionSale).
+        // Ручная смена статуса на active продажей не считается.
+        bought: rows.filter((r) => r.source === "sale").length
       });
 
       // Должники по срокам просрочки — из реальных счетов (если они есть).
@@ -1584,6 +1586,11 @@ export function registerMvpApi(app: express.Express) {
       let endsOn = payload.endsOn || startsOn;
       if (endsOn < startsOn) endsOn = startsOn;
 
+      // ТЗ «Логика продажи абонементов»: один абонемент = один календарный месяц.
+      if (startsOn.slice(0, 7) !== endsOn.slice(0, 7)) {
+        throw new SaleError(400, "Период пересекает два календарных месяца. Создайте отдельный абонемент на каждый месяц (или используйте пакетную продажу).");
+      }
+
       const basePrice = Number(plan.price) || 0;
       const discountAmount = Math.max(0, Number(payload.discountAmount) || 0);
       // Итоговая цена: либо передана с фронта, либо база − скидка − перерасчёт.
@@ -1604,17 +1611,22 @@ export function registerMvpApi(app: express.Express) {
       // Дата продажи (день оформления) — отдельно от starts_on (первый урок).
       const soldOn = String(payload.soldOn || today).slice(0, 10);
 
-      // Запрет двойной продажи (ТЗ §4): блокируем только если у ученика уже есть
-      // активный абонемент в ТОЙ ЖЕ группе с пересекающимся периодом. Другая группа,
-      // индивидуальное/мини-группа (group_id пуст) или другой период — разрешено.
+      // Запрет двойной продажи (ТЗ §7): один ученик × одна группа × один
+      // КАЛЕНДАРНЫЙ МЕСЯЦ = один абонемент. Окно проверки — весь месяц нового
+      // абонемента (ловит и легаси-абонементы, заходящие в месяц с краёв).
+      // Другая группа/направление или индивидуальное (group_id пуст) — разрешено.
       // Проверяем только при реальной продаже (paid), чтобы сохранять черновые счёта.
       if (paid && payload.groupId) {
+        const y = Number(startsOn.slice(0, 4));
+        const m = Number(startsOn.slice(5, 7));
+        const monthStart = `${startsOn.slice(0, 7)}-01`;
+        const monthEnd = `${startsOn.slice(0, 7)}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
         const overlap = await supabaseFetch<any[]>(
           "student_subscriptions",
-          `select=id,starts_on,ends_on&student_id=eq.${studentId}&group_id=eq.${payload.groupId}&status=eq.active&starts_on=lte.${endsOn}&ends_on=gte.${startsOn}`
+          `select=id,starts_on,ends_on&student_id=eq.${studentId}&group_id=eq.${payload.groupId}&status=eq.active&starts_on=lte.${monthEnd}&ends_on=gte.${monthStart}`
         ).catch(() => [] as any[]);
         if (overlap.length > 0) {
-          throw new SaleError(409, "У ученика уже есть активный абонемент в этой группе на пересекающийся период. Выберите другую группу, период или индивидуальное занятие.");
+          throw new SaleError(409, `У ученика уже есть активный абонемент в этой группе на ${monthStart.slice(0, 7)}. Один месяц — один абонемент; выберите другой месяц, группу или индивидуальное занятие.`);
         }
       }
 
@@ -1711,6 +1723,25 @@ export function registerMvpApi(app: express.Express) {
             body: JSON.stringify({ trial_outcome: "converted" }),
           });
         } catch { /* не критично для продажи */ }
+
+        // Событие ПРОДАЖИ для воронки дашборда (source='sale'): пишем напрямую,
+        // потому что logStatusEvent no-op-ится, когда ученик уже active, — а
+        // повторная покупка тоже должна попадать в «Купили».
+        try {
+          await supabaseFetch("student_status_events", "", {
+            method: "POST",
+            headers: { Prefer: "return=minimal" },
+            body: JSON.stringify({
+              organization_id: session.organizationId,
+              branch_id: branchId,
+              student_id: studentId,
+              from_status: null,
+              to_status: "active",
+              source: "sale",
+              created_by: session.fullName || session.role
+            })
+          });
+        } catch { /* аналитика не критична для продажи */ }
       }
 
       return {
@@ -1730,6 +1761,73 @@ export function registerMvpApi(app: express.Express) {
     } catch (error: any) {
       res.status(error instanceof SaleError ? error.status : 400).json({ error: error.message || "Не удалось продать абонемент" });
     }
+  });
+
+  // Пакетная продажа (ТЗ §5): клиент разбивает период по календарным месяцам,
+  // сервер валидирует ВСЕ месяцы до первой вставки (границы месяца, дубли в
+  // пакете, дубли в базе), затем создаёт абонементы последовательно.
+  // PostgREST не даёт транзакций между запросами, поэтому при сбое в середине
+  // возвращаем список уже созданных («создано M из N»).
+  app.post("/api/mvp/student-subscriptions/batch", async (req, res) => {
+    const session = getSession(req);
+    const items: any[] = Array.isArray((req.body || {}).items) ? (req.body || {}).items : [];
+    if (!items.length) return res.status(400).json({ error: "Пакет продаж пуст" });
+    if (items.length > 12) return res.status(400).json({ error: "Не больше 12 месяцев за одну операцию" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+
+    // 1. Локальная валидация пакета: границы месяца + дубли месяцев внутри пакета.
+    const seenMonths = new Set<string>();
+    for (const it of items) {
+      const s = String(it.startsOn || "").slice(0, 10);
+      const e = String(it.endsOn || s).slice(0, 10);
+      if (!s) return res.status(400).json({ error: "У каждого месяца пакета должна быть дата начала" });
+      if (s.slice(0, 7) !== e.slice(0, 7)) {
+        return res.status(400).json({ error: `Период ${s} — ${e} пересекает два календарных месяца. Один абонемент = один месяц.` });
+      }
+      const key = `${it.groupId || "solo"}|${s.slice(0, 7)}`;
+      if (seenMonths.has(key)) return res.status(400).json({ error: `В пакете два абонемента на один месяц (${s.slice(0, 7)}) в одну группу` });
+      seenMonths.add(key);
+    }
+
+    // 2. Валидация против базы ДО вставок: дубль «ученик × группа × месяц».
+    for (const it of items) {
+      if (it.paid === false || !it.groupId || !it.studentId) continue;
+      const s = String(it.startsOn).slice(0, 10);
+      const y = Number(s.slice(0, 4));
+      const m = Number(s.slice(5, 7));
+      const monthStart = `${s.slice(0, 7)}-01`;
+      const monthEnd = `${s.slice(0, 7)}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
+      try {
+        const overlap = await supabaseFetch<any[]>(
+          "student_subscriptions",
+          `select=id&student_id=eq.${it.studentId}&group_id=eq.${it.groupId}&status=eq.active&starts_on=lte.${monthEnd}&ends_on=gte.${monthStart}&limit=1`
+        );
+        if (overlap.length) {
+          return res.status(409).json({ error: `На ${s.slice(0, 7)} у ученика уже есть активный абонемент в этой группе — пакет не создан.` });
+        }
+      } catch (e: any) {
+        return res.status(500).json({ error: "Не удалось проверить дубли по месяцам: " + (e?.message || e) });
+      }
+    }
+
+    // 3. Последовательное создание.
+    const created: any[] = [];
+    for (const it of items) {
+      try {
+        created.push(await createSubscriptionSale(session, it));
+      } catch (error: any) {
+        return res.status(error instanceof SaleError ? error.status : 400).json({
+          error: `Месяц ${String(it.startsOn || "").slice(0, 7)}: ${error.message || "не удалось продать"}. Создано ${created.length} из ${items.length}.`,
+          created: created.map((c) => c.subscription),
+          createdCount: created.length,
+        });
+      }
+    }
+    res.status(201).json({
+      created: created.map((c) => c.subscription),
+      payments: created.map((c) => c.payment).filter(Boolean),
+      createdCount: created.length,
+    });
   });
 
   // Удалить абонемент (ТЗ §3): мягкое удаление — абонемент не исчезает, а помечается

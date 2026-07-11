@@ -87,6 +87,8 @@ export interface StudentManagementCardProps {
   leadSources?: LeadSource[];
   /** Продать абонемент: создаёт student_subscription. Если задан — открывает инлайн-форму. */
   onSellSubscription?: (payload: SellSubscriptionInput) => Promise<boolean> | boolean;
+  /** Пакетная продажа периода (разбивка по календарным месяцам). */
+  onSellSubscriptionBatch?: (items: SellSubscriptionInput[]) => Promise<boolean> | boolean;
   /** Запись на пробный урок (UI-форма; вызывается при сохранении) */
   onTrial?: (payload: { date: string; time: string; note: string }) => Promise<boolean> | boolean | void;
   /** Удалить запись на пробный урок по дате. */
@@ -163,6 +165,7 @@ export default function StudentManagementCard({
   plans = [],
   leadSources = [],
   onSellSubscription,
+  onSellSubscriptionBatch,
   onTrial,
   onDeleteTrial,
   initialPanel,
@@ -926,6 +929,7 @@ export default function StudentManagementCard({
             plans={plans}
             onClose={() => setPanel(null)}
             onSubmit={onSellSubscription}
+            onSubmitBatch={onSellSubscriptionBatch}
           />
         )}
 
@@ -1225,6 +1229,7 @@ function SellSubscriptionPanel({
   branch,
   plans,
   onSubmit,
+  onSubmitBatch,
   onClose,
 }: {
   student: Student;
@@ -1232,6 +1237,8 @@ function SellSubscriptionPanel({
   branch?: Branch;
   plans: SubscriptionPlan[];
   onSubmit: (payload: SellSubscriptionInput) => Promise<boolean> | boolean;
+  /** Пакетная продажа периода: N месячных абонементов одной операцией. */
+  onSubmitBatch?: (items: SellSubscriptionInput[]) => Promise<boolean> | boolean;
   onClose: () => void;
 }) {
   const activePlans = plans.filter((p) => p.status !== "archived");
@@ -1257,21 +1264,25 @@ function SellSubscriptionPanel({
   const [busy, setBusy] = useState<null | "save" | "sell">(null);
   const [error, setError] = useState<string | null>(null);
   const [kind, setKind] = useState<"group" | "individual">("group");
+  // Режим продажи (ТЗ «Логика продажи абонементов»): один месяц или период
+  // с автоматической разбивкой по календарным месяцам.
+  const [mode, setMode] = useState<"single" | "period">("single");
+  const [periodEnd, setPeriodEnd] = useState("");
+  // Ручная правка цены сегмента периода (ключ = ГГГГ-ММ); пусто = авторасчёт.
+  const [segPrices, setSegPrices] = useState<Record<string, string>>({});
+  // Ручная правка цены одиночного месяца (D2): пусто = пропорциональный авторасчёт.
+  const [priceEdit, setPriceEdit] = useState("");
 
   const plan = activePlans.find((p) => p.id === planId);
   const basePrice = plan?.price || 0;
   const targetLessons = plan?.lessonsCount && plan.lessonsCount > 0 ? plan.lessonsCount : 12;
 
-  // Абонемент действует РОВНО один месяц с первого урока: даты занятий генерируются
-  // по выбранным дням недели только внутри этого месячного окна (и не больше числа
-  // занятий тарифа).
+  // ТЗ: один абонемент = один КАЛЕНДАРНЫЙ месяц. Срок — до последнего дня
+  // месяца первого урока (не «месяц от старта», который пересекал границу).
   const subEndIso = useMemo(() => {
     if (!startDate) return startDate;
-    const [y, m, d] = startDate.split("-").map(Number);
-    const end = new Date(y, (m || 1) - 1, d || 1);
-    end.setMonth(end.getMonth() + 1);
-    end.setDate(end.getDate() - 1);
-    return isoOf(end);
+    const [y, m] = startDate.split("-").map(Number);
+    return isoOf(new Date(y, m || 1, 0)); // 0-й день следующего месяца = конец текущего
   }, [startDate]);
 
   const candidates = useMemo(() => {
@@ -1280,8 +1291,7 @@ function SellSubscriptionPanel({
     if (days.length === 0 || !startDate) return out;
     const [y, m, d] = startDate.split("-").map(Number);
     const cursor = new Date(y, (m || 1) - 1, d || 1);
-    const limit = new Date(y, (m || 1) - 1, d || 1);
-    limit.setMonth(limit.getMonth() + 1); // не включая — ровно месяц от старта
+    const limit = new Date(y, m || 1, 1); // не включая — до конца календарного месяца
     while (cursor < limit && out.length < targetLessons) {
       if (days.includes(cursor.getDay())) {
         out.push({ key: isoOf(cursor), label: ddmm(cursor) });
@@ -1294,20 +1304,60 @@ function SellSubscriptionPanel({
   const activeDates = candidates.filter((c) => !disabledDates[c.key]);
   const lessonsTotal = activeDates.length;
   const startsOn = activeDates[0]?.key || startDate;
-  const endsOn = subEndIso; // срок абонемента — календарный месяц, не дата последнего занятия
+  const endsOn = subEndIso; // срок абонемента — до конца календарного месяца
 
   const disc = SELL_DISCOUNTS[discountIdx];
+  // Пропорциональный авторасчёт неполного месяца (ТЗ §3): цена за фактические
+  // занятия по цене занятия тарифа; менеджер может исправить в поле «Стоимость».
+  const proratedBase = lessonsTotal < targetLessons && targetLessons > 0
+    ? Math.round((basePrice * lessonsTotal) / targetLessons)
+    : basePrice;
+  const effectiveBase = priceEdit !== "" ? Math.max(0, Math.round(Number(priceEdit) || 0)) : proratedBase;
   const discountAmount =
     disc.kind === "custom"
       ? Math.max(0, Math.round(customDiscount) || 0)
       : disc.kind === "pct"
-      ? Math.round((basePrice * (disc.pct || 0)) / 100)
+      ? Math.round((effectiveBase * (disc.pct || 0)) / 100)
       : 0;
   const recalcAmount = Math.max(0, Math.round(recalc) || 0);
-  const finalPrice = Math.max(0, basePrice - discountAmount - recalcAmount);
+  const finalPrice = Math.max(0, effectiveBase - discountAmount - recalcAmount);
   // Внесено: пусто = полная оплата. Меньше стоимости → долг.
   const paidNum = amountPaid === "" ? finalPrice : Math.min(finalPrice, Math.max(0, Math.round(Number(amountPaid) || 0)));
   const debtLeft = Math.max(0, finalPrice - paidNum);
+
+  // Сегменты периода (режим «Период»): разбивка по календарным месяцам,
+  // в каждом — даты занятий по выбранным дням недели (кап = занятия тарифа).
+  const segments = useMemo(() => {
+    if (mode !== "period" || !startDate || !periodEnd || periodEnd < startDate) return [];
+    const days = SELL_WEEKDAYS.filter((w) => enabledDays[w.d]).map((w) => w.d);
+    if (!days.length) return [];
+    const out: { monthKey: string; from: string; to: string; dates: string[] }[] = [];
+    const [ye, me, de] = periodEnd.split("-").map(Number);
+    const endD = new Date(ye, (me || 1) - 1, de || 1);
+    let [y, m, d] = startDate.split("-").map(Number);
+    let cursor = new Date(y, (m || 1) - 1, d || 1);
+    while (cursor <= endD && out.length < 12) {
+      const monthEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
+      const segEnd = monthEnd < endD ? monthEnd : endD;
+      const dates: string[] = [];
+      const c2 = new Date(cursor);
+      while (c2 <= segEnd && dates.length < targetLessons) {
+        if (days.includes(c2.getDay())) dates.push(isoOf(c2));
+        c2.setDate(c2.getDate() + 1);
+      }
+      out.push({ monthKey: isoOf(cursor).slice(0, 7), from: isoOf(cursor), to: isoOf(segEnd), dates });
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+    }
+    return out;
+  }, [mode, startDate, periodEnd, enabledDays, targetLessons]);
+
+  const segAutoPrice = (seg: { dates: string[] }) =>
+    seg.dates.length >= targetLessons ? basePrice : Math.round((basePrice * seg.dates.length) / targetLessons);
+  const segPrice = (seg: { monthKey: string; dates: string[] }) => {
+    const manual = segPrices[seg.monthKey];
+    return manual !== undefined && manual !== "" ? Math.max(0, Math.round(Number(manual) || 0)) : segAutoPrice(seg);
+  };
+  const periodTotal = segments.reduce((sum, s) => sum + segPrice(s), 0);
 
   const toggleDay = (d: number) => setEnabledDays((prev) => ({ ...prev, [d]: !prev[d] }));
   const toggleDate = (key: string) => setDisabledDates((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -1351,6 +1401,48 @@ function SellSubscriptionPanel({
     }
   };
 
+  // Пакетная продажа периода: N месячных абонементов одной операцией (ТЗ §5).
+  const submitBatch = async () => {
+    if (!plan || !onSubmitBatch) return;
+    if (!segments.length) {
+      setError("Укажите период: дату начала и дату окончания");
+      return;
+    }
+    if (segments.some((s) => s.dates.length === 0)) {
+      setError("В одном из месяцев не получилось ни одного занятия — проверьте дни недели");
+      return;
+    }
+    setError(null);
+    setBusy("sell");
+    try {
+      const items: SellSubscriptionInput[] = segments.map((seg) => ({
+        studentId: student.id,
+        branchId: student.branchId,
+        groupId: kind === "individual" ? undefined : student.groupIds?.[0],
+        planId: plan.id,
+        startsOn: seg.dates[0] || seg.from,
+        endsOn: seg.to,
+        soldOn: saleDate,
+        amountPaid: segPrice(seg),
+        lessonsTotal: seg.dates.length,
+        price: segPrice(seg),
+        discountAmount: 0,
+        recalc: 0,
+        method: SELL_METHODS[methodIdx].value,
+        description: `${kind === "individual" ? "Индивидуальный абонемент" : "Абонемент"}: ${plan.name} (${seg.monthKey})`,
+        paid: true,
+        kind,
+      }));
+      const ok = await onSubmitBatch(items);
+      if (ok !== false) onClose();
+      else setError("Не удалось оформить пакет абонементов");
+    } catch (e: any) {
+      setError(e?.message || "Не удалось оформить пакет абонементов");
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const fieldCls =
     "rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-300";
 
@@ -1387,6 +1479,23 @@ function SellSubscriptionPanel({
         </div>
       ) : (
         <div className="p-4">
+          {/* Режим: один месяц / период с разбивкой по месяцам (ТЗ §5) */}
+          {onSubmitBatch && (
+            <div className="mb-3 inline-flex rounded-xl border border-slate-200 bg-slate-50 p-1">
+              {([["single", "Один месяц"], ["period", "Период (несколько месяцев)"]] as const).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => { setMode(id); setError(null); }}
+                  className={`rounded-lg px-3.5 py-1.5 text-sm font-bold transition ${
+                    mode === id ? "bg-white text-violet-700 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           {/* Параметры */}
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-1">
@@ -1430,6 +1539,12 @@ function SellSubscriptionPanel({
               <span className="text-xs font-semibold text-slate-500">Первый урок (дата начала)</span>
               <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className={fieldCls} />
             </label>
+            {mode === "period" && (
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-slate-500">Окончание периода</span>
+                <input type="date" value={periodEnd} min={startDate} onChange={(e) => setPeriodEnd(e.target.value)} className={fieldCls} />
+              </label>
+            )}
             <label className="flex flex-col gap-1">
               <span className="text-xs font-semibold text-slate-500">Счёт поступления</span>
               <select value={methodIdx} onChange={(e) => setMethodIdx(Number(e.target.value))} className={fieldCls}>
@@ -1462,7 +1577,7 @@ function SellSubscriptionPanel({
                 </button>
               ))}
             </div>
-            {candidates.length > 0 && (
+            {mode === "single" && candidates.length > 0 && (
               <>
                 <p className="mb-2 mt-3 text-xs font-bold uppercase tracking-wide text-slate-400">
                   Конкретные даты ({lessonsTotal} из {candidates.length})
@@ -1489,7 +1604,8 @@ function SellSubscriptionPanel({
             )}
           </div>
 
-          {/* Сводка */}
+          {/* Сводка одиночного месяца */}
+          {mode === "single" && (
           <div className="mt-4 rounded-2xl border border-violet-100 bg-gradient-to-br from-violet-50 to-amber-50 p-4">
             <p className="mb-3 text-sm font-black text-slate-800">Информация об абонементе</p>
             <div className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
@@ -1504,8 +1620,22 @@ function SellSubscriptionPanel({
               <SellRow k="Способ оплаты" v={SELL_METHODS[methodIdx].label} />
               <SellRow k="Дата продажи" v={`${ddmmyyyyFromIso(saleDate)} (сегодня)`} />
               <SellRow k="Первый урок" v={ddmmyyyyFromIso(startsOn)} />
-              <SellRow k="Действует до" v={`${ddmmyyyyFromIso(endsOn)} (1 месяц)`} />
+              <SellRow k="Действует до" v={`${ddmmyyyyFromIso(endsOn)} (конец месяца)`} />
             </div>
+            {/* Неполный месяц: пропорциональный авторасчёт, редактируется вручную (ТЗ §3) */}
+            {lessonsTotal < targetLessons && (
+              <div className="mt-3 grid gap-3 border-t border-violet-200/40 pt-3 sm:grid-cols-[1fr_auto] sm:items-center">
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-semibold text-slate-500">
+                    Стоимость за {lessonsTotal} зан. (авторасчёт {money(proratedBase)}, можно исправить)
+                  </span>
+                  <input type="number" min={0} step={500} value={priceEdit}
+                    placeholder={String(proratedBase)}
+                    onChange={(e) => setPriceEdit(e.target.value)} className={fieldCls} />
+                </label>
+                <div className="text-right text-xs text-slate-400">Полный месяц — {money(basePrice)}</div>
+              </div>
+            )}
             <div className="mt-3 flex items-center justify-between border-t-2 border-violet-200/60 pt-3">
               <span className="text-sm font-black text-slate-700">Итоговая цена</span>
               <span className="text-xl font-black text-violet-700">{money(finalPrice)}</span>
@@ -1523,18 +1653,81 @@ function SellSubscriptionPanel({
               </div>
             </div>
           </div>
+          )}
+
+          {/* Предпросмотр периода: каждый календарный месяц — отдельный абонемент (ТЗ §5) */}
+          {mode === "period" && (
+            <div className="mt-4 rounded-2xl border border-violet-100 bg-gradient-to-br from-violet-50 to-amber-50 p-4">
+              <p className="mb-3 text-sm font-black text-slate-800">Разбивка периода по месяцам</p>
+              {segments.length === 0 ? (
+                <p className="text-sm text-slate-500">Укажите дату начала и дату окончания периода — система разобьёт его по календарным месяцам.</p>
+              ) : (
+                <>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[520px] text-left text-sm">
+                      <thead className="text-[11px] uppercase tracking-wider text-slate-400">
+                        <tr>
+                          <th className="py-1.5 pr-3 font-black">Месяц</th>
+                          <th className="py-1.5 pr-3 font-black">Период</th>
+                          <th className="py-1.5 pr-3 font-black">Занятий</th>
+                          <th className="py-1.5 font-black">Сумма (можно исправить)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {segments.map((seg) => (
+                          <tr key={seg.monthKey} className="border-t border-violet-100/70">
+                            <td className="py-2 pr-3 font-bold text-slate-800">
+                              {new Date(seg.from).toLocaleDateString("ru-RU", { month: "long", year: "numeric" })}
+                            </td>
+                            <td className="py-2 pr-3 text-slate-600">{ddmmyyyyFromIso(seg.from)} — {ddmmyyyyFromIso(seg.to)}</td>
+                            <td className="py-2 pr-3 text-slate-600">{seg.dates.length}</td>
+                            <td className="py-2">
+                              <input
+                                type="number" min={0} step={500}
+                                value={segPrices[seg.monthKey] ?? ""}
+                                placeholder={String(segAutoPrice(seg))}
+                                onChange={(e) => setSegPrices((m) => ({ ...m, [seg.monthKey]: e.target.value }))}
+                                className={`${fieldCls} w-32`}
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between border-t-2 border-violet-200/60 pt-3">
+                    <span className="text-sm font-black text-slate-700">Итого за {segments.length} мес.</span>
+                    <span className="text-xl font-black text-violet-700">{money(periodTotal)}</span>
+                  </div>
+                  <p className="mt-2 text-[11px] text-slate-400">
+                    Будет создано {segments.length} отдельных абонементов — по одному на календарный месяц (для помесячной отчётности). Оплата — полная за каждый месяц.
+                  </p>
+                </>
+              )}
+            </div>
+          )}
 
           {error && <p className="mt-3 rounded-xl bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-600">{error}</p>}
 
           {/* Кнопки */}
           <div className="mt-4 flex flex-wrap gap-2">
-            <button
-              onClick={() => submit(true)}
-              disabled={busy !== null}
-              className="rounded-xl bg-gradient-to-r from-violet-500 to-rose-500 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:brightness-105 disabled:opacity-40"
-            >
-              {busy === "sell" ? "Продаём…" : "Продать абонемент"}
-            </button>
+            {mode === "single" ? (
+              <button
+                onClick={() => submit(true)}
+                disabled={busy !== null}
+                className="rounded-xl bg-gradient-to-r from-violet-500 to-rose-500 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:brightness-105 disabled:opacity-40"
+              >
+                {busy === "sell" ? "Продаём…" : "Продать абонемент"}
+              </button>
+            ) : (
+              <button
+                onClick={submitBatch}
+                disabled={busy !== null || segments.length === 0}
+                className="rounded-xl bg-gradient-to-r from-violet-500 to-rose-500 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:brightness-105 disabled:opacity-40"
+              >
+                {busy === "sell" ? "Оформляем…" : `Продать ${segments.length || ""} абонемент${segments.length === 1 ? "" : segments.length >= 2 && segments.length <= 4 ? "а" : "ов"}`}
+              </button>
+            )}
             <button
               onClick={onClose}
               disabled={busy !== null}

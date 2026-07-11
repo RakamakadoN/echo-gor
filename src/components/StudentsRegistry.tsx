@@ -117,6 +117,7 @@ export interface StudentsRegistryProps {
   onOpenPayment?: (student: Student) => void;
   plans?: SubscriptionPlan[];
   onSellSubscription?: (payload: SellSubscriptionInput) => Promise<boolean> | boolean;
+  onSellSubscriptionBatch?: (items: SellSubscriptionInput[]) => Promise<boolean> | boolean;
   preset?: RegistryPreset | null;
   /** Справочник источников (откуда о нас узнали). */
   leadSources?: LeadSource[];
@@ -257,6 +258,7 @@ export default function StudentsRegistry({
   onOpenPayment,
   plans = [],
   onSellSubscription,
+  onSellSubscriptionBatch,
   preset,
   leadSources = [],
   waitlist = [],
@@ -1220,6 +1222,7 @@ export default function StudentsRegistry({
                 plans={plans}
                 leadSources={leadSources}
                 onSellSubscription={onSellSubscription}
+                onSellSubscriptionBatch={onSellSubscriptionBatch}
                 onTransfer={onUpdateStudent ? (payload) => onUpdateStudent(openStudent.id, payload) : undefined}
                 onAddToWaitlist={onAddToWaitlist}
                 inWaitlist={waitlistStudentIds.has(openStudent.id)}
