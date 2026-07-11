@@ -7647,7 +7647,7 @@ function ReportsSubsTab({ students, payments }: any) {
       </div>
       <section className="rounded-[1.5rem] border border-white/10 bg-white/[0.02] p-5 text-sm text-slate-300">
         <h4 className="text-sm font-black text-white">Отчёт по абонементам</h4>
-        <p className="mt-2 text-slate-400">Активных учеников: {active}. Должников: {debt}. За период продано {subCount} абонементов на {money(subRevenue)}. Проверьте истекающие абонементы в разделе «Ученики» → фильтр «Требуют продления».</p>
+        <p className="mt-2 text-slate-400">Активных учеников: {active}. Должников: {debt}. За период продано {subCount} абонементов на {money(subRevenue)}. Проверьте истекающие абонементы в разделе «Ученики» → фильтр «Не оплачен текущий месяц».</p>
       </section>
     </div>
   );

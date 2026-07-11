@@ -203,14 +203,34 @@ export const isFirstPurchaseThisMonth = (student: Student, now: Date = new Date(
   return first.getFullYear() === now.getFullYear() && first.getMonth() === now.getMonth();
 };
 
-/** Требуют продления (ТЗ, уточнение заказчика) = НЕТ активного абонемента,
- *  покрывающего текущий месяц. Без «скоро закончится»/«мало занятий». */
+/** «Не оплачен текущий месяц» (бывш. «Требуют продления», ТЗ заказчика 2026-07-11):
+ *  ученик РАНЬШЕ занимался (есть история абонементов), но на текущий месяц
+ *  действующего абонемента нет. Новый лид без истории сюда не попадает. */
 export const needsRenewal = (student: Student, now: Date = new Date()): boolean => {
   if (isLeft(student) || isPaused(student)) return false;
-  const active = (student.subscriptions || []).filter((s) => s.status === "active");
-  // Покрыт ли текущий момент действующим абонементом (без даты окончания = бессрочный).
-  const covered = active.some((s) => { const u = parseDate(s.validUntil); return !u || u.getTime() >= now.getTime(); });
-  return !covered;
+  if (!(student.subscriptions || []).length) return false;
+  return !hasCoveringSubscription(student, now);
+};
+
+/** Покрыт ли календарный месяц (year, month0) хоть одним абонементом из истории. */
+const monthCovered = (student: Student, year: number, month0: number): boolean => {
+  const mStart = new Date(year, month0, 1).getTime();
+  const mEnd = new Date(year, month0 + 1, 0, 23, 59, 59).getTime();
+  return (student.subscriptions || []).some((s) => {
+    const from = parseDate(s.startsOn);
+    const to = parseDate(s.validUntil);
+    if (!from) return false;
+    return from.getTime() <= mEnd && (!to || to.getTime() >= mStart);
+  });
+};
+
+/** «Не оплачен прошлый месяц» (доп. ТЗ заказчика): есть история абонементов,
+ *  но прошлый календарный месяц не был покрыт ни одним из них. */
+export const prevMonthUnpaid = (student: Student, now: Date = new Date()): boolean => {
+  if (isLeft(student) || isPaused(student)) return false;
+  if (!(student.subscriptions || []).length) return false;
+  const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  return !monthCovered(student, prev.getFullYear(), prev.getMonth());
 };
 
 /** Частично оплачено: ученик занимается И в группе, И индивидуально (в истории есть
@@ -328,6 +348,9 @@ export interface StudentState {
   trialOverLimit: boolean;
   /** Актуальная дата пробного: ближайшая предстоящая запись, иначе последняя прошедшая. */
   trialDate: string | null;
+  /** Частичный долг (0 < долг < цены абонемента): показывается подсветкой ПОД статусом,
+   *  основной статус не подменяет (ТЗ заказчика). 0 = частичного долга нет. */
+  partialDebt: number;
 }
 
 /**
@@ -420,12 +443,10 @@ export const getStudentState = (student: Student, now: Date = new Date()): Stude
     statusKey = "returned";
     statusLabel = "Вернувшийся ученик";
     tone = "purple";
-  } else if (debt > 0) {
-    if (isPartialDebt(student)) {
-      statusKey = "debt_partial";
-      statusLabel = "Частичный долг";
-      tone = "yellow";
-    } else if (!getPrimarySubscription(student) || getPrimarySubscription(student)?.status === "expired") {
+  } else if (debt > 0 && !isPartialDebt(student)) {
+    // Частичный долг (0 < долг < цены абонемента) статус НЕ подменяет —
+    // он уходит в отдельный признак partialDebt (подсветка под статусом, ТЗ).
+    if (!getPrimarySubscription(student) || getPrimarySubscription(student)?.status === "expired") {
       statusKey = "debt_prev";
       statusLabel = "Не оплачен прошлый месяц";
       tone = "red";
@@ -471,8 +492,10 @@ export const getStudentState = (student: Student, now: Date = new Date()): Stude
     statusLabel = "Новый ученик";
     tone = "blue";
   } else {
+    // Действующий абонемент И первая покупка была раньше текущего месяца (ТЗ:
+    // «пришёл в августе — новый весь август, продолжил в сентябре — постоянный»).
     statusKey = "active";
-    statusLabel = "Активный";
+    statusLabel = "Постоянный ученик";
     tone = "neutral";
   }
 
@@ -489,6 +512,7 @@ export const getStudentState = (student: Student, now: Date = new Date()): Stude
     trialCount: trial.count,
     trialOverLimit: trial.overLimit,
     trialDate: trial.upcoming ?? trial.lastPast,
+    partialDebt: isPartialDebt(student) ? debt : 0,
   };
 };
 
@@ -520,6 +544,7 @@ export type SegmentId =
   | "all"
   | "active"
   | "renewal"
+  | "prev_unpaid"
   | "debtors"
   | "new"
   | "returned"
@@ -556,8 +581,10 @@ const isVacation = (s: Student): boolean =>
 /** ТЗ §4: набор быстрых сегментов в верхней панели. */
 export const SEGMENTS: SegmentDef[] = [
   { id: "all", label: "Все ученики", match: () => true },
-  { id: "active", label: "Активные", match: (s, now, ctx) => !isLeft(s) && s.status === "active" && !isWaitlist(s, ctx) },
-  { id: "renewal", label: "Требуют продления", match: (s, now) => !isLeft(s) && needsRenewal(s, now) },
+  // «Активные» = есть ДЕЙСТВУЮЩИЙ абонемент (ТЗ заказчика), а не сырой status в БД.
+  { id: "active", label: "Активные", match: (s, now, ctx) => !isLeft(s) && !isPaused(s) && hasCoveringSubscription(s, now) && !isWaitlist(s, ctx) },
+  { id: "renewal", label: "Не оплачен текущий месяц", match: (s, now) => !isLeft(s) && needsRenewal(s, now) },
+  { id: "prev_unpaid", label: "Не оплачен прошлый месяц", match: (s, now) => !isLeft(s) && prevMonthUnpaid(s, now) },
   { id: "debtors", label: "Должники", match: (s) => !isLeft(s) && getDebt(s) > 0 },
   { id: "new", label: "Новые", match: (s, now) => !isLeft(s) && (isTrial(s) || getEnrollmentMonths(s, now) < 1) },
   { id: "returned", label: "Вернувшиеся", match: (s) => !isLeft(s) && isReturned(s) },
@@ -576,7 +603,8 @@ export const SEGMENTS: SegmentDef[] = [
 export const STATUS_FILTER_OPTIONS: { value: string; label: string }[] = [
   { value: "all", label: "Все статусы" },
   { value: "active", label: "Активные" },
-  { value: "renewal", label: "Требуют продления" },
+  { value: "renewal", label: "Не оплачен текущий месяц" },
+  { value: "prev_unpaid", label: "Не оплачен прошлый месяц" },
   { value: "debtors", label: "Должники" },
   { value: "new", label: "Новый ученик" },
   { value: "returned", label: "Вернувшийся" },

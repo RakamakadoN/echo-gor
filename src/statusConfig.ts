@@ -33,7 +33,7 @@ export const TONE_FUNNEL: Record<StatusTone, { bg: string; border: string; icon_
 export const BASE_KPI_STATUSES: { key: string; label: string; tone: StatusTone }[] = [
   { key: "total", label: "Всего учеников", tone: "gray" },
   { key: "active", label: "Активные", tone: "green" },
-  { key: "renewal", label: "Требуют продления", tone: "orange" },
+  { key: "renewal", label: "Не оплачен текущий месяц", tone: "orange" },
   { key: "debtors", label: "Должники", tone: "red" },
   { key: "waitlist", label: "Лист ожидания", tone: "purple" },
   { key: "left", label: "Ушли в этом месяце", tone: "red" },
@@ -57,13 +57,13 @@ export const AUTO_STATUS_LIST: { key: string; label: string; tone: StatusTone }[
   { key: "trial_rebooked", label: "Перезаписан на пробный", tone: "orange" },
   { key: "trial_lost", label: "Был на пробном, не купил", tone: "orange" },
   { key: "visitor_new", label: "Новый посетитель", tone: "green" },
-  { key: "not_renewed", label: "Требуют продления", tone: "red" },
+  { key: "not_renewed", label: "Не продлил абонемент", tone: "red" },
   { key: "debt_current", label: "Не оплачен текущий месяц", tone: "red" },
   { key: "debt_prev", label: "Не оплачен прошлый месяц", tone: "red" },
-  { key: "debt_partial", label: "Частичный долг", tone: "orange" },
+  // debt_partial убран: частичный долг больше не отдельный статус, а подсветка (ТЗ).
   { key: "next_paid", label: "Куплен следующий месяц", tone: "green" },
   { key: "new", label: "Новый ученик", tone: "blue" },
-  { key: "active", label: "Активный", tone: "green" },
+  { key: "active", label: "Постоянный ученик", tone: "green" },
   { key: "returned", label: "Вернувшийся", tone: "purple" },
   { key: "paused", label: "Замороженный абонемент", tone: "gray" },
   { key: "manual", label: "Ручной статус", tone: "gray" },
@@ -83,6 +83,9 @@ export interface StatusConfig {
   labels: Record<string, string>;
   tones: Record<string, StatusTone>;
   manual: string[];
+  /** true = пользователь сознательно сохранял список ручных статусов:
+   *  пустой manual при manualSet означает «удалили все», а не «взять дефолты». */
+  manualSet?: boolean;
 }
 
 const STORAGE_KEY = "echogor:status-config:v1";
@@ -95,6 +98,7 @@ function readLocal(): StatusConfig {
       labels: parsed.labels || {},
       tones: parsed.tones || {},
       manual: Array.isArray(parsed.manual) ? parsed.manual : [],
+      manualSet: Boolean(parsed.manualSet),
     };
   } catch {
     return { labels: {}, tones: {}, manual: [] };
@@ -117,6 +121,7 @@ export function hydrateStatusConfig(cfg: Partial<StatusConfig>): void {
     labels: cfg.labels || {},
     tones: (cfg.tones as Record<string, StatusTone>) || {},
     manual: Array.isArray(cfg.manual) ? cfg.manual : [],
+    manualSet: Boolean(cfg.manualSet),
   };
   try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(_cache)); } catch { /* noop */ }
 }
@@ -133,6 +138,8 @@ export async function fetchStatusConfig(roleHeader: string): Promise<void> {
 
 /** Сохранить конфиг: кэш + localStorage + общий стор на сервере. */
 export function saveStatusConfig(cfg: StatusConfig, roleHeader = "owner"): void {
+  // Помечаем, что список ручных статусов задан сознательно (в т.ч. пустой).
+  cfg = { ...cfg, manualSet: true };
   hydrateStatusConfig(cfg);
   try {
     fetch("/api/mvp/settings/status-config", {
@@ -159,6 +166,11 @@ export function getStatusToneRaw(key: string): StatusTone | undefined {
  * в ЛО добавляют только кнопкой (миграция 042). */
 export function getManualStatuses(): string[] {
   const cfg = loadStatusConfig();
-  const list = cfg.manual && cfg.manual.length ? cfg.manual : DEFAULT_MANUAL_STATUSES;
+  // manualSet: пустой список = «пользователь удалил все статусы», дефолты не подставляем.
+  const list = cfg.manualSet
+    ? cfg.manual
+    : cfg.manual && cfg.manual.length
+    ? cfg.manual
+    : DEFAULT_MANUAL_STATUSES;
   return list.filter((s) => !/лист ожид/i.test(s));
 }

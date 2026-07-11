@@ -229,7 +229,8 @@ const FUNNEL_STAGES: {
 const SEG_CHIPS: { id: string; label: string }[] = [
   { id: "all", label: "Все" },
   { id: "active", label: "Активные" },
-  { id: "renewal", label: "Требуют продления" },
+  { id: "renewal", label: "Не оплачен текущий месяц" },
+  { id: "prev_unpaid", label: "Не оплачен прошлый месяц" },
   { id: "debtors", label: "Должники" },
   { id: "trial", label: "Записаны на пробный" },
   { id: "next_month", label: "Купили следующий" },
@@ -423,8 +424,9 @@ export default function StudentsRegistry({
     }).length;
     return [
       { kpiKey: "total", label: "Всего учеников", value: data.length, icon: Users, color: "gray" },
-      { kpiKey: "active", label: "Активные", value: data.filter((s) => !isLeft(s) && s.status === "active").length, icon: UserCheck, color: "green" },
-      { kpiKey: "renewal", label: "Требуют продления", value: count("renewal"), icon: RefreshCw, color: "orange" },
+      // «Активные» = сегмент (есть действующий абонемент), НЕ сырой status из БД.
+      { kpiKey: "active", label: "Активные", value: count("active"), icon: UserCheck, color: "green" },
+      { kpiKey: "renewal", label: "Не оплачен текущий месяц", value: count("renewal"), icon: RefreshCw, color: "orange" },
       { kpiKey: "debtors", label: "Должники", value: count("debtors"), icon: AlertTriangle, color: "red" },
       { kpiKey: "waitlist", label: "Лист ожидания", value: activeWaitlist.length, icon: Clock, color: "purple" },
       { kpiKey: "left", label: "Ушли в этом месяце", value: leftThisMonth, icon: UserMinus, color: "red" },
@@ -1018,7 +1020,7 @@ export default function StudentsRegistry({
                   <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px]" style={{ color: CLR.second }}>
                     <span>{phone}</span>
                     {colOn("age") && <span>{formatAge(s)}</span>}
-                    {st.debt > 0 && <span className="font-bold" style={{ color: "#B14545" }}>Долг {money(st.debt)}</span>}
+                    {st.debt > 0 && <span className="font-bold" style={{ color: st.partialDebt > 0 ? "#B45309" : "#B14545" }}>{st.partialDebt > 0 ? "Частичный долг" : "Долг"} {money(st.debt)}</span>}
                     {colOn("ltv") && <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${LTV_BADGE[st.ltv]}`}>{st.ltv}</span>}
                     {st.trialCount > 0 && <span className={`inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-bold ${st.trialOverLimit ? "bg-[#F6E9E9] text-[#B14545]" : "bg-[#EDF1F5] text-[#5C6772]"}`}>ПУ ×{st.trialCount}</span>}
                     {st.trialDate && <span className="inline-flex rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-bold text-sky-700">ПУ {new Date(st.trialDate).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" })}</span>}
@@ -1107,6 +1109,14 @@ export default function StudentsRegistry({
                                   className="inline-flex items-center rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-bold text-sky-700"
                                 >
                                   ПУ {new Date(st.trialDate).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" })}
+                                </span>
+                              )}
+                              {st.partialDebt > 0 && (
+                                <span
+                                  title="Частичный долг: внесено меньше стоимости абонемента"
+                                  className="inline-flex items-center rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-700"
+                                >
+                                  частичный долг {money(st.partialDebt)}
                                 </span>
                               )}
                             </div>

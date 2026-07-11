@@ -389,7 +389,12 @@ export default function StudentManagementCard({
     student.subscriptions?.find((item) => item.status === "active") ||
     student.subscriptions?.[0];
   const debt = student.balance < 0;
-  const statusActive = !debt;
+  // Частичный долг (внесено меньше цены) НЕ красит статус в «Долг» —
+  // показывается отдельной янтарной подсветкой рядом (ТЗ заказчика).
+  const partialDebt = debt && subscription && Math.abs(student.balance) < (subscription.price || 0)
+    ? Math.abs(student.balance)
+    : 0;
+  const statusActive = !debt || partialDebt > 0;
 
   const attendanceRecords = Object.values(student.attendance || {});
   const presentCount = attendanceRecords.filter(
@@ -471,6 +476,14 @@ export default function StudentManagementCard({
                 />
                 {statusActive ? "Активный" : "Долг"}
               </span>
+              {partialDebt > 0 && (
+                <span
+                  title="Внесено меньше стоимости абонемента"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-700"
+                >
+                  частичный долг {money(partialDebt)}
+                </span>
+              )}
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-sm text-slate-500">
               <span className="inline-flex items-center gap-1.5">

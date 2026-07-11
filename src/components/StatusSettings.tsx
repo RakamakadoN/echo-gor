@@ -23,7 +23,11 @@ export default function StatusSettings({ onClose, roleHeader = "owner" }: { onCl
   const initial = loadStatusConfig();
   const [labels, setLabels] = useState<Record<string, string>>(initial.labels || {});
   const [tones, setTones] = useState<Record<string, StatusTone>>(initial.tones || {});
-  const [manual, setManual] = useState<string[]>(getManualStatuses());
+  // Ручные статусы: помним исходное имя строки, чтобы при переименовании
+  // перенести привязанный цвет (tones ключуется текстом статуса).
+  const [manual, setManual] = useState<{ name: string; initialName: string }[]>(
+    getManualStatuses().map((s) => ({ name: s, initialName: s }))
+  );
 
   const setLabel = (key: string, v: string) => setLabels((m) => ({ ...m, [key]: v }));
   const setTone = (key: string, t: StatusTone) => setTones((m) => ({ ...m, [key]: t }));
@@ -34,8 +38,20 @@ export default function StatusSettings({ onClose, roleHeader = "owner" }: { onCl
       const s = String(v ?? "").trim();
       if (s) cleanLabels[k] = s;
     });
-    const cleanManual = manual.map((s) => s.trim()).filter(Boolean);
-    saveStatusConfig({ labels: cleanLabels, tones, manual: cleanManual }, roleHeader);
+    // Перенос цвета при переименовании: tones[старое имя] → tones[новое имя].
+    const nextTones = { ...tones };
+    for (const row of manual) {
+      const name = row.name.trim();
+      if (!name || !row.initialName || name === row.initialName) continue;
+      if (nextTones[row.initialName] && !nextTones[name]) {
+        nextTones[name] = nextTones[row.initialName];
+        delete nextTones[row.initialName];
+      }
+    }
+    const cleanManual = manual.map((r) => r.name.trim()).filter(Boolean);
+    // Пустой список сохраняется как есть: manualSet в saveStatusConfig помечает
+    // «удалили все статусы сознательно», дефолты не вернутся.
+    saveStatusConfig({ labels: cleanLabels, tones: nextTones, manual: cleanManual }, roleHeader);
     onClose();
   };
 
@@ -106,26 +122,26 @@ export default function StatusSettings({ onClose, roleHeader = "owner" }: { onCl
             <div className="mb-2 flex items-center justify-between">
               <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">Ручные статусы</p>
               <button
-                onClick={() => setManual((m) => [...m, ""])}
+                onClick={() => setManual((m) => [...m, { name: "", initialName: "" }])}
                 className="inline-flex items-center gap-1 rounded-lg bg-slate-800 px-2.5 py-1 text-xs font-bold text-white hover:bg-slate-700"
               >
                 <Plus className="h-3.5 w-3.5" /> Добавить
               </button>
             </div>
             <div className="space-y-2">
-              {manual.map((s, i) => {
-                const curTone = tones[s] || "gray";
+              {manual.map((row, i) => {
+                const curTone = tones[row.name] || tones[row.initialName] || "gray";
                 return (
                 <div key={i} className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
                   <input
-                    value={s}
-                    onChange={(e) => setManual((m) => m.map((x, j) => (j === i ? e.target.value : x)))}
+                    value={row.name}
+                    onChange={(e) => setManual((m) => m.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))}
                     placeholder="Название статуса"
                     className="min-w-[160px] flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 outline-none focus:border-slate-400"
                   />
                   <div className="flex items-center gap-1.5">
                     {STATUS_TONES.map((t) => (
-                      <button key={t.id} title={t.label} onClick={() => s.trim() && setTone(s, t.id)}
+                      <button key={t.id} title={t.label} onClick={() => row.name.trim() && setTone(row.name.trim(), t.id)}
                         className={`h-6 w-6 rounded-full border-2 transition ${curTone === t.id ? "border-slate-800" : "border-transparent"}`}
                         style={{ background: t.swatch }} />
                     ))}
@@ -139,7 +155,8 @@ export default function StatusSettings({ onClose, roleHeader = "owner" }: { onCl
                 </div>
                 );
               })}
-              {manual.length === 0 && <p className="text-sm text-slate-400">Список пуст — добавьте статус.</p>}
+              {manual.length === 0 && <p className="text-sm text-slate-400">Список пуст — можно сохранить и без ручных статусов.</p>}
+              <p className="text-[11px] text-slate-400">Переименование статуса не меняет его у уже отмеченных учеников — им нужно выставить новый статус заново.</p>
             </div>
           </section>
 
