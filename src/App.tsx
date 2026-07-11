@@ -348,7 +348,6 @@ export default function App() {
 
   const [showAddPaymentModal, setShowAddPaymentModal] = useState<boolean>(false);
   const [paymentAmount, setPaymentAmount] = useState<number>(4500);
-  const [paymentType, setPaymentType] = useState<"subscription" | "single" | "uniform" | "concert">("subscription");
   const [paymentMethod, setPaymentMethod] = useState<"card" | "cash" | "transfer">("card");
   const [paymentDesc, setPaymentDesc] = useState("Продление абонемента");
 
@@ -999,7 +998,6 @@ export default function App() {
         ? `Погашение долга: ${student.name}`
         : `Оплата абонемента: ${student.name}`
     );
-    setPaymentType("subscription");
     setShowAddPaymentModal(true);
   };
 
@@ -1557,7 +1555,11 @@ export default function App() {
           description: paymentDesc
         })
       });
-      if (!response.ok) throw new Error(await response.text());
+      if (!response.ok) {
+        // Сервер шлёт {error: "..."} — показываем текст человеку, а не сырой JSON.
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.error || `Ошибка ${response.status}`);
+      }
       await loadMvpBootstrap(activeRole);
       setShowAddPaymentModal(false);
       toast.success("Оплата зарегистрирована");
@@ -5581,7 +5583,6 @@ export default function App() {
                     setSelectedStudentId("stud-alan");
                     setPaymentAmount(4500);
                     setPaymentDesc("Погашение долга: Старший ансамбль");
-                    setPaymentType("subscription");
                     setShowAddPaymentModal(true);
                   }}
                   className="px-3.5 py-1.5 bg-[#8B0000] text-white hover:bg-red-700 rounded-xl text-xs font-bold tracking-wide uppercase transition-all"
@@ -6616,6 +6617,20 @@ export default function App() {
                   onChange={(e) => setPaymentAmount(parseInt(e.target.value) || 0)}
                   className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#C5A059]"
                 />
+                {(() => {
+                  // Подсказка и мягкая валидация: платёж гасит долг, больше долга внести нельзя (ТЗ).
+                  const stud = students.find((s) => s.id === selectedStudentId);
+                  const debt = stud && stud.balance < 0 ? -stud.balance : 0;
+                  if (debt > 0) {
+                    return (
+                      <p className={`mt-1 text-[11px] ${paymentAmount > debt ? "text-red-400 font-bold" : "text-slate-400"}`}>
+                        Остаток долга: {debt.toLocaleString("ru-RU")} тг
+                        {paymentAmount > debt ? " — сумма больше долга, платёж не пройдёт" : ""}
+                      </p>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
 
               <div>
@@ -6629,32 +6644,17 @@ export default function App() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Тип платежа</label>
-                  <select
-                    value={paymentType}
-                    onChange={(e) => setPaymentType(e.target.value as any)}
-                    className="w-full bg-black/40 border border-white/10 rounded-xl px-2 py-2 text-xs text-white"
-                  >
-                    <option value="subscription">Абонемент 12зан.</option>
-                    <option value="single">Разовое зан.</option>
-                    <option value="uniform">Форма / Обувь</option>
-                    <option value="concert">Концертный сбор</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Способ оплаты</label>
-                  <select
-                    value={paymentMethod}
-                    onChange={(e) => setPaymentMethod(e.target.value as any)}
-                    className="w-full bg-black/40 border border-white/10 rounded-xl px-2 py-2 text-xs text-white"
-                  >
-                    <option value="card">Карта</option>
-                    <option value="cash">Наличные</option>
-                    <option value="transfer">Перевод СБП</option>
-                  </select>
-                </div>
+              <div>
+                <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Способ оплаты</label>
+                <select
+                  value={paymentMethod}
+                  onChange={(e) => setPaymentMethod(e.target.value as any)}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl px-2 py-2 text-xs text-white"
+                >
+                  <option value="card">Карта</option>
+                  <option value="cash">Наличные</option>
+                  <option value="transfer">Перевод СБП</option>
+                </select>
               </div>
 
               <div className="pt-2">

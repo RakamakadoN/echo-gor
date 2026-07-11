@@ -217,7 +217,6 @@ const FUNNEL_STAGES: {
   key: string; label: string; hint?: string; icon: React.ElementType;
   bg: string; border: string; icon_c: string; val: string; hint_c: string;
 }[] = [
-  { key: "lead", label: "Без статуса", hint: "нет целевых действий", icon: UserPlus, bg: "#F8F6FF", border: "#DDD6FE", icon_c: "#8B5CF6", val: "#5B21B6", hint_c: "#7C3AED" },
   { key: "trial", label: "Записаны на пробный", hint: "ожидают занятия", icon: Calendar, bg: "#EFF6FF", border: "#BFDBFE", icon_c: "#3B82F6", val: "#1E40AF", hint_c: "#2563EB" },
   { key: "trial_missed", label: "Не пришли на пробный", hint: "перезаписать", icon: UserX, bg: "#FFF5F5", border: "#FECACA", icon_c: "#EF4444", val: "#B91C1C", hint_c: "#DC2626" },
   { key: "trial_rebooked", label: "Перезаписаны", hint: "ждут занятия", icon: RefreshCw, bg: "#FFFBEB", border: "#FDE68A", icon_c: "#F59E0B", val: "#B45309", hint_c: "#D97706" },
@@ -231,7 +230,6 @@ const SEG_CHIPS: { id: string; label: string }[] = [
   { id: "active", label: "Активные" },
   { id: "renewal", label: "Требуют продления" },
   { id: "debtors", label: "Должники" },
-  { id: "nostatus", label: "Без статуса" },
   { id: "trial", label: "Записаны на пробный" },
   { id: "next_month", label: "Купили следующий" },
   { id: "waitlist", label: "Лист ожидания" },
@@ -386,7 +384,6 @@ export default function StudentsRegistry({
       const seg = SEGMENTS.find((x) => x.id === segment);
       if (seg && !seg.match(s, now)) return false;
       // Спец-чипы прототипа (нет прямого SegmentId): по авто-статусу воронки.
-      if (segment === "nostatus" && getStudentState(s, now).statusKey !== "lead") return false;
       if (segment === "trial" && getStudentState(s, now).statusKey !== "trial") return false;
       if (!matchStatusFilter(s, statusFilter, now)) return false;
       if (branchFilter !== "all" && s.branchId !== branchFilter) return false;
@@ -412,7 +409,6 @@ export default function StudentsRegistry({
   const kpis = useMemo(() => {
     const count = (id: SegmentId) =>
       data.filter((s) => SEGMENTS.find((x) => x.id === id)!.match(s, now)).length;
-    const noStatus = data.filter((s) => !isLeft(s) && getStudentState(s, now).statusKey === "lead").length;
     // «Ушли в этом месяце» — из РЕАЛЬНОГО архива (studentArchive), а не из активного
     // списка: связка с окном «Архив». Дата ухода = left_on (иначе archived_at).
     const leftThisMonth = studentArchive.filter((a: any) => {
@@ -426,7 +422,6 @@ export default function StudentsRegistry({
       { kpiKey: "active", label: "Активные", value: data.filter((s) => !isLeft(s) && s.status === "active").length, icon: UserCheck, color: "green" },
       { kpiKey: "renewal", label: "Требуют продления", value: count("renewal"), icon: RefreshCw, color: "orange" },
       { kpiKey: "debtors", label: "Должники", value: count("debtors"), icon: AlertTriangle, color: "red" },
-      { kpiKey: "nostatus", label: "Без статуса", value: noStatus, icon: HelpCircle, color: "blue" },
       { kpiKey: "waitlist", label: "Лист ожидания", value: activeWaitlist.length, icon: Clock, color: "purple" },
       { kpiKey: "left", label: "Ушли в этом месяце", value: leftThisMonth, icon: UserMinus, color: "red" },
     ];
@@ -490,7 +485,6 @@ export default function StudentsRegistry({
           if (key === "active") return !isLeft(s) && s.status === "active";
           if (key === "renewal") return SEGMENTS.find((x) => x.id === "renewal")!.match(s, now);
           if (key === "debtors") return SEGMENTS.find((x) => x.id === "debtors")!.match(s, now);
-          if (key === "nostatus") return !isLeft(s) && getStudentState(s, now).statusKey === "lead";
           return false;
         })
         .map((s) => s.id);

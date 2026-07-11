@@ -1441,6 +1441,30 @@ export function registerMvpApi(app: express.Express) {
       return res.status(503).json({ error: "Supabase is not configured" });
     }
 
+    // Запрет переплаты (ТЗ): нельзя внести больше, чем остаток долга по активным
+    // абонементам. Легаси без amount_paid — остаток неизвестен, пропускаем.
+    // Ошибка чтения = 500 (fail closed), НЕ пустой список — иначе валидация дырявая.
+    try {
+      const subsForCap = await supabaseFetch<any[]>(
+        "student_subscriptions",
+        `select=price,amount_paid&student_id=eq.${payload.studentId}&status=eq.active&amount_paid=not.is.null`
+      );
+      if (subsForCap.length > 0) {
+        const totalShortfall = subsForCap.reduce(
+          (sum, s) => sum + Math.max(0, (Number(s.price) || 0) - Number(s.amount_paid)), 0
+        );
+        if ((Number(payload.amount) || 0) > totalShortfall) {
+          return res.status(400).json({
+            error: totalShortfall > 0
+              ? `Сумма превышает остаток долга (${totalShortfall.toLocaleString("ru-RU")} тг). Для нового месяца используйте «Продать абонемент».`
+              : "У ученика нет долга по абонементам. Для нового месяца используйте «Продать абонемент»."
+          });
+        }
+      }
+    } catch (e: any) {
+      return res.status(500).json({ error: "Не удалось проверить остаток долга: " + (e?.message || e) });
+    }
+
     const insertedPayment = await supabaseFetch<any[]>("payments", "", {
       method: "POST",
       body: JSON.stringify({

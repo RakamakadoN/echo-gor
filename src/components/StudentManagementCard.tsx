@@ -106,6 +106,7 @@ type TabId =
   | "subscriptions"
   | "attendance"
   | "finance"
+  | "recalcs"
   | "comments"
   | "communications"
   | "family"
@@ -116,6 +117,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "subscriptions", label: "Абонементы" },
   { id: "attendance", label: "Посещения" },
   { id: "finance", label: "Финансы" },
+  { id: "recalcs", label: "Справки" },
   { id: "history", label: "История" },
   { id: "comments", label: "Комментарии" },
   { id: "communications", label: "Коммуникации" },
@@ -949,6 +951,7 @@ export default function StudentManagementCard({
           {tab === "communications" && (
             <CommunicationsTab student={student} />
           )}
+          {tab === "recalcs" && <RecalcsTab studentId={student.id} roleHeader={roleHeader} />}
           {tab === "history" && <HistoryTab studentId={student.id} roleHeader={roleHeader} />}
           {tab === "family" && <FamilyTab student={student} />}
         </div>
@@ -1048,13 +1051,15 @@ function GeneralTab({
   subscription?: Student["subscriptions"][number];
   onOpenSub?: (sub: Subscription) => void;
 }) {
-  // Первый пробный урок ученика (по отметкам is_trial) — самая ранняя дата.
-  const firstTrialDate = (() => {
+  // Актуальный пробный урок (ТЗ): ближайшая предстоящая запись, иначе последняя прошедшая.
+  const trialDate = (() => {
     const dates = Object.entries(student.attendance || {})
       .filter(([, r]: any) => r && r.isTrial)
       .map(([d]) => d)
       .sort();
-    return dates[0] || null;
+    if (!dates.length) return null;
+    const today = new Date().toISOString().slice(0, 10);
+    return dates.find((d) => d >= today) || dates[dates.length - 1];
   })();
   return (
     <div>
@@ -1111,12 +1116,12 @@ function GeneralTab({
         </div>
       </div>
 
-      {/* Первый пробный урок (ТЗ): рядом с абонементом. */}
-      {firstTrialDate && (
+      {/* Пробный урок (ТЗ): актуальная дата записи — ближайшая предстоящая, иначе последняя. */}
+      {trialDate && (
         <div className="mt-3 flex items-center gap-2 rounded-2xl border border-sky-200 bg-sky-50/70 px-4 py-3">
-          <span className="text-[11px] font-bold uppercase tracking-wide text-sky-700/70">Первый пробный урок</span>
+          <span className="text-[11px] font-bold uppercase tracking-wide text-sky-700/70">Пробный урок</span>
           <span className="ml-auto font-black text-slate-800">
-            {new Date(firstTrialDate).toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" })}
+            {new Date(trialDate).toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" })}
           </span>
         </div>
       )}
@@ -1729,6 +1734,93 @@ function HistoryTab({ studentId, roleHeader }: { studentId: string; roleHeader: 
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+// Вкладка «Справки»: перерасчёты ученика с причинами и приложенными справками (ТЗ §перерасчёт).
+// Причины — зеркало REASONS из AttendanceJournalView (там создаётся перерасчёт).
+const RECALC_REASON_LABELS: Record<string, string> = {
+  illness: "Болезнь",
+  certificate: "Справка",
+  left: "Уехал",
+  family: "Семейные обстоятельства",
+  no_notice: "Не предупредил",
+  other: "Другое",
+};
+const RECALC_STATUS_LABELS: Record<string, { label: string; cls: string }> = {
+  pending: { label: "Ожидает", cls: "bg-amber-100 text-amber-700" },
+  applied: { label: "Применён", cls: "bg-emerald-100 text-emerald-600" },
+  cancelled: { label: "Отменён", cls: "bg-slate-200 text-slate-500" },
+};
+
+function RecalcsTab({ studentId, roleHeader }: { studentId: string; roleHeader: string }) {
+  const [rows, setRows] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setLoading(true);
+      try {
+        const r = await fetch(`/api/mvp/recalculations?studentId=${studentId}`, { headers: { "x-demo-role": roleHeader } });
+        if (r.ok && alive) setRows((await r.json()).recalculations || []);
+      } catch { /* ignore */ } finally { if (alive) setLoading(false); }
+    })();
+    return () => { alive = false; };
+  }, [studentId, roleHeader]);
+
+  if (loading) return <p className="p-4 text-sm text-slate-400">Загрузка справок…</p>;
+  if (!rows.length) {
+    return (
+      <div>
+        <SectionHeader title="Справки и перерасчёты" />
+        <p className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-400">
+          Перерасчётов пока нет. Они создаются из журнала посещаемости (кнопка «Перерасчёт»), справка прикрепляется там же.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <SectionHeader title="Справки и перерасчёты" />
+      <div className="grid gap-3">
+        {rows.map((r) => {
+          const st = RECALC_STATUS_LABELS[r.status] || RECALC_STATUS_LABELS.pending;
+          const isImage = (r.attachmentUrl || "").startsWith("data:image");
+          return (
+            <div key={r.id} className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm font-bold text-slate-800">
+                  {RECALC_REASON_LABELS[r.reason] || r.reason || "Без причины"}
+                </p>
+                <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${st.cls}`}>{st.label}</span>
+                <span className="ml-auto text-sm font-black text-slate-800">{money(r.amount)}</span>
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                {r.periodFrom && r.periodTo ? `Период: ${r.periodFrom} — ${r.periodTo} · ` : ""}
+                {r.lessonsCount ? `Занятий: ${r.lessonsCount} · ` : ""}
+                {r.createdAt ? new Date(r.createdAt).toLocaleDateString("ru-RU") : ""}
+                {r.createdByName ? ` · ${r.createdByName}` : ""}
+              </p>
+              {r.comment && <p className="mt-1.5 text-sm text-slate-600">{r.comment}</p>}
+              {r.attachmentUrl && (
+                <div className="mt-2">
+                  {isImage && (
+                    <img src={r.attachmentUrl} alt="Справка" className="mb-2 max-h-40 rounded-xl border border-slate-100" />
+                  )}
+                  <a
+                    href={r.attachmentUrl}
+                    download={r.attachmentName || `spravka-${(r.createdAt || "").slice(0, 10)}`}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-700 hover:bg-sky-100"
+                  >
+                    📎 {r.attachmentName || "Скачать справку"}
+                  </a>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

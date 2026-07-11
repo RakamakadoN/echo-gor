@@ -35,14 +35,12 @@ export const BASE_KPI_STATUSES: { key: string; label: string; tone: StatusTone }
   { key: "active", label: "Активные", tone: "green" },
   { key: "renewal", label: "Требуют продления", tone: "orange" },
   { key: "debtors", label: "Должники", tone: "red" },
-  { key: "nostatus", label: "Без статуса", tone: "blue" },
   { key: "waitlist", label: "Лист ожидания", tone: "purple" },
   { key: "left", label: "Ушли в этом месяце", tone: "red" },
 ];
 
 /** Базовые статусы блока «Воронка продаж». */
 export const BASE_FUNNEL_STATUSES: { key: string; label: string; tone: StatusTone }[] = [
-  { key: "funnel:lead", label: "Без статуса", tone: "purple" },
   { key: "funnel:trial", label: "Записаны на пробный", tone: "blue" },
   { key: "funnel:trial_missed", label: "Не пришли на пробный", tone: "red" },
   { key: "funnel:trial_rebooked", label: "Перезаписаны", tone: "orange" },
