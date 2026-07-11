@@ -961,6 +961,7 @@ export default function StudentManagementCard({
               branch={branch}
               subscription={subscription}
               onOpenSub={setOpenSub}
+              onDeleteTrial={onDeleteTrial}
             />
           )}
           {tab === "subscriptions" && (
@@ -1081,11 +1082,13 @@ function GeneralTab({
   branch,
   subscription,
   onOpenSub,
+  onDeleteTrial,
 }: {
   student: Student;
   branch?: Branch;
   subscription?: Student["subscriptions"][number];
   onOpenSub?: (sub: Subscription) => void;
+  onDeleteTrial?: (date: string) => Promise<boolean> | boolean | void;
 }) {
   // Актуальный пробный урок (ТЗ): ближайшая предстоящая запись, иначе последняя прошедшая.
   const trialDate = (() => {
@@ -1097,6 +1100,8 @@ function GeneralTab({
     const today = new Date().toISOString().slice(0, 10);
     return dates.find((d) => d >= today) || dates[dates.length - 1];
   })();
+  // Подтверждение удаления пробного (если записали/продали неправильно).
+  const [confirmDel, setConfirmDel] = useState(false);
   return (
     <div>
       <SectionHeader title="Текущий абонемент" action="Все абонементы" />
@@ -1152,13 +1157,48 @@ function GeneralTab({
         </div>
       </div>
 
-      {/* Пробный урок (ТЗ): актуальная дата записи — ближайшая предстоящая, иначе последняя. */}
+      {/* Пробный урок (ТЗ): актуальная дата записи + удаление, если записали неправильно. */}
       {trialDate && (
-        <div className="mt-3 flex items-center gap-2 rounded-2xl border border-sky-200 bg-sky-50/70 px-4 py-3">
-          <span className="text-[11px] font-bold uppercase tracking-wide text-sky-700/70">Пробный урок</span>
-          <span className="ml-auto font-black text-slate-800">
-            {new Date(trialDate).toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" })}
-          </span>
+        <div className="mt-3 rounded-2xl border border-sky-200 bg-sky-50/70 px-4 py-3">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-bold uppercase tracking-wide text-sky-700/70">Пробный урок</span>
+            <span className="ml-auto font-black text-slate-800">
+              {new Date(trialDate).toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" })}
+            </span>
+            {onDeleteTrial && (
+              <button
+                type="button"
+                title="Удалить запись на пробный урок"
+                onClick={() => setConfirmDel(true)}
+                className="inline-flex items-center gap-1 rounded-xl border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-bold text-rose-600 hover:bg-rose-100"
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Удалить
+              </button>
+            )}
+          </div>
+          {confirmDel && (
+            <div className="mt-3 rounded-xl border border-rose-200 bg-white p-3">
+              <p className="text-sm font-bold text-slate-700">
+                Удалить запись на пробный урок {new Date(trialDate).toLocaleDateString("ru-RU")}?
+              </p>
+              <div className="mt-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={async () => { setConfirmDel(false); await onDeleteTrial?.(trialDate); }}
+                  className="rounded-xl bg-rose-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-rose-700"
+                >
+                  Да, удалить
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDel(false)}
+                  className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-500 hover:bg-slate-50"
+                >
+                  Отмена
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
