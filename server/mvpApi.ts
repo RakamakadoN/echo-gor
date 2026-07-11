@@ -1958,7 +1958,15 @@ export function registerMvpApi(app: express.Express) {
       for (const p of pays) ev.push({ type: "payment", title: `Оплата ${Math.round(Number(p.amount) || 0)} ₸`, detail: p.comment || null, at: p.paid_at, by: null });
       for (const sub of subs) {
         ev.push({ type: "sub_buy", title: `Куплен абонемент${sub.price ? ` · ${Math.round(Number(sub.price))} ₸` : ""}`, detail: [sub.starts_on, sub.ends_on].filter(Boolean).join(" – ") || null, at: sub.created_at, by: null });
-        if (sub.deleted_at) ev.push({ type: "sub_del", title: "Удалён абонемент", detail: sub.cancel_reason || null, at: sub.deleted_at, by: sub.deleted_by });
+        // В заголовке — ЧТО удалено (цена/период), причина отдельной строкой с подписью:
+        // раньше голая причина («ук») выглядела как данные ученика и путала.
+        if (sub.deleted_at) ev.push({
+          type: "sub_del",
+          title: `Удалён абонемент${sub.price ? ` · ${Math.round(Number(sub.price))} ₸` : ""}${[sub.starts_on, sub.ends_on].filter(Boolean).length ? ` (${[sub.starts_on, sub.ends_on].filter(Boolean).join(" – ")})` : ""}`,
+          detail: sub.cancel_reason ? `Причина: ${sub.cancel_reason}` : null,
+          at: sub.deleted_at,
+          by: sub.deleted_by,
+        });
       }
       for (const t of echo) ev.push({ type: "echo", title: `ЭхоБаксы ${Number(t.amount) > 0 ? "+" : ""}${t.amount} ⭐`, detail: t.reason || null, at: t.created_at, by: t.created_by });
       if (s0?.archived_at) ev.push({ type: "archive", title: "Переведён в архив", detail: s0.archive_reason || null, at: s0.archived_at, by: s0.archived_by });
@@ -1996,10 +2004,18 @@ export function registerMvpApi(app: express.Express) {
       const dayEnd = dayEndD.toISOString();
       const ex = await supabaseFetch<any[]>("schedule_lessons", `select=id&group_id=eq.${st.group_id}&starts_at=gte.${encodeURIComponent(dayStart)}&starts_at=lt.${encodeURIComponent(dayEnd)}&limit=1`);
       let lessonId = ex[0]?.id;
-      // Нельзя записать пробный на ту же дату дважды.
-      if (lessonId) {
-        const already = await supabaseFetch<any[]>("attendance", `select=id,is_trial&lesson_id=eq.${lessonId}&student_id=eq.${req.params.id}&limit=1`).catch(() => [] as any[]);
-        if (already[0]?.is_trial) return res.status(409).json({ error: "Ученик уже записан на пробный урок на эту дату" });
+      // Нельзя записать пробный на ту же дату дважды — проверяем по ВСЕМ пробным
+      // ученика (в любой группе), а не только по уроку текущей группы: раньше
+      // дубль проходил, если прежний пробный был в другой группе/уроке.
+      {
+        const marks = await supabaseFetch<any[]>("attendance", `select=id,lesson_id&student_id=eq.${req.params.id}&is_trial=eq.true`).catch(() => [] as any[]);
+        const lids = [...new Set(marks.map((m) => m.lesson_id).filter(Boolean))];
+        if (lids.length) {
+          const lessons = await supabaseFetch<any[]>("schedule_lessons", `select=id,starts_at&id=in.(${lids.join(",")})`).catch(() => [] as any[]);
+          if (lessons.some((l) => String(l.starts_at || "").slice(0, 10) === String(date).slice(0, 10))) {
+            return res.status(409).json({ error: "Ученик уже записан на пробный урок на эту дату" });
+          }
+        }
       }
       // Запись задним числом (дата в прошлом) — только с явным подтверждением (ТЗ).
       if (!Boolean((req.body || {}).confirm)) {

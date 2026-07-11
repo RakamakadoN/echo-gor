@@ -38,6 +38,7 @@ import QRCode from "qrcode";
 import { Branch, Group, LeadSource, Student, Subscription, SubscriptionPlan, Teacher } from "../types";
 import { getEnrollmentMonths, formatDuration, getLtvSegment, getTrialInfo, LTV_BADGE } from "../studentSegments";
 import { requestDataRefresh } from "../dataRefresh";
+import { toast } from "../toast";
 import { parseGroupDays } from "./GroupScheduleGrid";
 
 /** Полезная нагрузка продажи абонемента из инлайн-формы карточки. */
@@ -283,6 +284,29 @@ export default function StudentManagementCard({
 
   const accessUrl = accessStatus?.token ? `${window.location.origin}/?student=${accessStatus.token}` : "";
   const accessHeaders = () => ({ "Content-Type": "application/json", "x-demo-role": roleHeader });
+
+  // Удаление пробного урока: если родитель не передал обработчик (карточка
+  // открыта из воркспейса владельца/админа/педагога, а не из реестра) —
+  // карточка САМА вызывает API и обновляет данные. Кнопка доступна везде.
+  const deleteTrialFallback = async (date: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/mvp/students/${student.id}/trial`, {
+        method: "DELETE", headers: accessHeaders(), body: JSON.stringify({ date }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        toast.error(d.error || "Не удалось удалить пробный урок");
+        return false;
+      }
+      toast.success("Пробный урок удалён");
+      requestDataRefresh();
+      return true;
+    } catch (e: any) {
+      toast.error(e?.message || "Не удалось удалить пробный урок");
+      return false;
+    }
+  };
+  const deleteTrial = onDeleteTrial || deleteTrialFallback;
 
   // Подтянуть текущее состояние доступа при открытии панели / смене ученика.
   useEffect(() => {
@@ -961,7 +985,7 @@ export default function StudentManagementCard({
               branch={branch}
               subscription={subscription}
               onOpenSub={setOpenSub}
-              onDeleteTrial={onDeleteTrial}
+              onDeleteTrial={deleteTrial}
             />
           )}
           {tab === "subscriptions" && (
@@ -970,7 +994,7 @@ export default function StudentManagementCard({
               subs={(student.subscriptions || []).map(mergeDel)}
               onSell={(canSell || onOpenPayment) ? handleSellClick : undefined}
               onOpenSub={setOpenSub}
-              onDeleteTrial={onDeleteTrial}
+              onDeleteTrial={deleteTrial}
             />
           )}
           {tab === "attendance" && (

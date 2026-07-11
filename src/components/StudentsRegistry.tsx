@@ -1055,7 +1055,7 @@ export default function StudentsRegistry({
                       </div>
                       <div className="mt-0.5 truncate text-[12px]" style={{ color: CLR.muted }}>{branchName(s.branchId)} · {groupName(studentGroupId(s))}</div>
                     </button>
-                    <span className={`inline-flex shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${PILL_TONE[pillToneOf(s, st)] || PILL_TONE.gray}`}>{st.statusLabel}</span>
+                    <span className={`inline-flex shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${waitlistStudentIds.has(s.id) ? PILL_TONE.purple : PILL_TONE[pillToneOf(s, st)] || PILL_TONE.gray}`}>{waitlistStudentIds.has(s.id) ? "В листе ожидания" : st.statusLabel}</span>
                   </div>
                   <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px]" style={{ color: CLR.second }}>
                     <span>{phone}</span>
@@ -1134,7 +1134,7 @@ export default function StudentsRegistry({
                         {colOn("status") && (
                           <td className="px-3.5 py-3">
                             <div className="flex flex-wrap items-center gap-1">
-                              <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[12px] font-semibold ${PILL_TONE[pillToneOf(s, st)] || PILL_TONE.gray}`}>{st.statusLabel}</span>
+                              <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[12px] font-semibold ${waitlistStudentIds.has(s.id) ? PILL_TONE.purple : PILL_TONE[pillToneOf(s, st)] || PILL_TONE.gray}`}>{waitlistStudentIds.has(s.id) ? "В листе ожидания" : st.statusLabel}</span>
                               {st.trialCount > 0 && (
                                 <span
                                   title={st.trialOverLimit ? "Превышен регламент: более 2 пробных уроков" : "Количество пробных уроков"}
