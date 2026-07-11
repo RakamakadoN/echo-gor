@@ -236,6 +236,7 @@ const FUNNEL_STAGES: {
   { key: "trial_missed", label: "Не пришли на пробный", hint: "перезаписать", icon: UserX, bg: "#FFF5F5", border: "#FECACA", icon_c: "#EF4444", val: "#B91C1C", hint_c: "#DC2626" },
   { key: "trial_rebooked", label: "Перезаписаны", hint: "ждут занятия", icon: RefreshCw, bg: "#FFFBEB", border: "#FDE68A", icon_c: "#F59E0B", val: "#B45309", hint_c: "#D97706" },
   { key: "trial_lost", label: "Были, не купили", hint: "дожать", icon: AlertTriangle, bg: "#FFF7ED", border: "#FED7AA", icon_c: "#F97316", val: "#C2410C", hint_c: "#EA580C" },
+  { key: "promised", label: "Был на пробном, оплатит", hint: "обещал оплату", icon: UserCheck, bg: "#F0FDFA", border: "#99F6E4", icon_c: "#14B8A6", val: "#0F766E", hint_c: "#0D9488" },
   { key: "visitor_new", label: "Купили абонемент", hint: "новый посетитель", icon: CheckCircle2, bg: "#F0FDF4", border: "#BBF7D0", icon_c: "#22C55E", val: "#15803D", hint_c: "#16A34A" },
 ];
 
@@ -452,7 +453,7 @@ export default function StudentsRegistry({
   /* ---------- Воронка продаж (по автоматическим статусам пробных уроков) ---------- */
   const funnel = useMemo(() => {
     const buckets: Record<string, string[]> = {
-      lead: [], trial: [], trial_missed: [], trial_rebooked: [], trial_lost: [], visitor_new: [],
+      lead: [], trial: [], trial_missed: [], trial_rebooked: [], trial_lost: [], promised: [], visitor_new: [],
     };
     for (const s of data) {
       if (isLeft(s)) continue;
@@ -460,7 +461,12 @@ export default function StudentsRegistry({
       // «Купили абонемент» = все купившие: сразу после пробного (visitor_new),
       // новый ученик этого месяца (new) и купившие на БУДУЩИЙ месяц (next_paid) —
       // покупка на следующий период тоже покупка (ТЗ заказчика).
-      const key = ["next_paid", "new"].includes(st.statusKey) ? "visitor_new" : st.statusKey;
+      // «Был на пробном, оплатит» — ручной промис оплаты (ТЗ заказчика).
+      const key = ["next_paid", "new"].includes(st.statusKey)
+        ? "visitor_new"
+        : st.statusKey === "manual" && /оплат/i.test(s.manualStatus || "")
+        ? "promised"
+        : st.statusKey;
       if (buckets[key]) buckets[key].push(s.id);
     }
     return buckets;

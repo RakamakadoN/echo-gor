@@ -1060,6 +1060,7 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
             <FunnelStage label="Лиды" n={m.funnel.month.leads} conv={null} onClick={() => openStatusList(["lead"], "Лиды")} />
             <FunnelStage label="Записались" n={m.funnel.month.signed} conv={m.funnel.month.convSigned} onClick={() => openStatusList(["trial", "active"], "Записались")} />
             <FunnelStage label="Пришли" n={m.funnel.month.came} conv={m.funnel.month.convCame} onClick={() => openStatusList(["trial", "active"], "Пришли на пробный")} />
+            <FunnelStage label="Был на пробном, оплатит" n={m.funnel.month.promised} conv={null} onClick={() => go("students")} />
             <FunnelStage label="Купили" n={m.funnel.month.bought} conv={m.funnel.month.convBought} onClick={() => openStatusList(["active"], "Купили абонемент")} />
           </div>
           <p className="mt-3 text-[11px] text-slate-500">Этапы оцениваются по статусам учеников; точная дневная воронка накапливается из событий.</p>

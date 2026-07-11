@@ -417,8 +417,15 @@ export function computeOwnerDashboard(
       return sold && inRange(sold, ranges.cur);
     })
   ).length;
+  // «Был на пробном, оплатит» — промис оплаты (ручной статус); выполненный
+  // промис (уже есть активный абонемент) getStudentState скрывает сам.
+  const promised = students.filter((s) => {
+    if (s.status === "archived" || (s as any).archivedAt) return false;
+    const st = getStudentState(s);
+    return st.statusKey === "manual" && /оплат/i.test(s.manualStatus || "");
+  }).length;
   const month = {
-    leads, signed, came: trials + active, bought,
+    leads, signed, came: trials + active, promised, bought,
     convSigned: leads ? Math.round((signed / Math.max(leads, signed)) * 100) : null,
     convCame: signed ? Math.round((came / signed) * 100) : null,
     convBought: came ? Math.round((bought / Math.max(came, bought)) * 100) : null
