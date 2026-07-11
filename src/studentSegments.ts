@@ -259,25 +259,46 @@ export interface TrialInfo {
   lost: boolean;
   /** Превышен регламент перезаписи (более 2 пробных). */
   overLimit: boolean;
+  /** ПОСЛЕДНЯЯ по дате запись на пробный — статус ученика решается по ней, а не по агрегату. */
+  latest: { date: string; status: string } | null;
+  /** Ближайшая предстоящая незакрытая запись (дата >= сегодня) — «актуальная дата записи». */
+  upcoming: string | null;
+  /** Последняя прошедшая дата пробного. */
+  lastPast: string | null;
 }
 
 /** Анализ пробных уроков ученика по журналу посещаемости. */
-export const getTrialInfo = (student: Student): TrialInfo => {
-  const records = Object.values(student.attendance || {}).filter(
-    (a): a is NonNullable<typeof a> => Boolean(a) && (Boolean(a.isTrial) || a.status === "trial")
-  );
+export const getTrialInfo = (student: Student, now: Date = new Date()): TrialInfo => {
+  // Ключ attendance = ISO-дата урока → сортировка ключей даёт хронологию.
+  const entries = Object.entries(student.attendance || {})
+    .filter(([, a]: any) => Boolean(a) && (Boolean(a.isTrial) || a.status === "trial"))
+    .sort(([d1], [d2]) => d1.localeCompare(d2));
   let attended = 0;
   let missed = 0;
   let converted = false;
   let lost = false;
-  for (const a of records) {
+  for (const [, a] of entries as any) {
     if (a.status === "absent" || a.status === "sick") missed += 1;
     else if (a.status === "present" || a.status === "excused" || a.status === "trial") attended += 1;
     // status 'unmarked' — записан, урок ещё не закрыт: ни «был», ни «пропустил».
     if (a.trialOutcome === "converted") converted = true;
     if (a.trialOutcome === "lost") lost = true;
   }
-  return { count: records.length, attended, missed, converted, lost, overLimit: records.length > 2 };
+  const todayIso = now.toISOString().slice(0, 10);
+  const last = entries.length ? entries[entries.length - 1] : null;
+  const upcomingEntry = (entries as any).find(([d, a]: any) => d >= todayIso && a.status === "unmarked");
+  const pastDates = entries.map(([d]) => d).filter((d) => d <= todayIso);
+  return {
+    count: entries.length,
+    attended,
+    missed,
+    converted,
+    lost,
+    overLimit: entries.length > 2,
+    latest: last ? { date: last[0], status: (last[1] as any).status } : null,
+    upcoming: upcomingEntry ? upcomingEntry[0] : null,
+    lastPast: pastDates.length ? pastDates[pastDates.length - 1] : null,
+  };
 };
 
 /* ============================ Автоматический статус ============================ */
@@ -305,6 +326,8 @@ export interface StudentState {
   trialCount: number;
   /** Превышен регламент перезаписи на пробный (более 2 раз). */
   trialOverLimit: boolean;
+  /** Актуальная дата пробного: ближайшая предстоящая запись, иначе последняя прошедшая. */
+  trialDate: string | null;
 }
 
 /**
@@ -356,27 +379,31 @@ export const getStudentState = (student: Student, now: Date = new Date()): Stude
     (student.status === "lead" || student.status === "trial" || isTrial(student) || trial.count > 0)
   ) {
     // ── Воронка пробных уроков (автоматические статусы) ──
-    // «Был, но не купил» выводится автоматически: есть отметка «Был» на пробном,
-    // а абонемента нет (ручной trialOutcome='lost' не требуется — его никто не ставит).
-    if (trial.attended > 0) {
-      statusKey = "trial_lost";
-      statusLabel = "Пришёл на пробный, не купил";
-      tone = "yellow";
-    } else if (trial.missed > 0) {
+    // Статус решается по ПОСЛЕДНЕЙ по дате записи (ТЗ заказчика), а не по агрегату
+    // всех пробных: старый посещённый пробный не должен «залипать» статусом
+    // «пришёл не купил», когда ученика уже перезаписали на новую дату.
+    if (trial.latest && trial.latest.status === "unmarked") {
+      // Последняя запись ещё не закрыта: ученик записан (или перезаписан, если пробных ≥2).
       if (trial.count >= 2) {
         statusKey = "trial_rebooked";
         statusLabel = "Перезаписан на пробный урок";
         tone = "yellow";
       } else {
-        statusKey = "trial_missed";
-        statusLabel = "Не пришёл на пробный урок";
-        tone = "red";
+        statusKey = "trial";
+        statusLabel = "Записан на пробный урок";
+        tone = "blue";
       }
-    } else if (trial.count >= 2) {
-      statusKey = "trial_rebooked";
-      statusLabel = "Перезаписан на пробный урок";
+    } else if (trial.latest && ["present", "excused", "trial"].includes(trial.latest.status)) {
+      // Последний пробный посещён, абонемента нет (гарантия входа в ветку) → был, не купил.
+      statusKey = "trial_lost";
+      statusLabel = "Пришёл на пробный, не купил";
       tone = "yellow";
-    } else if (trial.count >= 1 || student.status === "trial") {
+    } else if (trial.latest) {
+      // Последний пробный пропущен (absent/sick) и новой записи нет.
+      statusKey = "trial_missed";
+      statusLabel = "Не пришёл на пробный урок";
+      tone = "red";
+    } else if (student.status === "trial") {
       statusKey = "trial";
       statusLabel = "Записан на пробный урок";
       tone = "blue";
@@ -461,6 +488,7 @@ export const getStudentState = (student: Student, now: Date = new Date()): Stude
     tone,
     trialCount: trial.count,
     trialOverLimit: trial.overLimit,
+    trialDate: trial.upcoming ?? trial.lastPast,
   };
 };
 

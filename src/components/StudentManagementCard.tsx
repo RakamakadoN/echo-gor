@@ -36,7 +36,7 @@ import {
 } from "lucide-react";
 import QRCode from "qrcode";
 import { Branch, Group, LeadSource, Student, Subscription, SubscriptionPlan, Teacher } from "../types";
-import { getEnrollmentMonths, formatDuration, getLtvSegment, LTV_BADGE } from "../studentSegments";
+import { getEnrollmentMonths, formatDuration, getLtvSegment, getTrialInfo, LTV_BADGE } from "../studentSegments";
 import { requestDataRefresh } from "../dataRefresh";
 import { parseGroupDays } from "./GroupScheduleGrid";
 
@@ -89,6 +89,8 @@ export interface StudentManagementCardProps {
   onSellSubscription?: (payload: SellSubscriptionInput) => Promise<boolean> | boolean;
   /** Запись на пробный урок (UI-форма; вызывается при сохранении) */
   onTrial?: (payload: { date: string; time: string; note: string }) => Promise<boolean> | boolean | void;
+  /** Удалить запись на пробный урок по дате. */
+  onDeleteTrial?: (date: string) => Promise<boolean> | boolean | void;
   /** Перевод ученика в другую группу/филиал/к другому педагогу */
   onTransfer?: (payload: { groupId?: string; branchId?: string; teacherId?: string }) => Promise<boolean> | boolean | void;
   /** Добавить ученика в лист ожидания (ТЗ «Лист ожидания»). */
@@ -160,6 +162,7 @@ export default function StudentManagementCard({
   leadSources = [],
   onSellSubscription,
   onTrial,
+  onDeleteTrial,
   onTransfer,
   onAddToWaitlist,
   inWaitlist = false,
@@ -934,6 +937,7 @@ export default function StudentManagementCard({
               subs={(student.subscriptions || []).map(mergeDel)}
               onSell={(canSell || onOpenPayment) ? handleSellClick : undefined}
               onOpenSub={setOpenSub}
+              onDeleteTrial={onDeleteTrial}
             />
           )}
           {tab === "attendance" && (
@@ -1830,16 +1834,70 @@ function SubscriptionsTab({
   subs: props_subs,
   onSell,
   onOpenSub,
+  onDeleteTrial,
 }: {
   student: Student;
   subs?: Subscription[];
   onSell?: () => void;
   onOpenSub?: (sub: Subscription) => void;
+  onDeleteTrial?: (date: string) => Promise<boolean> | boolean | void;
 }) {
   const subs = props_subs ?? (student.subscriptions || []);
+  // Пробный урок отображается вместе с абонементами (ТЗ заказчика).
+  const trial = getTrialInfo(student);
+  const trialDate = trial.upcoming ?? trial.lastPast;
+  const [confirmTrialDel, setConfirmTrialDel] = useState(false);
+  const trialStatusLabel = trial.converted
+    ? "Купил после пробного"
+    : trial.latest?.status === "unmarked"
+    ? "Записан"
+    : trial.latest && ["present", "excused", "trial"].includes(trial.latest.status)
+    ? "Пришёл, не купил"
+    : "Не пришёл";
   return (
     <div>
       <SectionHeader title="Абонементы" action="Продать" onAction={onSell} />
+      {trial.count > 0 && trialDate && (
+        <div className="mb-3 rounded-2xl border border-sky-200 bg-sky-50/70 p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-bold uppercase tracking-wide text-sky-700/70">Пробный урок</span>
+            <span className="font-black text-slate-800">
+              {new Date(trialDate).toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" })}
+            </span>
+            <span className="rounded-full bg-sky-100 px-2.5 py-0.5 text-xs font-bold text-sky-700">{trialStatusLabel}</span>
+            {onDeleteTrial && (
+              <button
+                type="button"
+                onClick={() => setConfirmTrialDel(true)}
+                className="ml-auto inline-flex items-center gap-1 rounded-xl border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-bold text-rose-600 hover:bg-rose-100"
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Удалить
+              </button>
+            )}
+          </div>
+          {confirmTrialDel && (
+            <div className="mt-3 rounded-xl border border-rose-200 bg-white p-3">
+              <p className="text-sm font-bold text-slate-700">Удалить запись на пробный урок {new Date(trialDate).toLocaleDateString("ru-RU")}?</p>
+              <div className="mt-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={async () => { setConfirmTrialDel(false); await onDeleteTrial?.(trialDate); }}
+                  className="rounded-xl bg-rose-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-rose-700"
+                >
+                  Да, удалить
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmTrialDel(false)}
+                  className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-500 hover:bg-slate-50"
+                >
+                  Отмена
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       {subs.length === 0 && (
         <p className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-400">
           Активных абонементов нет.

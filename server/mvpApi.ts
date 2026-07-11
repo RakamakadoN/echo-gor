@@ -1848,6 +1848,55 @@ export function registerMvpApi(app: express.Express) {
     }
   });
 
+  // Удалить запись на пробный урок (ТЗ заказчика: раньше удалить было нельзя вообще).
+  // Ищем пробные отметки ученика по ДАТЕ урока (а не по lesson_id с клиента —
+  // клиентский attendance ключуется датой и id урока не знает).
+  app.delete("/api/mvp/students/:id/trial", async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const date = String((req.body || {}).date || "").slice(0, 10);
+    if (!date) return res.status(400).json({ error: "Укажите дату пробного урока" });
+    const st = (await supabaseFetch<any[]>("students", `select=id,branch_id,status&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`).catch(() => [] as any[]))[0];
+    if (!st) return res.status(404).json({ error: "Ученик не найден" });
+    if (!canSeeBranch(session, st.branch_id)) return res.status(403).json({ error: "Branch access denied" });
+    try {
+      // Все пробные отметки ученика + их уроки; фильтруем по дате starts_at.
+      const marks = await supabaseFetch<any[]>("attendance", `select=id,lesson_id&student_id=eq.${req.params.id}&is_trial=eq.true`);
+      if (!marks.length) return res.status(404).json({ error: "Пробные уроки не найдены" });
+      const lessonIds = [...new Set(marks.map((m) => m.lesson_id).filter(Boolean))];
+      const lessons = lessonIds.length
+        ? await supabaseFetch<any[]>("schedule_lessons", `select=id,starts_at,comment&id=in.(${lessonIds.join(",")})`)
+        : [];
+      const onDate = new Set(lessons.filter((l) => String(l.starts_at || "").slice(0, 10) === date).map((l) => l.id));
+      const toDelete = marks.filter((m) => onDate.has(m.lesson_id));
+      if (!toDelete.length) return res.status(404).json({ error: "На эту дату пробный урок не найден" });
+      for (const m of toDelete) {
+        await supabaseFetch("attendance", `id=eq.${m.id}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      }
+      // Урок, созданный специально под пробный, без других отметок — подчищаем.
+      for (const l of lessons) {
+        if (!onDate.has(l.id) || l.comment !== "Пробный урок") continue;
+        const rest = await supabaseFetch<any[]>("attendance", `select=id&lesson_id=eq.${l.id}&limit=1`).catch(() => [{ id: "keep" }]);
+        if (!rest.length) {
+          await supabaseFetch("schedule_lessons", `id=eq.${l.id}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }).catch(() => {});
+        }
+      }
+      // Пробных не осталось и нет активных абонементов → ученик снова «новый лид».
+      if (st.status === "trial") {
+        const remaining = await supabaseFetch<any[]>("attendance", `select=id&student_id=eq.${req.params.id}&is_trial=eq.true&limit=1`).catch(() => [{ id: "keep" }]);
+        const activeSubs = await supabaseFetch<any[]>("student_subscriptions", `select=id&student_id=eq.${req.params.id}&status=eq.active&limit=1`).catch(() => [{ id: "keep" }]);
+        if (!remaining.length && !activeSubs.length) {
+          await supabaseFetch("students", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, {
+            method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ status: "lead" }),
+          }).catch(() => {});
+        }
+      }
+      res.json({ ok: true, removed: toDelete.length });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось удалить пробный урок" });
+    }
+  });
+
   app.post("/api/mvp/attendance", async (req, res) => {
     const session = getSession(req);
     const payload = req.body || {};

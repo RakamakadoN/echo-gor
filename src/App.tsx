@@ -768,6 +768,28 @@ export default function App() {
     }
   };
 
+  // Удалить запись на пробный урок (по дате урока).
+  const handleDeleteTrial = async (studentId: string, date: string): Promise<boolean> => {
+    try {
+      const response = await fetch(`/api/mvp/students/${studentId}/trial`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
+        body: JSON.stringify({ date })
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Не удалось удалить пробный урок");
+      }
+      await loadMvpBootstrap(activeRole);
+      toast.success("Пробный урок удалён");
+      return true;
+    } catch (error: any) {
+      const msg = error.message || "Не удалось удалить пробный урок";
+      toast.error(msg);
+      return false;
+    }
+  };
+
   // --- Лист ожидания (ТЗ «Ученики» → «Лист ожидания») ---
   const handleAddToWaitlist = async (payload: { studentId: string; branchId?: string | null; groupId?: string | null; comment?: string | null }): Promise<boolean> => {
     try {
@@ -3517,6 +3539,7 @@ export default function App() {
               onUnarchiveStudent={handleUnarchiveStudent}
               onEditArchive={handleEditArchive}
               onBookTrial={handleBookTrial}
+              onDeleteTrial={handleDeleteTrial}
               studentArchive={studentArchive}
               waitlist={waitlist}
               onAddToWaitlist={handleAddToWaitlist}
@@ -3567,6 +3590,7 @@ export default function App() {
               onUnarchiveStudent={handleUnarchiveStudent}
               onEditArchive={handleEditArchive}
               onBookTrial={handleBookTrial}
+              onDeleteTrial={handleDeleteTrial}
               onCreateTeacher={handleCreateTeacher}
               onUpdateTeacher={handleUpdateTeacher}
               onDeleteTeacher={handleDeleteTeacher}
@@ -3637,6 +3661,7 @@ export default function App() {
               onUnarchiveStudent={handleUnarchiveStudent}
               onEditArchive={handleEditArchive}
               onBookTrial={handleBookTrial}
+              onDeleteTrial={handleDeleteTrial}
               studentArchive={studentArchive}
               onCreateAnnouncement={handleCreateAnnouncement}
               onOpenPayment={openPaymentForStudent}

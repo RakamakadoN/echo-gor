@@ -112,6 +112,7 @@ export interface StudentsRegistryProps {
   onUnarchiveStudent?: (id: string) => Promise<unknown> | void;
   onEditArchive?: (id: string, patch: { leftOn?: string; reason?: string; comment?: string }) => Promise<unknown> | void;
   onBookTrial?: (id: string, payload: { date: string; time: string; note: string }) => Promise<boolean> | void;
+  onDeleteTrial?: (id: string, date: string) => Promise<boolean> | void;
   studentArchive?: any[];
   onOpenPayment?: (student: Student) => void;
   plans?: SubscriptionPlan[];
@@ -250,6 +251,7 @@ export default function StudentsRegistry({
   onUnarchiveStudent,
   onEditArchive,
   onBookTrial,
+  onDeleteTrial,
   studentArchive = [],
   onOpenPayment,
   plans = [],
@@ -1016,6 +1018,7 @@ export default function StudentsRegistry({
                     {st.debt > 0 && <span className="font-bold" style={{ color: "#B14545" }}>Долг {money(st.debt)}</span>}
                     {colOn("ltv") && <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${LTV_BADGE[st.ltv]}`}>{st.ltv}</span>}
                     {st.trialCount > 0 && <span className={`inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-bold ${st.trialOverLimit ? "bg-[#F6E9E9] text-[#B14545]" : "bg-[#EDF1F5] text-[#5C6772]"}`}>ПУ ×{st.trialCount}</span>}
+                    {st.trialDate && <span className="inline-flex rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-bold text-sky-700">ПУ {new Date(st.trialDate).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" })}</span>}
                   </div>
                   <div className="mt-2.5 flex items-center gap-1 border-t pt-2" style={{ borderColor: "#EEF1F4" }}>
                     <IconLink icon={Phone} title="Позвонить" href={telHref(phone)} tone="text-slate-500 hover:bg-slate-100" />
@@ -1093,6 +1096,14 @@ export default function StudentsRegistry({
                                   className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-bold ${st.trialOverLimit ? "bg-[#F6E9E9] text-[#B14545]" : "bg-[#EDF1F5] text-[#5C6772]"}`}
                                 >
                                   ПУ ×{st.trialCount}
+                                </span>
+                              )}
+                              {st.trialDate && (
+                                <span
+                                  title="Дата пробного урока (актуальная запись)"
+                                  className="inline-flex items-center rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-bold text-sky-700"
+                                >
+                                  ПУ {new Date(st.trialDate).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" })}
                                 </span>
                               )}
                             </div>
@@ -1187,6 +1198,7 @@ export default function StudentsRegistry({
                 onArchive={onArchiveStudent ? () => { setOpenId(null); setArchiveModal([openStudent]); } : undefined}
                 onSetStatus={onUpdateStudent ? (value) => setStudentStatus(openStudent.id, value) : undefined}
                 onTrial={onBookTrial ? (payload) => onBookTrial(openStudent.id, payload) : undefined}
+                onDeleteTrial={onDeleteTrial ? (date) => onDeleteTrial(openStudent.id, date) : undefined}
                 statusOptions={[{ value: "active", label: "Активный" }, { value: "paused", label: "Заморозить абонемент" }, ...getManualStatuses().map((s) => ({ value: s, label: s }))]}
                 onEdit={canManage ? () => { setOpenId(null); openEdit(openStudent); } : undefined}
                 onDelete={onDeleteStudent ? async () => { await onDeleteStudent(openStudent.id); applyOverride(openStudent.id, { status: "left" }); setOpenId(null); } : undefined}
