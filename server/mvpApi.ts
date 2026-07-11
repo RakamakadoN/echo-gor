@@ -397,6 +397,7 @@ function mapDbStudent(row: any, attendanceByStudent: Map<string, Record<string, 
     createdAt: row.created_at || undefined,
     status: row.status || undefined,
     manualStatus: row.manual_status || null,
+    skillLevel: row.skill_level || null,
     computedStatus: deriveStudentStatus(row, subsByStudent.get(row.id) || []),
     returned: Boolean(row.returned_at),
     payLater: Boolean(row.pay_later),
@@ -1097,6 +1098,7 @@ export function registerMvpApi(app: express.Express) {
         parent_phone: payload.parentPhone || null,
         status: payload.status || "lead",
         manual_status: payload.manualStatus || null,
+        skill_level: payload.skillLevel || null,
         comment: payload.comment || null
       })
     });
@@ -1136,11 +1138,35 @@ export function registerMvpApi(app: express.Express) {
     if (payload.comment !== undefined) updates.comment = payload.comment || null;
     if (payload.status !== undefined) updates.status = payload.status;
     if (payload.manualStatus !== undefined) updates.manual_status = payload.manualStatus || null;
+    if (payload.skillLevel !== undefined) updates.skill_level = payload.skillLevel || null;
     if (payload.payPromiseDate !== undefined) updates.pay_promise_date = payload.payPromiseDate || null;
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({ error: "Нет полей для обновления" });
     }
     try {
+      // Умный перевод (ТЗ): нельзя перевести ученика в другую группу, пока у него
+      // действует абонемент в ТЕКУЩЕЙ группе — журнал и оплаты привязаны к ней.
+      if (payload.groupId !== undefined) {
+        const cur = (await supabaseFetch<any[]>(
+          "students",
+          `select=group_id&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}&limit=1`
+        ).catch(() => [] as any[]))[0];
+        const oldGroup = cur?.group_id || null;
+        const newGroup = payload.groupId || null;
+        if (oldGroup && newGroup !== oldGroup) {
+          const today = new Date().toISOString().slice(0, 10);
+          const activeInOld = await supabaseFetch<any[]>(
+            "student_subscriptions",
+            `select=ends_on&student_id=eq.${req.params.id}&group_id=eq.${oldGroup}&status=eq.active&starts_on=lte.${today}&or=(ends_on.is.null,ends_on.gte.${today})&limit=1`
+          );
+          if (activeInOld.length > 0) {
+            const until = activeInOld[0].ends_on ? ` (действует до ${activeInOld[0].ends_on})` : "";
+            return res.status(409).json({
+              error: `У ученика активный абонемент в текущей группе${until}. Удалите абонемент или дождитесь его окончания, чтобы перевести в другую группу.`,
+            });
+          }
+        }
+      }
       // Гардрейл (и на сервере, не только в UI): «пробный/оплатит»-статус — для
       // ещё не оплативших; ученику с действующим абонементом его ставить нельзя.
       const wantsTrialPromise =
@@ -4128,6 +4154,77 @@ export function registerMvpApi(app: express.Express) {
 
   // Список значений справочника (с дефолтами, если своих ещё нет).
   // Общий конфиг статусов организации (названия/цвета/ручные статусы).
+  // История действий (ТЗ заказчика): кто что делал по датам — из audit_logs
+  // (пишутся middleware'ом на каждую мутацию). Человекочитаемые подписи здесь,
+  // чтобы клиенту не разбирать HTTP-пути.
+  app.get("/api/mvp/audit-logs", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!["owner", "branch_manager", "admin"].includes(session.role)) {
+      return res.status(403).json({ error: "История действий доступна владельцу, управляющему и администратору" });
+    }
+    if (!supabaseEnabled) return res.json({ logs: [] });
+    const limit = Math.min(500, Number((req.query as any).limit) || 300);
+    const rows = await supabaseFetch<any[]>(
+      "audit_logs",
+      `select=action,entity_type,after_data,created_at&order=created_at.desc&limit=${limit}`
+    ).catch(() => [] as any[]);
+
+    const label = (method: string, path: string): string => {
+      const p = path.split("?")[0];
+      const M = (post: string, patch: string, del: string) =>
+        method === "POST" ? post : method === "DELETE" ? del : patch;
+      if (/\/trial$/.test(p)) return M("Записал на пробный урок", "", "Удалил пробный урок");
+      if (/\/students\/[^/]+\/archive/.test(p)) return "Архивировал ученика";
+      if (/\/students\/[^/]+\/unarchive/.test(p)) return "Восстановил ученика из архива";
+      if (/\/students\/[^/]+\/access/.test(p)) return M("Выдал доступ в кабинет", "Изменил доступ в кабинет", "Отозвал доступ в кабинет");
+      if (/\/students(\/|$)/.test(p)) return M("Добавил ученика", "Изменил данные ученика", "Удалил ученика (в корзину)");
+      if (/student-subscriptions\/batch/.test(p)) return "Пакетная продажа абонементов";
+      if (/student-subscriptions/.test(p)) return M("Продал абонемент", "Изменил абонемент", "Удалил абонемент");
+      if (/subscription-plans/.test(p)) return M("Создал тариф", "Изменил тариф", "Удалил тариф");
+      if (/payments/.test(p)) return "Принял оплату";
+      if (/waitlist/.test(p)) return M("Добавил в лист ожидания", "", "Убрал из листа ожидания");
+      if (/attendance/.test(p)) return "Отметил посещаемость";
+      if (/recalculations/.test(p)) return M("Создал перерасчёт", "Изменил перерасчёт", "");
+      if (/groups/.test(p)) return M("Создал группу", "Изменил группу", "Удалил группу");
+      if (/branches/.test(p)) return M("Создал филиал", "Изменил филиал", "Удалил филиал");
+      if (/halls/.test(p)) return M("Создал зал", "Изменил зал", "Удалил зал");
+      if (/teachers/.test(p)) return M("Добавил педагога", "Изменил педагога", "Удалил педагога");
+      if (/schedule/.test(p)) return M("Добавил занятие", "Изменил занятие", "Удалил занятие");
+      if (/status-config/.test(p)) return "Изменил настройки статусов";
+      if (/shop|echo/.test(p)) return M("Действие в магазине", "Обновил заявку магазина", "Удалил в магазине");
+      if (/tasks|notes|meetings|homework/.test(p)) return M("Создал запись (задачи/заметки)", "Изменил запись", "Удалил запись");
+      return `${method} ${p.replace("/api/mvp/", "")}`;
+    };
+
+    // Короткая деталь из тела запроса: имя/причина/сумма — без сырых JSON.
+    const detailOf = (bodyRaw: string | null): string | null => {
+      if (!bodyRaw) return null;
+      try {
+        const b = JSON.parse(bodyRaw);
+        const bits: string[] = [];
+        if (b.name) bits.push(String(b.name));
+        if (b.firstName || b.lastName) bits.push([b.firstName, b.lastName].filter(Boolean).join(" "));
+        if (b.amount) bits.push(`${Math.round(Number(b.amount)).toLocaleString("ru-RU")} тг`);
+        if (b.price) bits.push(`${Math.round(Number(b.price)).toLocaleString("ru-RU")} тг`);
+        if (b.date) bits.push(String(b.date));
+        if (b.reason) bits.push(`причина: ${b.reason}`);
+        if (b.manualStatus) bits.push(`статус: ${b.manualStatus}`);
+        return bits.length ? [...new Set(bits)].slice(0, 3).join(" · ") : null;
+      } catch { return null; }
+    };
+
+    const logs = rows
+      .filter((r) => Number(r.after_data?.status || 0) < 400) // показываем только успешные действия
+      .map((r) => ({
+        at: r.created_at,
+        who: r.after_data?.user || r.after_data?.role || "система",
+        role: r.after_data?.role || null,
+        action: label(String(r.action || ""), String(r.after_data?.path || "")),
+        detail: detailOf(r.after_data?.body || null),
+      }));
+    res.json({ logs });
+  }));
+
   app.get("/api/mvp/settings/status-config", ah(async (req, res) => {
     const session = getSession(req);
     if (!supabaseEnabled) return res.json({ config: {} });

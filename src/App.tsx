@@ -714,7 +714,7 @@ export default function App() {
   };
 
   // --- Owner: student management ---
-  type StudentInput = { name?: string; firstName?: string; lastName?: string; branchId?: string; groupId?: string; teacherId?: string; parentName?: string; parentPhone?: string; phone?: string; gender?: string | null; birthday?: string | null; sourceId?: string | null; sourceName?: string; comment?: string; status?: string; manualStatus?: string | null; payPromiseDate?: string | null };
+  type StudentInput = { name?: string; firstName?: string; lastName?: string; branchId?: string; groupId?: string; teacherId?: string; parentName?: string; parentPhone?: string; phone?: string; gender?: string | null; birthday?: string | null; sourceId?: string | null; sourceName?: string; skillLevel?: string | null; comment?: string; status?: string; manualStatus?: string | null; payPromiseDate?: string | null };
   // Возвращает id созданного ученика (или null) — нужно, чтобы сразу открыть карточку (ТЗ).
   const handleCreateStudent = async (data: StudentInput): Promise<string | { archivedId: string; message: string } | null> => {
     try {
@@ -841,7 +841,10 @@ export default function App() {
         headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
         body: JSON.stringify(data)
       });
-      if (!response.ok) throw new Error(await response.text());
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error || `Ошибка ${response.status}`);
+      }
       await loadMvpBootstrap(activeRole);
       addAuditLog("Изменение ученика", `Обновлён ученик ${data.name || id}`);
       toast.success("Изменения сохранены");

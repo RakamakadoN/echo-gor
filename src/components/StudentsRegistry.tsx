@@ -80,6 +80,7 @@ type StudentInput = {
   birthday?: string | null;
   sourceId?: string | null;
   sourceName?: string;
+  skillLevel?: string | null;
   comment?: string;
   status?: string;
   manualStatus?: string | null;
@@ -144,6 +145,9 @@ const tgHref = (phone?: string) => `https://t.me/+${digits(phone).replace(/^\+/,
 const genderLabel = (g?: string | null) => (g === "male" ? "М" : g === "female" ? "Ж" : "—");
 
 const PAGE_SIZES = [10, 25, 50];
+
+/** Уровни подготовки ученика (ТЗ заказчика 2026-07-11). */
+const SKILL_LEVELS = ["Начинающий", "Продолжающий", "Студийный", "Ансамбль"];
 
 /** Источники по умолчанию (ТЗ): если справочник пуст — показываем этот список. */
 const DEFAULT_SOURCE_NAMES = [
@@ -299,7 +303,7 @@ export default function StudentsRegistry({
   );
   const waitlistStudentIds = useMemo(() => new Set(activeWaitlist.map((w) => w.studentId)), [activeWaitlist]);
 
-  const [view, setView] = useState<"registry" | "waitlist" | "archive">("registry");
+  const [view, setView] = useState<"registry" | "waitlist" | "archive" | "history">("registry");
   // Модалка перевода в архив (массово). Хранит выбранных учеников и busy-состояние.
   const [archiveModal, setArchiveModal] = useState<Student[] | null>(null);
   const [archiveBusy, setArchiveBusy] = useState(false);
@@ -309,6 +313,7 @@ export default function StudentsRegistry({
   const [branchFilter, setBranchFilter] = useState("all");
   const [groupFilter, setGroupFilter] = useState("all");
   const [ltvFilter, setLtvFilter] = useState("all");
+  const [skillFilter, setSkillFilter] = useState("all");
   const [archiveFilter, setArchiveFilter] = useState<"active" | "archive" | "all">("active");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
@@ -404,6 +409,7 @@ export default function StudentsRegistry({
       if (branchFilter !== "all" && s.branchId !== branchFilter) return false;
       if (groupFilter !== "all" && studentGroupId(s) !== groupFilter) return false;
       if (ltvFilter !== "all" && getLtvSegment(s, now) !== ltvFilter) return false;
+      if (skillFilter !== "all" && (s.skillLevel || "") !== skillFilter) return false;
       if (q) {
         const hay = [s.name, s.parentName, studentPhone(s), groupName(studentGroupId(s))]
           .filter(Boolean).join(" ").toLowerCase();
@@ -696,7 +702,7 @@ export default function StudentsRegistry({
   const emptyForm = {
     firstName: "", lastName: "", phone: "", gender: "" as "" | "male" | "female",
     birthday: "", branchId: adminBranchId || branches[0]?.id || "", groupId: "",
-    sourceId: "", parentName: "", comment: "",
+    sourceId: "", parentName: "", comment: "", skillLevel: "",
   };
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
@@ -717,6 +723,7 @@ export default function StudentsRegistry({
       sourceId: s.sourceId || "",
       parentName: s.parentName || "",
       comment: s.comment || "",
+      skillLevel: s.skillLevel || "",
     });
     setShowForm(true);
   };
@@ -749,6 +756,7 @@ export default function StudentsRegistry({
       groupId: form.groupId || undefined,
       sourceId: realSourceId,
       sourceName,
+      skillLevel: form.skillLevel || null,
       parentName: form.parentName || undefined,
       comment: form.comment || undefined,
       status: editingId ? undefined : "lead", // ТЗ: новый ученик → 🟢 Новый лид
@@ -829,7 +837,7 @@ export default function StudentsRegistry({
 
       {/* Переключатель: Реестр / Лист ожидания — пилюли прототипа */}
       <div className="flex flex-wrap gap-2">
-        {([["registry", "Реестр", data.length], ["waitlist", "Лист ожидания", activeWaitlist.length], ["archive", "Архив", studentArchive.length]] as const).map(([id, label, cnt]) => {
+        {([["registry", "Реестр", data.length], ["waitlist", "Лист ожидания", activeWaitlist.length], ["archive", "Архив", studentArchive.length], ["history", "История действий", null]] as const).map(([id, label, cnt]) => {
           const on = view === id;
           return (
             <button
@@ -841,7 +849,7 @@ export default function StudentsRegistry({
                 : { background: CLR.fill, border: `1.5px solid ${CLR.border}`, color: CLR.second }}
             >
               {label}
-              <span className="rounded-full px-[7px] py-px text-[11px] font-semibold" style={on ? { background: "rgba(0,0,0,.15)", color: "#fff" } : { background: "rgba(0,0,0,.08)", color: CLR.muted }}>{cnt}</span>
+              {cnt !== null && <span className="rounded-full px-[7px] py-px text-[11px] font-semibold" style={on ? { background: "rgba(0,0,0,.15)", color: "#fff" } : { background: "rgba(0,0,0,.08)", color: CLR.muted }}>{cnt}</span>}
             </button>
           );
         })}
@@ -926,6 +934,8 @@ export default function StudentsRegistry({
           onRemove={onRemoveFromWaitlist ? removeFromWaitlist : undefined}
           now={now}
         />
+      ) : view === "history" ? (
+        <ActionHistoryView roleHeader={roleHeader} />
       ) : (
         <>
           {/* Активный пресет-фильтр */}
@@ -970,6 +980,7 @@ export default function StudentsRegistry({
             <FilterSelect value={branchFilter} onChange={(v) => { clearPreset(); setBranchFilter(v); }} options={[{ value: "all", label: "Все филиалы" }, ...branches.map((b) => ({ value: b.id, label: b.name || b.city }))]} />
             <FilterSelect value={presetIds ? "all" : groupFilter} onChange={(v) => { clearPreset(); setGroupFilter(v); }} options={[{ value: "all", label: "Все группы" }, ...visibleGroups.map((g) => ({ value: g.id, label: g.name }))]} />
             <FilterSelect value={presetIds ? "all" : ltvFilter} onChange={(v) => { clearPreset(); setLtvFilter(v); }} options={[{ value: "all", label: "Все LTV" }, ...LTV_SEGMENTS.map((s) => ({ value: s, label: s }))]} />
+            <FilterSelect value={skillFilter} onChange={(v) => { clearPreset(); setSkillFilter(v); }} options={[{ value: "all", label: "Все уровни" }, ...SKILL_LEVELS.map((l) => ({ value: l, label: l }))]} />
             {/* Архив вынесен в отдельную вкладку «Архив» — список показывает только активных. */}
             <button onClick={() => setShowColumnConfig((v) => !v)} className="inline-flex items-center justify-center gap-2 rounded-[10px] px-3.5 py-2 text-[13px] font-semibold transition" style={showColumnConfig ? { background: "#F2EDE2", border: `1px solid ${CLR.gold}`, color: CLR.gold } : { background: CLR.fill, border: `1px solid ${CLR.border}`, color: CLR.second }}>
               <SlidersHorizontal className="h-4 w-4" /> Настроить таблицу
@@ -1510,13 +1521,78 @@ function WaitlistTable({
   );
 }
 
+/* ============================ История действий ============================ */
+/* ТЗ заказчика: кто что делал по датам (добавлял/сохранял/удалял). Данные —
+   audit_logs (сервер пишет каждую мутацию), подписи готовит сервер. */
+function ActionHistoryView({ roleHeader }: { roleHeader: string }) {
+  const [logs, setLogs] = useState<{ at: string; who: string; role: string | null; action: string; detail: string | null }[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setLoading(true);
+      try {
+        const r = await fetch("/api/mvp/audit-logs?limit=300", { headers: { "x-demo-role": roleHeader } });
+        if (r.ok && alive) setLogs((await r.json()).logs || []);
+      } catch { /* ignore */ } finally { if (alive) setLoading(false); }
+    })();
+    return () => { alive = false; };
+  }, [roleHeader]);
+
+  if (loading) return <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400">Загрузка истории…</div>;
+  if (!logs.length) return <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400">История действий пока пуста.</div>;
+
+  // Группировка по дням, свежие сверху.
+  const byDay = new Map<string, typeof logs>();
+  for (const l of logs) {
+    const day = (l.at || "").slice(0, 10);
+    if (!byDay.has(day)) byDay.set(day, []);
+    byDay.get(day)!.push(l);
+  }
+  const dayLabel = (iso: string) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const yest = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    if (iso === today) return "Сегодня";
+    if (iso === yest) return "Вчера";
+    return new Date(iso).toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
+  };
+  const ROLE_LABEL: Record<string, string> = { owner: "Владелец", branch_manager: "Управляющий", admin: "Админ", teacher: "Педагог", student: "Ученик" };
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-100 px-5 py-3">
+        <p className="text-sm font-black">История действий</p>
+        <p className="text-xs text-slate-400">Кто и что делал в системе: добавления, изменения, продажи, удаления. Последние {logs.length} действий.</p>
+      </div>
+      <div className="max-h-[640px] space-y-4 overflow-y-auto p-4">
+        {Array.from(byDay.entries()).map(([day, items]) => (
+          <div key={day}>
+            <p className="mb-2 text-[11px] font-black uppercase tracking-wider text-slate-400">{dayLabel(day)}</p>
+            <div className="space-y-1.5">
+              {items.map((l, i) => (
+                <div key={i} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded-xl border border-slate-100 bg-slate-50/60 px-3 py-2 text-sm">
+                  <span className="font-mono text-xs text-slate-400">{(l.at || "").slice(11, 16)}</span>
+                  <span className="rounded-full bg-slate-200 px-1.5 py-px text-[10px] font-bold uppercase text-slate-500">{ROLE_LABEL[l.role || ""] || l.role || "—"}</span>
+                  <span className="font-bold text-slate-800">{l.action}</span>
+                  {l.detail && <span className="text-slate-500">· {l.detail}</span>}
+                  <span className="ml-auto text-xs text-slate-400">{l.who}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ============================ Окно «Новый ученик» ============================ */
 function StudentFormModal({
   editing, form, setField, branches, groups, sourceOptions, age, valid, saving, onSave, onClose, onManageSources,
 }: {
   editing: boolean;
-  form: { firstName: string; lastName: string; phone: string; gender: "" | "male" | "female"; birthday: string; branchId: string; groupId: string; sourceId: string; parentName: string; comment: string };
-  setField: (patch: Partial<{ firstName: string; lastName: string; phone: string; gender: "" | "male" | "female"; birthday: string; branchId: string; groupId: string; sourceId: string; parentName: string; comment: string }>) => void;
+  form: { firstName: string; lastName: string; phone: string; gender: "" | "male" | "female"; birthday: string; branchId: string; groupId: string; sourceId: string; parentName: string; comment: string; skillLevel: string };
+  setField: (patch: Partial<{ firstName: string; lastName: string; phone: string; gender: "" | "male" | "female"; birthday: string; branchId: string; groupId: string; sourceId: string; parentName: string; comment: string; skillLevel: string }>) => void;
   branches: Branch[];
   groups: Group[];
   sourceOptions: { value: string; label: string }[];
@@ -1581,6 +1657,7 @@ function StudentFormModal({
               {[{ value: "", label: "Не указан" }, ...sourceOptions].map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </label>
+          <FSelect label="Уровень подготовки" value={form.skillLevel} onChange={(v) => setField({ skillLevel: v })} options={[{ value: "", label: "Не указан" }, ...SKILL_LEVELS.map((l) => ({ value: l, label: l }))]} />
           <FInput label="Имя родителя" value={form.parentName} onChange={(v) => setField({ parentName: v })} placeholder="Для семейного кабинета" />
           <label className="flex flex-col gap-1 sm:col-span-2">
             <span className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Комментарий</span>

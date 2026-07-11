@@ -229,9 +229,11 @@ export default function StudentManagementCard({
 
   const [trialForm, setTrialForm] = useState({ date: "", time: "", note: "" });
   const [manualTrial, setManualTrial] = useState(false);
+  // Выбор месяца записи (ТЗ): 0 = текущий, 1 = следующий, 2 = через один.
+  const [trialMonthOffset, setTrialMonthOffset] = useState(0);
 
-  // Доступные слоты пробного урока из расписания группы (вперёд от сегодня).
-  // Админ выбирает доступную дату — система подставляет дату и время занятия группы.
+  // Доступные слоты пробного урока из расписания группы — все занятия ВЫБРАННОГО
+  // месяца (в текущем — начиная с сегодня). Время подставляется из графика группы.
   const trialSlots = useMemo(() => {
     // Устойчиво к «Пн,Ср» и «Понедельник среда»: сводим к коротким кодам, затем к номерам.
     const dayNums = parseGroupDays((group?.days || []).join(" "))
@@ -239,10 +241,12 @@ export default function StudentManagementCard({
       .filter((n) => n !== undefined);
     if (!dayNums.length) return [] as { iso: string; label: string; time: string }[];
     const out: { iso: string; label: string; time: string }[] = [];
-    const cursor = new Date();
-    cursor.setHours(0, 0, 0, 0);
-    let guard = 0;
-    while (out.length < 8 && guard < 90) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const monthStart = new Date(today.getFullYear(), today.getMonth() + trialMonthOffset, 1);
+    const cursor = trialMonthOffset === 0 ? new Date(today) : monthStart;
+    const limit = new Date(today.getFullYear(), today.getMonth() + trialMonthOffset + 1, 1);
+    while (cursor < limit) {
       if (dayNums.includes(cursor.getDay())) {
         out.push({
           iso: isoOf(cursor),
@@ -251,10 +255,16 @@ export default function StudentManagementCard({
         });
       }
       cursor.setDate(cursor.getDate() + 1);
-      guard += 1;
     }
     return out;
-  }, [group]);
+  }, [group, trialMonthOffset]);
+
+  // Подписи месяцев для переключателя записи на пробный.
+  const trialMonthLabel = (offset: number) => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth() + offset, 1)
+      .toLocaleDateString("ru-RU", { month: "long" });
+  };
   const [transferForm, setTransferForm] = useState({
     groupId: student.groupIds?.[0] || "",
     branchId: student.branchId || "",
@@ -690,23 +700,41 @@ export default function StudentManagementCard({
           <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <div className="mb-3 flex items-center justify-between">
               <p className="text-sm font-bold text-slate-700">Запись на пробный урок</p>
-              {trialSlots.length > 0 && (
-                <button
-                  onClick={() => { setManualTrial((v) => !v); setTrialForm((f) => ({ ...f, date: "", time: "" })); }}
-                  className="text-xs font-bold text-rose-500 transition hover:text-rose-600"
-                >
-                  {manualTrial ? "← Из расписания группы" : "Указать дату вручную"}
-                </button>
-              )}
+              <button
+                onClick={() => { setManualTrial((v) => !v); setTrialForm((f) => ({ ...f, date: "", time: "" })); }}
+                className="text-xs font-bold text-rose-500 transition hover:text-rose-600"
+              >
+                {manualTrial ? "← Из расписания группы" : "Указать дату вручную"}
+              </button>
             </div>
 
             {/* Доступное расписание группы — админ выбирает слот, время подставляется автоматически */}
-            {trialSlots.length > 0 && !manualTrial ? (
+            {!manualTrial ? (
               <>
+                {/* Выбор месяца (ТЗ): запись доступна на текущий и два следующих месяца */}
+                <div className="mb-2 inline-flex rounded-xl border border-slate-200 bg-white p-1">
+                  {[0, 1, 2].map((off) => (
+                    <button
+                      key={off}
+                      type="button"
+                      onClick={() => { setTrialMonthOffset(off); setTrialForm((f) => ({ ...f, date: "", time: "" })); }}
+                      className={`rounded-lg px-3 py-1 text-xs font-bold capitalize transition ${
+                        trialMonthOffset === off ? "bg-rose-50 text-rose-600" : "text-slate-500 hover:text-slate-700"
+                      }`}
+                    >
+                      {trialMonthLabel(off)}
+                    </button>
+                  ))}
+                </div>
                 <p className="mb-2 text-xs font-semibold text-slate-500">
                   Доступные занятия{group?.name ? ` · ${group.name}` : ""}
                   {group?.time ? ` · ${group.time}` : ""}
                 </p>
+                {trialSlots.length === 0 && (
+                  <p className="mb-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+                    В этом месяце занятий по расписанию группы не осталось — выберите другой месяц или укажите дату вручную.
+                  </p>
+                )}
                 <div className="flex flex-wrap gap-2">
                   {trialSlots.map((slot) => {
                     const on = trialForm.date === slot.iso;

@@ -287,6 +287,7 @@ export interface Student {
   createdAt?: string; // дата регистрации ученика (ISO), для метрики «новые ученики»
   status?: string; // статус из БД: lead|trial|active|paused|debt|left|archived
   manualStatus?: string | null; // ручной статус (ТЗ §7): Каникулы, Лист ожидания, ...
+  skillLevel?: string | null; // уровень подготовки: Начинающий/Продолжающий/Студийный/Ансамбль
   computedStatus?: string | null; // автостатус (ТЗ §5–6): no_status|trial|active|debt|expired|archived|trash|<ручной>
   returned?: boolean; // признак вернувшегося ученика (фиолетовый, ТЗ §2)
   payLater?: boolean; // ручной статус «Оплатит позже» (Журнал §8, §9)

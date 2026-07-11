@@ -10,9 +10,6 @@ import React, { useState } from "react";
 import { X, Plus, Trash2, RotateCcw } from "lucide-react";
 import {
   STATUS_TONES,
-  BASE_KPI_STATUSES,
-  BASE_FUNNEL_STATUSES,
-  AUTO_STATUS_LIST,
   loadStatusConfig,
   saveStatusConfig,
   getManualStatuses,
@@ -58,9 +55,10 @@ export default function StatusSettings({ onClose, roleHeader = "owner" }: { onCl
   };
 
   // Авто-статусы (ТЗ заказчика): название системное и НЕ редактируется — можно
-  // менять только ЦВЕТ. Переименовывать разрешено только ручные статусы.
-  const Row = ({ item }: { item: { key: string; label: string; tone: StatusTone } }) => {
-    const curTone = tones[item.key] || item.tone;
+  // менять только ЦВЕТ. Один статус = ОДНА строка: цвет применяется сразу ко всем
+  // местам (KPI-плитка, воронка, пилюля в списке, дашборд) через группу ключей.
+  const Row = ({ item }: { item: { keys: string[]; label: string; tone: StatusTone } }) => {
+    const curTone = item.keys.map((k) => tones[k]).find(Boolean) || item.tone;
     return (
       <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
         <span className="min-w-[160px] flex-1 px-1 text-sm font-semibold text-slate-700">{item.label}</span>
@@ -69,7 +67,7 @@ export default function StatusSettings({ onClose, roleHeader = "owner" }: { onCl
             <button
               key={t.id}
               title={t.label}
-              onClick={() => setTone(item.key, t.id)}
+              onClick={() => setTones((m) => { const next = { ...m }; for (const k of item.keys) next[k] = t.id; return next; })}
               className={`h-6 w-6 rounded-full border-2 transition ${curTone === t.id ? "border-slate-800" : "border-transparent"}`}
               style={{ background: t.swatch }}
             />
@@ -78,6 +76,29 @@ export default function StatusSettings({ onClose, roleHeader = "owner" }: { onCl
       </div>
     );
   };
+
+  // Единый список авто-статусов без повторов (раньше три пересекающихся секции).
+  // keys — все места, куда применяется цвет строки.
+  const COMBINED_STATUSES: { keys: string[]; label: string; tone: StatusTone }[] = [
+    { keys: ["total"], label: "Всего учеников", tone: "gray" },
+    { keys: ["active"], label: "Активные / Постоянный ученик", tone: "green" },
+    { keys: ["new"], label: "Новый ученик (первый месяц)", tone: "blue" },
+    { keys: ["renewal", "debt_current"], label: "Не оплачен текущий месяц", tone: "orange" },
+    { keys: ["prev_unpaid", "debt_prev"], label: "Не оплачен прошлый месяц", tone: "red" },
+    { keys: ["debtors"], label: "Должники", tone: "red" },
+    { keys: ["waitlist"], label: "Лист ожидания", tone: "purple" },
+    { keys: ["left"], label: "Ушли в этом месяце", tone: "red" },
+    { keys: ["lead"], label: "Новый лид", tone: "purple" },
+    { keys: ["trial", "funnel:trial"], label: "Записан на пробный", tone: "blue" },
+    { keys: ["trial_missed", "funnel:trial_missed"], label: "Не пришёл на пробный", tone: "red" },
+    { keys: ["trial_rebooked", "funnel:trial_rebooked"], label: "Перезаписан на пробный", tone: "orange" },
+    { keys: ["trial_lost", "funnel:trial_lost"], label: "Был на пробном, не купил", tone: "orange" },
+    { keys: ["visitor_new", "funnel:visitor_new"], label: "Купили абонемент (новый посетитель)", tone: "green" },
+    { keys: ["next_paid"], label: "Куплен следующий месяц", tone: "green" },
+    { keys: ["not_renewed"], label: "Не продлил абонемент", tone: "red" },
+    { keys: ["returned"], label: "Вернувшийся ученик", tone: "purple" },
+    { keys: ["paused"], label: "Замороженный абонемент", tone: "gray" },
+  ];
 
   return (
     <div
@@ -100,20 +121,11 @@ export default function StatusSettings({ onClose, roleHeader = "owner" }: { onCl
 
         <div className="space-y-6 px-5 py-5">
           <section>
-            <p className="mb-2 text-[11px] font-black uppercase tracking-wider text-slate-500">Основные показатели</p>
-            <p className="mb-2 text-[11px] text-slate-400">Названия авто-статусов системные и не редактируются — настраивается только цвет.</p>
+            <p className="mb-2 text-[11px] font-black uppercase tracking-wider text-slate-500">Авто-статусы системы</p>
+            <p className="mb-2 text-[11px] text-slate-400">Система считает их сама. Названия не редактируются — настраивается только цвет; он применяется везде: KPI-плитки, воронка, список учеников, дашборд.</p>
             <div className="space-y-2">
-              {BASE_KPI_STATUSES.map((it) => (
-                <Row key={it.key} item={it} />
-              ))}
-            </div>
-          </section>
-
-          <section>
-            <p className="mb-2 text-[11px] font-black uppercase tracking-wider text-slate-500">Воронка продаж</p>
-            <div className="space-y-2">
-              {BASE_FUNNEL_STATUSES.map((it) => (
-                <Row key={it.key} item={it} />
+              {COMBINED_STATUSES.map((it) => (
+                <Row key={it.keys[0]} item={it} />
               ))}
             </div>
           </section>
@@ -169,15 +181,6 @@ export default function StatusSettings({ onClose, roleHeader = "owner" }: { onCl
             </div>
           </section>
 
-          <section>
-            <p className="mb-2 text-[11px] font-black uppercase tracking-wider text-slate-500">Авто-статусы (дашборд)</p>
-            <p className="mb-2 text-[11px] text-slate-400">Система считает их сама из посещаемости и абонементов. Цвет применяется на дашборде «Авто-статусы учеников» и в бейджах списка.</p>
-            <div className="space-y-2">
-              {AUTO_STATUS_LIST.map((it) => (
-                <Row key={it.key} item={it} />
-              ))}
-            </div>
-          </section>
         </div>
 
         <div className="flex items-center justify-between gap-2 border-t border-slate-200 px-5 py-4">
