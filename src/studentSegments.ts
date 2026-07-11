@@ -532,27 +532,37 @@ export type SegmentId =
   | "core"
   | "legends";
 
+/** Контекст сегментов: данные, которых нет внутри Student (реальные строки ЛО). */
+export interface SegmentCtx {
+  /** id учеников с ОТКРЫТОЙ строкой student_waitlist — единственный источник правды ЛО. */
+  waitlistIds?: Set<string>;
+}
+
 export interface SegmentDef {
   id: SegmentId;
   label: string;
-  match: (s: Student, now?: Date) => boolean;
+  match: (s: Student, now?: Date, ctx?: SegmentCtx) => boolean;
 }
 
-const isWaitlist = (s: Student): boolean =>
-  (s.manualStatus || "").toLowerCase().includes("лист ожид") || s.status === "lead";
+// ЛО = реальная строка student_waitlist (ctx). Больше НЕ по статус-тексту и НЕ по
+// «все лиды» — раньше фильтр и вкладка ЛО показывали разное (жалоба заказчика).
+const isWaitlist = (s: Student, ctx?: SegmentCtx): boolean =>
+  ctx?.waitlistIds
+    ? ctx.waitlistIds.has(s.id)
+    : (s.manualStatus || "").toLowerCase().includes("лист ожид");
 const isVacation = (s: Student): boolean =>
   isPaused(s) || (s.manualStatus || "").toLowerCase().includes("каникул");
 
 /** ТЗ §4: набор быстрых сегментов в верхней панели. */
 export const SEGMENTS: SegmentDef[] = [
   { id: "all", label: "Все ученики", match: () => true },
-  { id: "active", label: "Активные", match: (s) => !isLeft(s) && s.status === "active" },
+  { id: "active", label: "Активные", match: (s, now, ctx) => !isLeft(s) && s.status === "active" && !isWaitlist(s, ctx) },
   { id: "renewal", label: "Требуют продления", match: (s, now) => !isLeft(s) && needsRenewal(s, now) },
   { id: "debtors", label: "Должники", match: (s) => !isLeft(s) && getDebt(s) > 0 },
   { id: "new", label: "Новые", match: (s, now) => !isLeft(s) && (isTrial(s) || getEnrollmentMonths(s, now) < 1) },
   { id: "returned", label: "Вернувшиеся", match: (s) => !isLeft(s) && isReturned(s) },
   { id: "next_month", label: "Купили следующий", match: (s, now) => !isLeft(s) && hasNextMonthPaid(s, now) },
-  { id: "waitlist", label: "Лист ожидания", match: (s) => !isLeft(s) && isWaitlist(s) },
+  { id: "waitlist", label: "Лист ожидания", match: (s, now, ctx) => !isLeft(s) && isWaitlist(s, ctx) },
   { id: "vacation", label: "Каникулы", match: (s) => !isLeft(s) && isVacation(s) },
   { id: "left", label: "Ушедшие", match: (s) => isLeft(s) },
   { id: "partially_paid", label: "Частично оплачено", match: (s, now) => !isLeft(s) && isPartiallyPaid(s, now) },
@@ -577,10 +587,10 @@ export const STATUS_FILTER_OPTIONS: { value: string; label: string }[] = [
   { value: "left", label: "Ушедшие" },
 ];
 
-export const matchStatusFilter = (student: Student, value: string, now: Date = new Date()): boolean => {
+export const matchStatusFilter = (student: Student, value: string, now: Date = new Date(), ctx?: SegmentCtx): boolean => {
   if (value === "all") return true;
   const seg = SEGMENTS.find((x) => x.id === (value as SegmentId));
-  if (seg) return seg.match(student, now);
+  if (seg) return seg.match(student, now, ctx);
   // Ручной статус: точное совпадение (фильтр по любому ручному статусу).
   return (student.manualStatus || "") === value;
 };
@@ -597,11 +607,12 @@ export const COLOR_LEGEND: { tone: RowTone; dot: string; text: string }[] = [
   { tone: "gray", dot: "bg-slate-400", text: "Серый — ушедший ученик" },
 ];
 
-/** ТЗ §7: ручные статусы по умолчанию. */
+/** ТЗ §7: ручные статусы по умолчанию.
+ * «Лист ожидания» здесь НЕТ намеренно: в ЛО добавляют только кнопкой
+ * (таблица student_waitlist), статус-текст упразднён (миграция 042). */
 export const DEFAULT_MANUAL_STATUSES: string[] = [
   "Был на пробном, оплатит",
   "Каникулы",
-  "Лист ожидания",
   "Медицинская пауза",
   "Временно отсутствует",
   "Индивидуальный график",

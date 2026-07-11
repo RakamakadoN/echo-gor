@@ -91,6 +91,8 @@ export interface StudentManagementCardProps {
   onTrial?: (payload: { date: string; time: string; note: string }) => Promise<boolean> | boolean | void;
   /** Удалить запись на пробный урок по дате. */
   onDeleteTrial?: (date: string) => Promise<boolean> | boolean | void;
+  /** Панель, раскрытая при открытии карточки (например "trial" из листа ожидания). */
+  initialPanel?: "trial" | "transfer" | "sell" | "access";
   /** Перевод ученика в другую группу/филиал/к другому педагогу */
   onTransfer?: (payload: { groupId?: string; branchId?: string; teacherId?: string }) => Promise<boolean> | boolean | void;
   /** Добавить ученика в лист ожидания (ТЗ «Лист ожидания»). */
@@ -163,6 +165,7 @@ export default function StudentManagementCard({
   onSellSubscription,
   onTrial,
   onDeleteTrial,
+  initialPanel,
   onTransfer,
   onAddToWaitlist,
   inWaitlist = false,
@@ -170,7 +173,9 @@ export default function StudentManagementCard({
   roleHeader = "owner",
 }: StudentManagementCardProps) {
   const [tab, setTab] = useState<TabId>("general");
-  const [panel, setPanel] = useState<null | "trial" | "transfer" | "sell" | "access">(null);
+  const [panel, setPanel] = useState<null | "trial" | "transfer" | "sell" | "access">(initialPanel || null);
+  // «Пригласить на пробный» из листа ожидания: карточка открывается с нужной панелью.
+  useEffect(() => { if (initialPanel) setPanel(initialPanel); }, [student.id, initialPanel]);
   const [openSub, setOpenSub] = useState<Subscription | null>(null);
   // Локальный оверлей удалённых абонементов (§3): помечаем «Удалён» сразу после запроса.
   const [subDeletes, setSubDeletes] = useState<Record<string, Partial<Subscription>>>({});
@@ -191,6 +196,16 @@ export default function StudentManagementCard({
 
   const addToWaitlist = async () => {
     if (!onAddToWaitlist || waitlisted) return;
+    // ТЗ: лист ожидания только для новых лидов — быстрые проверки до запроса
+    // (сервер валидирует то же самое и остаётся источником правды).
+    if ((student.subscriptions || []).length > 0) {
+      setDone("У ученика уже есть (или был) абонемент — лист ожидания только для новых лидов");
+      return;
+    }
+    if (getTrialInfo(student).upcoming) {
+      setDone("Ученик записан на пробный урок — сначала закройте или удалите запись");
+      return;
+    }
     setBusy(true);
     try {
       const ok = await onAddToWaitlist({

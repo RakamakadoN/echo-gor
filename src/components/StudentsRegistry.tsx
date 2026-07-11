@@ -340,6 +340,8 @@ export default function StudentsRegistry({
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [openId, setOpenId] = useState<string | null>(null);
+  // Панель, которую карточка откроет сразу (например «Пригласить на пробный» из ЛО).
+  const [cardPanel, setCardPanel] = useState<"trial" | null>(null);
   const [drawerIn, setDrawerIn] = useState(false);
   useEffect(() => {
     if (openId) {
@@ -384,10 +386,10 @@ export default function StudentsRegistry({
         return false;
       }
       const seg = SEGMENTS.find((x) => x.id === segment);
-      if (seg && !seg.match(s, now)) return false;
+      if (seg && !seg.match(s, now, { waitlistIds: waitlistStudentIds })) return false;
       // Спец-чипы прототипа (нет прямого SegmentId): по авто-статусу воронки.
       if (segment === "trial" && getStudentState(s, now).statusKey !== "trial") return false;
-      if (!matchStatusFilter(s, statusFilter, now)) return false;
+      if (!matchStatusFilter(s, statusFilter, now, { waitlistIds: waitlistStudentIds })) return false;
       if (branchFilter !== "all" && s.branchId !== branchFilter) return false;
       if (groupFilter !== "all" && studentGroupId(s) !== groupFilter) return false;
       if (ltvFilter !== "all" && getLtvSegment(s, now) !== ltvFilter) return false;
@@ -398,7 +400,7 @@ export default function StudentsRegistry({
       }
       return true;
     });
-  }, [data, segment, statusFilter, branchFilter, groupFilter, ltvFilter, archiveFilter, search, now, presetIds]);
+  }, [data, segment, statusFilter, branchFilter, groupFilter, ltvFilter, archiveFilter, search, now, presetIds, waitlistStudentIds]);
 
   const filterKey = `${segment}|${statusFilter}|${branchFilter}|${groupFilter}|${ltvFilter}|${archiveFilter}|${search}|${pageSize}|${presetIds ? presetIds.size : "-"}`;
   const [lastKey, setLastKey] = useState(filterKey);
@@ -410,7 +412,7 @@ export default function StudentsRegistry({
   /* ---------- KPI ---------- */
   const kpis = useMemo(() => {
     const count = (id: SegmentId) =>
-      data.filter((s) => SEGMENTS.find((x) => x.id === id)!.match(s, now)).length;
+      data.filter((s) => SEGMENTS.find((x) => x.id === id)!.match(s, now, { waitlistIds: waitlistStudentIds })).length;
     // «Ушли в этом месяце» — из РЕАЛЬНОГО архива (studentArchive), а не из активного
     // списка: связка с окном «Архив». Дата ухода = left_on (иначе archived_at).
     const leftThisMonth = studentArchive.filter((a: any) => {
@@ -427,7 +429,7 @@ export default function StudentsRegistry({
       { kpiKey: "waitlist", label: "Лист ожидания", value: activeWaitlist.length, icon: Clock, color: "purple" },
       { kpiKey: "left", label: "Ушли в этом месяце", value: leftThisMonth, icon: UserMinus, color: "red" },
     ];
-  }, [data, now, activeWaitlist.length, studentArchive]);
+  }, [data, now, activeWaitlist.length, studentArchive, waitlistStudentIds]);
 
   /* ---------- Воронка продаж (по автоматическим статусам пробных уроков) ---------- */
   const funnel = useMemo(() => {
@@ -485,8 +487,8 @@ export default function StudentsRegistry({
       const ids = data
         .filter((s) => {
           if (key === "active") return !isLeft(s) && s.status === "active";
-          if (key === "renewal") return SEGMENTS.find((x) => x.id === "renewal")!.match(s, now);
-          if (key === "debtors") return SEGMENTS.find((x) => x.id === "debtors")!.match(s, now);
+          if (key === "renewal") return SEGMENTS.find((x) => x.id === "renewal")!.match(s, now, { waitlistIds: waitlistStudentIds });
+          if (key === "debtors") return SEGMENTS.find((x) => x.id === "debtors")!.match(s, now, { waitlistIds: waitlistStudentIds });
           return false;
         })
         .map((s) => s.id);
@@ -878,6 +880,7 @@ export default function StudentsRegistry({
           studentGroupId={studentGroupId}
           studentPhone={studentPhone}
           onOpen={(id) => { setView("registry"); setOpenId(id); }}
+          onInvite={onBookTrial ? (id) => { setView("registry"); setCardPanel("trial"); setOpenId(id); } : undefined}
           onRemove={onRemoveFromWaitlist ? removeFromWaitlist : undefined}
           now={now}
         />
@@ -1194,7 +1197,8 @@ export default function StudentsRegistry({
                 allGroups={groups}
                 allBranches={branches}
                 allTeachers={teachers}
-                onClose={() => setOpenId(null)}
+                onClose={() => { setOpenId(null); setCardPanel(null); }}
+                initialPanel={cardPanel || undefined}
                 onArchive={onArchiveStudent ? () => { setOpenId(null); setArchiveModal([openStudent]); } : undefined}
                 onSetStatus={onUpdateStudent ? (value) => setStudentStatus(openStudent.id, value) : undefined}
                 onTrial={onBookTrial ? (payload) => onBookTrial(openStudent.id, payload) : undefined}
@@ -1281,7 +1285,7 @@ export default function StudentsRegistry({
 type WaitRow = { entry: WaitlistEntry; student?: Student };
 
 function WaitlistTable({
-  rows, branches, groups, branchName, groupName, studentGroupId, studentPhone, onOpen, onRemove, now,
+  rows, branches, groups, branchName, groupName, studentGroupId, studentPhone, onOpen, onInvite, onRemove, now,
 }: {
   rows: WaitRow[];
   branches: Branch[];
@@ -1291,6 +1295,8 @@ function WaitlistTable({
   studentGroupId: (s: Student) => string;
   studentPhone: (s: Student) => string;
   onOpen: (studentId: string) => void;
+  /** Пригласить на пробный урок: открывает карточку с раскрытой панелью пробного. */
+  onInvite?: (studentId: string) => void;
   onRemove?: (entryId: string) => void;
   now: Date;
 }) {
@@ -1353,6 +1359,7 @@ function WaitlistTable({
                 <IconLink icon={Phone} title="Позвонить" href={telHref(phone)} tone="text-slate-500 hover:bg-slate-100" />
                 <IconLink icon={MessageCircle} title="WhatsApp" href={waHref(phone)} tone="text-emerald-600 hover:bg-emerald-50" />
                 <IconLink icon={Send} title="Telegram" href={tgHref(phone)} tone="text-sky-600 hover:bg-sky-50" />
+                {onInvite && <IconBtn icon={Calendar} title="Пригласить на пробный урок" onClick={() => onInvite(s.id)} tone="text-sky-600 hover:bg-sky-50" />}
                 <IconBtn icon={UserPlus} title="Записать в группу" onClick={() => onOpen(s.id)} tone="text-amber-600 hover:bg-amber-50" />
                 {onRemove && <span className="ml-auto"><IconBtn icon={Trash2} title="Удалить из листа" onClick={() => onRemove(r.entry.id)} tone="text-rose-500 hover:bg-rose-50" /></span>}
               </div>
@@ -1408,6 +1415,7 @@ function WaitlistTable({
                       <IconLink icon={Phone} title="Позвонить" href={telHref(phone)} tone="text-slate-500 hover:bg-slate-100" />
                       <IconLink icon={MessageCircle} title="WhatsApp" href={waHref(phone)} tone="text-emerald-600 hover:bg-emerald-50" />
                       <IconLink icon={Send} title="Telegram" href={tgHref(phone)} tone="text-sky-600 hover:bg-sky-50" />
+                      {onInvite && <IconBtn icon={Calendar} title="Пригласить на пробный урок" onClick={() => onInvite(s.id)} tone="text-sky-600 hover:bg-sky-50" />}
                       <IconBtn icon={UserPlus} title="Записать в группу" onClick={() => onOpen(s.id)} tone="text-amber-600 hover:bg-amber-50" />
                       {onRemove && <IconBtn icon={Trash2} title="Удалить из листа ожидания" onClick={() => onRemove(r.entry.id)} tone="text-rose-500 hover:bg-rose-50" />}
                     </div>

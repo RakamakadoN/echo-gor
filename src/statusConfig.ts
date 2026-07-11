@@ -154,8 +154,11 @@ export function getStatusToneRaw(key: string): StatusTone | undefined {
   return loadStatusConfig().tones[key];
 }
 
-/** Список ручных статусов (пользовательский или по умолчанию). */
+/** Список ручных статусов (пользовательский или по умолчанию).
+ * «Лист ожидания» фильтруется из сохранённых конфигов: статус-текст упразднён,
+ * в ЛО добавляют только кнопкой (миграция 042). */
 export function getManualStatuses(): string[] {
   const cfg = loadStatusConfig();
-  return cfg.manual && cfg.manual.length ? cfg.manual : DEFAULT_MANUAL_STATUSES;
+  const list = cfg.manual && cfg.manual.length ? cfg.manual : DEFAULT_MANUAL_STATUSES;
+  return list.filter((s) => !/лист ожид/i.test(s));
 }

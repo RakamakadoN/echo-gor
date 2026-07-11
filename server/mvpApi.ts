@@ -1168,17 +1168,23 @@ export function registerMvpApi(app: express.Express) {
       return res.status(403).json({ error: "Branch access denied" });
     }
     try {
-      // Конфликт: нельзя в лист ожидания той же группы, где у ученика уже есть
-      // действующий абонемент. В другую группу/филиал — можно.
-      if (payload.groupId) {
-        const today = new Date().toISOString().slice(0, 10);
-        const activeInGroup = await supabaseFetch<any[]>(
-          "student_subscriptions",
-          `select=id&student_id=eq.${payload.studentId}&group_id=eq.${payload.groupId}&status=eq.active&or=(ends_on.is.null,ends_on.gte.${today})`
-        );
-        if (activeInGroup[0]) {
-          return res.status(409).json({ error: "У ученика уже есть активный абонемент в этой группе — в лист ожидания той же группы добавить нельзя. Выберите другую группу или филиал." });
-        }
+      // ТЗ заказчика: лист ожидания — только для НОВЫХ ЛИДОВ. Ученик с историей
+      // покупок или с открытой записью на пробный в ЛО не попадает.
+      // Валидационные чтения без .catch(()=>[]) — ошибка чтения не должна
+      // молча пропускать невалидные данные (fail closed).
+      const anySubs = await supabaseFetch<any[]>(
+        "student_subscriptions",
+        `select=id&student_id=eq.${payload.studentId}&limit=1`
+      );
+      if (anySubs[0]) {
+        return res.status(409).json({ error: "У ученика уже есть (или был) абонемент — лист ожидания только для новых лидов." });
+      }
+      const openTrial = await supabaseFetch<any[]>(
+        "attendance",
+        `select=id&student_id=eq.${payload.studentId}&is_trial=eq.true&status=eq.unknown&limit=1`
+      );
+      if (openTrial[0]) {
+        return res.status(409).json({ error: "Ученик записан на пробный урок — в лист ожидания добавить нельзя. Сначала закройте или удалите запись на пробный." });
       }
       const existing = await supabaseFetch<any[]>(
         "student_waitlist",
@@ -1842,6 +1848,13 @@ export function registerMvpApi(app: express.Express) {
       await supabaseFetch("students", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, {
         method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(trialUpd),
       });
+      // Приглашение на пробный закрывает строку листа ожидания (ТЗ: «не переводится из ЛО»).
+      try {
+        await supabaseFetch("student_waitlist",
+          `student_id=eq.${req.params.id}&organization_id=eq.${session.organizationId}&removed_at=is.null`,
+          { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ removed_at: new Date().toISOString(), removed_reason: "invited_trial" }) }
+        );
+      } catch { /* закрытие ЛО не критично для записи на пробный */ }
       res.json({ ok: true, lessonId, date, startsAt });
     } catch (error: any) {
       res.status(400).json({ error: error.message || "Не удалось записать на пробный урок" });

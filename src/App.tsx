@@ -798,7 +798,10 @@ export default function App() {
         headers: { "Content-Type": "application/json", "x-demo-role": getMvpRoleHeader() },
         body: JSON.stringify(payload)
       });
-      if (!response.ok) throw new Error(await response.text());
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Не удалось добавить в лист ожидания");
+      }
       await loadMvpBootstrap(activeRole);
       toast.success("Добавлено в лист ожидания");
       return true;
