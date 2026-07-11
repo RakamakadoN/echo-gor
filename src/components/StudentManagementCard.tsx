@@ -1908,14 +1908,23 @@ function FinanceTab({
 
 function CommentsTab({ student }: { student: Student }) {
   const notes = student.notes || [];
+  // Свободный комментарий из формы редактирования (students.comment) — без этого
+  // блока введённое там «пропадало»: вкладка показывала только заметки педагогов.
+  const cardComment = (student.comment || "").trim();
   return (
     <div>
       <SectionHeader title="Комментарии" />
-      {notes.length === 0 ? (
+      {cardComment && (
+        <div className="mb-3 rounded-2xl border border-amber-100 bg-amber-50 p-4 shadow-sm">
+          <p className="text-sm font-bold text-slate-700">Комментарий из карточки</p>
+          <p className="mt-1.5 text-sm text-slate-600">{cardComment}</p>
+        </div>
+      )}
+      {notes.length === 0 && !cardComment ? (
         <p className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-400">
           Комментариев пока нет.
         </p>
-      ) : (
+      ) : notes.length === 0 ? null : (
         <div className="grid gap-3">
           {notes.map((note) => (
             <div
