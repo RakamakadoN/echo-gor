@@ -382,6 +382,9 @@ export default function StudentsRegistry({
   };
   const sourceName = (id?: string | null) => leadSources.find((s) => s.id === id)?.name || "—";
   const studentGroupId = (s: Student) => s.groupIds?.[0] || (s as any).groupId || "";
+  // Воронка пробных пройдена: у ученика есть (или был) купленный абонемент —
+  // бейджи «ПУ ×N» и дата пробного в списке больше не показываются (ТЗ).
+  const funnelDone = (s: Student) => (s.subscriptions || []).some((x) => x.status !== "deleted");
   // Все группы ученика (основная + группы действующих абонементов) — через запятую.
   const studentGroupNames = (s: Student) => {
     const ids = s.groupIds?.length ? s.groupIds : [(s as any).groupId].filter(Boolean);
@@ -1085,8 +1088,9 @@ export default function StudentsRegistry({
                     {colOn("age") && <span>{formatAge(s)}</span>}
                     {st.debt > 0 && <span className="font-bold" style={{ color: st.partialDebt > 0 ? "#B45309" : "#B14545" }}>{st.partialDebt > 0 ? "Частичный долг" : "Долг"} {money(st.debt)}</span>}
                     {colOn("ltv") && <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${LTV_BADGE[st.ltv]}`}>{st.ltv}</span>}
-                    {st.trialCount > 0 && <span className={`inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-bold ${st.trialOverLimit ? "bg-[#F6E9E9] text-[#B14545]" : "bg-[#EDF1F5] text-[#5C6772]"}`}>ПУ ×{st.trialCount}</span>}
-                    {st.trialDate && <span className="inline-flex rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-bold text-sky-700">ПУ {new Date(st.trialDate).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" })}</span>}
+                    {/* Бейджи пробных скрываются после покупки абонемента — воронка пройдена (ТЗ). */}
+                    {!funnelDone(s) && st.trialCount > 0 && <span className={`inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-bold ${st.trialOverLimit ? "bg-[#F6E9E9] text-[#B14545]" : "bg-[#EDF1F5] text-[#5C6772]"}`}>ПУ ×{st.trialCount}</span>}
+                    {!funnelDone(s) && st.trialDate && <span className="inline-flex rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-bold text-sky-700">ПУ {new Date(st.trialDate).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" })}</span>}
                   </div>
                   <div className="mt-2.5 flex items-center gap-1 border-t pt-2" style={{ borderColor: "#EEF1F4" }}>
                     <IconLink icon={Phone} title="Позвонить" href={telHref(phone)} tone="text-slate-500 hover:bg-slate-100" />
@@ -1159,7 +1163,8 @@ export default function StudentsRegistry({
                           <td className="px-3.5 py-3">
                             <div className="flex flex-wrap items-center gap-1">
                               <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[12px] font-semibold ${waitlistStudentIds.has(s.id) ? PILL_TONE.purple : PILL_TONE[pillToneOf(s, st)] || PILL_TONE.gray}`}>{waitlistStudentIds.has(s.id) ? "В листе ожидания" : st.statusLabel}</span>
-                              {st.trialCount > 0 && (
+                              {/* Бейджи пробных скрываются после покупки — воронка пройдена (ТЗ). */}
+                              {!funnelDone(s) && st.trialCount > 0 && (
                                 <span
                                   title={st.trialOverLimit ? "Превышен регламент: более 2 пробных уроков" : "Количество пробных уроков"}
                                   className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-bold ${st.trialOverLimit ? "bg-[#F6E9E9] text-[#B14545]" : "bg-[#EDF1F5] text-[#5C6772]"}`}
@@ -1167,7 +1172,7 @@ export default function StudentsRegistry({
                                   ПУ ×{st.trialCount}
                                 </span>
                               )}
-                              {st.trialDate && (
+                              {!funnelDone(s) && st.trialDate && (
                                 <span
                                   title="Дата пробного урока (актуальная запись)"
                                   className="inline-flex items-center rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-bold text-sky-700"
