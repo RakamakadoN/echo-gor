@@ -9506,6 +9506,71 @@ function layoutDay(items: any[]) {
 }
 
 // AI: свободные окна студии — эвристические подсказки по загрузке залов и педагогов.
+/** Карточка группы во вкладке «Расписание» с инлайн-редактированием (ТЗ 2026-07-12):
+ *  название, дни, время и срок действия правятся на месте — без ухода в «Филиалы». */
+function ScheduleGroupCard({ group, onUpdateGroup, onDeleteGroup }: any) {
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [f, setF] = useState({
+    name: group.name || "",
+    days: (group.days || []).join(", "),
+    time: group.time || "",
+    endDate: (group as any).endDate || "",
+  });
+  const save = async () => {
+    if (!onUpdateGroup || !f.name.trim()) return;
+    setBusy(true);
+    const ok = await onUpdateGroup(group.id, {
+      name: f.name.trim(),
+      scheduleDays: f.days.trim() || null,
+      scheduleTime: f.time.trim() || null,
+      endDate: f.endDate || null,
+    });
+    setBusy(false);
+    if (ok !== false) setEditing(false);
+  };
+  const inputCls = "w-full rounded-lg border border-white/10 bg-black/40 px-2.5 py-1.5 text-xs text-white placeholder-slate-600";
+  return (
+    <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+      {!editing ? (
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-black text-white">{group.name}</p>
+            <p className="mt-0.5 text-xs text-slate-400">{group.ageGroup} · {group.level}</p>
+            {(group.days?.length > 0 || group.time) && <p className="mt-0.5 text-xs text-slate-500">{group.days?.join(", ")} {group.time}</p>}
+            {(group as any).endDate && <p className="mt-0.5 text-[11px] text-amber-400/80">действует до {(group as any).endDate}</p>}
+            <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-[#C5A059]">{group.studentCount} учеников</p>
+          </div>
+          <div className="flex flex-shrink-0 flex-col gap-1.5">
+            {onUpdateGroup && (
+              <button onClick={() => setEditing(true)} className="rounded-lg bg-white/5 px-2 py-1 text-[10px] font-bold text-slate-300 transition-colors hover:bg-white/10">Изменить</button>
+            )}
+            {onDeleteGroup && (
+              <button onClick={() => onDeleteGroup(group.id)} className="rounded-lg bg-red-500/10 px-2 py-1 text-[10px] font-bold text-red-400 transition-colors hover:bg-red-500/20">Архив</button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <input value={f.name} onChange={(e) => setF((s) => ({ ...s, name: e.target.value }))} placeholder="Название группы" className={inputCls} />
+          <div className="grid grid-cols-2 gap-2">
+            <input value={f.days} onChange={(e) => setF((s) => ({ ...s, days: e.target.value }))} placeholder="Дни: Пн, Ср, Пт" className={inputCls} />
+            <input value={f.time} onChange={(e) => setF((s) => ({ ...s, time: e.target.value }))} placeholder="Время: 18:00–19:00" className={inputCls} />
+          </div>
+          <label className="block">
+            <span className="text-[10px] font-bold uppercase text-slate-500">Действует до (пусто — бессрочно)</span>
+            <input type="date" value={f.endDate} onChange={(e) => setF((s) => ({ ...s, endDate: e.target.value }))} className={inputCls} />
+          </label>
+          <div className="flex gap-2">
+            <button onClick={save} disabled={busy || !f.name.trim()} className="rounded-lg bg-[#C5A059] px-3 py-1.5 text-[11px] font-black text-black hover:bg-[#D4AF70] disabled:opacity-40">{busy ? "Сохранение…" : "Сохранить"}</button>
+            <button onClick={() => setEditing(false)} className="rounded-lg border border-white/10 px-3 py-1.5 text-[11px] font-bold text-slate-400 hover:text-white">Отмена</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ScheduleAiWindows({ hallLoad, halls, teachers, todayStats }: any) {
   const [answer, setAnswer] = useState<{ q: string; a: React.ReactNode } | null>(null);
   const loads: any[] = [...(hallLoad || [])].sort((a, b) => a.pct - b.pct);
@@ -10187,17 +10252,12 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
         {showGroups && (
           <div className="grid gap-3 p-4 pt-0 sm:grid-cols-2 lg:grid-cols-3">
             {groups.filter((g: Group) => !filterBranchId || g.branchId === filterBranchId).map((group: Group) => (
-              <div key={group.id} className="flex items-start justify-between gap-3 rounded-2xl border border-white/10 bg-black/25 p-4">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-black text-white">{group.name}</p>
-                  <p className="mt-0.5 text-xs text-slate-400">{group.ageGroup} · {group.level}</p>
-                  {(group.days?.length > 0 || group.time) && <p className="mt-0.5 text-xs text-slate-500">{group.days?.join(", ")} {group.time}</p>}
-                  <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-[#C5A059]">{group.studentCount} учеников</p>
-                </div>
-                {onDeleteGroup && (
-                  <button onClick={() => onDeleteGroup(group.id)} className="flex-shrink-0 rounded-lg bg-red-500/10 px-2 py-1 text-[10px] font-bold text-red-400 transition-colors hover:bg-red-500/20">Архив</button>
-                )}
-              </div>
+              <ScheduleGroupCard
+                key={group.id}
+                group={group}
+                onUpdateGroup={onUpdateGroup}
+                onDeleteGroup={onDeleteGroup}
+              />
             ))}
           </div>
         )}

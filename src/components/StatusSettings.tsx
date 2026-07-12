@@ -77,27 +77,29 @@ export default function StatusSettings({ onClose, roleHeader = "owner" }: { onCl
     );
   };
 
-  // Единый список авто-статусов без повторов (раньше три пересекающихся секции).
-  // keys — все места, куда применяется цвет строки.
+  // Единый список авто-статусов без повторов — ТОЛЬКО те, что система реально
+  // присваивает сама (сверено с getStudentState/SEGMENTS, ТЗ 2026-07-12).
+  // «Каникулы», «Замороженный абонемент» и прочее — РУЧНЫЕ статусы (секция ниже),
+  // их можно добавлять и удалять. keys — все места, куда применяется цвет.
   const COMBINED_STATUSES: { keys: string[]; label: string; tone: StatusTone }[] = [
     { keys: ["total"], label: "Всего учеников", tone: "gray" },
-    { keys: ["active"], label: "Активные / Постоянный ученик", tone: "green" },
-    { keys: ["new"], label: "Новый ученик (первый месяц)", tone: "blue" },
-    { keys: ["renewal", "debt_current"], label: "Не оплачен текущий месяц", tone: "orange" },
-    { keys: ["prev_unpaid", "debt_prev"], label: "Не оплачен прошлый месяц", tone: "red" },
-    { keys: ["debtors"], label: "Должники", tone: "red" },
-    { keys: ["waitlist"], label: "Лист ожидания", tone: "purple" },
-    { keys: ["left"], label: "Ушли в этом месяце", tone: "red" },
     { keys: ["lead"], label: "Новый лид", tone: "purple" },
     { keys: ["trial", "funnel:trial"], label: "Записан на пробный", tone: "blue" },
     { keys: ["trial_missed", "funnel:trial_missed"], label: "Не пришёл на пробный", tone: "red" },
     { keys: ["trial_rebooked", "funnel:trial_rebooked"], label: "Перезаписан на пробный", tone: "orange" },
     { keys: ["trial_lost", "funnel:trial_lost"], label: "Был на пробном, не купил", tone: "orange" },
     { keys: ["visitor_new", "funnel:visitor_new"], label: "Купили абонемент (новый посетитель)", tone: "green" },
+    { keys: ["new"], label: "Новый ученик (первый месяц)", tone: "blue" },
+    { keys: ["active"], label: "Активные / Постоянный ученик", tone: "green" },
     { keys: ["next_paid"], label: "Куплен следующий месяц", tone: "green" },
+    { keys: ["renewal", "debt_current"], label: "Не оплачен текущий месяц", tone: "orange" },
+    { keys: ["prev_unpaid", "debt_prev"], label: "Не оплачен прошлый месяц", tone: "red" },
     { keys: ["not_renewed"], label: "Не продлил абонемент", tone: "red" },
+    { keys: ["debtors"], label: "Должники", tone: "red" },
+    { keys: ["partially_paid"], label: "Частично оплачено (группа/индивид.)", tone: "orange" },
+    { keys: ["waitlist"], label: "Лист ожидания", tone: "purple" },
     { keys: ["returned"], label: "Вернувшийся ученик", tone: "purple" },
-    { keys: ["paused"], label: "Замороженный абонемент", tone: "gray" },
+    { keys: ["left"], label: "Ушли в этом месяце", tone: "red" },
   ];
 
   return (

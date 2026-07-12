@@ -1267,9 +1267,11 @@ export function registerMvpApi(app: express.Express) {
       // покупок или с открытой записью на пробный в ЛО не попадает.
       // Валидационные чтения без .catch(()=>[]) — ошибка чтения не должна
       // молча пропускать невалидные данные (fail closed).
+      // Удалённые (откаченные) абонементы историей не считаются — после полного
+      // отката ученик снова лид и может попасть в лист ожидания.
       const anySubs = await supabaseFetch<any[]>(
         "student_subscriptions",
-        `select=id&student_id=eq.${payload.studentId}&limit=1`
+        `select=id&student_id=eq.${payload.studentId}&status=neq.archived&limit=1`
       );
       if (anySubs[0]) {
         return res.status(409).json({ error: "У ученика уже есть (или был) абонемент — лист ожидания только для новых лидов." });
@@ -1280,6 +1282,15 @@ export function registerMvpApi(app: express.Express) {
       );
       if (openTrial[0]) {
         return res.status(409).json({ error: "Ученик записан на пробный урок — в лист ожидания добавить нельзя. Сначала закройте или удалите запись на пробный." });
+      }
+      // Обещал оплатить («Был на пробном, оплатит») — это этап воронки оплаты,
+      // а не кандидат в очередь: сначала снимите ручной статус.
+      const stuManual = (await supabaseFetch<any[]>(
+        "students",
+        `select=manual_status&id=eq.${payload.studentId}&limit=1`
+      ))[0];
+      if (/оплат/i.test(String(stuManual?.manual_status || ""))) {
+        return res.status(409).json({ error: "У ученика статус «Был на пробном, оплатит» — он ждёт оплаты, в лист ожидания добавлять нельзя. Сначала снимите ручной статус." });
       }
       const existing = await supabaseFetch<any[]>(
         "student_waitlist",
@@ -1708,6 +1719,21 @@ export function registerMvpApi(app: express.Express) {
       // Дата продажи (день оформления) — отдельно от starts_on (первый урок).
       const soldOn = String(payload.soldOn || today).slice(0, 10);
 
+      // Срок действия группы (ТЗ 2026-07-12): абонемент нельзя продать на период
+      // вне срока действия группы. Продлить срок можно в настройках группы.
+      if (payload.groupId) {
+        const grp = (await supabaseFetch<any[]>(
+          "groups",
+          `select=name,start_date,end_date&id=eq.${payload.groupId}&limit=1`
+        ))[0];
+        if (grp?.end_date && endsOn > grp.end_date) {
+          throw new SaleError(400, `Группа «${grp.name}» действует до ${grp.end_date} — абонемент на период после этой даты продать нельзя. Продлите срок действия группы или выберите другую.`);
+        }
+        if (grp?.start_date && startsOn < grp.start_date) {
+          throw new SaleError(400, `Группа «${grp.name}» начинает работать с ${grp.start_date} — абонемент на более ранний период продать нельзя.`);
+        }
+      }
+
       // Запрет двойной продажи (ТЗ §7): один ученик × одна группа × один
       // КАЛЕНДАРНЫЙ МЕСЯЦ = один абонемент. Окно проверки — весь месяц нового
       // абонемента (ловит и легаси-абонементы, заходящие в месяц с краёв).
@@ -1821,6 +1847,32 @@ export function registerMvpApi(app: express.Express) {
             body: JSON.stringify({ trial_outcome: "converted" }),
           });
         } catch { /* не критично для продажи */ }
+
+        // Перерасчёт при продаже (болезнь и т.п.): фиксируем запись с причиной и
+        // справкой — она видна во вкладке «Справки» карточки ученика (ТЗ).
+        if (recalc > 0) {
+          try {
+            await supabaseFetch("recalculations", "", {
+              method: "POST",
+              headers: { Prefer: "return=minimal" },
+              body: JSON.stringify({
+                organization_id: session.organizationId,
+                branch_id: branchId,
+                student_id: studentId,
+                subscription_id: insertedSub[0]?.id || null,
+                lessons_count: 0,
+                reason: payload.recalcReason || "other",
+                amount: recalc,
+                comment: `Перерасчёт при продаже абонемента «${plan.name}»`,
+                attachment_url: payload.recalcAttachmentUrl || null,
+                attachment_name: payload.recalcAttachmentName || null,
+                status: "applied",
+                created_by: authorId(session),
+                created_by_name: session.fullName || null,
+              }),
+            });
+          } catch { /* справка не критична для продажи */ }
+        }
 
         // Событие ПРОДАЖИ для воронки дашборда (source='sale'): пишем напрямую,
         // потому что logStatusEvent no-op-ится, когда ученик уже active, — а

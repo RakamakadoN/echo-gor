@@ -59,6 +59,10 @@ export interface SellSubscriptionInput {
   description?: string;
   paid: boolean;
   kind?: "group" | "individual";
+  /** Перерасчёт при продаже: причина и справка (создаётся запись во вкладке «Справки»). */
+  recalcReason?: string;
+  recalcAttachmentUrl?: string;
+  recalcAttachmentName?: string;
 }
 
 export interface StudentManagementCardProps {
@@ -1404,6 +1408,9 @@ function SellSubscriptionPanel({
   const [segPrices, setSegPrices] = useState<Record<string, string>>({});
   // Ручная правка цены одиночного месяца (D2): пусто = пропорциональный авторасчёт.
   const [priceEdit, setPriceEdit] = useState("");
+  // Перерасчёт при продаже: причина + справка (болезнь и т.п.) — попадут во вкладку «Справки».
+  const [recalcReason, setRecalcReason] = useState("illness");
+  const [recalcFile, setRecalcFile] = useState<{ name: string; dataUrl: string } | null>(null);
 
   // Тарифы фильтруются по ФОРМАТУ занятий (ТЗ 2026-07-12): «Групповой» →
   // групповые тарифы, «Индивидуальный» → индивидуальные. Смена формата
@@ -1571,6 +1578,9 @@ function SellSubscriptionPanel({
         description: `${kind === "individual" ? "Индивидуальный абонемент" : "Абонемент"}: ${plan.name}`,
         paid,
         kind,
+        recalcReason: recalcAmount > 0 ? recalcReason : undefined,
+        recalcAttachmentUrl: recalcAmount > 0 ? recalcFile?.dataUrl : undefined,
+        recalcAttachmentName: recalcAmount > 0 ? recalcFile?.name : undefined,
       });
       if (ok !== false) onClose();
       else setError("Не удалось сохранить абонемент");
@@ -1729,6 +1739,37 @@ function SellSubscriptionPanel({
               <span className="text-xs font-semibold text-slate-500">Перерасчёт (вычтется из цены)</span>
               <input type="number" min={0} step={500} value={recalc || ""} placeholder="0" onChange={(e) => setRecalc(Number(e.target.value))} className={fieldCls} />
             </label>
+            {/* Перерасчёт указан → причина обязательна, справка прикрепляется здесь же (ТЗ). */}
+            {recalcAmount > 0 && (
+              <>
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-semibold text-slate-500">Причина перерасчёта</span>
+                  <select value={recalcReason} onChange={(e) => setRecalcReason(e.target.value)} className={fieldCls}>
+                    <option value="illness">Болезнь</option>
+                    <option value="certificate">Справка</option>
+                    <option value="left">Уехал</option>
+                    <option value="family">Семейные обстоятельства</option>
+                    <option value="other">Другое</option>
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-semibold text-slate-500">Справка (фото / PDF)</span>
+                  <input
+                    type="file"
+                    accept="image/*,.pdf"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (!f) { setRecalcFile(null); return; }
+                      const reader = new FileReader();
+                      reader.onload = () => setRecalcFile({ name: f.name, dataUrl: String(reader.result || "") });
+                      reader.readAsDataURL(f);
+                    }}
+                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600"
+                  />
+                  {recalcFile && <span className="text-[11px] font-bold text-emerald-600">📎 {recalcFile.name}</span>}
+                </label>
+              </>
+            )}
             <label className="flex flex-col gap-1">
               <span className="text-xs font-semibold text-slate-500">Первый урок (дата начала)</span>
               <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className={fieldCls} />
