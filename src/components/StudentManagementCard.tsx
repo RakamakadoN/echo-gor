@@ -452,7 +452,11 @@ export default function StudentManagementCard({
     ? Math.round((presentCount / attendanceRecords.length) * 100)
     : 0;
 
-  const groupLabel = group?.name || group?.level || "Без группы";
+  // Ученик может заниматься в нескольких группах — показываем все (основная первой).
+  const groupLabel = (student.groupIds || [])
+    .map((id) => allGroups.find((g) => g.id === id)?.name)
+    .filter(Boolean)
+    .join(", ") || group?.name || group?.level || "Без группы";
   const branchLabel = branch?.name || branch?.city || "Основная база";
   const teacherLabel = teacher?.name || "Не назначен";
 
@@ -1001,6 +1005,7 @@ export default function StudentManagementCard({
             group={group}
             branch={branch}
             plans={plans}
+            allGroups={allGroups}
             onClose={() => setPanel(null)}
             onSubmit={onSellSubscription}
             onSubmitBatch={onSellSubscriptionBatch}
@@ -1343,6 +1348,7 @@ function SellSubscriptionPanel({
   group,
   branch,
   plans,
+  allGroups = [],
   onSubmit,
   onSubmitBatch,
   onClose,
@@ -1351,18 +1357,24 @@ function SellSubscriptionPanel({
   group?: Group;
   branch?: Branch;
   plans: SubscriptionPlan[];
+  /** Все группы: абонемент можно продать в ЛЮБУЮ группу (мульти-группы, ТЗ). */
+  allGroups?: Group[];
   onSubmit: (payload: SellSubscriptionInput) => Promise<boolean> | boolean;
   /** Пакетная продажа периода: N месячных абонементов одной операцией. */
   onSubmitBatch?: (items: SellSubscriptionInput[]) => Promise<boolean> | boolean;
   onClose: () => void;
 }) {
   const activePlans = plans.filter((p) => p.status !== "archived");
-  // Дни тренировок из расписания выбранной группы (["Пн","Ср","Пт"] → [1,3,5]); если не заданы — Пн/Ср/Пт.
-  const groupDayNums = (group?.days || [])
+  // Группа абонемента: по умолчанию основная группа ученика, но можно выбрать
+  // другую — ученик может заниматься в двух группах (ТЗ 2026-07-12).
+  const [saleGroupId, setSaleGroupId] = useState(student.groupIds?.[0] || group?.id || "");
+  const saleGroup = allGroups.find((g) => g.id === saleGroupId) || group;
+  // Дни тренировок из расписания ВЫБРАННОЙ группы (["Пн","Ср","Пт"] → [1,3,5]); если не заданы — Пн/Ср/Пт.
+  const groupDayNums = (saleGroup?.days || [])
     .map((d) => SHORT_WD_TO_NUM[d])
     .filter((n) => n !== undefined);
   const scheduleDayNums = groupDayNums.length ? groupDayNums : [1, 3, 5];
-  const groupTime = group?.time || "";
+  const groupTime = saleGroup?.time || "";
   const [planId, setPlanId] = useState(activePlans[0]?.id || "");
   const [discountIdx, setDiscountIdx] = useState(0);
   const [customDiscount, setCustomDiscount] = useState(0);
@@ -1376,6 +1388,11 @@ function SellSubscriptionPanel({
     () => Object.fromEntries(scheduleDayNums.map((d) => [d, true]))
   );
   const [disabledDates, setDisabledDates] = useState<Record<string, boolean>>({});
+  // Смена группы абонемента → дни недели пересобираются из расписания новой группы.
+  useEffect(() => {
+    setEnabledDays(Object.fromEntries(scheduleDayNums.map((d) => [d, true])));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saleGroupId]);
   const [busy, setBusy] = useState<null | "save" | "sell">(null);
   const [error, setError] = useState<string | null>(null);
   const [kind, setKind] = useState<"group" | "individual">("group");
@@ -1531,7 +1548,7 @@ function SellSubscriptionPanel({
       const ok = await onSubmit({
         studentId: student.id,
         branchId: student.branchId,
-        groupId: kind === "individual" ? undefined : student.groupIds?.[0],
+        groupId: kind === "individual" ? undefined : saleGroupId || undefined,
         planId: plan.id,
         startsOn,
         endsOn,
@@ -1572,7 +1589,7 @@ function SellSubscriptionPanel({
       const items: SellSubscriptionInput[] = segments.map((seg) => ({
         studentId: student.id,
         branchId: student.branchId,
-        groupId: kind === "individual" ? undefined : student.groupIds?.[0],
+        groupId: kind === "individual" ? undefined : saleGroupId || undefined,
         planId: plan.id,
         startsOn: seg.dates[0] || seg.from,
         endsOn: seg.to,
@@ -1659,6 +1676,20 @@ function SellSubscriptionPanel({
                 <option value="individual">Индивидуальный</option>
               </select>
             </label>
+            {/* Группа абонемента: ученик может заниматься в двух группах (ТЗ) —
+                абонемент продаётся в конкретную группу, расписание берётся из неё. */}
+            {kind === "group" && allGroups.length > 0 && (
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-slate-500">Группа абонемента</span>
+                <select value={saleGroupId} onChange={(e) => { setSaleGroupId(e.target.value); setDisabledDates({}); }} className={fieldCls}>
+                  {allGroups.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name}{g.id === (student.groupIds?.[0] || "") ? " (основная)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label className="flex flex-col gap-1">
               <span className="text-xs font-semibold text-slate-500">Тариф</span>
               <select value={planId} onChange={(e) => setPlanId(e.target.value)} className={fieldCls}>
@@ -1714,7 +1745,7 @@ function SellSubscriptionPanel({
           {/* Расписание группы */}
           <div className="mt-4">
             <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">
-              Расписание занятий{group?.name ? ` · ${group.name}` : ""}
+              Расписание занятий{saleGroup?.name ? ` · ${saleGroup.name}` : ""}
             </p>
             <div className="flex flex-wrap gap-2">
               {scheduleDayNums.map((d) => (
@@ -1765,7 +1796,7 @@ function SellSubscriptionPanel({
             <div className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
               <SellRow k="Ученик" v={student.name} />
               <SellRow k="Филиал" v={branch?.name || "—"} />
-              <SellRow k="Группа" v={group?.name || "—"} />
+              <SellRow k="Группа" v={kind === "individual" ? "Индивидуально" : saleGroup?.name || "—"} />
               <SellRow k="Тип абонемента" v={plan?.name || "—"} />
               <SellRow k="Количество занятий" v={`${lessonsTotal} занятий`} />
               <SellRow k="Базовая стоимость" v={money(basePrice)} />

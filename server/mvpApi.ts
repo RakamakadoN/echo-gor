@@ -392,7 +392,18 @@ function mapDbStudent(row: any, attendanceByStudent: Map<string, Record<string, 
     age: row.birthday ? Math.max(4, new Date().getFullYear() - new Date(row.birthday).getFullYear()) : 12,
     photoUrl: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&fit=crop&q=80",
     branchId: row.branch_id,
-    groupIds: row.group_id ? [row.group_id] : [],
+    // Ученик может заниматься в НЕСКОЛЬКИХ группах (ТЗ 2026-07-12): основная
+    // группа + группы действующих абонементов. Первая — основная (studentGroupId).
+    groupIds: (() => {
+      const today = new Date().toISOString().slice(0, 10);
+      const ids: string[] = row.group_id ? [row.group_id] : [];
+      for (const sub of subsByStudent.get(row.id) || []) {
+        if (sub.status === "active" && sub.group_id && (!sub.ends_on || sub.ends_on >= today) && !ids.includes(sub.group_id)) {
+          ids.push(sub.group_id);
+        }
+      }
+      return ids;
+    })(),
     teacherId: row.teacher_id || "",
     createdAt: row.created_at || undefined,
     status: row.status || undefined,
@@ -3384,11 +3395,17 @@ export function registerMvpApi(app: express.Express) {
       }
       if (!lessonId) return res.status(500).json({ error: "Не удалось определить занятие" });
 
-      // 2) Список учеников группы (или явный список из payload).
+      // 2) Список учеников группы (или явный список из payload). Ученик занимается
+      // в группе, если это его основная группа ИЛИ у него действующий абонемент
+      // в этой группе (мульти-группы, ТЗ 2026-07-12).
       let studentIds: string[] = Array.isArray(payload.studentIds) ? payload.studentIds : [];
       if (studentIds.length === 0) {
-        const studs = await supabaseFetch<any[]>("students", `select=id&group_id=eq.${payload.groupId}`);
-        studentIds = studs.map((s) => s.id);
+        const today = new Date().toISOString().slice(0, 10);
+        const [studs, subStuds] = await Promise.all([
+          supabaseFetch<any[]>("students", `select=id&group_id=eq.${payload.groupId}`),
+          supabaseFetch<any[]>("student_subscriptions", `select=student_id&group_id=eq.${payload.groupId}&status=eq.active&or=(ends_on.is.null,ends_on.gte.${today})`).catch(() => [] as any[]),
+        ]);
+        studentIds = [...new Set([...studs.map((s) => s.id), ...subStuds.map((s) => s.student_id)])];
       }
       if (studentIds.length === 0) return res.json({ marked: 0, lessonId });
 

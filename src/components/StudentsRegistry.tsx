@@ -382,6 +382,11 @@ export default function StudentsRegistry({
   };
   const sourceName = (id?: string | null) => leadSources.find((s) => s.id === id)?.name || "—";
   const studentGroupId = (s: Student) => s.groupIds?.[0] || (s as any).groupId || "";
+  // Все группы ученика (основная + группы действующих абонементов) — через запятую.
+  const studentGroupNames = (s: Student) => {
+    const ids = s.groupIds?.length ? s.groupIds : [(s as any).groupId].filter(Boolean);
+    return ids.map((id: string) => groupName(id)).filter((n: string) => n !== "—").join(", ") || "—";
+  };
   const studentPhone = (s: Student) => s.phone || s.parentPhone || (s as any).phone || "";
 
   /* ---------- фильтрация ---------- */
@@ -1071,7 +1076,7 @@ export default function StudentsRegistry({
                         <span className="truncate text-[14px] font-bold" style={{ color: CLR.text }}>{s.name}</span>
                         {waitlistStudentIds.has(s.id) && <Clock className="h-3.5 w-3.5 shrink-0 text-violet-500" />}
                       </div>
-                      <div className="mt-0.5 truncate text-[12px]" style={{ color: CLR.muted }}>{branchName(s.branchId)} · {groupName(studentGroupId(s))}</div>
+                      <div className="mt-0.5 truncate text-[12px]" style={{ color: CLR.muted }}>{branchName(s.branchId)} · {studentGroupNames(s)}</div>
                     </button>
                     <span className={`inline-flex shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${waitlistStudentIds.has(s.id) ? PILL_TONE.purple : PILL_TONE[pillToneOf(s, st)] || PILL_TONE.gray}`}>{waitlistStudentIds.has(s.id) ? "В листе ожидания" : st.statusLabel}</span>
                   </div>
@@ -1143,7 +1148,7 @@ export default function StudentsRegistry({
                         {colOn("gender") && <td className="px-3.5 py-3 text-[13px]" style={{ color: CLR.second }}>{genderLabel(s.gender)}</td>}
                         {colOn("age") && <td className="px-3.5 py-3 text-[13px]" style={{ color: CLR.second }}>{formatAge(s)}</td>}
                         {colOn("branch") && <td className="px-3.5 py-3 text-[13px]" style={{ color: CLR.second }}>{branchName(s.branchId)}</td>}
-                        {colOn("group") && <td className="px-3.5 py-3 text-[13px]" style={{ color: CLR.second }}>{groupName(studentGroupId(s))}</td>}
+                        {colOn("group") && <td className="px-3.5 py-3 text-[13px]" style={{ color: CLR.second }}>{studentGroupNames(s)}</td>}
                         {colOn("skill") && <td className="px-3.5 py-3 text-[13px]" style={{ color: CLR.second }}>{s.skillLevel || "—"}</td>}
                         {colOn("source") && <td className="px-3.5 py-3 text-[13px]" style={{ color: CLR.second }}>{sourceName(s.sourceId)}</td>}
                         {colOn("duration") && <td className="px-3.5 py-3 text-[13px]" style={{ color: CLR.second }}>{st.durationLabel}</td>}
