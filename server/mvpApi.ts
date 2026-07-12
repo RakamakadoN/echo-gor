@@ -198,7 +198,16 @@ async function supabaseFetch<T>(table: string, query = "select=*", init: Request
   return JSON.parse(text) as T;
 }
 
-const toDate = (value?: string | null) => value ? value.slice(0, 10) : new Date().toISOString().slice(0, 10);
+// Дата в часовом поясе студии (Казахстан). Чистые даты (YYYY-MM-DD) не трогаем;
+// таймстампы (paid_at и т.п.) приходят из PostgREST в UTC — без сдвига ночная
+// оплата (00:00–05:00 по Астане) уезжала бы на «вчера».
+const KZ_DATE = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Almaty" });
+const toDate = (value?: string | null) => {
+  if (!value) return KZ_DATE.format(new Date());
+  if (!value.includes("T")) return value.slice(0, 10); // уже дата без времени
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? value.slice(0, 10) : KZ_DATE.format(d);
+};
 
 // Журналирование смены статуса ученика (forward-collector для воронки лидов).
 // Тихо игнорирует ошибки: сбор аналитики не должен ломать основной CRUD.

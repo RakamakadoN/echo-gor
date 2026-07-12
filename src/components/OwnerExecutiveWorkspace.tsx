@@ -790,7 +790,9 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
   // Клик по «Выручка сегодня» открывает СПИСОК ОПЛАТ за сегодня (ТЗ заказчика).
   const PAY_METHOD_LABEL: Record<string, string> = { card: "Карта", cash: "Наличные", transfer: "Перевод", kaspi: "Kaspi" };
   const openPaymentsToday = () => {
-    const todayIso = new Date().toISOString().slice(0, 10);
+    // Локальная дата: toISOString в UTC+5 отдаёт «вчера» до 5 утра.
+    const nowD = new Date();
+    const todayIso = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, "0")}-${String(nowD.getDate()).padStart(2, "0")}`;
     const todays = (rawPayments || []).filter((p: Payment) => p.status === "paid" && p.date === todayIso);
     setRiskTable({
       title: "Оплаты за сегодня",

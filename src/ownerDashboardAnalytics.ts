@@ -5,7 +5,7 @@
 // UI показывает «нет данных / накапливается», а не выдуманную цифру.
 
 import type { Branch, Group, Student, Payment, Teacher } from "./types";
-import { getEnrollmentMonths } from "./studentSegments";
+import { getEnrollmentMonths, needsRenewal, prevMonthUnpaid } from "./studentSegments";
 
 export type PeriodKey = "today" | "yesterday" | "week" | "month" | "quarter" | "year" | "custom";
 export type LevelKey = "network" | "branch" | "group" | "teacher";
@@ -51,7 +51,9 @@ const plural = (n: number, one: string, few: string, many: string) => {
   if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return few;
   return many;
 };
-const iso = (d: Date) => d.toISOString().slice(0, 10);
+// ЛОКАЛЬНАЯ дата (не toISOString: в UTC+5 полночь по местному — ещё «вчера» по UTC,
+// и «сегодня» на дашборде съезжало на день назад).
+const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const monthKey = (s: string) => (s || "").slice(0, 7);
 const addDays = (d: Date, n: number) => new Date(d.getTime() + n * DAY);
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -632,17 +634,15 @@ export function computeOwnerDashboard(
   // перегруженные / низкозаполненные группы, филиалы с падением удержания.
   const paymentsTodayCount = payments.filter((p) => isPaid(p) && p.date === todayStr).length;
 
-  // «Зачисленные» ученики, от которых ждём оплату (исключаем лидов/пробных/паузу/ушедших).
-  const isEnrolled = (s: Student) => s.status !== "lead" && s.status !== "trial" && s.status !== "paused" && s.status !== "left" && s.status !== "archived";
   const curMonthKey = `${curY}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const prevMonthDate = new Date(curY, now.getMonth() - 1, 1);
   const prevMonthKey = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, "0")}`;
-  const paidInMonth = (studentId: string, mk: string) =>
-    payments.some((p) => isPaid(p) && p.studentId === studentId && monthKey(p.date) === mk);
-  // Считаем только при наличии платёжной истории, иначе метрика шумит (нет данных).
-  const hasPaymentHistory = payments.some(isPaid);
-  const unpaidCurrent = hasPaymentHistory ? students.filter((s) => isEnrolled(s) && !paidInMonth(s.id, curMonthKey)) : [];
-  const unpaidPrev = hasPaymentHistory ? students.filter((s) => isEnrolled(s) && !paidInMonth(s.id, prevMonthKey)) : [];
+  // Неоплаты считаем ТЕМИ ЖЕ правилами, что сегменты вкладки «Ученики»
+  // (needsRenewal / prevMonthUnpaid): покрытие месяца абонементом, новички
+  // текущего месяца в «не оплатил прошлый» не попадают. Раньше метрика
+  // считалась по платежам и расходилась со списком учеников.
+  const unpaidCurrent = students.filter((s) => needsRenewal(s, now));
+  const unpaidPrev = students.filter((s) => prevMonthUnpaid(s, now));
 
   // Перегруженные (>90%) и низкозаполненные (<50%) группы + их ученики.
   const studentsOfGroups = (gids: Set<string>) =>
