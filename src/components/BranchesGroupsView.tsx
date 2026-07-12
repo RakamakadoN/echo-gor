@@ -48,6 +48,39 @@ function aiRating(fill: number, retention: number, freeSeats: number, revenue: n
   return { grade, label, tone, ring, note };
 }
 
+// Заполненность и оценка считаются только когда к филиалу привязаны группы с вместимостью.
+const NO_DATA_RATING: AiRating = {
+  grade: "—", label: "Нет данных", tone: "text-slate-500", ring: "border-white/15 text-slate-500",
+  note: "Привяжите к филиалу группы и укажите их вместимость в настройках группы — тогда система рассчитает заполненность и даст оценку.",
+};
+
+// Данные для детальной AI-оценки (открывается кликом по оценке).
+type AiDetailData = {
+  title: string;
+  rating: AiRating;
+  hasData: boolean;
+  fill: number; retention: number; freeSeats: number; capacity: number; active: number;
+  revenue: number; potential: number;
+  groupsCount?: number; teachersCount?: number; hallsCount?: number;
+};
+
+function aiRecommendations(d: AiDetailData): string[] {
+  const recs: string[] = [];
+  if (!d.hasData) {
+    recs.push("Добавьте залы в филиал, создайте группы и укажите вместимость каждой группы — без этого заполненность не считается.");
+    return recs;
+  }
+  if (d.fill < 50) recs.push(`Заполненность низкая (${round(d.fill)}%) — усильте набор: пробные уроки, реклама, работа с листом ожидания.`);
+  else if (d.fill < 85) recs.push(`Есть ${d.freeSeats} свободных мест — можно добрать учеников без открытия новых групп.`);
+  else recs.push("Заполненность близка к максимуму — рассмотрите открытие новой группы или расширение залов.");
+  if (d.retention < 60) recs.push(`Удержание ${round(d.retention)}% — критично низкое: проверьте учеников без активных абонементов и должников.`);
+  else if (d.retention < 80) recs.push(`Удержание ${round(d.retention)}% — есть куда расти: продлевайте абонементы заранее, работайте с пропусками.`);
+  if (d.revenue <= 0) recs.push("Выручка за текущий месяц ещё не набрана — проверьте продажи абонементов.");
+  else if (d.potential > 0 && d.revenue < d.potential * 0.6) recs.push(`Выручка ${money(d.revenue)} при потенциале ${money(d.potential)} — резерв роста ${money(d.potential - d.revenue)}.`);
+  if (recs.length === 0) recs.push("Показатели в норме — продолжайте в том же духе.");
+  return recs;
+}
+
 const round = (n: number) => Math.round(n);
 
 /* ─────────────────────────── small UI ─────────────────────────── */
@@ -75,13 +108,22 @@ function Delta({ value }: { value: number }) {
   );
 }
 
-function AiBadge({ rating }: { rating: AiRating }) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className={`flex h-8 w-8 items-center justify-center rounded-full border text-sm font-black ${rating.ring}`}>{rating.grade}</span>
+function AiBadge({ rating, onClick }: { rating: AiRating; onClick?: () => void }) {
+  const inner = (
+    <>
+      <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-sm font-black ${rating.ring}`}>{rating.grade}</span>
       <span className={`text-xs font-bold ${rating.tone}`}>{rating.label}</span>
-    </div>
+    </>
   );
+  if (onClick) {
+    return (
+      <button onClick={onClick} title="Открыть детальную AI-оценку"
+        className="flex items-center gap-2 rounded-xl px-1 py-0.5 text-left transition hover:bg-white/5">
+        {inner}
+      </button>
+    );
+  }
+  return <div className="flex items-center gap-2">{inner}</div>;
 }
 
 function DashCard({ icon: Icon, label, value, sub, delta, accent }: {
@@ -182,18 +224,21 @@ export function BranchesGroupsView(props: Props) {
       const active = props.students.filter((s) => s.branchId === b.id && isActiveStudent(s)).length;
       const freeSeats = Math.max(0, capacity - active);
       const teachersCount = new Set(grps.map((g) => g.teacherId).filter(Boolean)).size;
-      const fill = capacity > 0 ? (active / capacity) * 100 : 0;
+      // Заполненность актуальна только когда к филиалу привязаны группы с указанной вместимостью.
+      const hasData = grps.length > 0 && capacity > 0;
+      const fill = hasData ? (active / capacity) * 100 : 0;
       const retention = score.retention ?? 0;
       const revenue = score.revenue ?? 0;
       const potential = capacity * avgSubPrice;
-      const rating = aiRating(fill, retention, freeSeats, revenue);
+      const rating = hasData ? aiRating(fill, retention, freeSeats, revenue) : NO_DATA_RATING;
+      const hallsCount = (props.halls || []).filter((h: any) => h.branchId === b.id && String(h.status || "active") === "active").length;
       return {
-        raw: b, capacity, active, freeSeats, teachersCount, fill, retention, revenue, potential, rating,
+        raw: b, capacity, active, freeSeats, teachersCount, fill, retention, revenue, potential, rating, hasData, hallsCount,
         groupsCount: grps.length,
         retentionDelta: round((retention - networkRetention) * 10) / 10,
       };
     });
-  }, [props.rawBranches, props.branches, props.groups, props.students, avgSubPrice]);
+  }, [props.rawBranches, props.branches, props.groups, props.students, props.halls, avgSubPrice]);
 
   // ── Производные метрики на группу ──────────────────────────────────────────
   const groupData = useMemo(() => {
@@ -259,9 +304,12 @@ export function BranchesGroupsView(props: Props) {
 function BranchesTab({ data, avgSubPrice, canManage, onCreate, onUpdate, onDelete, onOpenStudents, students, groups, teachers, halls }: any) {
   const [modal, setModal] = useState<{ mode: "add" | "edit"; id?: string } | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [aiDetail, setAiDetail] = useState<AiDetailData | null>(null);
 
   const [query, setQuery] = useState("");
   const METRIC_COLS = [
+    { key: "groups", label: "Группы" },
+    { key: "halls", label: "Залы" },
     { key: "free", label: "Своб. места" },
     { key: "students", label: "Ученики" },
     { key: "teachers", label: "Педагоги" },
@@ -293,8 +341,20 @@ function BranchesTab({ data, avgSubPrice, canManage, onCreate, onUpdate, onDelet
   const totPotential = data.reduce((a: number, d: any) => a + d.potential, 0);
   const netFill = totCapacity ? (totActive / totCapacity) * 100 : 0;
   const netRetention = data.length ? data.reduce((a: number, d: any) => a + d.retention, 0) / data.length : 0;
-  const netRating = aiRating(netFill, netRetention, totFree, totRevenue);
+  const netHasData = totCapacity > 0;
+  const netRating = netHasData ? aiRating(netFill, netRetention, totFree, totRevenue) : NO_DATA_RATING;
   const occupiedPct = totCapacity ? round((totActive / totCapacity) * 100) : 0;
+  const netGroupsCount = data.reduce((a: number, d: any) => a + d.groupsCount, 0);
+  const netDetail: AiDetailData = {
+    title: "Вся сеть", rating: netRating, hasData: netHasData,
+    fill: netFill, retention: netRetention, freeSeats: totFree, capacity: totCapacity, active: totActive,
+    revenue: totRevenue, potential: totPotential, groupsCount: netGroupsCount, teachersCount: totTeachers,
+  };
+  const branchDetailData = (d: any): AiDetailData => ({
+    title: d.raw.name, rating: d.rating, hasData: d.hasData,
+    fill: d.fill, retention: d.retention, freeSeats: d.freeSeats, capacity: d.capacity, active: d.active,
+    revenue: d.revenue, potential: d.potential, groupsCount: d.groupsCount, teachersCount: d.teachersCount, hallsCount: d.hallsCount,
+  });
 
   return (
     <div>
@@ -303,13 +363,13 @@ function BranchesTab({ data, avgSubPrice, canManage, onCreate, onUpdate, onDelet
           <DashCard icon={DoorOpen} label="Свободные места" value={String(totFree)} sub={`из ${totCapacity}`} accent="bg-emerald-500/15 text-emerald-400" />
           <DashCard icon={Users} label="Действующие ученики" value={String(totActive)} sub={`${occupiedPct}% занятости`} accent="bg-sky-500/15 text-sky-400" />
           <DashCard icon={UserCog} label="Педагогов" value={String(totTeachers)} sub="человек" accent="bg-violet-500/15 text-violet-400" />
-          <DashCard icon={Percent} label="Заполненность" value={`${round(netFill)}%`} accent="bg-[#C5A059]/15 text-[#C5A059]" />
+          <DashCard icon={Percent} label="Заполненность" value={netHasData ? `${round(netFill)}%` : "—"} sub={netHasData ? undefined : "нет групп с вместимостью"} accent="bg-[#C5A059]/15 text-[#C5A059]" />
           <DashCard icon={TrendingUp} label="Удержание (тек. мес.)" value={`${round(netRetention)}%`} accent="bg-emerald-500/15 text-emerald-400" />
           <DashCard icon={Coins} label="Выручка (тек. мес.)" value={money(totRevenue)} accent="bg-[#C5A059]/15 text-[#C5A059]" />
           <DashCard icon={Sparkles} label="Потенциальная выручка" value={money(totPotential)} sub="при 100% заполненности" accent="bg-amber-500/15 text-amber-400" />
           <div className="rounded-2xl border border-white/10 bg-[#121212] p-4">
             <p className={kic}>Оценка сети (AI)</p>
-            <div className="mt-3"><AiBadge rating={netRating} /></div>
+            <div className="mt-3"><AiBadge rating={netRating} onClick={() => setAiDetail(netDetail)} /></div>
             <p className="mt-2 text-[11px] leading-snug text-slate-500">{netRating.note}</p>
           </div>
         </div>
@@ -382,15 +442,16 @@ function BranchesTab({ data, avgSubPrice, canManage, onCreate, onUpdate, onDelet
                 <p className="truncate font-bold text-white">{d.raw.name}</p>
                 <p className="truncate text-xs text-slate-500">{d.raw.city} · {d.raw.managerName}</p>
               </button>
-              <AiBadge rating={d.rating} />
+              <AiBadge rating={d.rating} onClick={() => setAiDetail(branchDetailData(d))} />
             </div>
             <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-sm text-slate-300">
-              <div><p className="text-[10px] uppercase tracking-wider text-slate-500">Ученики</p><p className="font-bold text-white">{d.active} <span className="text-xs font-normal text-slate-500">· своб. {d.freeSeats} из {d.capacity}</span></p></div>
+              <div><p className="text-[10px] uppercase tracking-wider text-slate-500">Группы</p><p className="font-bold text-white">{d.groupsCount}</p></div>
+              <div><p className="text-[10px] uppercase tracking-wider text-slate-500">Залы</p><p className="font-bold text-white">{d.hallsCount}</p></div>
+              <div><p className="text-[10px] uppercase tracking-wider text-slate-500">Ученики</p><p className="font-bold text-white">{d.active} {d.hasData && <span className="text-xs font-normal text-slate-500">· своб. {d.freeSeats} из {d.capacity}</span>}</p></div>
               <div><p className="text-[10px] uppercase tracking-wider text-slate-500">Удержание</p><p><span className="font-bold text-white">{round(d.retention)}%</span> <Delta value={d.retentionDelta} /></p></div>
               <div><p className="text-[10px] uppercase tracking-wider text-slate-500">Выручка</p><p className="font-bold text-white">{money(d.revenue)}</p></div>
-              <div><p className="text-[10px] uppercase tracking-wider text-slate-500">Потенциал</p><p className="text-slate-400">{money(d.potential)}</p></div>
             </div>
-            <div className="mt-2.5"><FillBar pct={d.fill} /></div>
+            <div className="mt-2.5">{d.hasData ? <FillBar pct={d.fill} /> : <p className="text-[11px] text-slate-500">Заполненность: нет данных — привяжите группы с вместимостью</p>}</div>
             <div className="mt-2.5 flex items-center justify-end gap-1 border-t border-white/5 pt-2">
               <IconBtn title="Просмотр" onClick={() => setDetailId(d.raw.id)}><Eye className="h-4 w-4" /></IconBtn>
               {canManage && <IconBtn title="Редактировать" onClick={() => setModal({ mode: "edit", id: d.raw.id })}><Pencil className="h-4 w-4" /></IconBtn>}
@@ -406,6 +467,8 @@ function BranchesTab({ data, avgSubPrice, canManage, onCreate, onUpdate, onDelet
             <tr>
               <th className="p-3">№</th>
               <th className="p-3">Филиал</th>
+              {cols.groups && <th className="p-3">Группы</th>}
+              {cols.halls && <th className="p-3">Залы</th>}
               {cols.free && <th className="p-3">Своб. места</th>}
               {cols.students && <th className="p-3">Ученики</th>}
               {cols.teachers && <th className="p-3">Педагоги</th>}
@@ -425,14 +488,16 @@ function BranchesTab({ data, avgSubPrice, canManage, onCreate, onUpdate, onDelet
                   <p className="font-bold text-white">{d.raw.name}</p>
                   <p className="text-xs text-slate-500">{d.raw.city} · {d.raw.managerName}</p>
                 </td>
-                {cols.free && <td className="p-3"><span className="font-bold text-white">{d.freeSeats}</span> <span className="text-xs text-slate-500">из {d.capacity}</span></td>}
+                {cols.groups && <td className="p-3 font-bold text-white">{d.groupsCount}</td>}
+                {cols.halls && <td className="p-3 font-bold text-white">{d.hallsCount}</td>}
+                {cols.free && <td className="p-3">{d.hasData ? <><span className="font-bold text-white">{d.freeSeats}</span> <span className="text-xs text-slate-500">из {d.capacity}</span></> : <span className="text-slate-500">—</span>}</td>}
                 {cols.students && <td className="p-3 font-bold text-white">{d.active}</td>}
                 {cols.teachers && <td className="p-3">{d.teachersCount}</td>}
-                {cols.fill && <td className="p-3"><FillBar pct={d.fill} /></td>}
+                {cols.fill && <td className="p-3">{d.hasData ? <FillBar pct={d.fill} /> : <span className="text-xs text-slate-500" title="Привяжите к филиалу группы и укажите их вместимость">Нет данных</span>}</td>}
                 {cols.retention && <td className="p-3"><span className="font-bold text-white">{round(d.retention)}%</span> <Delta value={d.retentionDelta} /></td>}
                 {cols.revenue && <td className="p-3 font-bold text-white">{money(d.revenue)}</td>}
                 {cols.potential && <td className="p-3 text-slate-400">{money(d.potential)}</td>}
-                {cols.rating && <td className="p-3"><AiBadge rating={d.rating} /></td>}
+                {cols.rating && <td className="p-3"><AiBadge rating={d.rating} onClick={() => setAiDetail(branchDetailData(d))} /></td>}
                 <td className="p-3">
                   <div className="flex items-center justify-end gap-1">
                     <IconBtn title="Просмотр" onClick={() => setDetailId(d.raw.id)}><Eye className="h-4 w-4" /></IconBtn>
@@ -466,9 +531,82 @@ function BranchesTab({ data, avgSubPrice, canManage, onCreate, onUpdate, onDelet
         if (!d) return null;
         return <BranchDetail d={d} students={students} groups={groups} teachers={teachers} halls={halls}
           onClose={() => setDetailId(null)}
-          onOpenStudents={onOpenStudents} />;
+          onOpenStudents={onOpenStudents}
+          onOpenAiDetail={() => setAiDetail(branchDetailData(d))} />;
       })()}
+
+      {aiDetail && <AiDetailModal data={aiDetail} onClose={() => setAiDetail(null)} />}
     </div>
+  );
+}
+
+/* ─────────────── Детальная AI-оценка (клик по оценке) ─────────────── */
+
+function AiDetailModal({ data, onClose }: { data: AiDetailData; onClose: () => void }) {
+  const score = data.hasData ? data.fill * 0.5 + data.retention * 0.5 : null;
+  const scaleRows = [
+    { g: "A", range: "85–100", label: "Отлично" },
+    { g: "B", range: "70–84", label: "Стабильно" },
+    { g: "C", range: "50–69", label: "Требует внимания" },
+    { g: "D", range: "0–49", label: "Риск" },
+  ];
+  return (
+    <Modal title={`AI-оценка · ${data.title}`} subtitle="Из чего сложилась оценка и что с этим делать" onClose={onClose} wide>
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-[#121212] p-4">
+        <AiBadge rating={data.rating} />
+        <p className="text-sm text-slate-300">
+          {score !== null
+            ? <>Итоговый балл: <span className="font-black text-white">{round(score)}</span> из 100</>
+            : <span className="text-slate-500">Балл не рассчитан — недостаточно данных</span>}
+        </p>
+      </div>
+      <p className="mt-3 text-xs text-slate-500">Формула: балл = заполненность × 50% + удержание × 50%. Заполненность считается по вместимости групп, привязанных к филиалу.</p>
+
+      {data.hasData && (
+        <div className="mt-4 space-y-3 rounded-2xl border border-white/10 bg-[#121212] p-4">
+          <div>
+            <div className="flex items-center justify-between text-xs"><span className="font-bold text-slate-300">Заполненность</span><span className="text-slate-500">{round(data.fill)}% → вклад {round(data.fill * 0.5)} баллов</span></div>
+            <div className="mt-1.5"><FillBar pct={data.fill} /></div>
+          </div>
+          <div>
+            <div className="flex items-center justify-between text-xs"><span className="font-bold text-slate-300">Удержание</span><span className="text-slate-500">{round(data.retention)}% → вклад {round(data.retention * 0.5)} баллов</span></div>
+            <div className="mt-1.5"><FillBar pct={data.retention} /></div>
+          </div>
+        </div>
+      )}
+
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {data.groupsCount !== undefined && <MiniStat label="Группы" value={String(data.groupsCount)} />}
+        {data.hallsCount !== undefined && <MiniStat label="Залы" value={String(data.hallsCount)} />}
+        {data.teachersCount !== undefined && <MiniStat label="Педагоги" value={String(data.teachersCount)} />}
+        <MiniStat label="Ученики" value={String(data.active)} />
+        <MiniStat label="Вместимость" value={data.hasData ? String(data.capacity) : "—"} />
+        <MiniStat label="Своб. места" value={data.hasData ? String(data.freeSeats) : "—"} />
+        <MiniStat label="Выручка" value={money(data.revenue)} />
+        <MiniStat label="Потенциал" value={money(data.potential)} />
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-[#C5A059]/20 bg-[#C5A059]/5 p-4">
+        <p className={`${kic} flex items-center gap-1.5`}><Sparkles className="h-3.5 w-3.5" /> Рекомендации</p>
+        <ul className="mt-2 space-y-1.5">
+          {aiRecommendations(data).map((r, i) => (
+            <li key={i} className="flex gap-2 text-sm text-slate-300"><span className="text-[#C5A059]">•</span><span>{r}</span></li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="mt-4">
+        <p className={kic}>Шкала оценок</p>
+        <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {scaleRows.map((s) => (
+            <div key={s.g} className={`rounded-xl border px-3 py-2 text-xs ${data.rating.grade === s.g ? "border-[#C5A059]/50 bg-[#C5A059]/10" : "border-white/10 bg-[#121212]"}`}>
+              <span className="font-black text-white">{s.g}</span> <span className="text-slate-500">({s.range})</span>
+              <p className="mt-0.5 text-slate-400">{s.label}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -515,7 +653,7 @@ function BranchModal({ mode, branch, onClose, onSubmit }: {
   );
 }
 
-function BranchDetail({ d, students, groups, teachers, halls, onClose, onOpenStudents }: any) {
+function BranchDetail({ d, students, groups, teachers, halls, onClose, onOpenStudents, onOpenAiDetail }: any) {
   const branchGroups = groups.filter((g: Group) => g.branchId === d.raw.id);
   const branchHalls = halls.filter((h: any) => h.branchId === d.raw.id);
   const branchStudents = students.filter((s: Student) => s.branchId === d.raw.id);
@@ -525,16 +663,28 @@ function BranchDetail({ d, students, groups, teachers, halls, onClose, onOpenStu
     <Modal title={d.raw.name} subtitle={`${d.raw.city} · ${d.raw.managerName} · ${d.raw.phone || "—"}`} onClose={onClose} wide>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <MiniStat label="Группы" value={String(d.groupsCount)} />
+        <MiniStat label="Залы" value={String(d.hallsCount)} />
         <MiniStat label="Педагоги" value={String(d.teachersCount)} />
         <MiniStat label="Ученики" value={String(d.active)} />
-        <MiniStat label="Своб. места" value={String(d.freeSeats)} />
-        <MiniStat label="Заполненность" value={`${round(d.fill)}%`} />
+        <MiniStat label="Своб. места" value={d.hasData ? String(d.freeSeats) : "—"} />
+        <MiniStat label="Заполненность" value={d.hasData ? `${round(d.fill)}%` : "нет данных"} />
         <MiniStat label="Удержание" value={`${round(d.retention)}%`} />
         <MiniStat label="Выручка" value={money(d.revenue)} />
-        <MiniStat label="Потенциал" value={money(d.potential)} />
       </div>
+      {!d.hasData && (
+        <p className="mt-3 rounded-xl border border-amber-400/20 bg-amber-400/5 px-3 py-2 text-xs text-amber-300/90">
+          Заполненность не считается: к филиалу не привязаны группы с указанной вместимостью. Добавьте группы и укажите в настройках группы максимальное число учеников.
+        </p>
+      )}
       <div className="mt-4 rounded-2xl border border-white/10 bg-[#121212] p-4">
-        <div className="flex items-center justify-between"><AiBadge rating={d.rating} /><span className={kic}>AI-оценка</span></div>
+        <div className="flex items-center justify-between">
+          <AiBadge rating={d.rating} onClick={onOpenAiDetail} />
+          {onOpenAiDetail && (
+            <button onClick={onOpenAiDetail} className="rounded-xl border border-[#C5A059]/40 px-3 py-1.5 text-xs font-bold text-[#C5A059] transition hover:bg-[#C5A059]/10">
+              Подробный AI-разбор
+            </button>
+          )}
+        </div>
         <p className="mt-2 text-sm text-slate-400">{d.rating.note}</p>
       </div>
 
@@ -776,7 +926,9 @@ function GroupModal({ mode, group, rawBranches, teachers, halls, levels, onClose
   const [busy, setBusy] = useState(false);
 
   const branchTeachers = form.branchId ? teachers.filter((t: Teacher) => !t.branchId || t.branchId === form.branchId) : teachers;
-  const branchHalls = halls.filter((h: any) => !form.branchId || h.branchId === form.branchId);
+  const branchHalls = halls.filter((h: any) => (!form.branchId || h.branchId === form.branchId) && String(h.status || "active") === "active");
+  // Порядок внесения данных: без залов в филиале новую группу создать нельзя.
+  const noHalls = mode === "add" && Boolean(form.branchId) && branchHalls.length === 0;
 
   const toggleDay = (day: string) => setDays((d) => ({ ...d, [day]: { ...d[day], on: !d[day].on } }));
   const setTime = (day: string, key: "start" | "end", v: string) => setDays((d) => ({ ...d, [day]: { ...d[day], [key]: v } }));
@@ -827,6 +979,11 @@ function GroupModal({ mode, group, rawBranches, teachers, halls, levels, onClose
             <option value="">Выберите зал</option>
             {branchHalls.map((h: any) => <option key={h.id} value={h.id}>{h.name}</option>)}
           </select>
+          {noHalls && (
+            <p className="mt-1.5 rounded-xl border border-amber-400/20 bg-amber-400/5 px-3 py-2 text-xs text-amber-300/90">
+              В этом филиале ещё нет залов. Сначала добавьте зал (вкладка «Залы») — без залов создавать группы нельзя.
+            </p>
+          )}
         </Field>
         <Field label="Уровень">
           <select value={form.level} onChange={(e) => setForm({ ...form, level: e.target.value })} className={inputCls}>
@@ -858,7 +1015,7 @@ function GroupModal({ mode, group, rawBranches, teachers, halls, levels, onClose
         <p className="mt-2 text-[11px] text-slate-500">Расписание автоматически используется в продаже абонемента, журнале посещаемости и расчёте загрузки.</p>
       </div>
 
-      <ModalActions busy={busy} disabled={!form.name.trim() || !form.branchId} onCancel={onClose} onSubmit={submit} submitLabel="Сохранить группу" />
+      <ModalActions busy={busy} disabled={!form.name.trim() || !form.branchId || noHalls} onCancel={onClose} onSubmit={submit} submitLabel="Сохранить группу" />
     </Modal>
   );
 }

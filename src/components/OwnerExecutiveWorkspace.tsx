@@ -1842,8 +1842,13 @@ function BranchGroupsManager({ rawBranches, groups, teachers, halls, onCreateGro
   };
   const cancel = () => { setAdding(false); setEditingId(null); setForm(emptyForm); };
 
+  // Порядок внесения данных: без залов в филиале новую группу создать нельзя.
+  const activeBranchHalls = (branchId: string) =>
+    (halls || []).filter((h: any) => h.branchId === branchId && String(h.status || "active") === "active");
+  const noHalls = adding && Boolean(form.branchId) && activeBranchHalls(form.branchId).length === 0;
+
   const submit = async () => {
-    if (!form.name.trim() || !form.branchId) return;
+    if (!form.name.trim() || !form.branchId || noHalls) return;
     setBusy(true);
     const payload = {
       name: form.name.trim(),
@@ -1930,6 +1935,11 @@ function BranchGroupsManager({ rawBranches, groups, teachers, halls, onCreateGro
                 <option value="">Не выбрано</option>
                 {(halls || []).filter((h: any) => !form.branchId || h.branchId === form.branchId).map((h: any) => <option key={h.id} value={h.id}>{h.name}</option>)}
               </select>
+              {noHalls && (
+                <p className="mt-1.5 rounded-xl border border-amber-400/20 bg-amber-400/5 px-3 py-2 text-xs text-amber-300/90">
+                  В этом филиале ещё нет залов. Сначала добавьте зал (Филиалы → Залы) — без залов создавать группы нельзя.
+                </p>
+              )}
             </label>
             <label className="block"><span className={kicCls}>Уровень</span>
               <select value={form.level} onChange={(e) => setForm({ ...form, level: e.target.value })} className={inputCls}>
@@ -1953,7 +1963,7 @@ function BranchGroupsManager({ rawBranches, groups, teachers, halls, onCreateGro
             </label>
           </div>
           <div className="mt-4 flex gap-2">
-            <button disabled={busy || !form.name.trim() || !form.branchId} onClick={submit} className="rounded-2xl bg-[#C5A059] px-5 py-2 text-sm font-bold text-black transition hover:bg-[#d4b06a] disabled:opacity-50">
+            <button disabled={busy || !form.name.trim() || !form.branchId || noHalls} onClick={submit} className="rounded-2xl bg-[#C5A059] px-5 py-2 text-sm font-bold text-black transition hover:bg-[#d4b06a] disabled:opacity-50">
               {busy ? "Сохранение…" : "Сохранить"}
             </button>
             <button onClick={cancel} className="rounded-2xl border border-white/10 px-5 py-2 text-sm font-bold text-slate-300 hover:text-white">Отмена</button>
@@ -9904,8 +9914,12 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
     }
   };
 
+  // Порядок внесения данных: без залов в филиале новую группу создать нельзя.
+  const groupFormNoHalls = Boolean(groupForm.branchId) &&
+    (halls || []).filter((h: any) => h.branchId === groupForm.branchId && String(h.status || "active") === "active").length === 0;
+
   const handleSaveGroup = async () => {
-    if (!groupForm.name || !groupForm.branchId) return;
+    if (!groupForm.name || !groupForm.branchId || groupFormNoHalls) return;
     setSaving(true);
     const ok = await onCreateGroup?.({ ...groupForm, ageFrom: groupForm.ageFrom ? Number(groupForm.ageFrom) : undefined, ageTo: groupForm.ageTo ? Number(groupForm.ageTo) : undefined });
     setSaving(false);
@@ -10066,8 +10080,13 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
             <label className={labelCls}><span className={kicCls}>Зал</span>
               <select value={groupForm.hallId} onChange={(e) => setGroupForm(f => ({ ...f, hallId: e.target.value }))} className={inputCls}>
                 <option value="">Не выбрано</option>
-                {(halls || []).map((h: any) => <option key={h.id} value={h.id}>{h.name}</option>)}
+                {(halls || []).filter((h: any) => !groupForm.branchId || h.branchId === groupForm.branchId).map((h: any) => <option key={h.id} value={h.id}>{h.name}</option>)}
               </select>
+              {groupFormNoHalls && (
+                <p className="rounded-xl border border-amber-400/20 bg-amber-400/5 px-3 py-2 text-xs text-amber-300/90">
+                  В этом филиале ещё нет залов. Сначала добавьте зал (Филиалы → Залы) — без залов создавать группы нельзя.
+                </p>
+              )}
             </label>
             <label className={labelCls}><span className={kicCls}>Возраст от–до</span>
               <div className="flex gap-2">
@@ -10096,7 +10115,7 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
             </label>
           </div>
           <div className="flex gap-3">
-            <button onClick={handleSaveGroup} disabled={saving || !groupForm.name || !groupForm.branchId} className="rounded-xl bg-[#C5A059] px-5 py-2 text-sm font-bold text-black disabled:opacity-40">{saving ? "Сохранение…" : "Создать"}</button>
+            <button onClick={handleSaveGroup} disabled={saving || !groupForm.name || !groupForm.branchId || groupFormNoHalls} className="rounded-xl bg-[#C5A059] px-5 py-2 text-sm font-bold text-black disabled:opacity-40">{saving ? "Сохранение…" : "Создать"}</button>
             <button onClick={() => setActiveForm(null)} className="rounded-xl bg-white/5 px-5 py-2 text-sm font-bold text-slate-400">Отмена</button>
           </div>
         </div>

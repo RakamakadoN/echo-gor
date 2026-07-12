@@ -1163,8 +1163,12 @@ function CalendarView({ groups, teachers, branches, halls, scheduleItems, schedu
     }
   };
 
+  // Порядок внесения данных: без залов в филиале новую группу создать нельзя.
+  const groupFormNoHalls = Boolean(groupForm.branchId) &&
+    (halls || []).filter((h: any) => h.branchId === groupForm.branchId && String(h.status || "active") === "active").length === 0;
+
   const handleSaveGroup = async () => {
-    if (!groupForm.name || !groupForm.branchId) return;
+    if (!groupForm.name || !groupForm.branchId || groupFormNoHalls) return;
     setSaving(true);
     const ok = await onCreateGroup?.({ ...groupForm, ageFrom: groupForm.ageFrom ? Number(groupForm.ageFrom) : undefined, ageTo: groupForm.ageTo ? Number(groupForm.ageTo) : undefined });
     setSaving(false);
@@ -1291,8 +1295,13 @@ function CalendarView({ groups, teachers, branches, halls, scheduleItems, schedu
               <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Зал</span>
               <select value={groupForm.hallId} onChange={(e) => setGroupForm(f => ({ ...f, hallId: e.target.value }))} className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white">
                 <option value="">Не выбрано</option>
-                {(halls || []).map((h: any) => <option key={h.id} value={h.id}>{h.name}</option>)}
+                {(halls || []).filter((h: any) => !groupForm.branchId || h.branchId === groupForm.branchId).map((h: any) => <option key={h.id} value={h.id}>{h.name}</option>)}
               </select>
+              {groupFormNoHalls && (
+                <p className="rounded-xl border border-amber-400/20 bg-amber-400/5 px-3 py-2 text-xs text-amber-300/90">
+                  В этом филиале ещё нет залов. Сначала добавьте зал (Филиалы → Залы) — без залов создавать группы нельзя.
+                </p>
+              )}
             </label>
             <label className="flex flex-col gap-1">
               <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Возраст от</span>
@@ -1317,7 +1326,7 @@ function CalendarView({ groups, teachers, branches, halls, scheduleItems, schedu
             />
           </div>
           <div className="mt-4 flex gap-3">
-            <button onClick={handleSaveGroup} disabled={saving || !groupForm.name || !groupForm.branchId} className="rounded-xl bg-[#C5A059] px-5 py-2 text-sm font-bold text-black disabled:opacity-40 hover:bg-[#D4AF70] transition-colors">
+            <button onClick={handleSaveGroup} disabled={saving || !groupForm.name || !groupForm.branchId || groupFormNoHalls} className="rounded-xl bg-[#C5A059] px-5 py-2 text-sm font-bold text-black disabled:opacity-40 hover:bg-[#D4AF70] transition-colors">
               {saving ? "Сохранение…" : "Создать группу"}
             </button>
             <button onClick={() => setActiveForm(null)} className="rounded-xl bg-white/5 px-5 py-2 text-sm font-bold text-slate-400 hover:bg-white/10 transition-colors">Отмена</button>

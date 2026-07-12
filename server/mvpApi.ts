@@ -2743,6 +2743,12 @@ export function registerMvpApi(app: express.Express) {
       return res.status(403).json({ error: "Branch access denied" });
     }
     try {
+      // Порядок внесения данных: филиал → залы → группы. Без залов группу не создать.
+      const branchHalls = await supabaseFetch<any[]>("halls", `branch_id=eq.${payload.branchId}&select=id,status`);
+      const hasActiveHall = branchHalls.some((h) => String(h.status || "active") === "active");
+      if (!hasActiveHall) {
+        return res.status(400).json({ error: "В этом филиале ещё нет залов. Сначала добавьте зал (Филиалы → Залы), затем создавайте группы." });
+      }
       const inserted = await supabaseFetch<any[]>("groups", "", {
         method: "POST",
         body: JSON.stringify({
