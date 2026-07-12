@@ -309,6 +309,7 @@ function BranchesTab({ data, avgSubPrice, canManage, onCreate, onUpdate, onDelet
   const [query, setQuery] = useState("");
   const METRIC_COLS = [
     { key: "groups", label: "Группы" },
+    { key: "halls", label: "Залы" },
     { key: "free", label: "Своб. места" },
     { key: "students", label: "Ученики" },
     { key: "teachers", label: "Педагоги" },
@@ -444,7 +445,8 @@ function BranchesTab({ data, avgSubPrice, canManage, onCreate, onUpdate, onDelet
               <AiBadge rating={d.rating} onClick={() => setAiDetail(branchDetailData(d))} />
             </div>
             <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-sm text-slate-300">
-              <div><p className="text-[10px] uppercase tracking-wider text-slate-500">Группы</p><p className="font-bold text-white">{d.groupsCount} <span className="text-xs font-normal text-slate-500">· залов {d.hallsCount}</span></p></div>
+              <div><p className="text-[10px] uppercase tracking-wider text-slate-500">Группы</p><p className="font-bold text-white">{d.groupsCount}</p></div>
+              <div><p className="text-[10px] uppercase tracking-wider text-slate-500">Залы</p><p className="font-bold text-white">{d.hallsCount}</p></div>
               <div><p className="text-[10px] uppercase tracking-wider text-slate-500">Ученики</p><p className="font-bold text-white">{d.active} {d.hasData && <span className="text-xs font-normal text-slate-500">· своб. {d.freeSeats} из {d.capacity}</span>}</p></div>
               <div><p className="text-[10px] uppercase tracking-wider text-slate-500">Удержание</p><p><span className="font-bold text-white">{round(d.retention)}%</span> <Delta value={d.retentionDelta} /></p></div>
               <div><p className="text-[10px] uppercase tracking-wider text-slate-500">Выручка</p><p className="font-bold text-white">{money(d.revenue)}</p></div>
@@ -466,6 +468,7 @@ function BranchesTab({ data, avgSubPrice, canManage, onCreate, onUpdate, onDelet
               <th className="p-3">№</th>
               <th className="p-3">Филиал</th>
               {cols.groups && <th className="p-3">Группы</th>}
+              {cols.halls && <th className="p-3">Залы</th>}
               {cols.free && <th className="p-3">Своб. места</th>}
               {cols.students && <th className="p-3">Ученики</th>}
               {cols.teachers && <th className="p-3">Педагоги</th>}
@@ -485,7 +488,8 @@ function BranchesTab({ data, avgSubPrice, canManage, onCreate, onUpdate, onDelet
                   <p className="font-bold text-white">{d.raw.name}</p>
                   <p className="text-xs text-slate-500">{d.raw.city} · {d.raw.managerName}</p>
                 </td>
-                {cols.groups && <td className="p-3"><span className="font-bold text-white">{d.groupsCount}</span> <span className="text-xs text-slate-500">· залов {d.hallsCount}</span></td>}
+                {cols.groups && <td className="p-3 font-bold text-white">{d.groupsCount}</td>}
+                {cols.halls && <td className="p-3 font-bold text-white">{d.hallsCount}</td>}
                 {cols.free && <td className="p-3">{d.hasData ? <><span className="font-bold text-white">{d.freeSeats}</span> <span className="text-xs text-slate-500">из {d.capacity}</span></> : <span className="text-slate-500">—</span>}</td>}
                 {cols.students && <td className="p-3 font-bold text-white">{d.active}</td>}
                 {cols.teachers && <td className="p-3">{d.teachersCount}</td>}
