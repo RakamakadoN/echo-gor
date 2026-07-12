@@ -220,7 +220,7 @@ export default function App() {
       channels: ["email", "push"],
       recipients: { parents: 4, students: 4 },
       status: "success",
-      authorName: "Асланбек Болотаев"
+      authorName: "Владелец"
     },
     {
       id: "notif-hist-2",
@@ -233,7 +233,7 @@ export default function App() {
       channels: ["email", "push", "sms"],
       recipients: { parents: 12, students: 12 },
       status: "success",
-      authorName: "Фатима Царикаева"
+      authorName: "Администратор"
     }
   ]);
 
@@ -1572,7 +1572,7 @@ export default function App() {
       audience: data.audience,
       date: new Date().toISOString().slice(0, 10),
       authorId: "owner-1",
-      authorName: "Асланбек Болотаев",
+      authorName: "Владелец",
       authorRole: "Владелец",
       likes: 0,
       isImportant: data.isImportant
@@ -1675,7 +1675,7 @@ export default function App() {
             id: `note-${Date.now()}`,
             date: new Date().toISOString().split("T")[0],
             teacherId: "teach-aslan",
-            teacherName: "Аслан Плиев",
+            teacherName: "Педагог",
             content: newNoteContent,
             isPrivate: newNotePrivate,
           };
@@ -1733,7 +1733,7 @@ export default function App() {
           currentAttendance[date] = {
             date,
             status,
-            markedBy: "Учитель Аслан Плиев",
+            markedBy: "Педагог",
             absenceReason: opts?.absenceReason ?? null,
             isTrial: opts?.isTrial,
           };
@@ -1830,7 +1830,7 @@ export default function App() {
       id: `note-${Date.now()}`,
       date: new Date().toISOString(),
       teacherId: "teach-aslan",
-      teacherName: "Аслан Плиев",
+      teacherName: "Педагог",
       content: prefix + trimmed,
       isPrivate: Boolean(opts.isPrivate),
     };
@@ -1927,7 +1927,7 @@ export default function App() {
       prev.map((s) => {
         if (s.groupIds?.includes(groupId)) {
           count++;
-          return { ...s, attendance: { ...s.attendance, [date]: { date, status, markedBy: "Аслан Плиев" } } };
+          return { ...s, attendance: { ...s.attendance, [date]: { date, status, markedBy: "Педагог" } } };
         }
         return s;
       })
@@ -2102,7 +2102,7 @@ export default function App() {
       title: `⚠️ Напоминание об оплате обучения: ${s.name}`,
       content: messageToSend,
       sentAt: new Date().toISOString(),
-      authorName: "Асланбек Болотаев",
+      authorName: "Владелец",
       channels: ["sms", "push", "whatsapp"],
       isImportant: true
     };
@@ -2407,7 +2407,7 @@ export default function App() {
           content: notifFormContent,
           date: new Date().toISOString().split("T")[0],
           authorId: activeRole,
-          authorName: "Асланбек Болотаев", // Using actual owner's name for consistency
+          authorName: "Владелец", // Using actual owner's name for consistency
           authorRole: roles.find(r => r.id === activeRole)?.name || "Руководитель",
           audience: "all",
           isImportant: notifIsImportant,
@@ -2428,7 +2428,7 @@ export default function App() {
           channels: Object.keys(notifChannels).filter(k => notifChannels[k as keyof typeof notifChannels] && notifChannels[k as keyof typeof notifChannels] === true),
           recipients: { parents: paToNotify.length, students: stToNotify.length },
           status: "success",
-          authorName: "Асланбек Болотаев"
+          authorName: "Владелец"
         };
         setNotificationHistory(prev => [newHist, ...prev]);
 
@@ -2453,7 +2453,7 @@ export default function App() {
           title: notifFormTitle,
           content: notifFormContent,
           sentAt: new Date().toISOString(),
-          authorName: "Асланбек Болотаев",
+          authorName: "Владелец",
           channels: Object.keys(notifChannels).filter(k => notifChannels[k as keyof typeof notifChannels] && notifChannels[k as keyof typeof notifChannels] === true),
           isImportant: notifIsImportant
         };
@@ -4876,7 +4876,7 @@ export default function App() {
                           <div>
                             <p className="text-[9px] text-slate-500 uppercase">Преподаватель</p>
                             <p className="font-semibold text-slate-300 truncate">
-                              {teacher?.name || "Аслан Плиев"}
+                              {teacher?.name || "Педагог"}
                             </p>
                             <p className="text-[10px] text-slate-500">Заслуженный артист</p>
                           </div>
@@ -5703,7 +5703,7 @@ export default function App() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                   <h2 className="text-lg font-bold text-white">Журнал посещаемости и Прогресса</h2>
-                  <p className="text-xs text-slate-500">Авторизован как: Преподаватель Аслан Плиев</p>
+                  <p className="text-xs text-slate-500">Авторизован как: Преподаватель Педагог</p>
                 </div>
                 <div className="flex space-x-2">
                   <select
@@ -6621,7 +6621,7 @@ export default function App() {
                     type="text"
                     value={newStudentParent}
                     onChange={(e) => setNewStudentParent(e.target.value)}
-                    placeholder="Аслан Плиев ст."
+                    placeholder="Педагог ст."
                     className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white"
                   />
                 </div>

@@ -7380,7 +7380,7 @@ function NetworkSettingsView({ branches, teachers, subscriptionPlans = [], onCre
   return (
     <OwnerScreen title="Настройки сети" subtitle="Справочники, тарифы абонементов, филиалы, роли, права доступа, шаблоны, audit log, интеграции и лицензия.">
       {/* Тарифы абонементов: владелец задаёт названия, кол-во занятий, срок и цену. */}
-      <SubscriptionPlansManager plans={subscriptionPlans} onCreatePlan={onCreatePlan} onUpdatePlan={onUpdatePlan} onDeletePlan={onDeletePlan} />
+      <SubscriptionPlansManager plans={subscriptionPlans} branches={branches} onCreatePlan={onCreatePlan} onUpdatePlan={onUpdatePlan} onDeletePlan={onDeletePlan} />
 
       {/* Настраиваемые справочники: владелец добавляет значения, остальные выбирают из готового. */}
       <section className="rounded-[1.75rem] border border-white/10 bg-gradient-to-br from-[#141414] to-black p-5">
@@ -9516,6 +9516,7 @@ function ScheduleGroupCard({ group, onUpdateGroup, onDeleteGroup }: any) {
     days: (group.days || []).join(", "),
     time: group.time || "",
     endDate: (group as any).endDate || "",
+    format: ((group as any).format === "individual" ? "individual" : "group") as "group" | "individual",
   });
   const save = async () => {
     if (!onUpdateGroup || !f.name.trim()) return;
@@ -9525,6 +9526,7 @@ function ScheduleGroupCard({ group, onUpdateGroup, onDeleteGroup }: any) {
       scheduleDays: f.days.trim() || null,
       scheduleTime: f.time.trim() || null,
       endDate: f.endDate || null,
+      format: f.format,
     });
     setBusy(false);
     if (ok !== false) setEditing(false);
@@ -9536,7 +9538,7 @@ function ScheduleGroupCard({ group, onUpdateGroup, onDeleteGroup }: any) {
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="truncate text-sm font-black text-white">{group.name}</p>
-            <p className="mt-0.5 text-xs text-slate-400">{group.ageGroup} · {group.level}</p>
+            <p className="mt-0.5 text-xs text-slate-400">{(group as any).format === "individual" ? "индивидуальные" : "групповая"} · {group.ageGroup} · {group.level}</p>
             {(group.days?.length > 0 || group.time) && <p className="mt-0.5 text-xs text-slate-500">{group.days?.join(", ")} {group.time}</p>}
             {(group as any).endDate && <p className="mt-0.5 text-[11px] text-amber-400/80">действует до {(group as any).endDate}</p>}
             <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-[#C5A059]">{group.studentCount} учеников</p>
@@ -9553,6 +9555,10 @@ function ScheduleGroupCard({ group, onUpdateGroup, onDeleteGroup }: any) {
       ) : (
         <div className="space-y-2">
           <input value={f.name} onChange={(e) => setF((s) => ({ ...s, name: e.target.value }))} placeholder="Название группы" className={inputCls} />
+          <select value={f.format} onChange={(e) => setF((s) => ({ ...s, format: e.target.value as "group" | "individual" }))} className={inputCls}>
+            <option value="group">Групповая</option>
+            <option value="individual">Индивидуальные занятия</option>
+          </select>
           <div className="grid grid-cols-2 gap-2">
             <input value={f.days} onChange={(e) => setF((s) => ({ ...s, days: e.target.value }))} placeholder="Дни: Пн, Ср, Пт" className={inputCls} />
             <input value={f.time} onChange={(e) => setF((s) => ({ ...s, time: e.target.value }))} placeholder="Время: 18:00–19:00" className={inputCls} />

@@ -770,6 +770,7 @@ function GroupModal({ mode, group, rawBranches, teachers, halls, levels, onClose
     hallId: group?.hallId || "", level: group?.level || "Начинающая",
     ageFrom: group?.ageFrom != null ? String(group.ageFrom) : "", ageTo: group?.ageTo != null ? String(group.ageTo) : "",
     capacity: group?.capacity != null ? String(group.capacity) : "",
+    format: (group?.format === "individual" ? "individual" : "group") as "group" | "individual",
   });
   const [days, setDays] = useState(initDays);
   const [busy, setBusy] = useState(false);
@@ -794,6 +795,7 @@ function GroupModal({ mode, group, rawBranches, teachers, halls, levels, onClose
       ageTo: form.ageTo ? Number(form.ageTo) : undefined,
       capacity: form.capacity ? Number(form.capacity) : undefined,
       scheduleDays: scheduleDays || undefined, scheduleTime: scheduleTime || undefined,
+      format: form.format,
     };
     setBusy(true); await onSubmit(payload); setBusy(false);
   };
@@ -802,6 +804,12 @@ function GroupModal({ mode, group, rawBranches, teachers, halls, levels, onClose
     <Modal title={mode === "add" ? "Добавить группу" : "Редактировать группу"} onClose={onClose} wide>
       <div className="grid gap-3 md:grid-cols-2">
         <Field label="Название группы *"><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Детская 5–12" className={inputCls} /></Field>
+        <Field label="Формат *">
+          <select value={form.format} onChange={(e) => setForm({ ...form, format: e.target.value as "group" | "individual" })} className={inputCls}>
+            <option value="group">Групповая</option>
+            <option value="individual">Индивидуальные занятия</option>
+          </select>
+        </Field>
         <Field label="Филиал *">
           <select value={form.branchId} onChange={(e) => setForm({ ...form, branchId: e.target.value, teacherId: "", hallId: "" })} className={inputCls}>
             <option value="">Выберите филиал</option>

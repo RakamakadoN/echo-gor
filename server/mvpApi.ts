@@ -96,11 +96,13 @@ const orgId = "00000000-0000-0000-0000-000000000001";
 // Almaty branch UUID from db/seed_mvp_demo.sql (the only seeded branch with staff/students).
 const demoBranchAlmaty = "00000000-0000-0000-0000-000000000101";
 
+// Имена демо-сессий = названия ролей (ТЗ заказчика 2026-07-12): вымышленных
+// сотрудников в истории быть не должно, пока нет настоящей авторизации.
 const demoUsers: MvpSession[] = [
-  { userId: "00000000-0000-0000-0000-000000001001", organizationId: orgId, role: "owner", branchId: null, dbBranchId: null, fullName: "Асланбек Болотаев" },
-  { userId: "00000000-0000-0000-0000-000000001002", organizationId: orgId, role: "branch_manager", branchId: "branch-almaty", dbBranchId: demoBranchAlmaty, fullName: "Магомед Даудов" },
-  { userId: "00000000-0000-0000-0000-000000001003", organizationId: orgId, role: "admin", branchId: "branch-almaty", dbBranchId: demoBranchAlmaty, fullName: "Фатима Царикаева" },
-  { userId: "00000000-0000-0000-0000-000000001004", organizationId: orgId, role: "teacher", branchId: "branch-almaty", dbBranchId: demoBranchAlmaty, fullName: "Аслан Плиев" }
+  { userId: "00000000-0000-0000-0000-000000001001", organizationId: orgId, role: "owner", branchId: null, dbBranchId: null, fullName: "Владелец" },
+  { userId: "00000000-0000-0000-0000-000000001002", organizationId: orgId, role: "branch_manager", branchId: "branch-almaty", dbBranchId: demoBranchAlmaty, fullName: "Управляющий" },
+  { userId: "00000000-0000-0000-0000-000000001003", organizationId: orgId, role: "admin", branchId: "branch-almaty", dbBranchId: demoBranchAlmaty, fullName: "Администратор" },
+  { userId: "00000000-0000-0000-0000-000000001004", organizationId: orgId, role: "teacher", branchId: "branch-almaty", dbBranchId: demoBranchAlmaty, fullName: "Педагог" }
 ];
 
 // Демо-филиал из seed может отсутствовать в реальной БД (филиалы пересоздавали) —
@@ -289,7 +291,9 @@ function mapDbPlan(row: any) {
     // 'month' — все занятия календарного месяца без доплаты; 'lessons' — строго по числу занятий.
     billingMode: row.billing_mode === "lessons" ? "lessons" : "month",
     // 'group' — групповой тариф, 'individual' — индивидуальный (фильтр при продаже).
-    format: row.format === "individual" ? "individual" : "group"
+    format: row.format === "individual" ? "individual" : "group",
+    // Филиал, где действует тариф (null = во всех) — у филиалов разные цены.
+    branchId: row.branch_id || null
   };
 }
 
@@ -2691,6 +2695,8 @@ export function registerMvpApi(app: express.Express) {
       status: row.status || "active",
       startDate: row.start_date || null,
       endDate: row.end_date || null,
+      // 'group' — обычная группа; 'individual' — график индивидуальных занятий.
+      format: row.format === "individual" ? "individual" : "group",
       studentCount,
     };
   }
@@ -2734,6 +2740,7 @@ export function registerMvpApi(app: express.Express) {
           schedule_time: payload.scheduleTime || null,
           start_date: payload.startDate || null,
           end_date: payload.endDate || null,
+          format: payload.format === "individual" ? "individual" : "group",
           status: "active",
         }),
       });
@@ -2767,6 +2774,7 @@ export function registerMvpApi(app: express.Express) {
     if (payload.scheduleTime !== undefined) updates.schedule_time = payload.scheduleTime || null;
     if (payload.startDate !== undefined) updates.start_date = payload.startDate || null;
     if (payload.endDate !== undefined) updates.end_date = payload.endDate || null;
+    if (payload.format !== undefined) updates.format = payload.format === "individual" ? "individual" : "group";
     if (Object.keys(updates).length === 0) return res.status(400).json({ error: "Нет полей для обновления" });
     try {
       // ТЗ §10: при смене педагога фиксируем старого/нового в журнале.
@@ -3128,7 +3136,8 @@ export function registerMvpApi(app: express.Express) {
           price: Number(payload.price) || 0,
           status: payload.status || "active",
           billing_mode: payload.billingMode === "lessons" ? "lessons" : "month",
-          format: payload.format === "individual" ? "individual" : "group"
+          format: payload.format === "individual" ? "individual" : "group",
+          branch_id: payload.branchId || null
         })
       });
       res.status(201).json({ plan: mapDbPlan(inserted[0]) });
@@ -3149,6 +3158,7 @@ export function registerMvpApi(app: express.Express) {
     if (payload.status !== undefined) updates.status = payload.status;
     if (payload.billingMode !== undefined) updates.billing_mode = payload.billingMode === "lessons" ? "lessons" : "month";
     if (payload.format !== undefined) updates.format = payload.format === "individual" ? "individual" : "group";
+    if (payload.branchId !== undefined) updates.branch_id = payload.branchId || null;
     if (Object.keys(updates).length === 0) return res.status(400).json({ error: "Нет полей для обновления" });
     try {
       const rows = await supabaseFetch<any[]>("subscription_plans", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", body: JSON.stringify(updates) });
@@ -4288,8 +4298,11 @@ export function registerMvpApi(app: express.Express) {
       } catch { return null; }
     };
 
+    // Технические авто-запросы (снапшоты метрик, сессии) — не действия людей.
+    const TECH_PATHS = /owner\/snapshot|\/session\/|status-config$/;
     const logs = rows
       .filter((r) => Number(r.after_data?.status || 0) < 400) // показываем только успешные действия
+      .filter((r) => !TECH_PATHS.test(String(r.after_data?.path || "").split("?")[0]) || String(r.action) === "PUT")
       .map((r) => ({
         at: r.created_at,
         who: r.after_data?.user || r.after_data?.role || "система",

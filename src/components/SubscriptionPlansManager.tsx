@@ -9,17 +9,20 @@ const fmtTenge = (n: number) => `${new Intl.NumberFormat("ru-RU").format(Math.ro
 
 export function SubscriptionPlansManager({
   plans,
+  branches = [],
   onCreatePlan,
   onUpdatePlan,
   onDeletePlan,
 }: {
   plans?: SubscriptionPlan[];
+  /** Филиалы: тариф может действовать в одном филиале (разные цены) или во всех. */
+  branches?: { id: string; name?: string; city?: string }[];
   onCreatePlan?: (data: any) => Promise<boolean>;
   onUpdatePlan?: (id: string, data: any) => Promise<boolean>;
   onDeletePlan?: (id: string) => Promise<boolean>;
 }) {
   const canManage = Boolean(onCreatePlan);
-  const emptyForm = { name: "", lessonsCount: "", durationDays: "", price: "", billingMode: "month" as "month" | "lessons", format: "group" as "group" | "individual" };
+  const emptyForm = { name: "", lessonsCount: "", durationDays: "", price: "", billingMode: "month" as "month" | "lessons", format: "group" as "group" | "individual", branchId: "" };
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const list: SubscriptionPlan[] = plans || [];
@@ -33,13 +36,14 @@ export function SubscriptionPlansManager({
       price: Number(form.price) || 0,
       billingMode: form.billingMode,
       format: form.format,
+      branchId: form.branchId || null,
     };
     const ok = editingId ? await onUpdatePlan?.(editingId, data) : await onCreatePlan?.(data);
     if (ok) { setForm(emptyForm); setEditingId(null); }
   };
   const edit = (p: SubscriptionPlan) => {
     setEditingId(p.id);
-    setForm({ name: p.name, lessonsCount: String(p.lessonsCount), durationDays: String(p.durationDays), price: String(p.price), billingMode: p.billingMode === "lessons" ? "lessons" : "month", format: p.format === "individual" ? "individual" : "group" });
+    setForm({ name: p.name, lessonsCount: String(p.lessonsCount), durationDays: String(p.durationDays), price: String(p.price), billingMode: p.billingMode === "lessons" ? "lessons" : "month", format: p.format === "individual" ? "individual" : "group", branchId: p.branchId || "" });
   };
   const cancel = () => { setEditingId(null); setForm(emptyForm); };
 
@@ -79,6 +83,15 @@ export function SubscriptionPlansManager({
             <option value="month">На месяц (все занятия)</option>
             <option value="lessons">По количеству занятий</option>
           </select>
+          <select
+            value={form.branchId}
+            onChange={(e) => setForm((f) => ({ ...f, branchId: e.target.value }))}
+            title="Филиал, где действует тариф — у филиалов разные цены. «Все филиалы» = тариф общий."
+            className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-sm text-white"
+          >
+            <option value="">Все филиалы</option>
+            {branches.map((b) => <option key={b.id} value={b.id}>{b.name || b.city}</option>)}
+          </select>
           <div className="flex gap-2">
             <button onClick={save} disabled={!form.name.trim()} className="flex-1 rounded-xl bg-[#C5A059] px-3 py-2 text-sm font-black text-black hover:bg-[#D4AF70] disabled:opacity-40">{editingId ? "Сохранить" : "Добавить"}</button>
             {editingId && <button onClick={cancel} className="rounded-xl border border-white/10 px-3 py-2 text-sm font-bold text-slate-300 hover:text-white">Отмена</button>}
@@ -92,7 +105,7 @@ export function SubscriptionPlansManager({
           <div key={p.id} className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/25 p-3">
             <div className="min-w-0">
               <p className="truncate text-sm font-black text-white">{p.name}</p>
-              <p className="text-xs text-slate-500">{p.format === "individual" ? "индивидуальный" : "групповой"} · {p.billingMode === "lessons" ? `строго ${p.lessonsCount} занятий` : "месячный (все занятия месяца)"} · {p.durationDays} дн. · {fmtTenge(p.price)}{p.status !== "active" ? " · архив" : ""}</p>
+              <p className="text-xs text-slate-500">{p.format === "individual" ? "индивидуальный" : "групповой"} · {p.billingMode === "lessons" ? `строго ${p.lessonsCount} занятий` : "месячный (все занятия месяца)"} · {p.durationDays} дн. · {fmtTenge(p.price)} · {p.branchId ? (branches.find((b) => b.id === p.branchId)?.name || "филиал") : "все филиалы"}{p.status !== "active" ? " · архив" : ""}</p>
             </div>
             {canManage && (
               <div className="flex shrink-0 gap-2">

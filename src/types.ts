@@ -81,6 +81,7 @@ export interface Group {
   level: string; // e.g., "Начинающие", "Продолжающие", "Ансамбль"
   startDate?: string | null; // период работы группы — дата начала
   endDate?: string | null;   // период работы группы — дата окончания
+  format?: "group" | "individual"; // обычная группа или график индивидуальных занятий
   studentCount: number;
 }
 
@@ -405,6 +406,8 @@ export interface SubscriptionPlan {
   billingMode?: "month" | "lessons";
   /** Формат тарифа: групповой или индивидуальный — фильтр при продаже. */
   format?: "group" | "individual";
+  /** Филиал, где действует тариф (null = во всех) — у филиалов разные цены. */
+  branchId?: string | null;
 }
 
 export interface LeadSource {

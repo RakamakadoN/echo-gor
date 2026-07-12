@@ -1412,12 +1412,24 @@ function SellSubscriptionPanel({
   const [recalcReason, setRecalcReason] = useState("illness");
   const [recalcFile, setRecalcFile] = useState<{ name: string; dataUrl: string } | null>(null);
 
-  // Тарифы фильтруются по ФОРМАТУ занятий (ТЗ 2026-07-12): «Групповой» →
-  // групповые тарифы, «Индивидуальный» → индивидуальные. Смена формата
-  // автоматически выбирает первый подходящий тариф.
-  const activePlans = plans.filter((p) => p.status !== "archived" && (p.format === "individual") === (kind === "individual"));
+  // Тарифы фильтруются по ФОРМАТУ занятий и ФИЛИАЛУ ученика (ТЗ 2026-07-12):
+  // «Групповой» → групповые тарифы, «Индивидуальный» → индивидуальные;
+  // тариф с филиалом действует только в нём (у филиалов разные цены).
+  const activePlans = plans.filter((p) =>
+    p.status !== "archived" &&
+    (p.format === "individual") === (kind === "individual") &&
+    (!p.branchId || p.branchId === student.branchId)
+  );
   useEffect(() => {
     if (!activePlans.some((p) => p.id === planId)) setPlanId(activePlans[0]?.id || "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind]);
+
+  // Группы фильтруются по формату: «Групповой» → обычные группы,
+  // «Индивидуальный» → графики индивидуальных занятий.
+  const formatGroups = allGroups.filter((g) => ((g as any).format === "individual") === (kind === "individual"));
+  useEffect(() => {
+    if (!formatGroups.some((g) => g.id === saleGroupId)) setSaleGroupId(formatGroups[0]?.id || "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind]);
 
@@ -1698,13 +1710,13 @@ function SellSubscriptionPanel({
             {/* Группа/индивидуальный график: абонемент продаётся в конкретную группу
                 (для «Индивидуальный» — в группу-график индивидуальных занятий,
                 созданную во вкладке «Группы»); расписание и педагог берутся из неё. */}
-            {allGroups.length > 0 && (
+            {formatGroups.length > 0 && (
               <label className="flex flex-col gap-1">
                 <span className="text-xs font-semibold text-slate-500">
                   {kind === "individual" ? "Индивидуальные занятия (график / педагог)" : "Группа абонемента"}
                 </span>
                 <select value={saleGroupId} onChange={(e) => { setSaleGroupId(e.target.value); setDisabledDates({}); }} className={fieldCls}>
-                  {allGroups.map((g) => (
+                  {formatGroups.map((g) => (
                     <option key={g.id} value={g.id}>
                       {g.name}{g.time ? ` · ${g.time}` : ""}{g.id === (student.groupIds?.[0] || "") ? " (основная)" : ""}
                     </option>
