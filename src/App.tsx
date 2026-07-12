@@ -962,7 +962,10 @@ export default function App() {
         method: "DELETE",
         headers: { "x-demo-role": getMvpRoleHeader() }
       });
-      if (!response.ok) throw new Error(await response.text());
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error || `Ошибка ${response.status}`);
+      }
       await loadMvpBootstrap(activeRole);
       toast.success("Тариф удалён");
       return true;

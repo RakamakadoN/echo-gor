@@ -3174,19 +3174,19 @@ export function registerMvpApi(app: express.Express) {
     if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
     const scope = `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`;
     try {
-      // Пытаемся удалить полностью (если тариф ещё нигде не продан).
-      await supabaseFetch("subscription_plans", scope, { method: "DELETE", headers: { Prefer: "return=minimal" } });
-      res.json({ ok: true, archived: false });
-    } catch (error: any) {
-      // Тариф уже используется в проданных абонементах (FK RESTRICT) —
-      // архивируем вместо удаления, чтобы сохранить историю. В UI он пропадёт
-      // (bootstrap грузит только активные тарифы).
-      try {
-        await supabaseFetch("subscription_plans", scope, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ status: "archived" }) });
-        res.json({ ok: true, archived: true });
-      } catch (e2: any) {
-        res.status(400).json({ error: e2?.message || error?.message || "Не удалось удалить абонемент" });
+      // ТЗ заказчика: тариф с продажами удалять НЕЛЬЗЯ — честный отказ,
+      // а не тихая архивация (история и отчёты держатся на plan_id).
+      const sales = await supabaseFetch<any[]>(
+        "student_subscriptions",
+        `select=id&plan_id=eq.${req.params.id}&limit=1`
+      );
+      if (sales.length > 0) {
+        return res.status(409).json({ error: "По этому тарифу уже есть продажи — удалить нельзя, иначе сломаются история и отчёты. Если тариф больше не нужен, создайте новый, а этот перестаньте использовать." });
       }
+      await supabaseFetch("subscription_plans", scope, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      res.json({ ok: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error?.message || "Не удалось удалить абонемент" });
     }
   });
 
