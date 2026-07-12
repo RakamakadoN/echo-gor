@@ -1193,6 +1193,12 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
       </div>
       </CollapsibleSection>
 
+      {/* ЛОЯЛЬНОСТЬ (LTV): средний срок обучения и разбивка по месяцам */}
+      <CollapsibleSection id="ltv" icon={GraduationCap} title="Лояльность (LTV)" hint="Средний срок обучения · сколько учеников занимается 1–2, 3–4… месяцев"
+        locked open={sectionOpen("ltv")} onToggle={() => toggleSection("ltv")}>
+        <LtvPanel ltv={m.ltv} onOpenBucket={(ids, label) => openStudentsModal(ids, label, { ids, label })} />
+      </CollapsibleSection>
+
       {/* РИСКИ ПО ГРУППАМ И ФИЛИАЛАМ */}
       <CollapsibleSection id="risks" icon={AlertTriangle} title="Риски" hint="Группы и филиалы, требующие внимания"
         locked open={sectionOpen("risks")} onToggle={() => toggleSection("risks")}>
@@ -1764,6 +1770,66 @@ function BdrProgressPanel({ bdr, onGoPlanning }: {
       </div>
       <p className="mt-4 text-[11px] text-slate-500">План — из вкладки «Планирование (БДР)» (в т.ч. планы по филиалам). Факт — оплаченные платежи текущего месяца.</p>
     </section>
+  );
+}
+
+// ---------- Лояльность (LTV): средний срок обучения + разбивка по месяцам ----------
+// Показывает, сколько учеников занимается 1–2 / 3–4 / 5–6 / 7–8 / 9–12 месяцев
+// и больше года — где студия теряет аудиторию, а где её ядро.
+function LtvPanel({ ltv, onOpenBucket }: {
+  ltv: { avgMonths: number | null; avgRevenue: number | null; buckets: { key: string; label: string; count: number; ids: string[] }[] };
+  onOpenBucket: (ids: string[], label: string) => void;
+}) {
+  const total = ltv.buckets.reduce((s, b) => s + b.count, 0);
+  const max = Math.max(1, ...ltv.buckets.map((b) => b.count));
+  // Цвет от «новичков» к «ядру»: короткий срок — нейтральный, длинный — золотой.
+  const BUCKET_COLORS = ["#38bdf8", "#34d399", "#a3e635", "#fbbf24", "#f59e0b", "#C5A059"];
+  return (
+    <div className="grid gap-4 xl:grid-cols-[280px_1fr]">
+      {/* Сводка */}
+      <section className="rounded-[2rem] border border-white/10 bg-[#141414] p-5">
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Средний срок обучения</p>
+        <p className="mt-1.5 text-3xl font-black text-[#C5A059]">
+          {ltv.avgMonths === null ? "—" : `${ltv.avgMonths} мес`}
+        </p>
+        <div className="mt-4 space-y-2 border-t border-white/5 pt-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] text-slate-500">Средний LTV (выручка на ученика)</span>
+            <span className="shrink-0 text-xs font-bold text-slate-200">{ltv.avgRevenue === null ? "—" : money(ltv.avgRevenue)}</span>
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] text-slate-500">Учеников в расчёте</span>
+            <span className="shrink-0 text-xs font-bold text-slate-200">{total}</span>
+          </div>
+        </div>
+        <p className="mt-3 text-[11px] leading-relaxed text-slate-500">Срок — от даты регистрации ученика (как в его карточке). Лиды и пробные не считаются — у них ещё нет срока обучения.</p>
+      </section>
+      {/* Разбивка по длительности */}
+      <section className="rounded-[2rem] border border-white/10 bg-[#141414] p-5">
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Сколько учеников занимается</p>
+        <div className="mt-3 space-y-2.5">
+          {ltv.buckets.map((b, i) => {
+            const share = total ? Math.round((b.count / total) * 100) : 0;
+            return (
+              <button key={b.key} onClick={() => b.count > 0 && onOpenBucket(b.ids, `Занимаются ${b.label.toLowerCase()}`)}
+                className={`group block w-full text-left ${b.count > 0 ? "cursor-pointer" : "cursor-default"}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-bold text-slate-300 group-hover:text-white">{b.label}</span>
+                  <span className="shrink-0 text-xs font-black text-slate-200">
+                    {b.count} <span className="font-bold text-slate-500">· {share}%</span>
+                  </span>
+                </div>
+                <div className="mt-1 h-3 w-full overflow-hidden rounded-full bg-white/[0.06]">
+                  <div className="h-full rounded-full transition group-hover:brightness-125"
+                    style={{ width: `${Math.max(b.count > 0 ? 4 : 0, Math.round((b.count / max) * 100))}%`, background: BUCKET_COLORS[i] || "#C5A059" }} />
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        <p className="mt-3 text-[11px] text-slate-500">Провал в середине шкалы — слабое место удержания: аудитория уходит, не дойдя до «ядра». Клик по строке — список учеников.</p>
+      </section>
+    </div>
   );
 }
 

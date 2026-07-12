@@ -5,6 +5,7 @@
 // UI показывает «нет данных / накапливается», а не выдуманную цифру.
 
 import type { Branch, Group, Student, Payment, Teacher } from "./types";
+import { getEnrollmentMonths } from "./studentSegments";
 
 export type PeriodKey = "today" | "yesterday" | "week" | "month" | "quarter" | "year" | "custom";
 export type LevelKey = "network" | "branch" | "group" | "teacher";
@@ -278,6 +279,13 @@ export interface OwnerDashboardModel {
   // Сколько записей на пробный нужно, чтобы заполнить свободные места
   // (по фактической конверсии запись→покупка, откат на 40%).
   trialsToFill: { freeSpots: number | null; convPct: number; needed: number | null };
+  // Лояльность аудитории: средний срок обучения (LTV в месяцах), средняя
+  // выручка на ученика и разбивка учеников по длительности обучения.
+  ltv: {
+    avgMonths: number | null;
+    avgRevenue: number | null;
+    buckets: { key: string; label: string; count: number; ids: string[] }[];
+  };
   charts: {
     revenueByMonth: { month: string; cur: number; prev: number | null }[];
     avgCheckByMonth: { month: string; cur: number | null; prev: number | null }[];
@@ -697,6 +705,38 @@ export function computeOwnerDashboard(
   const mtdPrev = payments.filter((p) => isPaid(p) && p.date >= `${prevMonthKey}-01` && p.date <= prevSameDay).reduce((s, p) => s + p.amount, 0);
   const mtd = { cur: mtdCur, prev: mtdPrev, pct: mtdPrev > 0 ? delta(mtdCur, mtdPrev).pct : null };
 
+  // --- Лояльность (LTV): срок обучения и разбивка по месяцам ---
+  // База — занимающиеся ученики (без ушедших/архива и без лидов/пробных:
+  // у них ещё нет срока обучения). Срок — getEnrollmentMonths, тот же
+  // расчёт, что в карточке ученика.
+  const ltvBase = students.filter((s) =>
+    s.status !== "left" && s.status !== "archived" && !(s as any).archivedAt &&
+    s.status !== "lead" && s.status !== "trial");
+  const LTV_BUCKETS: { key: string; label: string; match: (mo: number) => boolean }[] = [
+    { key: "1-2", label: "1–2 мес", match: (mo) => mo <= 1 },      // 0–1 полный месяц = занимается 1–2-й месяц
+    { key: "3-4", label: "3–4 мес", match: (mo) => mo >= 2 && mo <= 3 },
+    { key: "5-6", label: "5–6 мес", match: (mo) => mo >= 4 && mo <= 5 },
+    { key: "7-8", label: "7–8 мес", match: (mo) => mo >= 6 && mo <= 7 },
+    { key: "9-12", label: "9–12 мес", match: (mo) => mo >= 8 && mo <= 11 },
+    { key: "12+", label: "Больше года", match: (mo) => mo >= 12 },
+  ];
+  const ltvBuckets = LTV_BUCKETS.map((b) => ({ key: b.key, label: b.label, count: 0, ids: [] as string[] }));
+  let ltvMonthsSum = 0;
+  ltvBase.forEach((s) => {
+    const mo = getEnrollmentMonths(s, now);
+    ltvMonthsSum += mo;
+    const idx = LTV_BUCKETS.findIndex((b) => b.match(mo));
+    if (idx >= 0) { ltvBuckets[idx].count += 1; ltvBuckets[idx].ids.push(s.id); }
+  });
+  // Средняя выручка на ученика за всё время — по платившим ученикам области.
+  const paidAll = payments.filter(isPaid);
+  const payers = new Set(paidAll.map((p) => p.studentId));
+  const ltv = {
+    avgMonths: ltvBase.length ? Math.round((ltvMonthsSum / ltvBase.length) * 10) / 10 : null,
+    avgRevenue: payers.size ? Math.round(paidAll.reduce((s, p) => s + p.amount, 0) / payers.size) : null,
+    buckets: ltvBuckets,
+  };
+
   // --- Сколько записей на пробный нужно, чтобы заполнить свободные места ---
   const freeSpots = capTotal > 0 ? Math.max(0, capTotal - filledTotal) : null;
   const convOverall = signed > 0 && bought > 0 ? Math.min(1, bought / signed) : 0.4;
@@ -834,7 +874,7 @@ export function computeOwnerDashboard(
     renewals,
     funnel: { today: extras.funnelToday ?? null, yesterday: extras.funnelYesterday ?? null, month },
     sales: { soldSubs, uniqueBuyers },
-    mtd, churn, trialsToFill,
+    mtd, churn, trialsToFill, ltv,
     charts: { revenueByMonth, avgCheckByMonth, subsByMonth, retentionByMonth, retentionByDay },
     risks,
     riskTables: {
