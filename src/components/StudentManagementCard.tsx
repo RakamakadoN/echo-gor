@@ -1368,10 +1368,24 @@ function SellSubscriptionPanel({
   onSubmitBatch?: (items: SellSubscriptionInput[]) => Promise<boolean> | boolean;
   onClose: () => void;
 }) {
-  // Группа абонемента: по умолчанию основная группа ученика, но можно выбрать
-  // другую — ученик может заниматься в двух группах (ТЗ 2026-07-12).
+  // Формат занятий: по умолчанию — формат основной группы ученика.
+  const [kind, setKind] = useState<"group" | "individual">(() => {
+    const main = allGroups.find((g) => g.id === (student.groupIds?.[0] || group?.id || ""));
+    return main?.format === "individual" ? "individual" : "group";
+  });
+  // Группы строго выбранного формата («Групповой» → обычные группы,
+  // «Индивидуальный» → графики индивидуальных занятий), только филиал ученика
+  // и только с действующим сроком — закрытые группы в продаже не предлагаем.
+  const todayIso = isoOf(new Date());
+  const formatGroups = allGroups.filter((g) =>
+    (g.format === "individual") === (kind === "individual") &&
+    (!g.branchId || g.branchId === student.branchId) &&
+    (!g.endDate || g.endDate >= todayIso)
+  );
+  // Группа абонемента: по умолчанию основная группа ученика (если подходит по
+  // формату), иначе первая подходящая — ученик может заниматься в двух группах.
   const [saleGroupId, setSaleGroupId] = useState(student.groupIds?.[0] || group?.id || "");
-  const saleGroup = allGroups.find((g) => g.id === saleGroupId) || group;
+  const saleGroup = formatGroups.find((g) => g.id === saleGroupId);
   // Дни тренировок из расписания ВЫБРАННОЙ группы (["Пн","Ср","Пт"] → [1,3,5]); если не заданы — Пн/Ср/Пт.
   const groupDayNums = (saleGroup?.days || [])
     .map((d) => SHORT_WD_TO_NUM[d])
@@ -1399,7 +1413,6 @@ function SellSubscriptionPanel({
   }, [saleGroupId]);
   const [busy, setBusy] = useState<null | "save" | "sell">(null);
   const [error, setError] = useState<string | null>(null);
-  const [kind, setKind] = useState<"group" | "individual">("group");
   // Режим продажи (ТЗ «Логика продажи абонементов»): один месяц или период
   // с автоматической разбивкой по календарным месяцам.
   const [mode, setMode] = useState<"single" | "period">("single");
@@ -1425,13 +1438,14 @@ function SellSubscriptionPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind]);
 
-  // Группы фильтруются по формату: «Групповой» → обычные группы,
-  // «Индивидуальный» → графики индивидуальных занятий.
-  const formatGroups = allGroups.filter((g) => ((g as any).format === "individual") === (kind === "individual"));
+  // Смена формата → выбранная группа обязана быть из списка нового формата.
   useEffect(() => {
     if (!formatGroups.some((g) => g.id === saleGroupId)) setSaleGroupId(formatGroups[0]?.id || "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind]);
+
+  // Продажа возможна только при полном согласовании: тариф формата + группа формата.
+  const canSell = activePlans.some((p) => p.id === planId) && formatGroups.some((g) => g.id === saleGroupId);
 
   const plan = activePlans.find((p) => p.id === planId);
   const basePrice = plan?.price || 0;
@@ -1561,6 +1575,10 @@ function SellSubscriptionPanel({
       setError("Выберите тип абонемента");
       return;
     }
+    if (!saleGroupId) {
+      setError(kind === "individual" ? "Выберите график индивидуальных занятий" : "Выберите группу абонемента");
+      return;
+    }
     if (lessonsTotal === 0) {
       setError("Выберите хотя бы одно занятие");
       return;
@@ -1606,6 +1624,10 @@ function SellSubscriptionPanel({
   // Пакетная продажа периода: N месячных абонементов одной операцией (ТЗ §5).
   const submitBatch = async () => {
     if (!plan || !onSubmitBatch) return;
+    if (!saleGroupId) {
+      setError(kind === "individual" ? "Выберите график индивидуальных занятий" : "Выберите группу абонемента");
+      return;
+    }
     if (!segments.length) {
       setError("Укажите период: дату начала и дату окончания");
       return;
@@ -1670,7 +1692,7 @@ function SellSubscriptionPanel({
         </div>
       </div>
 
-      {activePlans.length === 0 ? (
+      {!plans.some((p) => p.status !== "archived") ? (
         <div className="p-4 text-sm text-slate-500">
           Нет доступных планов абонементов. Создайте их в справочнике «Абонементы».
           <div className="mt-3">
@@ -1701,8 +1723,8 @@ function SellSubscriptionPanel({
           {/* Параметры */}
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-1">
-              <span className="text-xs font-semibold text-slate-500">Форма занятий</span>
-              <select value={kind} onChange={(e) => setKind(e.target.value as "group" | "individual")} className={fieldCls}>
+              <span className="text-xs font-semibold text-slate-500">Формат занятий</span>
+              <select value={kind} onChange={(e) => { setKind(e.target.value as "group" | "individual"); setError(null); }} className={fieldCls}>
                 <option value="group">Групповой</option>
                 <option value="individual">Индивидуальный</option>
               </select>
@@ -1710,35 +1732,51 @@ function SellSubscriptionPanel({
             {/* Группа/индивидуальный график: абонемент продаётся в конкретную группу
                 (для «Индивидуальный» — в группу-график индивидуальных занятий,
                 созданную во вкладке «Группы»); расписание и педагог берутся из неё. */}
-            {formatGroups.length > 0 && (
-              <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-slate-500">
-                  {kind === "individual" ? "Индивидуальные занятия (график / педагог)" : "Группа абонемента"}
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-semibold text-slate-500">
+                {kind === "individual" ? "Индивидуальные занятия (график / педагог)" : "Группа абонемента"}
+              </span>
+              {formatGroups.length > 0 ? (
+                <>
+                  <select value={saleGroupId} onChange={(e) => { setSaleGroupId(e.target.value); setDisabledDates({}); }} className={fieldCls}>
+                    {formatGroups.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name}{g.time ? ` · ${g.time}` : ""}{g.id === (student.groupIds?.[0] || "") ? " (основная)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                  {saleGroup && (
+                    <span className="text-[11px] text-slate-400">
+                      {saleGroup.days?.length ? saleGroup.days.join(", ") : "дни не заданы"}
+                      {saleGroup.time ? ` · ${saleGroup.time}` : ""}
+                    </span>
+                  )}
+                </>
+              ) : (
+                <span className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+                  {kind === "individual"
+                    ? "Нет графиков индивидуальных занятий в филиале ученика. Создайте группу с форматом «Индивидуальный» в разделе «Группы»."
+                    : "Нет действующих групп в филиале ученика. Создайте группу в разделе «Группы»."}
                 </span>
-                <select value={saleGroupId} onChange={(e) => { setSaleGroupId(e.target.value); setDisabledDates({}); }} className={fieldCls}>
-                  {formatGroups.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.name}{g.time ? ` · ${g.time}` : ""}{g.id === (student.groupIds?.[0] || "") ? " (основная)" : ""}
+              )}
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-semibold text-slate-500">Тариф</span>
+              {activePlans.length > 0 ? (
+                <select value={planId} onChange={(e) => setPlanId(e.target.value)} className={fieldCls}>
+                  {activePlans.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} · {p.lessonsCount} зан. · {money(p.price)}
                     </option>
                   ))}
                 </select>
-                {saleGroup && (
-                  <span className="text-[11px] text-slate-400">
-                    {saleGroup.days?.length ? saleGroup.days.join(", ") : "дни не заданы"}
-                    {saleGroup.time ? ` · ${saleGroup.time}` : ""}
-                  </span>
-                )}
-              </label>
-            )}
-            <label className="flex flex-col gap-1">
-              <span className="text-xs font-semibold text-slate-500">Тариф</span>
-              <select value={planId} onChange={(e) => setPlanId(e.target.value)} className={fieldCls}>
-                {activePlans.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} · {p.lessonsCount} зан. · {money(p.price)}
-                  </option>
-                ))}
-              </select>
+              ) : (
+                <span className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+                  {kind === "individual"
+                    ? "Нет индивидуальных тарифов для филиала ученика. Создайте тариф с форматом «Индивидуальный» в настройках сети → «Тарифы абонементов»."
+                    : "Нет групповых тарифов для филиала ученика. Создайте тариф в настройках сети → «Тарифы абонементов»."}
+                </span>
+              )}
             </label>
             <label className="flex flex-col gap-1">
               <span className="text-xs font-semibold text-slate-500">Скидка</span>
@@ -1970,7 +2008,7 @@ function SellSubscriptionPanel({
             {mode === "single" ? (
               <button
                 onClick={() => submit(true)}
-                disabled={busy !== null}
+                disabled={busy !== null || !canSell}
                 className="rounded-xl bg-gradient-to-r from-violet-500 to-rose-500 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:brightness-105 disabled:opacity-40"
               >
                 {busy === "sell" ? "Продаём…" : "Продать абонемент"}
@@ -1978,7 +2016,7 @@ function SellSubscriptionPanel({
             ) : (
               <button
                 onClick={submitBatch}
-                disabled={busy !== null || segments.length === 0}
+                disabled={busy !== null || segments.length === 0 || !canSell}
                 className="rounded-xl bg-gradient-to-r from-violet-500 to-rose-500 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:brightness-105 disabled:opacity-40"
               >
                 {busy === "sell" ? "Оформляем…" : `Продать ${segments.length || ""} абонемент${segments.length === 1 ? "" : segments.length >= 2 && segments.length <= 4 ? "а" : "ов"}`}

@@ -1723,13 +1723,29 @@ export function registerMvpApi(app: express.Express) {
       // Дата продажи (день оформления) — отдельно от starts_on (первый урок).
       const soldOn = String(payload.soldOn || today).slice(0, 10);
 
+      // Тариф с филиалом действует только в нём — у филиалов разные цены (ТЗ 2026-07-12).
+      if (plan.branch_id && plan.branch_id !== branchId) {
+        throw new SaleError(400, `Тариф «${plan.name}» действует в другом филиале — выберите тариф филиала ученика или общий тариф.`);
+      }
+
       // Срок действия группы (ТЗ 2026-07-12): абонемент нельзя продать на период
       // вне срока действия группы. Продлить срок можно в настройках группы.
       if (payload.groupId) {
         const grp = (await supabaseFetch<any[]>(
           "groups",
-          `select=name,start_date,end_date&id=eq.${payload.groupId}&limit=1`
+          `select=name,start_date,end_date,format&id=eq.${payload.groupId}&limit=1`
         ))[0];
+        // Формат тарифа обязан совпадать с форматом группы: индивидуальный тариф
+        // нельзя продать в групповую группу и наоборот (ТЗ 2026-07-12).
+        if (grp) {
+          const planFmt = plan.format === "individual" ? "individual" : "group";
+          const grpFmt = grp.format === "individual" ? "individual" : "group";
+          if (planFmt !== grpFmt) {
+            throw new SaleError(400, planFmt === "individual"
+              ? `Тариф «${plan.name}» — индивидуальный, а «${grp.name}» — групповая группа. Выберите индивидуальный график или групповой тариф.`
+              : `Тариф «${plan.name}» — групповой, а «${grp.name}» — индивидуальный график. Выберите группу или индивидуальный тариф.`);
+          }
+        }
         if (grp?.end_date && endsOn > grp.end_date) {
           throw new SaleError(400, `Группа «${grp.name}» действует до ${grp.end_date} — абонемент на период после этой даты продать нельзя. Продлите срок действия группы или выберите другую.`);
         }
