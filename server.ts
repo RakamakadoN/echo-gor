@@ -21,7 +21,8 @@ registerMagomedApi(app);
 
 // Configure client routing
 const isProduction = process.env.NODE_ENV === 'production';
-const PORT = 3000; // Must strictly run on port 3000 as per runtime environment facts
+// 3000 по умолчанию; PORT из окружения — для параллельного запуска (worktrees).
+const PORT = Number(process.env.PORT) || 3000;
 
 if (!isProduction) {
   // Integrate Vite dev server middleware in local development
