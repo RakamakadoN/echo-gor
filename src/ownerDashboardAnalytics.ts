@@ -5,26 +5,7 @@
 // UI показывает «нет данных / накапливается», а не выдуманную цифру.
 
 import type { Branch, Group, Student, Payment, Teacher } from "./types";
-import { getStudentState } from "./studentSegments";
-
-// Стабильные названия авто-статусов для дашборда (по statusKey из getStudentState).
-const AUTO_STATUS_LABELS: Record<string, string> = {
-  lead: "Новый лид",
-  trial: "Записан на пробный",
-  trial_missed: "Не пришёл на пробный",
-  trial_rebooked: "Перезаписан на пробный",
-  trial_lost: "Был на пробном, не купил",
-  visitor_new: "Новый посетитель",
-  not_renewed: "Не продлил абонемент",
-  debt_current: "Не оплачен текущий месяц",
-  debt_prev: "Не оплачен прошлый месяц",
-  next_paid: "Куплен следующий месяц",
-  new: "Новый ученик",
-  active: "Постоянный ученик",
-  returned: "Вернувшийся",
-  paused: "Замороженный абонемент",
-  manual: "Ручной статус",
-};
+import { getEnrollmentMonths } from "./studentSegments";
 
 export type PeriodKey = "today" | "yesterday" | "week" | "month" | "quarter" | "year" | "custom";
 export type LevelKey = "network" | "branch" | "group" | "teacher";
@@ -251,6 +232,10 @@ export interface DailyReport {
   expiring14d: DailyReportEntry;
   unpaidCurrentMonth: DailyReportEntry;
   unpaidPrevMonth: DailyReportEntry;
+  // Вчерашние пробные, ещё НЕ обработанные управляющим (нет покупки, ручного
+  // статуса и перезаписи на новую дату): был-не-купил / не пришёл.
+  trialYesterdayLost: DailyReportEntry;
+  trialYesterdayMissed: DailyReportEntry;
   overloadedGroups: { count: number; groupIds: string[]; studentIds: string[] };
   lowFillGroups: { count: number; groupIds: string[]; studentIds: string[] };
   retentionDropBranches: { count: number; branchIds: string[]; studentIds: string[] };
@@ -269,18 +254,38 @@ export interface OwnerDashboardModel {
     momPct: number | null; yoyPct: number | null;
   };
   avgCheck: { all: number | null; new: number | null; regular: number | null; returning: number | null; momPct: number | null };
-  activeSubs: { count: number; momPct: number | null; yoyPct: number | null };
+  // count — активных абонементов, students — уникальных учеников с абонементом:
+  // это ДВА разных показателя (у одного ученика может быть два абонемента).
+  activeSubs: { count: number; students: number; momPct: number | null; yoyPct: number | null };
   occupancy: { pct: number | null; filled: number; capacity: number; byBranch: { id: string; name: string; pct: number | null; filled: number; capacity: number }[] };
   retention: { pct: number | null; activeStudents: number; totalStudents: number; momPct: number | null; yoyPct: number | null };
   debtors: { total: number; debtAmount: number; aging: { d1_7: number; d8_14: number; d14plus: number } | null };
   futureEnrollments: { total: number; byBranch: { name: string; n: number }[]; byAge: { label: string; n: number }[]; isProxy: boolean };
   newStudents: { period: number; today: number; hasData: boolean };
   renewals: { d3: number; d7: number; d14: number };
+  // Воронка без лидов (ТЗ заказчика): запись на пробный → пришёл → купил,
+  // конверсии в процентах. Считается по отметкам пробных в журнале и датам продаж.
   funnel: {
     today: FunnelDay | null; yesterday: FunnelDay | null;
-    month: { leads: number; signed: number; came: number; bought: number; convSigned: number | null; convCame: number | null; convBought: number | null };
+    month: { signed: number; came: number; bought: number; convCame: number | null; convBought: number | null };
   };
-  autoStatuses: { key: string; label: string; count: number }[];
+  // Продажи за период: продано абонементов и уникальных покупателей —
+  // два разных показателя (один ученик может купить два абонемента).
+  sales: { soldSubs: number; uniqueBuyers: number };
+  // Выручка с начала месяца и сравнение с тем же днём прошлого месяца.
+  mtd: { cur: number; prev: number; pct: number | null };
+  // Отток: ушедшие в текущем месяце (из архива) и % оттока.
+  churn: { left: number; pct: number | null };
+  // Сколько записей на пробный нужно, чтобы заполнить свободные места
+  // (по фактической конверсии запись→покупка, откат на 40%).
+  trialsToFill: { freeSpots: number | null; convPct: number; needed: number | null };
+  // Лояльность аудитории: средний срок обучения (LTV в месяцах), средняя
+  // выручка на ученика и разбивка учеников по длительности обучения.
+  ltv: {
+    avgMonths: number | null;
+    avgRevenue: number | null;
+    buckets: { key: string; label: string; count: number; ids: string[] }[];
+  };
   charts: {
     revenueByMonth: { month: string; cur: number; prev: number | null }[];
     avgCheckByMonth: { month: string; cur: number | null; prev: number | null }[];
@@ -307,7 +312,7 @@ export interface OwnerDashboardModel {
 }
 
 export function computeOwnerDashboard(
-  all: { students: Student[]; payments: Payment[]; groups: Group[]; branches: Branch[]; teachers: Teacher[] },
+  all: { students: Student[]; payments: Payment[]; groups: Group[]; branches: Branch[]; teachers: Teacher[]; archive?: any[] },
   filters: DashFilters,
   now: Date = new Date(),
   extras: DashExtras = {}
@@ -402,53 +407,50 @@ export function computeOwnerDashboard(
   const newPeriod = newPeriodStudents.length;
   const newToday = newTodayStudents.length;
 
-  // --- воронка ---
-  const leads = students.filter((s) => s.status === "lead").length;
-  const trials = students.filter((s) => s.status === "trial").length;
-  const active = students.filter((s) => s.status === "active").length;
-  const signed = trials + active; // дошли до пробного и дальше
-  const came = active + trials;   // упрощение при отсутствии событий
-  // «Купили» = ПОКУПКИ за период (по дате продажи sold_on), а не снапшот
-  // активных: продление/повторная покупка тоже видна в воронке (ТЗ заказчика).
-  const bought = students.filter((s) =>
-    (s.subscriptions || []).some((sub) => {
-      if (sub.status === "deleted") return false; // удалённый абонемент — покупка откатилась
-      const sold = (sub.soldOn || sub.startsOn || "").slice(0, 10);
-      return sold && inRange(sold, ranges.cur);
-    })
-  ).length;
-  // «Был на пробном, оплатит» — промис оплаты (ручной статус); выполненный
-  // промис (уже есть активный абонемент) getStudentState скрывает сам.
-  const promised = students.filter((s) => {
-    if (s.status === "archived" || (s as any).archivedAt) return false;
-    const st = getStudentState(s);
-    return st.statusKey === "manual" && /оплат/i.test(s.manualStatus || "");
-  }).length;
+  // --- воронка (без лидов, ТЗ заказчика): запись на пробный → пришёл → купил ---
+  // Записи и приходы — по отметкам пробных уроков в журнале посещаемости
+  // (те же данные, что видит управляющий); «купили» — первая покупка
+  // абонемента в выбранном периоде.
+  const isTrialMark = (a: any) => Boolean(a) && (Boolean(a.isTrial) || a.status === "trial");
+  const cameStatuses = ["present", "excused", "trial"];
+  const signedSet = new Set<string>();
+  const cameSet = new Set<string>();
+  students.forEach((s) => {
+    Object.values(s.attendance || {}).forEach((a: any) => {
+      if (!isTrialMark(a)) return;
+      const d = String(a.date || "").slice(0, 10);
+      if (!d || !inRange(d, ranges.cur)) return;
+      signedSet.add(s.id);
+      if (cameStatuses.includes(a.status)) cameSet.add(s.id);
+    });
+    // Записан на пробный, но отметки в журнале ещё нет — считаем по дате создания.
+    if (s.status === "trial" && s.createdAt && inRange(s.createdAt.slice(0, 10), ranges.cur)) signedSet.add(s.id);
+  });
+  const firstPurchaseInRange = (s: Student) => {
+    const dates = (s.subscriptions || [])
+      .filter((sub) => sub.status !== "deleted")
+      .map((sub) => (sub.soldOn || sub.startsOn || "").slice(0, 10))
+      .filter(Boolean)
+      .sort();
+    return dates.length > 0 && inRange(dates[0], ranges.cur);
+  };
+  const signed = signedSet.size;
+  const came = cameSet.size;
+  const bought = students.filter(firstPurchaseInRange).length;
   const month = {
-    leads, signed, came: trials + active, promised, bought,
-    convSigned: leads ? Math.round((signed / Math.max(leads, signed)) * 100) : null,
+    signed, came, bought,
     convCame: signed ? Math.round((came / signed) * 100) : null,
-    convBought: came ? Math.round((bought / Math.max(came, bought)) * 100) : null
+    convBought: came ? Math.round((bought / came) * 100) : null,
   };
 
-  // --- распределение по авто-статусам (getStudentState — тот же источник, что список
-  // учеников): «не пришёл на пробный», «был не купил», «требуют продления» и т.д.
-  // Так авто-статусы, которые система считает сама, подтягиваются к владельцу. ---
-  const autoStatusMap = new Map<string, number>();
-  for (const s of students) {
-    if (s.status === "archived" || (s as any).archivedAt) continue;
-    const st = getStudentState(s);
-    if (st.statusKey === "left") continue;
-    // Ручные статусы показываем ПО НАЗВАНИЯМ («Был на пробном, оплатит»,
-    // «Каникулы», …), а не одной строкой «Ручной статус» (ТЗ заказчика).
-    const key = st.statusKey === "manual" ? (s.manualStatus || "Ручной статус") : st.statusKey;
-    autoStatusMap.set(key, (autoStatusMap.get(key) || 0) + 1);
-  }
-  const autoStatuses = Array.from(autoStatusMap, ([key, count]) => ({
-    key,
-    label: AUTO_STATUS_LABELS[key] || key,
-    count,
-  })).filter((x) => x.count > 0).sort((a, b) => b.count - a.count);
+  // --- продажи за период: проданные абонементы и уникальные покупатели ---
+  const subSoldInRange = (sub: any) => {
+    if (sub.status === "deleted") return false;
+    const sold = (sub.soldOn || sub.startsOn || "").slice(0, 10);
+    return Boolean(sold) && inRange(sold, ranges.cur);
+  };
+  const soldSubs = students.reduce((c, s) => c + (s.subscriptions || []).filter(subSoldInRange).length, 0);
+  const uniqueBuyers = students.filter((s) => (s.subscriptions || []).some(subSoldInRange)).length;
 
   // --- графики: помесячно за тек. и пред. год ---
   const months: string[] = [];
@@ -667,6 +669,83 @@ export function computeOwnerDashboard(
   const trialToday = trialOf(todayStr);
   const trialYesterday = trialOf(yStr);
 
+  // --- Вчерашние пробные, ещё не обработанные управляющим (ТЗ заказчика) ---
+  // «Обработан» = купил абонемент, ИЛИ управляющий поставил ручной статус,
+  // ИЛИ ученик перезаписан на новую дату пробного, ИЛИ отправлен в архив.
+  const yesterdayTrialUnprocessed = (kind: "came" | "missed") => students.filter((s) => {
+    if (s.status === "archived" || (s as any).archivedAt) return false;
+    if ((s.subscriptions || []).some((sub) => sub.status === "active")) return false;
+    if (s.manualStatus) return false;
+    const entries = Object.values(s.attendance || {}).filter(isTrialMark) as any[];
+    const yEntries = entries.filter((a) => String(a.date || "").slice(0, 10) === yStr);
+    if (!yEntries.length) return false;
+    if (yEntries.some((a) => a.trialOutcome === "converted")) return false;
+    if (entries.some((a) => String(a.date || "").slice(0, 10) > yStr)) return false; // перезаписан
+    const cameY = yEntries.some((a) => cameStatuses.includes(a.status));
+    const missedY = yEntries.some((a) => a.status === "absent" || a.status === "sick");
+    return kind === "came" ? cameY : (!cameY && missedY);
+  });
+  const trialLostYesterday = yesterdayTrialUnprocessed("came");
+  const trialMissedYesterday = yesterdayTrialUnprocessed("missed");
+
+  // --- Отток: ушедшие в текущем месяце (из архива учеников в области видимости) ---
+  const archiveScoped = (all.archive || []).filter((a: any) =>
+    (filters.level !== "branch" || !filters.branchId || a.branchId === filters.branchId));
+  const leftThisMonth = archiveScoped.filter((a: any) => {
+    const d = String(a.leftOn || a.archivedAt || a.archived_at || "").slice(0, 7);
+    return d === curMonthKey;
+  }).length;
+  const churnBase = students.length + leftThisMonth;
+  const churn = { left: leftThisMonth, pct: churnBase ? Math.round((leftThisMonth / churnBase) * 100) : null };
+
+  // --- Выручка месяца к тому же дню прошлого месяца (MTD-сравнение) ---
+  const mtdCur = payments.filter((p) => isPaid(p) && p.date >= `${curMonthKey}-01` && p.date <= todayStr).reduce((s, p) => s + p.amount, 0);
+  const prevMonthDays = new Date(curY, now.getMonth(), 0).getDate();
+  const prevSameDay = iso(new Date(prevMonthDate.getFullYear(), prevMonthDate.getMonth(), Math.min(now.getDate(), prevMonthDays)));
+  const mtdPrev = payments.filter((p) => isPaid(p) && p.date >= `${prevMonthKey}-01` && p.date <= prevSameDay).reduce((s, p) => s + p.amount, 0);
+  const mtd = { cur: mtdCur, prev: mtdPrev, pct: mtdPrev > 0 ? delta(mtdCur, mtdPrev).pct : null };
+
+  // --- Лояльность (LTV): срок обучения и разбивка по месяцам ---
+  // База — занимающиеся ученики (без ушедших/архива и без лидов/пробных:
+  // у них ещё нет срока обучения). Срок — getEnrollmentMonths, тот же
+  // расчёт, что в карточке ученика.
+  const ltvBase = students.filter((s) =>
+    s.status !== "left" && s.status !== "archived" && !(s as any).archivedAt &&
+    s.status !== "lead" && s.status !== "trial");
+  const LTV_BUCKETS: { key: string; label: string; match: (mo: number) => boolean }[] = [
+    { key: "1-2", label: "1–2 мес", match: (mo) => mo <= 1 },      // 0–1 полный месяц = занимается 1–2-й месяц
+    { key: "3-4", label: "3–4 мес", match: (mo) => mo >= 2 && mo <= 3 },
+    { key: "5-6", label: "5–6 мес", match: (mo) => mo >= 4 && mo <= 5 },
+    { key: "7-8", label: "7–8 мес", match: (mo) => mo >= 6 && mo <= 7 },
+    { key: "9-12", label: "9–12 мес", match: (mo) => mo >= 8 && mo <= 11 },
+    { key: "12+", label: "Больше года", match: (mo) => mo >= 12 },
+  ];
+  const ltvBuckets = LTV_BUCKETS.map((b) => ({ key: b.key, label: b.label, count: 0, ids: [] as string[] }));
+  let ltvMonthsSum = 0;
+  ltvBase.forEach((s) => {
+    const mo = getEnrollmentMonths(s, now);
+    ltvMonthsSum += mo;
+    const idx = LTV_BUCKETS.findIndex((b) => b.match(mo));
+    if (idx >= 0) { ltvBuckets[idx].count += 1; ltvBuckets[idx].ids.push(s.id); }
+  });
+  // Средняя выручка на ученика за всё время — по платившим ученикам области.
+  const paidAll = payments.filter(isPaid);
+  const payers = new Set(paidAll.map((p) => p.studentId));
+  const ltv = {
+    avgMonths: ltvBase.length ? Math.round((ltvMonthsSum / ltvBase.length) * 10) / 10 : null,
+    avgRevenue: payers.size ? Math.round(paidAll.reduce((s, p) => s + p.amount, 0) / payers.size) : null,
+    buckets: ltvBuckets,
+  };
+
+  // --- Сколько записей на пробный нужно, чтобы заполнить свободные места ---
+  const freeSpots = capTotal > 0 ? Math.max(0, capTotal - filledTotal) : null;
+  const convOverall = signed > 0 && bought > 0 ? Math.min(1, bought / signed) : 0.4;
+  const trialsToFill = {
+    freeSpots,
+    convPct: Math.round(convOverall * 100),
+    needed: freeSpots === null ? null : (freeSpots === 0 ? 0 : Math.ceil(freeSpots / Math.max(convOverall, 0.05))),
+  };
+
   // --- Продления на следующий период: абонемент покрывает ВЕСЬ следующий месяц
   // (validUntil не раньше последнего дня след. месяца) — значит ученик уже оплатил следующий период,
   // а не просто дотягивает текущим месячным абонементом до начала следующего. ---
@@ -753,6 +832,8 @@ export function computeOwnerDashboard(
     expiring14d: { count: exp14.length, ids: exp14 },
     unpaidCurrentMonth: { count: unpaidCurrent.length, ids: unpaidCurrent.map((s) => s.id) },
     unpaidPrevMonth: { count: unpaidPrev.length, ids: unpaidPrev.map((s) => s.id) },
+    trialYesterdayLost: { count: trialLostYesterday.length, ids: trialLostYesterday.map((s) => s.id) },
+    trialYesterdayMissed: { count: trialMissedYesterday.length, ids: trialMissedYesterday.map((s) => s.id) },
     overloadedGroups: { count: overloaded.length, groupIds: overloadedGroupIds, studentIds: studentsOfGroups(new Set(overloadedGroupIds)) },
     lowFillGroups: { count: halfEmpty.length, groupIds: lowFillGroupIds, studentIds: studentsOfGroups(new Set(lowFillGroupIds)) },
     retentionDropBranches: { count: retentionDropBranchList.length, branchIds: retentionDropBranchIds, studentIds: studentsOfBranches(new Set(retentionDropBranchIds)) },
@@ -777,6 +858,7 @@ export function computeOwnerDashboard(
     },
     activeSubs: {
       count: activeSubsCount,
+      students: activeStud,
       momPct: snPrev ? delta(activeSubsCount, snPrev.activeSubscriptions).pct : null,
       yoyPct: snYoY ? delta(activeSubsCount, snYoY.activeSubscriptions).pct : null
     },
@@ -791,7 +873,8 @@ export function computeOwnerDashboard(
     newStudents: { period: newPeriod, today: newToday, hasData: hasCreated },
     renewals,
     funnel: { today: extras.funnelToday ?? null, yesterday: extras.funnelYesterday ?? null, month },
-    autoStatuses,
+    sales: { soldSubs, uniqueBuyers },
+    mtd, churn, trialsToFill, ltv,
     charts: { revenueByMonth, avgCheckByMonth, subsByMonth, retentionByMonth, retentionByDay },
     risks,
     riskTables: {

@@ -1016,6 +1016,51 @@ export function registerMvpApi(app: express.Express) {
     }
   });
 
+  // Выполнение плана БДР по филиалам: план — из planning_budgets (вкладка
+  // «Планирование (БДР)»), факт — реальные оплаты месяца из payments.
+  // Если план на месяц не задан — plan/pct = null, UI подскажет заполнить БДР.
+  app.get("/api/mvp/owner/bdr-progress", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "Только владелец" });
+    const period = String(req.query.period || new Date().toISOString().slice(0, 7)); // YYYY-MM
+    if (!supabaseEnabled) return res.json({ period, network: null, byBranch: [] });
+    try {
+      const orgFilter = `organization_id=eq.${session.organizationId}`;
+      const [budgets, payments, branches] = await Promise.all([
+        supabaseFetch<any[]>("planning_budgets", `select=branch_id,planned_revenue,planned_expense&${orgFilter}&period_month=eq.${period}&status=eq.active`),
+        supabaseFetch<any[]>("payments", `select=amount,branch_id,paid_at,status&${orgFilter}`),
+        supabaseFetch<any[]>("branches", `select=id,name,city&${orgFilter}&status=neq.archived`),
+      ]);
+      const paid = payments.filter((p) => p.status === "paid" && String(p.paid_at || "").slice(0, 7) === period);
+      const factOf = (branchId: string | null) =>
+        (branchId ? paid.filter((p) => p.branch_id === branchId) : paid).reduce((s, p) => s + Number(p.amount || 0), 0);
+      const planOf = (branchId: string | null) => {
+        const row = budgets.find((b) => (b.branch_id || null) === branchId);
+        return row ? Number(row.planned_revenue || 0) : null;
+      };
+      // План сети: строка branch_id=null, иначе сумма планов филиалов.
+      const branchPlans = branches.map((b) => planOf(b.id));
+      const networkPlan = planOf(null) ?? (branchPlans.some((p) => p !== null)
+        ? branchPlans.reduce((s: number, p) => s + (p || 0), 0)
+        : null);
+      const pct = (fact: number, plan: number | null) =>
+        plan && plan > 0 ? Math.round((fact / plan) * 100) : null;
+      const networkFact = factOf(null);
+      const byBranch = branches.map((b) => {
+        const plan = planOf(b.id);
+        const fact = factOf(b.id);
+        return { branchId: b.id, name: b.name || b.city, plan, fact, pct: pct(fact, plan) };
+      });
+      res.json({
+        period,
+        network: { plan: networkPlan, fact: networkFact, pct: pct(networkFact, networkPlan) },
+        byBranch,
+      });
+    } catch (error: any) {
+      res.status(503).json({ period, network: null, byBranch: [], error: error?.message });
+    }
+  });
+
   app.get("/api/mvp/video/templates", (_req, res) => {
     res.json({ templates: listVideoTemplates() });
   });
@@ -3918,6 +3963,127 @@ export function registerMvpApi(app: express.Express) {
       res.json({ request: mapExpenseReq(rows[0]) });
     } catch (error: any) {
       res.status(400).json({ error: error.message || "Не удалось отклонить заявку" });
+    }
+  });
+
+  // ---- Заявки на возврат средств (управляющий запрашивает — владелец подтверждает) ----
+  // Миграция 043: finance_refund_requests. Одобрение создаёт фактическую расходную
+  // операцию в Бухгалтерии (finance_transactions), как и заявки на расход.
+  const mapRefundReq = (r: any) => ({
+    id: r.id, branchId: r.branch_id, studentId: r.student_id, studentName: r.student_name,
+    requestedByName: r.requested_by_name, amount: Number(r.amount), reason: r.reason,
+    status: r.status, decidedBy: r.decided_by, decidedAt: r.decided_at,
+    decisionComment: r.decision_comment, operationId: r.operation_id, createdAt: r.created_at,
+  });
+
+  // Создать заявку на возврат (управляющий филиалом или владелец)
+  app.post("/api/mvp/accounting/refund-requests", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "branch_manager" && session.role !== "owner") {
+      return res.status(403).json({ error: "Недостаточно прав" });
+    }
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const p = req.body || {};
+    const amount = Number(p.amount);
+    if (!amount || amount <= 0) return res.status(400).json({ error: "Укажите сумму больше нуля" });
+    try {
+      const inserted = await supabaseFetch<any[]>("finance_refund_requests", "", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: session.organizationId,
+          branch_id: p.branchId || session.dbBranchId || null,
+          student_id: p.studentId || null,
+          student_name: p.studentName || null,
+          requested_by: authorId(session),
+          requested_by_name: session.fullName || session.role,
+          amount,
+          reason: p.reason || null,
+          status: "pending",
+        }),
+      });
+      res.status(201).json({ request: mapRefundReq(inserted[0]) });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось создать заявку на возврат" });
+    }
+  });
+
+  // Список заявок на возврат (владелец — все по сети; управляющий — свой филиал)
+  app.get("/api/mvp/accounting/refund-requests", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "branch_manager" && session.role !== "owner") {
+      return res.status(403).json({ error: "Недостаточно прав" });
+    }
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const filters = [`select=*`, `organization_id=eq.${session.organizationId}`, "order=created_at.desc", "limit=500"];
+    if (session.role === "branch_manager") filters.push(`branch_id=eq.${session.dbBranchId}`);
+    if (req.query.status) filters.push(`status=eq.${req.query.status}`);
+    try {
+      const rows = await supabaseFetch<any[]>("finance_refund_requests", filters.join("&"));
+      res.json({ requests: rows.map(mapRefundReq) });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось загрузить заявки на возврат" });
+    }
+  });
+
+  // Одобрить возврат (только владелец) — создаёт фактическую расходную операцию
+  app.post("/api/mvp/accounting/refund-requests/:id/approve", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "Подтверждать может только владелец" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const p = req.body || {};
+    try {
+      const found = await supabaseFetch<any[]>("finance_refund_requests", `select=*&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`);
+      const reqRow = found[0];
+      if (!reqRow) return res.status(404).json({ error: "Заявка не найдена" });
+      if (reqRow.status !== "pending") return res.status(400).json({ error: "Заявка уже обработана" });
+
+      const op = await supabaseFetch<any[]>("finance_transactions", "", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: session.organizationId,
+          branch_id: reqRow.branch_id,
+          account_id: p.accountId || null,
+          category_id: p.categoryId || null,
+          amount: reqRow.amount,
+          type: "expense",
+          status: "actual",
+          operation_date: p.date || new Date().toISOString().slice(0, 10),
+          counterparty: reqRow.student_name || null,
+          description: `Возврат средств${reqRow.student_name ? `: ${reqRow.student_name}` : ""}${reqRow.reason ? ` — ${reqRow.reason}` : ""}`,
+        }),
+      });
+      const rows = await supabaseFetch<any[]>("finance_refund_requests", `id=eq.${req.params.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: "approved", decided_by: session.fullName || "owner",
+          decided_at: new Date().toISOString(), decision_comment: p.comment || null,
+          operation_id: op[0]?.id || null,
+        }),
+      });
+      res.json({ request: mapRefundReq(rows[0]) });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось одобрить возврат" });
+    }
+  });
+
+  // Отклонить возврат (только владелец)
+  app.post("/api/mvp/accounting/refund-requests/:id/reject", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "Отклонять может только владелец" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const p = req.body || {};
+    try {
+      const rows = await supabaseFetch<any[]>("finance_refund_requests", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}&status=eq.pending`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: "rejected", decided_by: session.fullName || "owner",
+          decided_at: new Date().toISOString(), decision_comment: p.comment || null,
+        }),
+      });
+      if (!rows[0]) return res.status(400).json({ error: "Заявка не найдена или уже обработана" });
+      res.json({ request: mapRefundReq(rows[0]) });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось отклонить возврат" });
     }
   });
 

@@ -665,6 +665,7 @@ function FinanceView({ payments, students, monthRevenue, debt, renewals }: any) 
         </div>
       </section>
       <ExpenseRequestCard />
+      <RefundRequestCard students={students} />
     </Screen>
   );
 }
@@ -739,6 +740,99 @@ function ExpenseRequestCard() {
               <div key={r.id} className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-[#161616] p-3">
                 <div>
                   <p className="text-sm font-bold text-white">{formatMoney(r.amount)}{r.description ? ` · ${r.description}` : ""}</p>
+                  <p className="text-[11px] text-slate-500">
+                    {new Date(r.createdAt).toLocaleDateString("ru-RU")}
+                    {r.status === "rejected" && r.decisionComment ? ` · причина: ${r.decisionComment}` : ""}
+                  </p>
+                </div>
+                <span className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-bold ${st.cls}`}>
+                  <Icon className="h-3.5 w-3.5" /> {st.label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// Заявка на возврат средств ученику: управляющий отправляет — владелец видит
+// её на дашборде в «Требуют решения» и одобряет (создастся расход в Бухгалтерии).
+function RefundRequestCard({ students }: { students: Student[] }) {
+  const [studentId, setStudentId] = useState("");
+  const [amount, setAmount] = useState("");
+  const [reason, setReason] = useState("");
+  const [list, setList] = useState<any[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const hdr = { "x-demo-role": "branch_manager" };
+
+  const load = async () => {
+    try {
+      const res = await fetch("/api/mvp/accounting/refund-requests", { headers: hdr });
+      if (res.ok) setList((await res.json()).requests || []);
+    } catch { /* no-op */ }
+  };
+  useEffect(() => { load(); }, []);
+
+  const submit = async () => {
+    const a = Number(amount);
+    if (!a || a <= 0) { setError("Укажите сумму больше нуля"); return; }
+    setBusy(true); setError(null);
+    const student = students.find((s) => s.id === studentId);
+    try {
+      const res = await fetch("/api/mvp/accounting/refund-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...hdr },
+        body: JSON.stringify({ amount: a, reason, studentId: studentId || null, studentName: student?.name || null }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setAmount(""); setReason(""); setStudentId("");
+      await load();
+    } catch (e: any) {
+      setError(e?.message || "Не удалось отправить заявку на возврат");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const field = "w-full rounded-xl border border-white/10 bg-[#0e0e0e] px-3 py-2 text-sm text-white outline-none focus:border-[#C5A059]/50";
+
+  return (
+    <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+      <div className="flex items-center gap-2">
+        <HeartHandshake className="h-5 w-5 text-[#C5A059]" />
+        <h3 className="font-black text-white">Заявка на возврат средств ученику</h3>
+      </div>
+      <p className="mt-1 text-xs text-slate-500">Заявка уйдёт владельцу сети на подтверждение — он увидит её на своём дашборде в блоке «Требуют решения».</p>
+      <div className="mt-4 grid gap-2 md:grid-cols-[1fr_140px_1fr_auto]">
+        <select value={studentId} onChange={(e) => setStudentId(e.target.value)} className={field}>
+          <option value="">Ученик (не обязательно)</option>
+          {students.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+        <input type="number" inputMode="numeric" placeholder="Сумма, ₸" value={amount} onChange={(e) => setAmount(e.target.value)} className={field} />
+        <input placeholder="Причина возврата" value={reason} onChange={(e) => setReason(e.target.value)} className={field} />
+        <button disabled={busy || !amount} onClick={submit}
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#C5A059] px-4 py-2 text-sm font-black text-black transition hover:bg-[#d4b06a] disabled:opacity-50">
+          <Send className="h-4 w-4" /> {busy ? "Отправка…" : "Запросить возврат"}
+        </button>
+      </div>
+      {error && <p className="mt-2 text-xs text-rose-300">{error}</p>}
+
+      {list.length > 0 && (
+        <div className="mt-5 space-y-2">
+          <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">Мои заявки на возврат</p>
+          {list.map((r) => {
+            const st = REQ_STATUS[r.status] || REQ_STATUS.pending;
+            const Icon = st.icon;
+            return (
+              <div key={r.id} className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-[#161616] p-3">
+                <div>
+                  <p className="text-sm font-bold text-white">
+                    {formatMoney(r.amount)}
+                    {r.studentName ? ` · ${r.studentName}` : ""}
+                    {r.reason ? ` · ${r.reason}` : ""}
+                  </p>
                   <p className="text-[11px] text-slate-500">
                     {new Date(r.createdAt).toLocaleDateString("ru-RU")}
                     {r.status === "rejected" && r.decisionComment ? ` · причина: ${r.decisionComment}` : ""}
