@@ -1421,12 +1421,20 @@ function SellSubscriptionPanel({
   // «Индивидуальный» → графики индивидуальных занятий), только филиал ученика
   // и только с действующим сроком — закрытые группы в продаже не предлагаем.
   const todayIso = isoOf(new Date());
+  // «Другая группа» — только группы БЕЗ действующего абонемента ученика:
+  // где абонемент уже есть, продаёт обычная кнопка (следующий месяц и т.д.).
+  const activeSubGroupIds = new Set(
+    (student.subscriptions || [])
+      .filter((s) => s.status === "active" && s.groupId && (!s.validUntil || s.validUntil.slice(0, 10) >= todayIso))
+      .map((s) => s.groupId as string)
+  );
   const formatGroups = locked
     ? (mainGroup ? [mainGroup] : [])
     : allGroups.filter((g) =>
         (g.format === "individual") === (kind === "individual") &&
         (!g.branchId || g.branchId === student.branchId) &&
-        (!g.endDate || g.endDate >= todayIso)
+        (!g.endDate || g.endDate >= todayIso) &&
+        !activeSubGroupIds.has(g.id)
       );
   // Группа абонемента: в обычной продаже — группа ученика; в «другой группе» —
   // по умолчанию первая подходящая, кроме основной (за ней — обычная кнопка).
@@ -1830,8 +1838,8 @@ function SellSubscriptionPanel({
                   ) : (
                     <span className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
                       {kind === "individual"
-                        ? "Нет графиков индивидуальных занятий в филиале ученика. Создайте группу с форматом «Индивидуальный» в разделе «Группы»."
-                        : "Нет действующих групп в филиале ученика. Создайте группу в разделе «Группы»."}
+                        ? "Нет доступных индивидуальных графиков: либо их нет в филиале ученика (создайте группу с форматом «Индивидуальный» в разделе «Группы»), либо во всех у ученика уже есть действующий абонемент."
+                        : "Нет доступных групп: либо в филиале ученика нет действующих групп, либо во всех у ученика уже есть действующий абонемент — за продлением используйте кнопку «Продать абонемент»."}
                     </span>
                   )}
                 </label>

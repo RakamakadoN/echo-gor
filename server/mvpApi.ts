@@ -574,6 +574,9 @@ async function dbBootstrap(session: MvpSession) {
     status: group.status || "active",
     startDate: group.start_date || null,
     endDate: group.end_date || null,
+    // ЛОВУШКА двойного маппинга: mapDbGroup format отдаёт, а bootstrap — забывал.
+    // Из-за этого формат «терялся» после перезагрузки (всегда «групповой»).
+    format: group.format === "individual" ? "individual" : "group",
     ageGroup: group.age_from && group.age_to ? `${group.age_from}-${group.age_to} лет` : "Все возрасты",
     ageFrom: group.age_from ?? null,
     ageTo: group.age_to ?? null,

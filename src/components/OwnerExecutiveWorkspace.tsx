@@ -9734,7 +9734,7 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
   const [lessonForm, setLessonForm] = useState({ branchId: "", groupId: "", teacherId: "", hallId: "", date: "", startTime: "", endTime: "", topic: "", reason: "" });
   // Список времени для выпадашек урока (08:00–22:00, шаг 30 мин).
   const LESSON_TIMES = useMemo(() => { const o: string[] = []; for (let h = 8; h <= 22; h++) for (const m of [0, 30]) o.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`); return o; }, []);
-  const [groupForm, setGroupForm] = useState({ name: "", branchId: "", teacherId: "", hallId: "", ageFrom: "", ageTo: "", level: "Начинающие", scheduleDays: "", scheduleTime: "", startDate: "", endDate: "" });
+  const [groupForm, setGroupForm] = useState({ name: "", branchId: "", teacherId: "", hallId: "", ageFrom: "", ageTo: "", level: "Начинающие", scheduleDays: "", scheduleTime: "", startDate: "", endDate: "", format: "group" });
   const [saving, setSaving] = useState(false);
 
   // Видимый диапазон по выбранному режиму
@@ -10044,6 +10044,12 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <label className={labelCls}><span className={kicCls}>Название *</span>
               <input type="text" value={groupForm.name} onChange={(e) => setGroupForm(f => ({ ...f, name: e.target.value }))} placeholder="Название группы" className={inputCls} />
+            </label>
+            <label className={labelCls}><span className={kicCls}>Формат *</span>
+              <select value={groupForm.format} onChange={(e) => setGroupForm(f => ({ ...f, format: e.target.value }))} className={inputCls}>
+                <option value="group">Групповая</option>
+                <option value="individual">Индивидуальные занятия</option>
+              </select>
             </label>
             <label className={labelCls}><span className={kicCls}>Филиал *</span>
               <select value={groupForm.branchId} onChange={(e) => setGroupForm(f => ({ ...f, branchId: e.target.value }))} className={inputCls}>
