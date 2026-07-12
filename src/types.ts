@@ -403,6 +403,8 @@ export interface SubscriptionPlan {
   /** 'month' — все занятия календарного месяца без доплаты (групповые);
    *  'lessons' — строго по количеству занятий тарифа (индивидуальные). */
   billingMode?: "month" | "lessons";
+  /** Формат тарифа: групповой или индивидуальный — фильтр при продаже. */
+  format?: "group" | "individual";
 }
 
 export interface LeadSource {

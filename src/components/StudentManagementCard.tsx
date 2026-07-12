@@ -1364,7 +1364,6 @@ function SellSubscriptionPanel({
   onSubmitBatch?: (items: SellSubscriptionInput[]) => Promise<boolean> | boolean;
   onClose: () => void;
 }) {
-  const activePlans = plans.filter((p) => p.status !== "archived");
   // Группа абонемента: по умолчанию основная группа ученика, но можно выбрать
   // другую — ученик может заниматься в двух группах (ТЗ 2026-07-12).
   const [saleGroupId, setSaleGroupId] = useState(student.groupIds?.[0] || group?.id || "");
@@ -1375,7 +1374,8 @@ function SellSubscriptionPanel({
     .filter((n) => n !== undefined);
   const scheduleDayNums = groupDayNums.length ? groupDayNums : [1, 3, 5];
   const groupTime = saleGroup?.time || "";
-  const [planId, setPlanId] = useState(activePlans[0]?.id || "");
+  // Начальный тариф подставит эффект ниже (первый тариф выбранного формата).
+  const [planId, setPlanId] = useState("");
   const [discountIdx, setDiscountIdx] = useState(0);
   const [customDiscount, setCustomDiscount] = useState(0);
   const [recalc, setRecalc] = useState(0);
@@ -1404,6 +1404,15 @@ function SellSubscriptionPanel({
   const [segPrices, setSegPrices] = useState<Record<string, string>>({});
   // Ручная правка цены одиночного месяца (D2): пусто = пропорциональный авторасчёт.
   const [priceEdit, setPriceEdit] = useState("");
+
+  // Тарифы фильтруются по ФОРМАТУ занятий (ТЗ 2026-07-12): «Групповой» →
+  // групповые тарифы, «Индивидуальный» → индивидуальные. Смена формата
+  // автоматически выбирает первый подходящий тариф.
+  const activePlans = plans.filter((p) => p.status !== "archived" && (p.format === "individual") === (kind === "individual"));
+  useEffect(() => {
+    if (!activePlans.some((p) => p.id === planId)) setPlanId(activePlans[0]?.id || "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind]);
 
   const plan = activePlans.find((p) => p.id === planId);
   const basePrice = plan?.price || 0;

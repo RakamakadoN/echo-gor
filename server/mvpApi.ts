@@ -287,7 +287,9 @@ function mapDbPlan(row: any) {
     price: Number(row.price || 0),
     status: row.status || "active",
     // 'month' — все занятия календарного месяца без доплаты; 'lessons' — строго по числу занятий.
-    billingMode: row.billing_mode === "lessons" ? "lessons" : "month"
+    billingMode: row.billing_mode === "lessons" ? "lessons" : "month",
+    // 'group' — групповой тариф, 'individual' — индивидуальный (фильтр при продаже).
+    format: row.format === "individual" ? "individual" : "group"
   };
 }
 
@@ -3073,7 +3075,8 @@ export function registerMvpApi(app: express.Express) {
           duration_days: Number(payload.durationDays) || 30,
           price: Number(payload.price) || 0,
           status: payload.status || "active",
-          billing_mode: payload.billingMode === "lessons" ? "lessons" : "month"
+          billing_mode: payload.billingMode === "lessons" ? "lessons" : "month",
+          format: payload.format === "individual" ? "individual" : "group"
         })
       });
       res.status(201).json({ plan: mapDbPlan(inserted[0]) });
@@ -3093,6 +3096,7 @@ export function registerMvpApi(app: express.Express) {
     if (payload.price !== undefined) updates.price = Number(payload.price) || 0;
     if (payload.status !== undefined) updates.status = payload.status;
     if (payload.billingMode !== undefined) updates.billing_mode = payload.billingMode === "lessons" ? "lessons" : "month";
+    if (payload.format !== undefined) updates.format = payload.format === "individual" ? "individual" : "group";
     if (Object.keys(updates).length === 0) return res.status(400).json({ error: "Нет полей для обновления" });
     try {
       const rows = await supabaseFetch<any[]>("subscription_plans", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", body: JSON.stringify(updates) });

@@ -417,7 +417,8 @@ export default function StudentsRegistry({
       // «Записаны на пробный» — обычный сегмент (trial + trial_rebooked), спец-кейс убран.
       if (!matchStatusFilter(s, statusFilter, now, { waitlistIds: waitlistStudentIds })) return false;
       if (branchFilter !== "all" && s.branchId !== branchFilter) return false;
-      if (groupFilter !== "all" && studentGroupId(s) !== groupFilter) return false;
+      // Фильтр по группе учитывает ВСЕ группы ученика (мульти-группы), не только основную.
+      if (groupFilter !== "all" && !(s.groupIds || []).includes(groupFilter)) return false;
       if (ltvFilter !== "all" && getLtvSegment(s, now) !== ltvFilter) return false;
       if (skillFilter !== "all" && (s.skillLevel || "") !== skillFilter) return false;
       if (q) {

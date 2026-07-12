@@ -191,12 +191,14 @@ const subCoversNow = (s: Subscription, now: Date): boolean => {
 export const hasCoveringSubscription = (student: Student, now: Date = new Date()): boolean =>
   (student.subscriptions || []).some((s) => subCoversNow(s, now));
 
-/** Куплен ли абонемент ВПЕРВЫЕ в текущем месяце: самая ранняя покупка в истории
- *  (по дате продажи soldOn, иначе по дате начала) приходится на текущий месяц.
- *  Так «Новый ученик» = тот, кто впервые оплатил абонемент в этом месяце. */
+/** «Новый ученик» = текущий месяц — его ПЕРВЫЙ месяц занятий: самый ранний
+ *  абонемент в истории (по дате НАЧАЛА занятий startsOn, откат на soldOn)
+ *  начинается в текущем месяце. Купил июнь+июль разом — уже «Постоянный»:
+ *  считаем по месяцам занятий, а не по дате оформления (ТЗ заказчика). */
 export const isFirstPurchaseThisMonth = (student: Student, now: Date = new Date()): boolean => {
   const dates = (student.subscriptions || [])
-    .map((s) => parseDate(s.soldOn) || parseDate(s.startsOn))
+    .filter((s) => s.status !== "deleted")
+    .map((s) => parseDate(s.startsOn) || parseDate(s.soldOn))
     .filter((d): d is Date => Boolean(d));
   if (!dates.length) return false;
   const first = new Date(Math.min(...dates.map((d) => d.getTime())));

@@ -19,7 +19,7 @@ export function SubscriptionPlansManager({
   onDeletePlan?: (id: string) => Promise<boolean>;
 }) {
   const canManage = Boolean(onCreatePlan);
-  const emptyForm = { name: "", lessonsCount: "", durationDays: "", price: "", billingMode: "month" as "month" | "lessons" };
+  const emptyForm = { name: "", lessonsCount: "", durationDays: "", price: "", billingMode: "month" as "month" | "lessons", format: "group" as "group" | "individual" };
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const list: SubscriptionPlan[] = plans || [];
@@ -32,13 +32,14 @@ export function SubscriptionPlansManager({
       durationDays: Number(form.durationDays) || 30,
       price: Number(form.price) || 0,
       billingMode: form.billingMode,
+      format: form.format,
     };
     const ok = editingId ? await onUpdatePlan?.(editingId, data) : await onCreatePlan?.(data);
     if (ok) { setForm(emptyForm); setEditingId(null); }
   };
   const edit = (p: SubscriptionPlan) => {
     setEditingId(p.id);
-    setForm({ name: p.name, lessonsCount: String(p.lessonsCount), durationDays: String(p.durationDays), price: String(p.price), billingMode: p.billingMode === "lessons" ? "lessons" : "month" });
+    setForm({ name: p.name, lessonsCount: String(p.lessonsCount), durationDays: String(p.durationDays), price: String(p.price), billingMode: p.billingMode === "lessons" ? "lessons" : "month", format: p.format === "individual" ? "individual" : "group" });
   };
   const cancel = () => { setEditingId(null); setForm(emptyForm); };
 
@@ -56,6 +57,19 @@ export function SubscriptionPlansManager({
           <input type="number" value={form.lessonsCount} onChange={(e) => setForm((f) => ({ ...f, lessonsCount: e.target.value }))} placeholder="Занятий" className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-sm text-white placeholder-slate-600" />
           <input type="number" value={form.durationDays} onChange={(e) => setForm((f) => ({ ...f, durationDays: e.target.value }))} placeholder="Дней" className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-sm text-white placeholder-slate-600" />
           <input type="number" value={form.price} onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))} placeholder="Цена ₸" className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-sm text-white placeholder-slate-600" />
+          <select
+            value={form.format}
+            onChange={(e) => {
+              const format = e.target.value as "group" | "individual";
+              // Индивидуальный тариф всегда «по количеству занятий» (ТЗ).
+              setForm((f) => ({ ...f, format, billingMode: format === "individual" ? "lessons" : f.billingMode }));
+            }}
+            title="Групповой тариф продаётся в группу; индивидуальный — без группы."
+            className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-sm text-white"
+          >
+            <option value="group">Групповой</option>
+            <option value="individual">Индивидуальный</option>
+          </select>
           <select
             value={form.billingMode}
             onChange={(e) => setForm((f) => ({ ...f, billingMode: e.target.value as "month" | "lessons" }))}
@@ -78,7 +92,7 @@ export function SubscriptionPlansManager({
           <div key={p.id} className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/25 p-3">
             <div className="min-w-0">
               <p className="truncate text-sm font-black text-white">{p.name}</p>
-              <p className="text-xs text-slate-500">{p.billingMode === "lessons" ? `строго ${p.lessonsCount} занятий` : "месячный (все занятия месяца)"} · {p.durationDays} дн. · {fmtTenge(p.price)}{p.status !== "active" ? " · архив" : ""}</p>
+              <p className="text-xs text-slate-500">{p.format === "individual" ? "индивидуальный" : "групповой"} · {p.billingMode === "lessons" ? `строго ${p.lessonsCount} занятий` : "месячный (все занятия месяца)"} · {p.durationDays} дн. · {fmtTenge(p.price)}{p.status !== "active" ? " · архив" : ""}</p>
             </div>
             {canManage && (
               <div className="flex shrink-0 gap-2">
