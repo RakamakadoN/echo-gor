@@ -244,7 +244,11 @@ export function getExecutiveSummary(
   payments: Payment[],
   teachers: Teacher[] = []
 ): ExecutiveSummary {
-  const today = new Date().toISOString().slice(0, 10);
+  // Дата «сегодня» в часовом поясе студии (Казахстан): toISOString даёт UTC —
+  // на сервере Vercel (UTC) «сегодня» начиналось бы на 5 часов позже, и ночные
+  // оплаты уезжали бы во «вчера». Intl работает и на клиенте, и на сервере;
+  // формат sv-SE = YYYY-MM-DD.
+  const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Almaty" }).format(new Date());
   const monthPrefix = today.slice(0, 7); // YYYY-MM
   const round1 = (n: number) => Math.round(n * 10) / 10;
 
@@ -290,7 +294,9 @@ export function getExecutiveSummary(
         branchId: b.id,
         branchName: b.name,
         studentsCount: branchStudents.length,
-        revenue: paidSum(payments.filter((p) => p.branchId === b.id)),
+        // Выручка ТЕКУЩЕГО МЕСЯЦА (раньше — за всё время: карточка филиала и
+        // AI-рекомендации говорили про месяц, а цифра была общей).
+        revenue: paidSum(payments.filter((p) => p.branchId === b.id && (p.date || "").startsWith(monthPrefix))),
         attendanceRate: attendanceRate(branchStudents),
         capacityRate: 0 // hall capacities are not available in this view
       };
