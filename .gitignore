@@ -12,3 +12,6 @@ coverage/
 *.zip
 *.command
 ChatGPT Image *.png
+
+testsprite_tests/tmp/config.json
+.claude/worktrees/
