@@ -512,8 +512,11 @@ function GroupsView({ groups, teachers, students, halls = [], branchId, onCreate
     setShowForm(true);
   };
 
+  // Порядок внесения данных: без залов в филиале новую группу создать нельзя.
+  const noHalls = !editingId && (halls || []).filter((h: any) => String(h.status || "active") === "active").length === 0;
+
   const handleSave = async () => {
-    if (!form.name.trim()) return;
+    if (!form.name.trim() || noHalls) return;
     setSaving(true);
     const payload: any = {
       name: form.name.trim(),
@@ -569,6 +572,11 @@ function GroupsView({ groups, teachers, students, halls = [], branchId, onCreate
                 <option value="">Без зала</option>
                 {halls.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
               </select>
+              {noHalls && (
+                <p className="rounded-xl border border-amber-400/20 bg-amber-400/5 px-3 py-2 text-xs text-amber-300/90">
+                  В филиале ещё нет залов. Попросите владельца добавить зал (Филиалы → Залы) — без залов создавать группы нельзя.
+                </p>
+              )}
             </label>
             <label className="flex flex-col gap-1">
               <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Уровень</span>
@@ -591,7 +599,7 @@ function GroupsView({ groups, teachers, students, halls = [], branchId, onCreate
             />
           </div>
           <div className="flex gap-3">
-            <button onClick={handleSave} disabled={saving || !form.name.trim()} className="rounded-xl bg-[#C5A059] px-5 py-2 text-sm font-bold text-black transition-colors hover:bg-[#D4AF70] disabled:opacity-40">
+            <button onClick={handleSave} disabled={saving || !form.name.trim() || noHalls} className="rounded-xl bg-[#C5A059] px-5 py-2 text-sm font-bold text-black transition-colors hover:bg-[#D4AF70] disabled:opacity-40">
               {saving ? "Сохранение…" : editingId ? "Сохранить" : "Создать группу"}
             </button>
             <button onClick={() => { setShowForm(false); setEditingId(null); setForm(emptyForm); }} className="rounded-xl bg-white/5 px-5 py-2 text-sm font-bold text-slate-400 transition-colors hover:bg-white/10">Отмена</button>
