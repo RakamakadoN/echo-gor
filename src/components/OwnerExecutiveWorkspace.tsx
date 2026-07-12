@@ -559,6 +559,44 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
   const [riskTable, setRiskTable] = useState<DetailModalData | null>(null);
   // Состояние сворачивания блоков — запоминается по роли пользователя.
   const { isOpen: sectionOpen, toggle: toggleSection } = useCollapsedSections("owner");
+  // Вкладки дашборда: информация упорядочена по темам, без дублей (ТЗ заказчика).
+  const [dashTab, setDashTab] = useState<"today" | "finance" | "sales" | "retention" | "ratings">("today");
+  // Заявки на расходы и возвраты, ожидающие решения владельца.
+  const [expenseReqs, setExpenseReqs] = useState<any[]>([]);
+  const [refundReqs, setRefundReqs] = useState<any[]>([]);
+  const [reqBusy, setReqBusy] = useState<string | null>(null);
+  // Выполнение плана БДР: план — вкладка «Планирование (БДР)», факт — оплаты месяца.
+  const [bdr, setBdr] = useState<{ period: string; network: { plan: number | null; fact: number; pct: number | null } | null; byBranch: { branchId: string; name: string; plan: number | null; fact: number; pct: number | null }[] } | null>(null);
+
+  const loadRequests = () => {
+    const get = (url: string) => fetch(url, { headers: { "x-demo-role": "owner" } }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    get("/api/mvp/accounting/expense-requests?status=pending").then((d) => setExpenseReqs(d?.requests || []));
+    get("/api/mvp/accounting/refund-requests?status=pending").then((d) => setRefundReqs(d?.requests || []));
+  };
+  useEffect(() => { loadRequests(); }, []);
+
+  useEffect(() => {
+    let alive = true;
+    const period = new Date().toISOString().slice(0, 7);
+    fetch(`/api/mvp/owner/bdr-progress?period=${period}`, { headers: { "x-demo-role": "owner" } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (alive && d) setBdr(d); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  // Одобрить / отклонить заявку (расход или возврат) прямо с дашборда.
+  const decideRequest = async (kind: "expense" | "refund", id: string, action: "approve" | "reject") => {
+    setReqBusy(id);
+    try {
+      await fetch(`/api/mvp/accounting/${kind}-requests/${id}/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-demo-role": "owner" },
+        body: "{}",
+      });
+      loadRequests();
+    } finally { setReqBusy(null); }
+  };
 
   useEffect(() => {
     let alive = true;
@@ -637,10 +675,10 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
   const filters: DashFilters = { period, level, branchId, groupId, teacherId, customStart, customEnd };
   const m = useMemo(
     () => computeOwnerDashboard(
-      { students: rawStudents || [], payments: rawPayments || [], groups: rawGroups || [], branches: rawBranches || [], teachers: rawTeachers || [] },
+      { students: rawStudents || [], payments: rawPayments || [], groups: rawGroups || [], branches: rawBranches || [], teachers: rawTeachers || [], archive: studentArchive || [] },
       filters, new Date(), extras
     ),
-    [rawStudents, rawPayments, rawGroups, rawBranches, rawTeachers, period, level, branchId, groupId, teacherId, customStart, customEnd, extras]
+    [rawStudents, rawPayments, rawGroups, rawBranches, rawTeachers, studentArchive, period, level, branchId, groupId, teacherId, customStart, customEnd, extras]
   );
 
   // Запас прочности: общее количество учеников и лист ожидания с учётом фильтра
@@ -749,6 +787,44 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
   });
 
   // --- окна KPI ---
+  // Клик по «Выручка сегодня» открывает СПИСОК ОПЛАТ за сегодня (ТЗ заказчика).
+  const PAY_METHOD_LABEL: Record<string, string> = { card: "Карта", cash: "Наличные", transfer: "Перевод", kaspi: "Kaspi" };
+  const openPaymentsToday = () => {
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const todays = (rawPayments || []).filter((p: Payment) => p.status === "paid" && p.date === todayIso);
+    setRiskTable({
+      title: "Оплаты за сегодня",
+      subtitle: `${todays.length} ${todays.length === 1 ? "оплата" : todays.length >= 2 && todays.length <= 4 ? "оплаты" : "оплат"} · ${money(todays.reduce((s: number, p: Payment) => s + p.amount, 0))}`,
+      columns: ["Ученик", "Сумма", "Способ", "Назначение"],
+      rows: todays.map((p: Payment) => {
+        const st = studentById.get(p.studentId);
+        return [
+          <span className="font-bold text-white">{st?.name || "—"}</span>,
+          <span className="font-black text-[#C5A059]">{money(p.amount)}</span>,
+          PAY_METHOD_LABEL[p.method as string] || p.method || "—",
+          p.description || "—",
+        ];
+      }),
+      empty: "Сегодня оплат ещё не было.",
+    });
+  };
+  // Окно «План БДР по филиалам»: план из «Планирования (БДР)», факт — оплаты месяца.
+  const openBdr = () => setRiskTable({
+    title: "Выполнение плана БДР по филиалам",
+    subtitle: bdr?.network?.plan
+      ? `Сеть: ${money(bdr.network.fact)} из ${money(bdr.network.plan)} · ${bdr.network.pct}%`
+      : "План на текущий месяц не задан",
+    columns: ["Филиал", "План", "Факт", "% выполнения"],
+    rows: (bdr?.byBranch || []).map((b) => [
+      b.name,
+      b.plan === null ? <span className="text-slate-500">не задан</span> : money(b.plan),
+      money(b.fact),
+      b.pct === null ? "—" : <span className={`font-black ${b.pct >= 100 ? "text-emerald-400" : b.pct >= 70 ? "text-amber-400" : "text-rose-400"}`}>{b.pct}%</span>,
+    ]),
+    empty: "Нет данных по филиалам.",
+    note: "План задаётся во вкладке «Планирование (БДР)». Факт — оплаченные платежи текущего месяца.",
+    footer: { label: "Открыть Планирование (БДР) ›", onClick: () => go("planning") },
+  });
   const openRevenue = () => openInfo("Выручка за период", [
     ["Всего", <span className="font-black text-[#C5A059]">{money(m.revenue.total)}</span>],
     ["Сегодня / вчера", `${money(m.revenue.today)} / ${money(m.revenue.yesterday)}`],
@@ -875,19 +951,57 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
         </div>
       </section>
 
-      {/* 1.5 ЕЖЕДНЕВНЫЙ ОТЧЁТ РУКОВОДИТЕЛЯ */}
-      <CollapsibleSection id="daily" icon={ClipboardList} title="Ежедневный отчёт руководителя" hint="Здоровье студии за 30 секунд"
+      {/* Вкладки дашборда: информация упорядочена по темам, без дублей (ТЗ заказчика). */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {([
+          { id: "today", label: "Сегодня", icon: ClipboardList, badge: expenseReqs.length + refundReqs.length + dr.trialYesterdayLost.count + dr.trialYesterdayMissed.count },
+          { id: "finance", label: "Финансы", icon: Coins, badge: 0 },
+          { id: "sales", label: "Продажи", icon: Filter, badge: 0 },
+          { id: "retention", label: "Удержание", icon: TrendingUp, badge: 0 },
+          { id: "ratings", label: "Рейтинги и AI", icon: Trophy, badge: 0 },
+        ] as { id: typeof dashTab; label: string; icon: React.ElementType; badge: number }[]).map((t) => {
+          const TabIcon = t.icon;
+          return (
+            <button key={t.id} onClick={() => setDashTab(t.id)}
+              className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition ${dashTab === t.id ? "bg-[#C5A059] text-black" : "border border-white/10 bg-white/[0.04] text-slate-300 hover:border-[#C5A059]/40 hover:text-white"}`}>
+              <TabIcon className="h-3.5 w-3.5" /> {t.label}
+              {t.badge > 0 && (
+                <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${dashTab === t.id ? "bg-black/20 text-black" : "bg-rose-500/25 text-rose-300"}`}>{t.badge}</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {dashTab === "today" && (<>
+      {/* КРАТКИЙ ОТЧЁТ ИИ ПО ИТОГАМ НА СЕГОДНЯ */}
+      <AiDailyBrief m={m} bdr={bdr} pendingExpenses={expenseReqs.length} pendingRefunds={refundReqs.length} />
+
+      {/* ЗДОРОВЬЕ СТУДИИ ЗА 30 СЕКУНД */}
+      <CollapsibleSection id="daily" icon={ClipboardList} title="Здоровье студии за 30 секунд" hint="Ключевые показатели дня — всё кликабельно"
         locked open={sectionOpen("daily")} onToggle={() => toggleSection("daily")}>
-        <DailyManagerReport report={m.dailyReport} scopeLabel={m.scope.label} periodLabel={m.ranges.cur.label}
-          onOpenList={openList} onGo={go} onRevenue={openRevenue} />
-        {/* Рекомендация внутри отчёта: вернуть ушедших (ИИ-реактивация) */}
-        <div className="mt-4">
-          <ReactivationPanel archive={studentArchive} roleHeader="owner" minMonths={2} />
-        </div>
+        <DailyManagerReport m={m} bdrPct={bdr?.network?.pct ?? null} scopeLabel={m.scope.label} periodLabel={m.ranges.cur.label}
+          onOpenList={openList} onPayments={openPaymentsToday} onRetention={openRetention} onAvgCheck={openAvgCheck} onBdr={openBdr} />
       </CollapsibleSection>
 
-      {/* 1.7 ВЫРУЧКА ПО НАПРАВЛЕНИЯМ */}
-      <CollapsibleSection id="streams" icon={Coins} title="Основные показатели" hint="Абонементы · выступления · товары · общая выручка"
+      {/* ТРЕБУЮТ РЕШЕНИЯ: заявки на расходы/возвраты + необработанные пробные */}
+      <CollapsibleSection id="decisions" icon={CheckCircle} title="Требуют решения" hint="Заявки филиалов и вчерашние пробные"
+        locked open={sectionOpen("decisions")} onToggle={() => toggleSection("decisions")}>
+        <ApprovalsPanel expenseReqs={expenseReqs} refundReqs={refundReqs} busyId={reqBusy} onDecide={decideRequest} branchNameOf={branchNameOf} />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <RiskTile severity={dr.trialYesterdayLost.count > 0 ? "high" : "low"}
+            title={`Вчера был на пробном, не купил — ${dr.trialYesterdayLost.count}`} detail="Не обработан управляющим · связаться ›"
+            onClick={() => openList({ ids: dr.trialYesterdayLost.ids, label: "Вчера был на пробном, не купил" })} />
+          <RiskTile severity={dr.trialYesterdayMissed.count > 0 ? "mid" : "low"}
+            title={`Вчера не пришёл на пробный — ${dr.trialYesterdayMissed.count}`} detail="Не обработан · перезаписать ›"
+            onClick={() => openList({ ids: dr.trialYesterdayMissed.ids, label: "Вчера не пришёл на пробный" })} />
+        </div>
+      </CollapsibleSection>
+      </>)}
+
+      {dashTab === "finance" && (<>
+      {/* ВЫРУЧКА ПО НАПРАВЛЕНИЯМ */}
+      <CollapsibleSection id="streams" icon={Coins} title="Выручка по направлениям" hint="Абонементы · выступления · товары · общая выручка"
         locked open={sectionOpen("streams")} onToggle={() => toggleSection("streams")}>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <StreamCard label="Выручка от абонементов" value={money(subsTotal)} color={STREAM_COLORS.subs}
@@ -908,35 +1022,10 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
         </div>
       </CollapsibleSection>
 
-      {/* 3. ГЛАВНЫЕ РИСКИ */}
-      <CollapsibleSection id="risks" icon={AlertTriangle} title="Главные риски" hint="Что требует решения прямо сейчас"
-        locked open={sectionOpen("risks")} onToggle={() => toggleSection("risks")}>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          <RiskTile severity="high"
-            title={`Абонементы истекают через 3 дня — ${dr.expiring3d.count}`} detail="Срочно связаться ›"
-            onClick={() => openList({ ids: dr.expiring3d.ids, label: "Абонементы истекают через 3 дня" })} />
-          <RiskTile severity="mid"
-            title={`Абонементы истекают через 7 дней — ${dr.expiring7d.count}`} detail="Запланировать продление ›"
-            onClick={() => openList({ ids: dr.expiring7d.ids, label: "Абонементы истекают через 7 дней" })} />
-          <RiskTile severity="info"
-            title={`Абонементы истекают через 14 дней — ${dr.expiring14d.count}`} detail="Взять на контроль ›"
-            onClick={() => openList({ ids: dr.expiring14d.ids, label: "Абонементы истекают через 14 дней" })} />
-          <RiskTile severity="info"
-            title={`Должники — ${m.debtors.total}`} detail={m.debtors.debtAmount > 0 ? `Сумма: ${money(m.debtors.debtAmount)} ›` : "Сверка оплат ›"}
-            onClick={openDebtors} />
-          <RiskTile severity={dr.unpaidCurrentMonth.count > 0 ? "high" : "low"}
-            title={`Не оплатили текущий месяц — ${dr.unpaidCurrentMonth.count}`} detail="Нет оплаты ›"
-            onClick={() => openList({ ids: dr.unpaidCurrentMonth.ids, label: "Не оплатили текущий месяц" })} />
-          <RiskTile severity={dr.unpaidPrevMonth.count > 0 ? "mid" : "low"}
-            title={`Не оплатили прошлый месяц — ${dr.unpaidPrevMonth.count}`} detail="Задолженность ›"
-            onClick={() => openList({ ids: dr.unpaidPrevMonth.ids, label: "Не оплатили прошлый месяц" })} />
-          <RiskTile severity={m.riskTables.overloadGroups.length > 0 ? "high" : "low"}
-            title={`Перегруженные группы — ${m.riskTables.overloadGroups.length}`} detail="Близко к пределу ›"
-            onClick={openOverload} />
-          <RiskTile severity={dr.retentionDropBranches.count > 0 ? "mid" : "low"}
-            title={`Филиалы с падением удержания — ${dr.retentionDropBranches.count}`} detail="Удержание ниже нормы ›"
-            onClick={() => openList({ ids: dr.retentionDropBranches.studentIds, label: "Филиалы с падением удержания" })} />
-        </div>
+      {/* ПЛАН БДР ПО ФИЛИАЛАМ */}
+      <CollapsibleSection id="bdr" icon={LineChart} title="План БДР по филиалам" hint="План — из «Планирования (БДР)» · факт — оплаты месяца"
+        locked open={sectionOpen("bdr")} onToggle={() => toggleSection("bdr")}>
+        <BdrProgressPanel bdr={bdr} onGoPlanning={() => go("planning")} />
       </CollapsibleSection>
 
       {/* Выступления + AI-инсайты по продажам и складу */}
@@ -976,124 +1065,9 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
         </div>
       </CollapsibleSection>
 
-      {/* 2. ОСНОВНЫЕ ПОКАЗАТЕЛИ */}
-      <CollapsibleSection id="kpi" icon={BarChart3} title="Метрики сети" hint="Заполняемость · удержание · чек · база"
-        locked open={sectionOpen("kpi")} onToggle={() => toggleSection("kpi")}>
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <BigKpi label="Выручка" value={money(m.revenue.total)} onClick={openRevenue}
-          rows={[
-            { k: "К пред. периоду", v: <DeltaBadge pct={m.revenue.momPct} /> },
-            { k: "Год к году", v: <DeltaBadge pct={m.revenue.yoyPct} /> },
-            { k: "Сегодня / вчера", v: <span className="text-slate-200">{money(m.revenue.today)} / {money(m.revenue.yesterday)}</span> },
-            { k: "Новые / пост. / верн.", v: <span className="text-slate-200 text-[11px]">{money(m.revenue.new)} · {money(m.revenue.regular)} · {money(m.revenue.returning)}</span> }
-          ]} />
-        <BigKpi label="Активные абонементы" value={m.activeSubs.count} onClick={openActiveSubs}
-          rows={[
-            { k: "К пред. месяцу", v: <DeltaBadge pct={m.activeSubs.momPct} /> },
-            { k: "Год к году", v: <DeltaBadge pct={m.activeSubs.yoyPct} /> }
-          ]} />
-        <BigKpi label="Заполняемость" value={m.occupancy.pct === null ? "—" : `${m.occupancy.pct}%`} onClick={openOccupancy}
-          rows={[
-            { k: "Мест занято", v: <span className="text-slate-200">{m.occupancy.filled} / {m.occupancy.capacity || "—"}</span> },
-            ...(m.occupancy.byBranch.slice(0, 2).map((b) => ({ k: b.name, v: <span className="text-slate-300">{b.pct === null ? "—" : b.pct + "%"}</span> })))
-          ]} />
-        <BigKpi label="Удержание (мес→мес)" value={m.retention.pct === null ? "—" : `${m.retention.pct}%`} onClick={openRetention}
-          rows={[
-            { k: "Активны / всего", v: <span className="text-slate-200">{m.retention.activeStudents} / {m.retention.totalStudents}</span> },
-            { k: "К пред. месяцу", v: <DeltaBadge pct={m.retention.momPct} /> },
-            { k: "Год к году", v: <DeltaBadge pct={m.retention.yoyPct} /> }
-          ]} />
-      </div>
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <BigKpi label="Средний чек" value={m.avgCheck.all === null ? "—" : money(m.avgCheck.all)} onClick={openAvgCheck}
-          rows={[
-            { k: "Новые", v: <span className="text-slate-200">{m.avgCheck.new === null ? "—" : money(m.avgCheck.new)}</span> },
-            { k: "Постоянные", v: <span className="text-slate-200">{m.avgCheck.regular === null ? "—" : money(m.avgCheck.regular)}</span> },
-            { k: "Вернувшиеся", v: <span className="text-slate-200">{m.avgCheck.returning === null ? "—" : money(m.avgCheck.returning)}</span> },
-            { k: "К пред. периоду", v: <DeltaBadge pct={m.avgCheck.momPct} /> }
-          ]} />
-        <BigKpi label="Должники" value={m.debtors.total} tone={m.debtors.total > 0 ? "rose" : "emerald"} onClick={openDebtors}
-          rows={m.debtors.aging
-            ? [
-                { k: "1–7 дней", v: <span className="text-slate-200">{m.debtors.aging.d1_7}</span> },
-                { k: "8–14 дней", v: <span className="text-slate-200">{m.debtors.aging.d8_14}</span> },
-                { k: "> 14 дней", v: <span className="text-slate-200">{m.debtors.aging.d14plus}</span> }
-              ]
-            : [
-                { k: "Сумма долга", v: <span className="text-slate-200">{m.debtors.debtAmount ? money(m.debtors.debtAmount) : "—"}</span> },
-                { k: "Разбивка по дням", v: <span className="text-slate-500 text-[11px]">накапливается</span> }
-              ]} />
-        <BigKpi label="Записи на будущее" value={m.futureEnrollments.total} onClick={openFuture}
-          rows={[
-            ...(m.futureEnrollments.byBranch.slice(0, 2).map((b) => ({ k: b.name, v: <span className="text-slate-200">{b.n}</span> }))),
-            { k: m.futureEnrollments.isProxy ? "Лиды + пробные (прокси)" : "По возрастам", v: <span className="text-slate-500 text-[11px]">{m.futureEnrollments.byAge.map((a) => `${a.label}:${a.n}`).join(" ") || "—"}</span> }
-          ]} />
-        <BigKpi label="Новые ученики" value={m.newStudents.hasData ? m.newStudents.period : "—"} tone="gold" onClick={openNewStudents}
-          rows={[
-            { k: "Сегодня", v: <span className="text-slate-200">{m.newStudents.hasData ? m.newStudents.today : "—"}</span> },
-            { k: "За период", v: <span className="text-slate-200">{m.newStudents.hasData ? m.newStudents.period : "нет данных"}</span> }
-          ]} />
-      </div>
-      {/* Запас прочности: всего учеников и лист ожидания (с учётом фильтра) */}
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <BigKpi label="Учеников всего" value={capacityInfo.totalStudents} tone="white" onClick={onOpenStudents ? () => onOpenStudents() : undefined}
-          rows={[
-            { k: "Активных", v: <span className="text-slate-200">{m.retention.activeStudents}</span> },
-            { k: "Свободных мест", v: <span className="text-slate-200">{capacityInfo.freeSpots === null ? "—" : capacityInfo.freeSpots}</span> }
-          ]} />
-        <BigKpi label="В листе ожидания" value={capacityInfo.waitlistTotal} tone={capacityInfo.waitlistTotal > 0 ? "gold" : "white"} onClick={() => go("students")}
-          rows={[
-            { k: "Запас прочности", v: <span className="text-slate-300 text-[11px]">{capacityInfo.waitlistTotal > 0 ? "есть кого пригласить" : "очередь пуста"}</span> },
-            { k: "Свободно мест", v: <span className="text-slate-200">{capacityInfo.freeSpots === null ? "—" : capacityInfo.freeSpots}</span> }
-          ]} />
-      </div>
-      </CollapsibleSection>
-
-      {/* 4. ВОРОНКА ПРОДАЖ */}
-      <CollapsibleSection id="funnel" icon={Filter} title="Воронка продаж"
-        locked open={sectionOpen("funnel")} onToggle={() => toggleSection("funnel")}>
-      <div className="grid gap-4 xl:grid-cols-3">
-        <FunnelDayCard title="Сегодня" data={m.funnel.today} />
-        <FunnelDayCard title="Вчера" data={m.funnel.yesterday} />
-        <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
-          <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">За текущий месяц</p>
-          <div className="mt-3 space-y-2.5">
-            <FunnelStage label="Лиды" n={m.funnel.month.leads} conv={null} onClick={() => openStatusList(["lead"], "Лиды")} />
-            <FunnelStage label="Записались" n={m.funnel.month.signed} conv={m.funnel.month.convSigned} onClick={() => openStatusList(["trial", "active"], "Записались")} />
-            <FunnelStage label="Пришли" n={m.funnel.month.came} conv={m.funnel.month.convCame} onClick={() => openStatusList(["trial", "active"], "Пришли на пробный")} />
-            <FunnelStage label="Был на пробном, оплатит" n={m.funnel.month.promised} conv={null} onClick={() => go("students")} />
-            <FunnelStage label="Купили" n={m.funnel.month.bought} conv={m.funnel.month.convBought} onClick={() => openStatusList(["active"], "Купили абонемент")} />
-          </div>
-          <p className="mt-3 text-[11px] text-slate-500">Этапы оцениваются по статусам учеников; точная дневная воронка накапливается из событий.</p>
-        </section>
-      </div>
-
-      {/* Авто-статусы учеников — система считает сама и подтягивает владельцу. */}
-      {m.autoStatuses.length > 0 && (
-        <div className="mt-4 rounded-[2rem] border border-white/10 bg-[#121212] p-5">
-          <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">Авто-статусы учеников</p>
-          <p className="mt-1 text-[11px] text-slate-500">Система считает из посещаемости и абонементов (не пришёл на пробный, был не купил, требуют продления…) — то же, что видят управляющие в списке.</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {m.autoStatuses.map((s: { key: string; label: string; count: number }) => {
-              const c = statusSwatch(s.key);
-              return (
-              <button key={s.key} onClick={() => go("students")}
-                style={{ borderColor: `${c}66` }}
-                className="inline-flex items-center gap-2 rounded-xl border bg-white/[0.04] px-3 py-1.5 text-xs font-bold text-slate-200 transition hover:bg-white/[0.07]">
-                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: c }} />
-                {s.label}
-                <span className="rounded-full px-1.5 py-0.5 text-[10px] font-black" style={{ background: `${c}22`, color: c }}>{s.count}</span>
-              </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-      </CollapsibleSection>
-
-      {/* 5. ГРАФИКИ */}
-      <CollapsibleSection id="charts" icon={LineChart} title="Графики"
-        locked open={sectionOpen("charts")} onToggle={() => toggleSection("charts")}>
+      {/* ГРАФИКИ ФИНАНСОВ */}
+      <CollapsibleSection id="fincharts" icon={LineChart} title="Графики" hint="Выручка и средний чек по месяцам"
+        locked open={sectionOpen("fincharts")} onToggle={() => toggleSection("fincharts")}>
       <div className="grid gap-4 xl:grid-cols-2">
         <ChartCard title="Выручка по месяцам" subtitle="текущий и прошлый год">
           <ResponsiveContainer width="100%" height="100%">
@@ -1120,6 +1094,139 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
             </RLineChart>
           </ResponsiveContainer>
         </ChartCard>
+      </div>
+      </CollapsibleSection>
+      </>)}
+
+      {dashTab === "sales" && (<>
+      {/* ВОРОНКА ПРОДАЖ: запись → пришёл → купил (без лидов, ТЗ заказчика) */}
+      <CollapsibleSection id="funnel" icon={Filter} title="Воронка продаж" hint="Запись → пришёл → купил · конверсии в %"
+        locked open={sectionOpen("funnel")} onToggle={() => toggleSection("funnel")}>
+      <div className="grid gap-4 xl:grid-cols-3">
+        <FunnelDayCard title="Сегодня" data={m.funnel.today} />
+        <FunnelDayCard title="Вчера" data={m.funnel.yesterday} />
+        <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+          <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">За выбранный период</p>
+          <div className="mt-3 space-y-2.5">
+            <FunnelStage label="Записались на пробный" n={m.funnel.month.signed} conv={null} onClick={() => openStatusList(["trial"], "Записаны на пробный")} />
+            <FunnelStage label="Пришли на пробный" n={m.funnel.month.came} conv={m.funnel.month.convCame} onClick={() => openStatusList(["trial", "active"], "Пришли на пробный")} />
+            <FunnelStage label="Купили" n={m.funnel.month.bought} conv={m.funnel.month.convBought} onClick={() => openStatusList(["active"], "Купили абонемент")} />
+          </div>
+          <p className="mt-3 text-[11px] text-slate-500">Запись и приход — по отметкам пробных уроков в журнале; «купили» — первая покупка абонемента в периоде. Проценты — конверсия из предыдущего этапа.</p>
+        </section>
+      </div>
+      </CollapsibleSection>
+
+      {/* ПРОДАЖИ ЗА ПЕРИОД */}
+      <CollapsibleSection id="saleskpi" icon={BarChart3} title="Продажи за период" hint="Абонементы · покупатели · новые · записи на будущее"
+        locked open={sectionOpen("saleskpi")} onToggle={() => toggleSection("saleskpi")}>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <BigKpi label="Продано абонементов" value={m.sales.soldSubs} onClick={openRevenue}
+          rows={[
+            { k: "Уникальных покупателей", v: <span className="text-slate-200">{m.sales.uniqueBuyers}</span> },
+            { k: "Почему различаются", v: <span className="text-slate-500 text-[11px]">у ученика может быть 2 абонемента</span> }
+          ]} />
+        <BigKpi label="Уникальных покупателей" value={m.sales.uniqueBuyers} tone="white" onClick={openRevenue}
+          rows={[
+            { k: "Средний чек", v: <span className="text-slate-200">{m.avgCheck.all === null ? "—" : money(m.avgCheck.all)}</span> },
+            { k: "Выручка периода", v: <span className="text-slate-200">{money(m.revenue.total)}</span> }
+          ]} />
+        <BigKpi label="Новые ученики" value={m.newStudents.hasData ? m.newStudents.period : "—"} tone="gold" onClick={openNewStudents}
+          rows={[
+            { k: "Сегодня", v: <span className="text-slate-200">{m.newStudents.hasData ? m.newStudents.today : "—"}</span> },
+            { k: "За период", v: <span className="text-slate-200">{m.newStudents.hasData ? m.newStudents.period : "нет данных"}</span> }
+          ]} />
+        <BigKpi label="Записи на будущее" value={m.futureEnrollments.total} onClick={openFuture}
+          rows={[
+            ...(m.futureEnrollments.byBranch.slice(0, 2).map((b) => ({ k: b.name, v: <span className="text-slate-200">{b.n}</span> }))),
+            { k: m.futureEnrollments.isProxy ? "Лиды + пробные (прокси)" : "По возрастам", v: <span className="text-slate-500 text-[11px]">{m.futureEnrollments.byAge.map((a) => `${a.label}:${a.n}`).join(" ") || "—"}</span> }
+          ]} />
+      </div>
+      {/* Запас прочности: всего учеников и лист ожидания (с учётом фильтра) */}
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <BigKpi label="Учеников всего" value={capacityInfo.totalStudents} tone="white" onClick={onOpenStudents ? () => onOpenStudents() : undefined}
+          rows={[
+            { k: "Активных", v: <span className="text-slate-200">{m.retention.activeStudents}</span> },
+            { k: "Свободных мест", v: <span className="text-slate-200">{capacityInfo.freeSpots === null ? "—" : capacityInfo.freeSpots}</span> }
+          ]} />
+        <BigKpi label="В листе ожидания" value={capacityInfo.waitlistTotal} tone={capacityInfo.waitlistTotal > 0 ? "gold" : "white"} onClick={() => go("students")}
+          rows={[
+            { k: "Запас прочности", v: <span className="text-slate-300 text-[11px]">{capacityInfo.waitlistTotal > 0 ? "есть кого пригласить" : "очередь пуста"}</span> },
+            { k: "Свободно мест", v: <span className="text-slate-200">{capacityInfo.freeSpots === null ? "—" : capacityInfo.freeSpots}</span> }
+          ]} />
+      </div>
+      </CollapsibleSection>
+      </>)}
+
+      {dashTab === "retention" && (<>
+      {/* УДЕРЖАНИЕ И БАЗА */}
+      <CollapsibleSection id="retkpi" icon={TrendingUp} title="Удержание и база" hint="Конверсия из месяца в месяц · отток · должники · заполняемость"
+        locked open={sectionOpen("retkpi")} onToggle={() => toggleSection("retkpi")}>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <BigKpi label="Удержание (мес→мес)" value={m.retention.pct === null ? "—" : `${m.retention.pct}%`} tone="emerald" onClick={openRetention}
+          rows={[
+            { k: "Активны / всего", v: <span className="text-slate-200">{m.retention.activeStudents} / {m.retention.totalStudents}</span> },
+            { k: "К пред. месяцу", v: <DeltaBadge pct={m.retention.momPct} /> },
+            { k: "Год к году", v: <DeltaBadge pct={m.retention.yoyPct} /> }
+          ]} />
+        <BigKpi label="Отток за месяц" value={m.churn.left} tone={m.churn.left > 0 ? "rose" : "emerald"} onClick={() => go("marketing")}
+          rows={[
+            { k: "Процент оттока", v: <span className="text-slate-200">{m.churn.pct === null ? "—" : `${m.churn.pct}%`}</span> },
+            { k: "Кто это", v: <span className="text-slate-500 text-[11px]">ушедшие в архив в этом месяце</span> }
+          ]} />
+        <BigKpi label="Должники" value={m.debtors.total} tone={m.debtors.total > 0 ? "rose" : "emerald"} onClick={openDebtors}
+          rows={m.debtors.aging
+            ? [
+                { k: "1–7 дней", v: <span className="text-slate-200">{m.debtors.aging.d1_7}</span> },
+                { k: "8–14 дней", v: <span className="text-slate-200">{m.debtors.aging.d8_14}</span> },
+                { k: "> 14 дней", v: <span className="text-slate-200">{m.debtors.aging.d14plus}</span> }
+              ]
+            : [
+                { k: "Сумма долга", v: <span className="text-slate-200">{m.debtors.debtAmount ? money(m.debtors.debtAmount) : "—"}</span> },
+                { k: "Разбивка по дням", v: <span className="text-slate-500 text-[11px]">накапливается</span> }
+              ]} />
+        <BigKpi label="Заполняемость" value={m.occupancy.pct === null ? "—" : `${m.occupancy.pct}%`} onClick={openOccupancy}
+          rows={[
+            { k: "Мест занято", v: <span className="text-slate-200">{m.occupancy.filled} / {m.occupancy.capacity || "—"}</span> },
+            ...(m.occupancy.byBranch.slice(0, 2).map((b) => ({ k: b.name, v: <span className="text-slate-300">{b.pct === null ? "—" : b.pct + "%"}</span> })))
+          ]} />
+      </div>
+      </CollapsibleSection>
+
+      {/* РИСКИ ПО ГРУППАМ И ФИЛИАЛАМ */}
+      <CollapsibleSection id="risks" icon={AlertTriangle} title="Риски" hint="Группы и филиалы, требующие внимания"
+        locked open={sectionOpen("risks")} onToggle={() => toggleSection("risks")}>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <RiskTile severity={m.riskTables.overloadGroups.length > 0 ? "high" : "low"}
+            title={`Перегруженные группы — ${m.riskTables.overloadGroups.length}`} detail="Близко к пределу ›"
+            onClick={openOverload} />
+          <RiskTile severity={m.riskTables.lowFillGroups.length > 0 ? "mid" : "low"}
+            title={`Низкая заполняемость — ${m.riskTables.lowFillGroups.length}`} detail="Меньше 50% мест ›"
+            onClick={openLowFill} />
+          <RiskTile severity={dr.retentionDropBranches.count > 0 ? "mid" : "low"}
+            title={`Филиалы с падением удержания — ${dr.retentionDropBranches.count}`} detail="Удержание ниже нормы ›"
+            onClick={() => openList({ ids: dr.retentionDropBranches.studentIds, label: "Филиалы с падением удержания" })} />
+          <RiskTile severity={m.riskTables.teacherLowRetention.length > 0 ? "mid" : "low"}
+            title={`Педагоги с низким удержанием — ${m.riskTables.teacherLowRetention.length}`} detail="Ниже нормы 70% ›"
+            onClick={openTeacherRetention} />
+        </div>
+      </CollapsibleSection>
+
+      {/* ГРАФИКИ УДЕРЖАНИЯ */}
+      <CollapsibleSection id="retcharts" icon={LineChart} title="Графики удержания" hint="Удержание по месяцам · активные абонементы"
+        locked open={sectionOpen("retcharts")} onToggle={() => toggleSection("retcharts")}>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <ChartCard title="Удержание по месяцам" subtitle="накапливается из месячных снапшотов" empty={m.charts.retentionByMonth.every((p) => p.value === null)}>
+          <ResponsiveContainer width="100%" height="100%">
+            <RLineChart data={m.charts.retentionByMonth} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+              <XAxis dataKey="month" tick={{ fill: "#94a3b8", fontSize: 10 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} domain={[0, 100]} width={34} tickFormatter={(v) => `${v}%`} />
+              <Tooltip contentStyle={tooltipStyle} formatter={(v: any) => [`${v}%`, "Удержание"]} />
+              <Line type="monotone" dataKey="value" stroke="#34d399" strokeWidth={2.5} dot={{ r: 3 }} connectNulls />
+            </RLineChart>
+          </ResponsiveContainer>
+        </ChartCard>
         <ChartCard title="Активные абонементы по месяцам" subtitle="накапливается из снапшотов" empty={m.charts.subsByMonth.every((p) => p.value === null)}>
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={m.charts.subsByMonth} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
@@ -1131,37 +1238,18 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
             </AreaChart>
           </ResponsiveContainer>
         </ChartCard>
-        <ChartCard title="Удержание по дням" subtitle="за последние 30 дней (по посещаемости)" empty={!m.charts.retentionByDay}>
-          <ResponsiveContainer width="100%" height="100%">
-            <RLineChart data={m.charts.retentionByDay || []} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
-              <XAxis dataKey="day" tick={{ fill: "#94a3b8", fontSize: 9 }} axisLine={false} tickLine={false} interval={4} />
-              <YAxis tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} domain={[0, 100]} width={30} tickFormatter={(v) => `${v}%`} />
-              <Tooltip contentStyle={tooltipStyle} formatter={(v: any) => [`${v}%`, "Посещаемость"]} />
-              <Line type="monotone" dataKey="value" stroke="#34d399" strokeWidth={2.5} dot={false} connectNulls />
-            </RLineChart>
-          </ResponsiveContainer>
-        </ChartCard>
       </div>
       </CollapsibleSection>
 
-      {/* 6. AI EXECUTIVE BRIEF */}
-      <CollapsibleSection id="brief" icon={Sparkles} title="AI Executive Brief"
-        locked open={sectionOpen("brief")} onToggle={() => toggleSection("brief")}>
-      <section className="rounded-[2rem] border border-[#C5A059]/20 bg-[#C5A059]/10 p-5">
-        <div className="flex items-start gap-3">
-          <div className="rounded-2xl bg-[#C5A059] p-3 text-black"><Sparkles className="h-5 w-5" /></div>
-          <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">AI Executive Brief · Итоги за 30 секунд</p>
-            <ul className="mt-3 space-y-1.5">
-              {m.brief.map((t, i) => <li key={i} className="flex gap-2 text-sm text-slate-100"><span className="text-[#C5A059]">•</span><span>{t}</span></li>)}
-            </ul>
-          </div>
-        </div>
-      </section>
+      {/* ВЕРНУТЬ УШЕДШИХ (ИИ-реактивация) */}
+      <CollapsibleSection id="reactivation" icon={RefreshCw} title="Вернуть ушедших" hint="ИИ-реактивация архива"
+        locked open={sectionOpen("reactivation")} onToggle={() => toggleSection("reactivation")}>
+        <ReactivationPanel archive={studentArchive} roleHeader="owner" minMonths={2} />
       </CollapsibleSection>
+      </>)}
 
-      {/* 7 + 8. ТРЕБУЮТ ВНИМАНИЯ + ТОЧКИ РОСТА */}
+      {dashTab === "ratings" && (<>
+      {/* ТРЕБУЮТ ВНИМАНИЯ + ТОЧКИ РОСТА */}
       <CollapsibleSection id="growth" icon={TrendingUp} title="Точки роста и внимание"
         locked open={sectionOpen("growth")} onToggle={() => toggleSection("growth")}>
       <div className="grid gap-4 xl:grid-cols-2">
@@ -1214,8 +1302,9 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
           ]} />
           <AnalysisBlock title="Продажи" lines={[
             `Новые ученики: ${m.newStudents.hasData ? m.newStudents.period : "нет данных"}`,
-            `Воронка: ${m.funnel.month.leads}→${m.funnel.month.signed}→${m.funnel.month.came}→${m.funnel.month.bought}`,
-            `Конверсия в покупку: ${m.funnel.month.convBought === null ? "—" : m.funnel.month.convBought + "%"}`
+            `Воронка: запись ${m.funnel.month.signed} → пришли ${m.funnel.month.came} → купили ${m.funnel.month.bought}`,
+            `Конверсия в покупку: ${m.funnel.month.convBought === null ? "—" : m.funnel.month.convBought + "%"}`,
+            `Продано абонементов: ${m.sales.soldSubs} (${m.sales.uniqueBuyers} покупателей)`
           ]} />
           <AnalysisBlock title="Удержание" lines={[
             `Удержание: ${m.retention.pct === null ? "—" : m.retention.pct + "%"}`,
@@ -1245,6 +1334,7 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
         )}
       </section>
       </CollapsibleSection>
+      </>)}
 
       {riskTable && <RiskTableModal data={riskTable} onClose={() => setRiskTable(null)} />}
     </div>
@@ -1441,25 +1531,35 @@ function RiskTile({ severity, title, detail, onClick }: { key?: React.Key; sever
   );
 }
 
-// ---------- Ежедневный отчёт руководителя: «Здоровье студии за 30 секунд» ----------
-function DailyManagerReport({ report, scopeLabel, periodLabel, onOpenList, onGo, onRevenue }: {
-  report: DailyReport;
+// ---------- «Здоровье студии за 30 секунд» ----------
+// 8 главных показателей дня (ТЗ заказчика): клик по выручке открывает СПИСОК
+// ОПЛАТ; ученики и абонементы — два разных показателя; вместо «истекают через
+// N дней» — неоплаты текущего/прошлого месяца; добавлены удержание, средний
+// чек и % выполнения плана БДР.
+function DailyManagerReport({ m, bdrPct, scopeLabel, periodLabel, onOpenList, onPayments, onRetention, onAvgCheck, onBdr }: {
+  m: any;
+  bdrPct: number | null;
   scopeLabel: string;
   periodLabel: string;
   onOpenList: (preset: RegistryPreset) => void;
-  onGo: (tab: string) => void;
-  onRevenue: () => void;
+  onPayments: () => void;
+  onRetention: () => void;
+  onAvgCheck: () => void;
+  onBdr: () => void;
 }) {
+  const report = m.dailyReport as DailyReport;
   const toneCls: Record<string, string> = {
     gold: "text-[#C5A059]", white: "text-white", rose: "text-rose-400", emerald: "text-emerald-400", amber: "text-amber-400",
   };
   const stats: { label: string; value: React.ReactNode; tone: string; hint?: string; onClick: () => void }[] = [
-    { label: "Выручка сегодня", value: money(report.revenueToday), tone: "gold", hint: `${report.paymentsToday} ${report.paymentsToday === 1 ? "оплата" : "оплат"}`, onClick: onRevenue },
-    { label: "Активные абонементы", value: report.activeSubs, tone: "white", onClick: () => onOpenList({ segment: "active", label: "Активные ученики" }) },
-    { label: "Должники", value: report.debtors.count, tone: report.debtors.count > 0 ? "rose" : "emerald", onClick: () => onOpenList({ ids: report.debtors.ids, label: "Должники" }) },
-    { label: "Новые ученики", value: report.newStudents.count, tone: "gold", onClick: () => onOpenList({ ids: report.newStudents.ids, label: `Новые ученики · ${periodLabel}` }) },
-    { label: "Записи на будущее", value: report.futureEnrollments.count, tone: "white", onClick: () => onOpenList({ ids: report.futureEnrollments.ids, label: "Записи на будущее" }) },
-    { label: "Истекают через 3 дня", value: report.expiring3d.count, tone: report.expiring3d.count > 0 ? "amber" : "emerald", onClick: () => onOpenList({ ids: report.expiring3d.ids, label: "Истекают через 3 дня" }) },
+    { label: "Выручка сегодня", value: money(report.revenueToday), tone: "gold", hint: `${report.paymentsToday} ${report.paymentsToday === 1 ? "оплата" : report.paymentsToday >= 2 && report.paymentsToday <= 4 ? "оплаты" : "оплат"} — список`, onClick: onPayments },
+    { label: "Учеников с абонементом", value: m.activeSubs.students, tone: "white", hint: "уникальные ученики", onClick: () => onOpenList({ segment: "active", label: "Ученики с активным абонементом" }) },
+    { label: "Активных абонементов", value: m.activeSubs.count, tone: "white", hint: "у ученика может быть два", onClick: () => onOpenList({ segment: "active", label: "Ученики с активным абонементом" }) },
+    { label: "План БДР", value: bdrPct === null ? "—" : `${bdrPct}%`, tone: bdrPct === null ? "white" : bdrPct >= 100 ? "emerald" : bdrPct >= 70 ? "amber" : "rose", hint: bdrPct === null ? "план не задан" : "по филиалам", onClick: onBdr },
+    { label: "Не оплачен текущий месяц", value: report.unpaidCurrentMonth.count, tone: report.unpaidCurrentMonth.count > 0 ? "rose" : "emerald", onClick: () => onOpenList({ ids: report.unpaidCurrentMonth.ids, label: "Не оплатили текущий месяц" }) },
+    { label: "Не оплатили прошлый месяц", value: report.unpaidPrevMonth.count, tone: report.unpaidPrevMonth.count > 0 ? "amber" : "emerald", onClick: () => onOpenList({ ids: report.unpaidPrevMonth.ids, label: "Не оплатили прошлый месяц" }) },
+    { label: "Удержание (мес→мес)", value: m.retention.pct === null ? "—" : `${m.retention.pct}%`, tone: "emerald", hint: "конверсия из месяца в месяц", onClick: onRetention },
+    { label: "Средний чек", value: m.avgCheck.all === null ? "—" : money(m.avgCheck.all), tone: "gold", onClick: onAvgCheck },
   ];
 
   return (
@@ -1467,14 +1567,14 @@ function DailyManagerReport({ report, scopeLabel, periodLabel, onOpenList, onGo,
       <div className="flex items-start gap-3">
         <div className="rounded-2xl bg-[#C5A059] p-2.5 text-black"><ClipboardList className="h-5 w-5" /></div>
         <div className="min-w-0">
-          <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">Ежедневный отчёт руководителя · Здоровье студии за 30 секунд</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">Здоровье студии за 30 секунд</p>
           <p className="mt-1 text-sm leading-relaxed text-slate-100">{report.summary}</p>
           <p className="mt-1 text-[11px] text-slate-500">{scopeLabel} · {periodLabel}</p>
         </div>
       </div>
 
       {/* Кликабельные показатели */}
-      <div className="mt-4 grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-6">
+      <div className="mt-4 grid grid-cols-2 gap-2.5 md:grid-cols-4">
         {stats.map((s) => (
           <button key={s.label} onClick={s.onClick}
             className="group rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 text-left transition hover:border-[#C5A059]/45 hover:bg-white/[0.06]">
@@ -1490,16 +1590,192 @@ function DailyManagerReport({ report, scopeLabel, periodLabel, onOpenList, onGo,
   );
 }
 
+// ---------- Краткий отчёт ИИ по итогам на сегодня ----------
+// БДР и прогноз по темпу, сравнение с тем же днём прошлого месяца, отток и
+// удержание, заполненность и сколько записей на пробный нужно для заполнения.
+function AiDailyBrief({ m, bdr, pendingExpenses, pendingRefunds }: {
+  m: any;
+  bdr: { network: { plan: number | null; fact: number; pct: number | null } | null } | null;
+  pendingExpenses: number;
+  pendingRefunds: number;
+}) {
+  const now = new Date();
+  const dayN = now.getDate();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const lines: { tone: "good" | "warn" | "info"; text: string }[] = [];
+
+  const nw = bdr?.network;
+  if (nw && nw.plan) {
+    const forecastPct = Math.round(((nw.fact / Math.max(1, dayN)) * daysInMonth / nw.plan) * 100);
+    const paceOk = (nw.pct || 0) >= Math.round((dayN / daysInMonth) * 100);
+    lines.push({ tone: paceOk ? "good" : "warn", text: `План БДР выполнен на ${nw.pct}% (${money(nw.fact)} из ${money(nw.plan)}). Прогноз к концу месяца по текущему темпу — ~${forecastPct}%.` });
+  } else {
+    lines.push({ tone: "info", text: "План БДР на этот месяц не задан — заполните «Планирование (БДР)», и здесь появятся % выполнения и прогноз." });
+  }
+
+  if (m.mtd.pct !== null) {
+    lines.push({ tone: m.mtd.pct >= 0 ? "good" : "warn", text: `Выручка с начала месяца — ${money(m.mtd.cur)}: на ${Math.abs(m.mtd.pct)}% ${m.mtd.pct >= 0 ? "выше" : "ниже"}, чем к этому же дню прошлого месяца (${money(m.mtd.prev)}).` });
+  } else {
+    lines.push({ tone: "info", text: `Выручка с начала месяца — ${money(m.mtd.cur)} (данных прошлого месяца для сравнения пока нет).` });
+  }
+
+  lines.push({
+    tone: m.churn.left > 0 ? "warn" : "good",
+    text: `Удержание ${m.retention.pct === null ? "—" : m.retention.pct + "%"} · отток за месяц: ${m.churn.left} ${m.churn.left === 1 ? "ушедший" : "ушедших"}${m.churn.pct !== null && m.churn.left > 0 ? ` (${m.churn.pct}% базы)` : ""}.`,
+  });
+
+  if (m.occupancy.pct !== null) {
+    const t = m.trialsToFill;
+    lines.push({
+      tone: m.occupancy.pct >= 85 ? "good" : "info",
+      text: `Общая заполненность ${m.occupancy.pct}% (${m.occupancy.filled} из ${m.occupancy.capacity} мест).${t.needed ? ` Чтобы заполнить группы, нужно ещё ~${t.needed} записей на пробный (конверсия запись→покупка ${t.convPct}%).` : t.needed === 0 ? " Свободных мест нет — группы заполнены." : ""}`,
+    });
+  }
+
+  const pending = pendingExpenses + pendingRefunds;
+  if (pending > 0) {
+    lines.push({ tone: "warn", text: `Ждут вашего решения: ${pendingExpenses} заяв. на расходы и ${pendingRefunds} на возврат — блок «Требуют решения» ниже.` });
+  }
+
+  return (
+    <section className="rounded-[2rem] border border-[#C5A059]/25 bg-gradient-to-br from-[#19160f] via-[#121212] to-black p-5 md:p-6">
+      <div className="flex items-start gap-3">
+        <div className="rounded-2xl bg-[#C5A059] p-2.5 text-black"><Sparkles className="h-5 w-5" /></div>
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">Краткий отчёт ИИ · итоги на сегодня</p>
+          <ul className="mt-2 space-y-1.5">
+            {lines.map((l, i) => (
+              <li key={i} className="flex gap-2 text-sm leading-relaxed">
+                <span className={l.tone === "warn" ? "text-rose-400" : l.tone === "good" ? "text-emerald-400" : "text-[#C5A059]"}>•</span>
+                <span className="text-slate-100">{l.text}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ---------- «Требуют решения»: заявки на расходы и возвраты ----------
+// Владелец одобряет/отклоняет прямо с дашборда; одобрение создаёт операцию в Бухгалтерии.
+function ApprovalsPanel({ expenseReqs, refundReqs, busyId, onDecide, branchNameOf }: {
+  expenseReqs: any[];
+  refundReqs: any[];
+  busyId: string | null;
+  onDecide: (kind: "expense" | "refund", id: string, action: "approve" | "reject") => void;
+  branchNameOf: (id?: string) => string;
+}) {
+  const total = expenseReqs.length + refundReqs.length;
+  const renderCard = (kind: "expense" | "refund", r: any) => (
+    <div key={r.id} className="flex flex-wrap items-center gap-3 rounded-2xl border border-white/10 bg-[#161616] p-3.5">
+      <div className="min-w-0 flex-1">
+        <p className="flex items-center gap-2 text-sm font-bold text-white">
+          {money(r.amount)}
+          <span className={`rounded-lg px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${kind === "refund" ? "bg-rose-500/15 text-rose-300" : "bg-sky-500/15 text-sky-300"}`}>
+            {kind === "refund" ? "Возврат" : "Расход"}
+          </span>
+        </p>
+        <p className="mt-0.5 text-xs text-slate-400">
+          {branchNameOf(r.branchId)} · {r.requestedByName || "—"}
+          {kind === "refund" && r.studentName ? ` · ученик: ${r.studentName}` : ""}
+        </p>
+        {(r.description || r.reason) && <p className="mt-0.5 text-xs text-slate-500">{r.description || r.reason}</p>}
+      </div>
+      <div className="flex shrink-0 gap-2">
+        <button disabled={busyId === r.id} onClick={() => onDecide(kind, r.id, "approve")}
+          className="inline-flex items-center gap-1 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-black text-emerald-300 transition hover:bg-emerald-500/25 disabled:opacity-50">
+          <CheckCircle className="h-3.5 w-3.5" /> Одобрить
+        </button>
+        <button disabled={busyId === r.id} onClick={() => onDecide(kind, r.id, "reject")}
+          className="inline-flex items-center gap-1 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-black text-rose-300 transition hover:bg-rose-500/25 disabled:opacity-50">
+          <X className="h-3.5 w-3.5" /> Отклонить
+        </button>
+      </div>
+    </div>
+  );
+  return (
+    <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">Заявки на расходы и возвраты</p>
+        <span className={`text-xs font-bold ${total ? "text-amber-400" : "text-slate-500"}`}>{total ? `${total} ждут решения` : "всё обработано"}</span>
+      </div>
+      {total === 0 ? (
+        <p className="mt-3 text-sm text-slate-500">Новых заявок нет. Управляющие создают заявки в своих кабинетах — они появятся здесь для одобрения.</p>
+      ) : (
+        <div className="mt-3 space-y-2">
+          {refundReqs.map((r) => renderCard("refund", r))}
+          {expenseReqs.map((r) => renderCard("expense", r))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ---------- План БДР по филиалам: план / факт / % с прогресс-барами ----------
+function BdrProgressPanel({ bdr, onGoPlanning }: {
+  bdr: { network: { plan: number | null; fact: number; pct: number | null } | null; byBranch: { branchId: string; name: string; plan: number | null; fact: number; pct: number | null }[] } | null;
+  onGoPlanning: () => void;
+}) {
+  const rows = bdr?.byBranch || [];
+  const nw = bdr?.network;
+  const barColor = (pct: number | null) => pct === null ? "bg-white/10" : pct >= 100 ? "bg-emerald-400" : pct >= 70 ? "bg-amber-400" : "bg-rose-400";
+  const pctColor = (pct: number | null) => pct === null ? "text-slate-500" : pct >= 100 ? "text-emerald-400" : pct >= 70 ? "text-amber-400" : "text-rose-400";
+  const bar = (pct: number | null) => (
+    <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
+      <div className={`h-full rounded-full ${barColor(pct)}`} style={{ width: `${Math.min(100, pct || 0)}%` }} />
+    </div>
+  );
+  const noPlan = !nw?.plan && rows.every((r) => r.plan === null);
+  if (noPlan) {
+    return (
+      <section className="rounded-[2rem] border border-dashed border-white/15 bg-[#121212] p-6 text-center">
+        <p className="text-sm text-slate-400">План БДР на текущий месяц не задан — выполнение плана считать не из чего.</p>
+        <button onClick={onGoPlanning}
+          className="mt-3 rounded-xl bg-[#C5A059] px-4 py-2 text-xs font-black text-black transition hover:brightness-110">
+          Заполнить в «Планировании (БДР)» ›
+        </button>
+      </section>
+    );
+  }
+  return (
+    <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+      {nw?.plan ? (
+        <div className="mb-4 rounded-2xl border border-[#C5A059]/20 bg-[#C5A059]/5 p-3.5">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm font-black text-white">Вся сеть</p>
+            <p className={`shrink-0 text-sm font-black ${pctColor(nw.pct)}`}>{nw.pct}% · {money(nw.fact)} из {money(nw.plan)}</p>
+          </div>
+          <div className="mt-2">{bar(nw.pct)}</div>
+        </div>
+      ) : null}
+      <div className="space-y-3">
+        {rows.map((b) => (
+          <div key={b.branchId}>
+            <div className="flex items-center justify-between gap-2">
+              <p className="truncate text-sm font-bold text-slate-200">{b.name}</p>
+              <p className={`shrink-0 text-xs font-bold ${pctColor(b.pct)}`}>
+                {b.plan === null ? "план не задан" : `${b.pct}% · ${money(b.fact)} из ${money(b.plan)}`}
+              </p>
+            </div>
+            <div className="mt-1.5">{bar(b.pct)}</div>
+          </div>
+        ))}
+      </div>
+      <p className="mt-4 text-[11px] text-slate-500">План — из вкладки «Планирование (БДР)» (в т.ч. планы по филиалам). Факт — оплаченные платежи текущего месяца.</p>
+    </section>
+  );
+}
+
 function FunnelDayCard({ title, data }: { title: string; data: { leads: number; trialBooked: number; trialCame: number; bought: number } | null }) {
   return (
     <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
       <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">{title}</p>
       {data ? (
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          <MiniMetric label="Лиды" value={data.leads} />
+        <div className="mt-3 grid grid-cols-3 gap-3">
           <MiniMetric label="Запись на пробный" value={data.trialBooked} />
-          <MiniMetric label="Пришли на пробный" value={data.trialCame} />
-          <MiniMetric label="Купили впервые" value={data.bought} />
+          <MiniMetric label="Пришли" value={data.trialCame} />
+          <MiniMetric label="Купили" value={data.bought} />
         </div>
       ) : (
         <p className="mt-4 text-sm text-slate-500">Накапливается из событий статусов.</p>
