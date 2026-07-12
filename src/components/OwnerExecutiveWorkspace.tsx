@@ -84,6 +84,7 @@ import { BranchesGroupsView } from "./BranchesGroupsView";
 import AiHubView from "./AiHubView";
 import { useOwnerSectionSettings, SectionSettingsDrawer, SectionGearButton, type ResolvedTab } from "./OwnerSectionSettings";
 import { SubscriptionPlansManager } from "./SubscriptionPlansManager";
+import StatusSettings from "./StatusSettings";
 import { computeOwnerDashboard, type DashFilters, type PeriodKey, type LevelKey, type DashExtras, type Delta, type DailyReport } from "../ownerDashboardAnalytics";
 
 // Память состояния свёрнутых блоков дашборда — отдельно для каждого пользователя (по роли).
@@ -1807,7 +1808,7 @@ function BranchGroupsManager({ rawBranches, groups, teachers, halls, onCreateGro
   onUpdateGroup?: (id: string, data: any) => Promise<boolean>;
   onDeleteGroup?: (id: string) => Promise<boolean>;
 }) {
-  const emptyForm = { name: "", branchId: "", teacherId: "", hallId: "", ageFrom: "", ageTo: "", capacity: "", level: "Начинающие", scheduleDays: "", scheduleTime: "" };
+  const emptyForm = { name: "", branchId: "", teacherId: "", hallId: "", ageFrom: "", ageTo: "", capacity: "", level: "Начинающие", scheduleDays: "", scheduleTime: "", format: "group" };
   const [filterBranchId, setFilterBranchId] = useState("");
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -1836,6 +1837,7 @@ function BranchGroupsManager({ rawBranches, groups, teachers, halls, onCreateGro
       level: g.level || "Начинающие",
       scheduleDays: (g.days || []).join(", "),
       scheduleTime: g.time || "",
+      format: g.format === "individual" ? "individual" : "group",
     });
   };
   const cancel = () => { setAdding(false); setEditingId(null); setForm(emptyForm); };
@@ -1854,6 +1856,7 @@ function BranchGroupsManager({ rawBranches, groups, teachers, halls, onCreateGro
       level: form.level,
       scheduleDays: form.scheduleDays || undefined,
       scheduleTime: form.scheduleTime || undefined,
+      format: form.format,
     };
     let ok = false;
     if (adding && onCreateGroup) ok = await onCreateGroup(payload);
@@ -1903,6 +1906,12 @@ function BranchGroupsManager({ rawBranches, groups, teachers, halls, onCreateGro
           <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
             <label className="block"><span className={kicCls}>Название *</span>
               <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Лезгинка · Старшая" className={inputCls} />
+            </label>
+            <label className="block"><span className={kicCls}>Формат *</span>
+              <select value={form.format} onChange={(e) => setForm({ ...form, format: e.target.value })} className={inputCls}>
+                <option value="group">Групповая</option>
+                <option value="individual">Индивидуальные занятия</option>
+              </select>
             </label>
             <label className="block"><span className={kicCls}>Филиал *</span>
               <select value={form.branchId} onChange={(e) => setForm({ ...form, branchId: e.target.value, teacherId: "" })} className={inputCls}>
@@ -1958,7 +1967,7 @@ function BranchGroupsManager({ rawBranches, groups, teachers, halls, onCreateGro
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <h3 className="text-lg font-black text-white">{g.name}</h3>
-                <p className="mt-1 text-xs text-slate-500">{branchName(g.branchId)} · {g.ageGroup || "Все возрасты"} · {g.level}</p>
+                <p className="mt-1 text-xs text-slate-500">{branchName(g.branchId)} · {g.format === "individual" ? "Индивидуальные занятия" : "Групповая"} · {g.ageGroup || "Все возрасты"} · {g.level}</p>
                 {(g.days?.length > 0 || g.time) && <p className="mt-0.5 text-xs text-slate-500">{(g.days || []).join(", ")} {g.time}</p>}
               </div>
               {canManage && (
@@ -7377,16 +7386,32 @@ function MarketingView({ studentArchive = [], branches = [] }: { studentArchive?
 }
 
 function NetworkSettingsView({ branches, teachers, subscriptionPlans = [], onCreatePlan, onUpdatePlan, onDeletePlan }: { branches: Branch[]; teachers: Teacher[]; subscriptionPlans?: SubscriptionPlan[]; onCreatePlan?: (data: any) => Promise<boolean>; onUpdatePlan?: (id: string, data: any) => Promise<boolean>; onDeletePlan?: (id: string) => Promise<boolean> }) {
+  const [showStatusSettings, setShowStatusSettings] = useState(false);
   return (
-    <OwnerScreen title="Настройки сети" subtitle="Справочники, тарифы абонементов, филиалы, роли, права доступа, шаблоны, audit log, интеграции и лицензия.">
+    <OwnerScreen title="Настройки сети" subtitle="Тарифы, статусы учеников, справочники (рекламные источники и др.), роли и audit log.">
       {/* Тарифы абонементов: владелец задаёт названия, кол-во занятий, срок и цену. */}
       <SubscriptionPlansManager plans={subscriptionPlans} branches={branches} onCreatePlan={onCreatePlan} onUpdatePlan={onUpdatePlan} onDeletePlan={onDeletePlan} />
+
+      {/* Статусы учеников: те же настройки, что открываются из вкладки «Ученики». */}
+      <section className="rounded-[1.75rem] border border-white/10 bg-gradient-to-br from-[#141414] to-black p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-black uppercase tracking-wider text-white">Статусы учеников</h3>
+            <p className="mt-1 text-xs text-slate-500">Цвета автостатусов и список ручных статусов (Каникулы, Заморозка и т.д.). Автостатусы система ставит сама — их переименовать нельзя.</p>
+          </div>
+          <button onClick={() => setShowStatusSettings(true)} className="rounded-2xl bg-[#C5A059] px-4 py-2 text-sm font-bold text-black transition hover:bg-[#d4b06a]">
+            Настроить статусы
+          </button>
+        </div>
+      </section>
+      {showStatusSettings && <StatusSettings roleHeader="owner" onClose={() => setShowStatusSettings(false)} />}
 
       {/* Настраиваемые справочники: владелец добавляет значения, остальные выбирают из готового. */}
       <section className="rounded-[1.75rem] border border-white/10 bg-gradient-to-br from-[#141414] to-black p-5">
         <h3 className="text-sm font-black uppercase tracking-wider text-white">Справочники</h3>
         <p className="mt-1 text-xs text-slate-500">Эти списки используются в выпадающих полях. Управленцы и администраторы выбирают из готовых значений.</p>
-        <div className="mt-4 grid gap-4 lg:grid-cols-3">
+        <div className="mt-4 grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
+          <LeadSourcesEditor />
           <SettingsListEditor kind="performance_type" title="Типы выступлений" />
           <SettingsListEditor kind="product_category" title="Категории товаров" />
           <SettingsListEditor kind="group_level" title="Уровни групп" />
@@ -7400,6 +7425,66 @@ function NetworkSettingsView({ branches, teachers, subscriptionPlans = [], onCre
         <ExecutivePanel icon={<Activity />} title="Audit log сети" text="Все действия владельца, руководителей филиалов, администраторов и преподавателей фиксируются." />
       </div>
     </OwnerScreen>
+  );
+}
+
+// Редактор рекламных источников (lead_sources): откуда ученики узнают о студии.
+// Значения появляются в поле «Рекламный источник» карточки ученика и в отчётах.
+function LeadSourcesEditor() {
+  const [items, setItems] = useState<{ id: string; name: string }[]>([]);
+  const [val, setVal] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const jhdr = { headers: { "Content-Type": "application/json", "x-demo-role": "owner" } };
+
+  const load = async () => {
+    try {
+      const r = await fetch("/api/mvp/lead-sources", { headers: { "x-demo-role": "owner" } });
+      if (!r.ok) return;
+      const d = await r.json();
+      setItems(d.sources || []);
+    } catch { /* пусто */ }
+  };
+  useEffect(() => { load(); }, []);
+
+  const add = async () => {
+    const name = val.trim();
+    if (!name) return;
+    setBusy(true); setErr(null);
+    try {
+      const r = await fetch("/api/mvp/lead-sources", { method: "POST", ...jhdr, body: JSON.stringify({ name }) });
+      if (!r.ok) { const b = await r.json().catch(() => ({})); setErr(b.error || `Ошибка ${r.status}`); return; }
+      setVal(""); await load();
+    } finally { setBusy(false); }
+  };
+  const remove = async (id: string) => {
+    setBusy(true); setErr(null);
+    try {
+      const r = await fetch(`/api/mvp/lead-sources/${id}`, { method: "DELETE", headers: { "x-demo-role": "owner" } });
+      if (!r.ok) { const b = await r.json().catch(() => ({})); setErr(b.error || `Ошибка ${r.status}`); return; }
+      await load();
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+      <p className="text-[11px] font-black uppercase tracking-wider text-slate-400">Рекламные источники</p>
+      <p className="mt-1 text-[10px] text-slate-600">Откуда узнают о студии: Instagram, сарафан и т.д. Выбираются в карточке ученика, считаются в отчётах по рекламе.</p>
+      <div className="mt-3 space-y-1.5">
+        {items.length === 0 && <p className="text-xs text-slate-600">Пока пусто — добавьте первый источник.</p>}
+        {items.map((it) => (
+          <div key={it.id} className="flex items-center justify-between gap-2 rounded-lg border border-white/5 bg-black/30 px-3 py-1.5">
+            <span className="text-sm text-slate-200">{it.name}</span>
+            <button onClick={() => remove(it.id)} disabled={busy} className="text-slate-500 hover:text-rose-400"><Trash2 className="h-3.5 w-3.5" /></button>
+          </div>
+        ))}
+      </div>
+      {err && <p className="mt-2 rounded-lg bg-rose-500/10 px-2.5 py-1.5 text-[11px] font-semibold text-rose-300">{err}</p>}
+      <div className="mt-3 flex gap-2">
+        <input value={val} onChange={(e) => setVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} placeholder="Например: Instagram" className="flex-1 rounded-lg border border-white/10 bg-black/40 px-2.5 py-1.5 text-sm text-white outline-none focus:border-[#C5A059]/50" />
+        <button onClick={add} disabled={busy || !val.trim()} className="rounded-lg bg-[#C5A059] px-3 py-1.5 text-xs font-black text-black disabled:opacity-40">Добавить</button>
+      </div>
+    </div>
   );
 }
 

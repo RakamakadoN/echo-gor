@@ -277,9 +277,22 @@ export default function StudentManagementCard({
 
   // Если задан onSellSubscription — кнопка открывает инлайн-форму, иначе старая модалка оплаты.
   const canSell = Boolean(onSellSubscription);
+  // Обычная продажа — строго в группу ученика (без выбора, чтобы не путаться).
+  // «Абонемент в другую группу» — отдельная кнопка: там выбор формата и группы.
+  const [sellPickGroup, setSellPickGroup] = useState(false);
   const handleSellClick = () => {
-    if (onSellSubscription) togglePanel("sell");
-    else if (onOpenPayment) onOpenPayment();
+    if (!onSellSubscription) { if (onOpenPayment) onOpenPayment(); return; }
+    setDone(null);
+    if (panel === "sell" && !sellPickGroup) { setPanel(null); return; }
+    setSellPickGroup(false);
+    setPanel("sell");
+  };
+  const handleSellOtherGroupClick = () => {
+    if (!onSellSubscription) return;
+    setDone(null);
+    if (panel === "sell" && sellPickGroup) { setPanel(null); return; }
+    setSellPickGroup(true);
+    setPanel("sell");
   };
 
   const togglePanel = (next: "trial" | "transfer" | "sell" | "access") => {
@@ -456,9 +469,13 @@ export default function StudentManagementCard({
     ? Math.round((presentCount / attendanceRecords.length) * 100)
     : 0;
 
-  // Ученик может заниматься в нескольких группах — показываем все (основная первой).
+  // Ученик может заниматься в нескольких группах — показываем все (основная первой)
+  // с форматом каждой, чтобы было видно, где групповые, а где индивидуальные.
   const groupLabel = (student.groupIds || [])
-    .map((id) => allGroups.find((g) => g.id === id)?.name)
+    .map((id) => {
+      const g = allGroups.find((x) => x.id === id);
+      return g ? `${g.name} (${g.format === "individual" ? "индивидуальные" : "групповые"})` : null;
+    })
     .filter(Boolean)
     .join(", ") || group?.name || group?.level || "Без группы";
   const branchLabel = branch?.name || branch?.city || "Основная база";
@@ -612,6 +629,19 @@ export default function StudentManagementCard({
               }`}
             >
               <Plus className="h-4 w-4" /> Продать абонемент
+            </button>
+          )}
+          {canSell && (
+            <button
+              onClick={handleSellOtherGroupClick}
+              title="Второй абонемент в любую группу любого формата — ученик может заниматься в двух группах"
+              className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-bold transition ${
+                panel === "sell" && sellPickGroup
+                  ? "border-rose-300 bg-rose-50 text-rose-600"
+                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              <Users className="h-4 w-4 text-slate-400" /> Абонемент в другую группу
             </button>
           )}
           <button
@@ -1010,6 +1040,7 @@ export default function StudentManagementCard({
             branch={branch}
             plans={plans}
             allGroups={allGroups}
+            pickGroup={sellPickGroup}
             onClose={() => setPanel(null)}
             onSubmit={onSellSubscription}
             onSubmitBatch={onSellSubscriptionBatch}
@@ -1353,6 +1384,7 @@ function SellSubscriptionPanel({
   branch,
   plans,
   allGroups = [],
+  pickGroup = false,
   onSubmit,
   onSubmitBatch,
   onClose,
@@ -1363,28 +1395,44 @@ function SellSubscriptionPanel({
   plans: SubscriptionPlan[];
   /** Все группы: абонемент можно продать в ЛЮБУЮ группу (мульти-группы, ТЗ). */
   allGroups?: Group[];
+  /** false (обычная продажа) — строго в группу ученика, без выбора.
+      true («Абонемент в другую группу») — выбор формата и любой группы. */
+  pickGroup?: boolean;
   onSubmit: (payload: SellSubscriptionInput) => Promise<boolean> | boolean;
   /** Пакетная продажа периода: N месячных абонементов одной операцией. */
   onSubmitBatch?: (items: SellSubscriptionInput[]) => Promise<boolean> | boolean;
   onClose: () => void;
 }) {
-  // Формат занятий: по умолчанию — формат основной группы ученика.
-  const [kind, setKind] = useState<"group" | "individual">(() => {
-    const main = allGroups.find((g) => g.id === (student.groupIds?.[0] || group?.id || ""));
-    return main?.format === "individual" ? "individual" : "group";
-  });
+  // Основная группа ученика — задаётся при создании карточки, меняется через «Перевод».
+  const mainGroupId = student.groupIds?.[0] || group?.id || "";
+  const mainGroup = allGroups.find((g) => g.id === mainGroupId);
+  // Обычная продажа привязана к группе ученика: формат и расписание — её.
+  // Если у ученика группы нет — деваться некуда, включаем выбор.
+  const locked = !pickGroup && Boolean(mainGroup);
+  // Формат занятий: в обычной продаже — формат группы ученика (не выбирается),
+  // в «другой группе» — выбирается вручную.
+  const [kindPick, setKindPick] = useState<"group" | "individual">(
+    () => (mainGroup?.format === "individual" ? "individual" : "group")
+  );
+  const kind: "group" | "individual" = locked
+    ? (mainGroup?.format === "individual" ? "individual" : "group")
+    : kindPick;
   // Группы строго выбранного формата («Групповой» → обычные группы,
   // «Индивидуальный» → графики индивидуальных занятий), только филиал ученика
   // и только с действующим сроком — закрытые группы в продаже не предлагаем.
   const todayIso = isoOf(new Date());
-  const formatGroups = allGroups.filter((g) =>
-    (g.format === "individual") === (kind === "individual") &&
-    (!g.branchId || g.branchId === student.branchId) &&
-    (!g.endDate || g.endDate >= todayIso)
-  );
-  // Группа абонемента: по умолчанию основная группа ученика (если подходит по
-  // формату), иначе первая подходящая — ученик может заниматься в двух группах.
-  const [saleGroupId, setSaleGroupId] = useState(student.groupIds?.[0] || group?.id || "");
+  const formatGroups = locked
+    ? (mainGroup ? [mainGroup] : [])
+    : allGroups.filter((g) =>
+        (g.format === "individual") === (kind === "individual") &&
+        (!g.branchId || g.branchId === student.branchId) &&
+        (!g.endDate || g.endDate >= todayIso)
+      );
+  // Группа абонемента: в обычной продаже — группа ученика; в «другой группе» —
+  // по умолчанию первая подходящая, кроме основной (за ней — обычная кнопка).
+  const [saleGroupIdPick, setSaleGroupIdPick] = useState("");
+  const saleGroupId = locked ? mainGroupId : saleGroupIdPick;
+  const setSaleGroupId = setSaleGroupIdPick;
   const saleGroup = formatGroups.find((g) => g.id === saleGroupId);
   // Дни тренировок из расписания ВЫБРАННОЙ группы (["Пн","Ср","Пт"] → [1,3,5]); если не заданы — Пн/Ср/Пт.
   const groupDayNums = (saleGroup?.days || [])
@@ -1439,10 +1487,15 @@ function SellSubscriptionPanel({
   }, [kind]);
 
   // Смена формата → выбранная группа обязана быть из списка нового формата.
+  // По умолчанию предлагаем НЕ основную группу: эта форма — про вторую группу.
   useEffect(() => {
-    if (!formatGroups.some((g) => g.id === saleGroupId)) setSaleGroupId(formatGroups[0]?.id || "");
+    if (locked) return;
+    if (!formatGroups.some((g) => g.id === saleGroupId)) {
+      const preferred = formatGroups.find((g) => g.id !== mainGroupId) || formatGroups[0];
+      setSaleGroupId(preferred?.id || "");
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kind]);
+  }, [kind, pickGroup]);
 
   // Продажа возможна только при полном согласовании: тариф формата + группа формата.
   const canSell = activePlans.some((p) => p.id === planId) && formatGroups.some((g) => g.id === saleGroupId);
@@ -1674,7 +1727,7 @@ function SellSubscriptionPanel({
     <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-white">
       <div className="bg-gradient-to-r from-violet-500 via-rose-500 to-amber-400 px-4 py-3">
         <p className="flex items-center gap-2 text-sm font-black text-white">
-          <Wallet className="h-4 w-4" /> Продать абонемент
+          <Wallet className="h-4 w-4" /> {locked ? "Продать абонемент" : "Абонемент в другую группу"}
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           <span className="inline-flex items-center gap-1.5 rounded-full border border-white/30 bg-white/20 px-2.5 py-1 text-xs font-bold text-white backdrop-blur">
@@ -1684,7 +1737,7 @@ function SellSubscriptionPanel({
             <MapPin className="h-3.5 w-3.5" /> {branch?.name || "Филиал"}
           </span>
           <span className="inline-flex items-center gap-1.5 rounded-full border border-white/30 bg-white/20 px-2.5 py-1 text-xs font-bold text-white backdrop-blur">
-            <Users className="h-3.5 w-3.5" /> {group?.name || "Без группы"}
+            <Users className="h-3.5 w-3.5" /> {saleGroup?.name || (locked ? "Без группы" : "выберите группу")}
           </span>
           <span className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-white/30 bg-white/20 px-2.5 py-1 text-xs font-bold text-white backdrop-blur">
             <Calendar className="h-3.5 w-3.5" /> Счёт от {ddmmyyyyFromIso(isoOf(new Date()))}
@@ -1722,44 +1775,68 @@ function SellSubscriptionPanel({
           )}
           {/* Параметры */}
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="flex flex-col gap-1">
-              <span className="text-xs font-semibold text-slate-500">Формат занятий</span>
-              <select value={kind} onChange={(e) => { setKind(e.target.value as "group" | "individual"); setError(null); }} className={fieldCls}>
-                <option value="group">Групповой</option>
-                <option value="individual">Индивидуальный</option>
-              </select>
-            </label>
-            {/* Группа/индивидуальный график: абонемент продаётся в конкретную группу
-                (для «Индивидуальный» — в группу-график индивидуальных занятий,
-                созданную во вкладке «Группы»); расписание и педагог берутся из неё. */}
-            <label className="flex flex-col gap-1">
-              <span className="text-xs font-semibold text-slate-500">
-                {kind === "individual" ? "Индивидуальные занятия (график / педагог)" : "Группа абонемента"}
-              </span>
-              {formatGroups.length > 0 ? (
-                <>
-                  <select value={saleGroupId} onChange={(e) => { setSaleGroupId(e.target.value); setDisabledDates({}); }} className={fieldCls}>
-                    {formatGroups.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.name}{g.time ? ` · ${g.time}` : ""}{g.id === (student.groupIds?.[0] || "") ? " (основная)" : ""}
-                      </option>
-                    ))}
+            {locked ? (
+              /* Обычная продажа: группа ученика зафиксирована — показываем её условия.
+                 Сменить группу — через «Перевод»; вторая группа — отдельной кнопкой. */
+              <div className="flex flex-col gap-1 sm:col-span-2">
+                <span className="text-xs font-semibold text-slate-500">Группа ученика</span>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                  <p className="text-sm font-bold text-slate-800">
+                    {mainGroup?.name}
+                    <span className="ml-2 rounded-full bg-white px-2 py-0.5 text-[11px] font-bold text-slate-500 ring-1 ring-slate-200">
+                      {kind === "individual" ? "индивидуальные занятия" : "групповые занятия"}
+                    </span>
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-slate-400">
+                    {mainGroup?.days?.length ? mainGroup.days.join(", ") : "дни не заданы"}
+                    {mainGroup?.time ? ` · ${mainGroup.time}` : ""}
+                    {" · сменить группу — через «Перевод», вторая группа — кнопкой «Абонемент в другую группу»"}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <>
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-semibold text-slate-500">Формат занятий</span>
+                  <select value={kind} onChange={(e) => { setKindPick(e.target.value as "group" | "individual"); setError(null); }} className={fieldCls}>
+                    <option value="group">Групповой</option>
+                    <option value="individual">Индивидуальный</option>
                   </select>
-                  {saleGroup && (
-                    <span className="text-[11px] text-slate-400">
-                      {saleGroup.days?.length ? saleGroup.days.join(", ") : "дни не заданы"}
-                      {saleGroup.time ? ` · ${saleGroup.time}` : ""}
+                </label>
+                {/* Группа/индивидуальный график: абонемент продаётся в конкретную группу
+                    (для «Индивидуальный» — в группу-график индивидуальных занятий,
+                    созданную во вкладке «Группы»); расписание и педагог берутся из неё. */}
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-semibold text-slate-500">
+                    {kind === "individual" ? "Индивидуальные занятия (график / педагог)" : "Группа абонемента"}
+                  </span>
+                  {formatGroups.length > 0 ? (
+                    <>
+                      <select value={saleGroupId} onChange={(e) => { setSaleGroupId(e.target.value); setDisabledDates({}); }} className={fieldCls}>
+                        {formatGroups.map((g) => (
+                          <option key={g.id} value={g.id}>
+                            {g.name}{g.time ? ` · ${g.time}` : ""}
+                            {g.id === mainGroupId ? " (основная группа ученика)" : (student.groupIds || []).includes(g.id) ? " (уже занимается)" : ""}
+                          </option>
+                        ))}
+                      </select>
+                      {saleGroup && (
+                        <span className="text-[11px] text-slate-400">
+                          {saleGroup.days?.length ? saleGroup.days.join(", ") : "дни не заданы"}
+                          {saleGroup.time ? ` · ${saleGroup.time}` : ""}
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <span className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+                      {kind === "individual"
+                        ? "Нет графиков индивидуальных занятий в филиале ученика. Создайте группу с форматом «Индивидуальный» в разделе «Группы»."
+                        : "Нет действующих групп в филиале ученика. Создайте группу в разделе «Группы»."}
                     </span>
                   )}
-                </>
-              ) : (
-                <span className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
-                  {kind === "individual"
-                    ? "Нет графиков индивидуальных занятий в филиале ученика. Создайте группу с форматом «Индивидуальный» в разделе «Группы»."
-                    : "Нет действующих групп в филиале ученика. Создайте группу в разделе «Группы»."}
-                </span>
-              )}
-            </label>
+                </label>
+              </>
+            )}
             <label className="flex flex-col gap-1">
               <span className="text-xs font-semibold text-slate-500">Тариф</span>
               {activePlans.length > 0 ? (

@@ -3207,6 +3207,16 @@ export function registerMvpApi(app: express.Express) {
   });
 
   // ===== Справочник: рекламные источники (lead_sources) =====
+  app.get("/api/mvp/lead-sources", async (_req, res) => {
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      const rows = await supabaseFetch<any[]>("lead_sources", "select=*&order=name.asc");
+      res.json({ sources: rows.map(mapDbLeadSource) });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Не удалось загрузить источники" });
+    }
+  });
+
   app.post("/api/mvp/lead-sources", async (req, res) => {
     const payload = req.body || {};
     if (!payload.name || !String(payload.name).trim()) return res.status(400).json({ error: "name is required" });
@@ -3241,6 +3251,12 @@ export function registerMvpApi(app: express.Express) {
   app.delete("/api/mvp/lead-sources/:id", async (req, res) => {
     if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
     try {
+      // FK в базе — ON DELETE SET NULL: без этой проверки источник удалился бы
+      // молча, обнулив его у учеников (потеря статистики рекламы).
+      const used = await supabaseFetch<any[]>("students", `select=id&source_id=eq.${req.params.id}&limit=1`);
+      if (used.length > 0) {
+        return res.status(409).json({ error: "Этот источник уже указан у учеников — удалить нельзя, иначе потеряется статистика рекламы. Если источник больше не нужен, просто перестаньте его выбирать." });
+      }
       await supabaseFetch("lead_sources", `id=eq.${req.params.id}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
       res.json({ ok: true });
     } catch (error: any) {
