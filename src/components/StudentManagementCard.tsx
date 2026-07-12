@@ -1564,7 +1564,7 @@ function SellSubscriptionPanel({
       const ok = await onSubmit({
         studentId: student.id,
         branchId: student.branchId,
-        groupId: kind === "individual" ? undefined : saleGroupId || undefined,
+        groupId: saleGroupId || undefined,
         planId: plan.id,
         startsOn,
         endsOn,
@@ -1608,7 +1608,7 @@ function SellSubscriptionPanel({
       const items: SellSubscriptionInput[] = segments.map((seg) => ({
         studentId: student.id,
         branchId: student.branchId,
-        groupId: kind === "individual" ? undefined : saleGroupId || undefined,
+        groupId: saleGroupId || undefined,
         planId: plan.id,
         startsOn: seg.dates[0] || seg.from,
         endsOn: seg.to,
@@ -1695,18 +1695,27 @@ function SellSubscriptionPanel({
                 <option value="individual">Индивидуальный</option>
               </select>
             </label>
-            {/* Группа абонемента: ученик может заниматься в двух группах (ТЗ) —
-                абонемент продаётся в конкретную группу, расписание берётся из неё. */}
-            {kind === "group" && allGroups.length > 0 && (
+            {/* Группа/индивидуальный график: абонемент продаётся в конкретную группу
+                (для «Индивидуальный» — в группу-график индивидуальных занятий,
+                созданную во вкладке «Группы»); расписание и педагог берутся из неё. */}
+            {allGroups.length > 0 && (
               <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-slate-500">Группа абонемента</span>
+                <span className="text-xs font-semibold text-slate-500">
+                  {kind === "individual" ? "Индивидуальные занятия (график / педагог)" : "Группа абонемента"}
+                </span>
                 <select value={saleGroupId} onChange={(e) => { setSaleGroupId(e.target.value); setDisabledDates({}); }} className={fieldCls}>
                   {allGroups.map((g) => (
                     <option key={g.id} value={g.id}>
-                      {g.name}{g.id === (student.groupIds?.[0] || "") ? " (основная)" : ""}
+                      {g.name}{g.time ? ` · ${g.time}` : ""}{g.id === (student.groupIds?.[0] || "") ? " (основная)" : ""}
                     </option>
                   ))}
                 </select>
+                {saleGroup && (
+                  <span className="text-[11px] text-slate-400">
+                    {saleGroup.days?.length ? saleGroup.days.join(", ") : "дни не заданы"}
+                    {saleGroup.time ? ` · ${saleGroup.time}` : ""}
+                  </span>
+                )}
               </label>
             )}
             <label className="flex flex-col gap-1">
@@ -1846,7 +1855,7 @@ function SellSubscriptionPanel({
             <div className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
               <SellRow k="Ученик" v={student.name} />
               <SellRow k="Филиал" v={branch?.name || "—"} />
-              <SellRow k="Группа" v={kind === "individual" ? "Индивидуально" : saleGroup?.name || "—"} />
+              <SellRow k={kind === "individual" ? "Индивидуальные занятия" : "Группа"} v={saleGroup?.name || "—"} />
               <SellRow k="Тип абонемента" v={plan?.name || "—"} />
               <SellRow k="Количество занятий" v={`${lessonsTotal} занятий`} />
               <SellRow k="Базовая стоимость" v={money(basePrice)} />
