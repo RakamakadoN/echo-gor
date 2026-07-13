@@ -547,6 +547,15 @@ export function OwnerExecutiveWorkspace({
   );
 }
 
+// Выполнение плана БДР + ожидаемая чистая прибыль (сеть и по филиалам).
+type BdrProfit = {
+  plannedRevenue: number | null; plannedExpense: number | null;
+  factRevenue: number; factExpense: number; forecastRevenue: number;
+  plannedProfit: number | null; expectedProfit: number | null; factProfit: number;
+};
+type BdrRow = { branchId: string; name: string; plan: number | null; fact: number; pct: number | null } & Partial<BdrProfit>;
+type BdrData = { period: string; network: ({ plan: number | null; fact: number; pct: number | null } & Partial<BdrProfit>) | null; byBranch: BdrRow[] };
+
 function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawPayments, rawWaitlist, studentArchive = [], branchScorecards, onNavigate, onOpenStudents, onTriggerAiReport, aiResult, aiGenerating }: any) {
   const go = (tab: string) => onNavigate?.(tab);
   // Локальные «сегодня» и «текущий месяц» (не toISOString — часовой пояс!).
@@ -585,7 +594,7 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
   const [refundReqs, setRefundReqs] = useState<any[]>([]);
   const [reqBusy, setReqBusy] = useState<string | null>(null);
   // Выполнение плана БДР: план — вкладка «Планирование (БДР)», факт — оплаты месяца.
-  const [bdr, setBdr] = useState<{ period: string; network: { plan: number | null; fact: number; pct: number | null } | null; byBranch: { branchId: string; name: string; plan: number | null; fact: number; pct: number | null }[] } | null>(null);
+  const [bdr, setBdr] = useState<BdrData | null>(null);
 
   const loadRequests = () => {
     const get = (url: string) => fetch(url, { headers: { "x-demo-role": "owner" } }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
@@ -1622,7 +1631,7 @@ function HealthKpi({ icon: Icon, label, value, valueTone = "white", momPct, yoyP
 
 function DailyManagerReport({ m, bdr, scopeLabel, periodLabel, onOpenList, onPayments, onRetention, onAvgCheck, onRevenue, onBdr, onOccupancy }: {
   m: any;
-  bdr: { network: { plan: number | null; fact: number; pct: number | null } | null } | null;
+  bdr: BdrData | null;
   scopeLabel: string;
   periodLabel: string;
   onOpenList: (preset: RegistryPreset) => void;
@@ -1670,6 +1679,10 @@ function DailyManagerReport({ m, bdr, scopeLabel, periodLabel, onOpenList, onPay
           extra={<p className="text-[11px] text-slate-500">{m.occupancy.capacity ? `${m.occupancy.filled} / ${m.occupancy.capacity} мест` : "мест не задано"}</p>} />
         <HealthKpi icon={UserRound} label="Свободных мест" value={m.occupancy.freeSpots === null ? "—" : `${m.occupancy.freeSpots} шт.`} valueTone={m.occupancy.freeSpots && m.occupancy.freeSpots > 0 ? "emerald" : "white"} onClick={onOccupancy}
           extra={<p className="text-[11px] text-slate-500">{m.occupancy.capacity ? "по всем группам" : "укажите вместимость"}</p>} />
+        <HealthKpi icon={Wallet} label="Ожид. чистая прибыль"
+          value={bdr?.network?.expectedProfit == null ? "—" : (bdr.network.expectedProfit >= 0 ? money(bdr.network.expectedProfit) : `−${money(Math.abs(bdr.network.expectedProfit))}`)}
+          valueTone={bdr?.network?.expectedProfit == null ? "white" : bdr.network.expectedProfit >= 0 ? "emerald" : "rose"} onClick={onBdr}
+          extra={<p className="text-[11px] text-slate-500">{bdr?.network?.plannedExpense != null ? "прогноз выручки − план расходов" : "нужен план расходов в БДР"}</p>} />
       </div>
 
       {/* Быстрые действия дня */}
@@ -1694,7 +1707,7 @@ function DailyManagerReport({ m, bdr, scopeLabel, periodLabel, onOpenList, onPay
 // удержание, заполненность и сколько записей на пробный нужно для заполнения.
 function AiDailyBrief({ m, bdr, pendingExpenses, pendingRefunds }: {
   m: any;
-  bdr: { network: { plan: number | null; fact: number; pct: number | null } | null } | null;
+  bdr: BdrData | null;
   pendingExpenses: number;
   pendingRefunds: number;
 }) {
@@ -1813,11 +1826,15 @@ function ApprovalsPanel({ expenseReqs, refundReqs, busyId, onDecide, branchNameO
 
 // ---------- План БДР по филиалам: план / факт / % с прогресс-барами ----------
 function BdrProgressPanel({ bdr, onGoPlanning }: {
-  bdr: { network: { plan: number | null; fact: number; pct: number | null } | null; byBranch: { branchId: string; name: string; plan: number | null; fact: number; pct: number | null }[] } | null;
+  bdr: BdrData | null;
   onGoPlanning: () => void;
 }) {
   const rows = bdr?.byBranch || [];
   const nw = bdr?.network;
+  // Ожидаемая чистая прибыль = прогноз выручки к концу месяца − плановые расходы.
+  const profitColor = (v: number | null | undefined) => v == null ? "text-slate-500" : v >= 0 ? "text-emerald-400" : "text-rose-400";
+  const profitVal = (v: number | null | undefined) => v == null ? "—" : (v >= 0 ? money(v) : `−${money(Math.abs(v))}`);
+  const hasProfit = nw && (nw.expectedProfit != null || nw.plannedProfit != null || rows.some((r) => r.expectedProfit != null));
   const barColor = (pct: number | null) => pct === null ? "bg-white/10" : pct >= 100 ? "bg-emerald-400" : pct >= 70 ? "bg-amber-400" : "bg-rose-400";
   const pctColor = (pct: number | null) => pct === null ? "text-slate-500" : pct >= 100 ? "text-emerald-400" : pct >= 70 ? "text-amber-400" : "text-rose-400";
   const bar = (pct: number | null) => (
@@ -1862,6 +1879,43 @@ function BdrProgressPanel({ bdr, onGoPlanning }: {
         ))}
       </div>
       <p className="mt-4 text-[11px] text-slate-500">План — из вкладки «Планирование (БДР)» (в т.ч. планы по филиалам). Факт — оплаченные платежи текущего месяца.</p>
+
+      {/* Ожидаемая чистая прибыль: прогноз выручки к концу месяца − плановые расходы */}
+      {hasProfit && (
+        <div className="mt-5 border-t border-white/10 pt-4">
+          <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">Ожидаемая чистая прибыль</p>
+          <div className="mt-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.05] p-3.5">
+            <div className="flex items-end justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-black text-white">Вся сеть</p>
+                <p className="mt-0.5 text-[11px] text-slate-500">прогноз выручки {money(nw!.forecastRevenue ?? nw!.fact)} − план расходов {nw!.plannedExpense != null ? money(nw!.plannedExpense) : "не задан"}</p>
+              </div>
+              <p className={`shrink-0 text-2xl font-black ${profitColor(nw!.expectedProfit)}`}>{profitVal(nw!.expectedProfit)}</p>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
+              <span>план прибыли: <span className={profitColor(nw!.plannedProfit)}>{profitVal(nw!.plannedProfit)}</span></span>
+              <span>факт на сегодня: <span className={profitColor(nw!.factProfit)}>{profitVal(nw!.factProfit)}</span></span>
+            </div>
+          </div>
+          <div className="mt-3 space-y-2">
+            {rows.map((b) => (
+              <div key={b.branchId} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-bold text-slate-200">{b.name}</p>
+                  <p className="truncate text-[11px] text-slate-500">
+                    прогноз {money(b.forecastRevenue ?? b.fact)} − расходы {b.plannedExpense != null ? money(b.plannedExpense) : "план не задан"}
+                  </p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className={`text-base font-black ${profitColor(b.expectedProfit)}`}>{profitVal(b.expectedProfit)}</p>
+                  <p className="text-[10px] text-slate-500">факт {profitVal(b.factProfit)}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="mt-3 text-[11px] text-slate-500">Ожидаемая прибыль = прогноз выручки к концу месяца (по текущему темпу) − плановые расходы из БДР. «Факт на сегодня» = поступления − фактические расходы Бухгалтерии.</p>
+        </div>
+      )}
     </section>
   );
 }

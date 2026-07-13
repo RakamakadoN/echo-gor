@@ -1038,34 +1038,81 @@ export function registerMvpApi(app: express.Express) {
     if (!supabaseEnabled) return res.json({ period, network: null, byBranch: [] });
     try {
       const orgFilter = `organization_id=eq.${session.organizationId}`;
-      const [budgets, payments, branches] = await Promise.all([
+      const [budgets, payments, branches, expenses] = await Promise.all([
         supabaseFetch<any[]>("planning_budgets", `select=branch_id,planned_revenue,planned_expense&${orgFilter}&period_month=eq.${period}&status=eq.active`),
         supabaseFetch<any[]>("payments", `select=amount,branch_id,paid_at,status&${orgFilter}`),
         supabaseFetch<any[]>("branches", `select=id,name,city&${orgFilter}&status=neq.archived`),
+        // Фактические расходы месяца из Бухгалтерии (для «факт. прибыли»).
+        supabaseFetch<any[]>("finance_transactions", `select=amount,branch_id,operation_date,type,status&${orgFilter}&type=eq.expense&status=eq.actual`).catch(() => [] as any[]),
       ]);
       const paid = payments.filter((p) => p.status === "paid" && String(p.paid_at || "").slice(0, 7) === period);
+      const exp = (expenses || []).filter((e) => String(e.operation_date || "").slice(0, 7) === period);
       const factOf = (branchId: string | null) =>
         (branchId ? paid.filter((p) => p.branch_id === branchId) : paid).reduce((s, p) => s + Number(p.amount || 0), 0);
+      const factExpOf = (branchId: string | null) =>
+        (branchId ? exp.filter((e) => e.branch_id === branchId) : exp).reduce((s, e) => s + Number(e.amount || 0), 0);
+      const budgetRow = (branchId: string | null) => budgets.find((b) => (b.branch_id || null) === branchId);
       const planOf = (branchId: string | null) => {
-        const row = budgets.find((b) => (b.branch_id || null) === branchId);
+        const row = budgetRow(branchId);
         return row ? Number(row.planned_revenue || 0) : null;
+      };
+      const planExpOf = (branchId: string | null) => {
+        const row = budgetRow(branchId);
+        return row ? Number(row.planned_expense || 0) : null;
       };
       // План сети: строка branch_id=null, иначе сумма планов филиалов.
       const branchPlans = branches.map((b) => planOf(b.id));
       const networkPlan = planOf(null) ?? (branchPlans.some((p) => p !== null)
         ? branchPlans.reduce((s: number, p) => s + (p || 0), 0)
         : null);
+      const branchPlanExps = branches.map((b) => planExpOf(b.id));
+      const networkPlanExp = planExpOf(null) ?? (branchPlanExps.some((p) => p !== null)
+        ? branchPlanExps.reduce((s: number, p) => s + (p || 0), 0)
+        : null);
       const pct = (fact: number, plan: number | null) =>
         plan && plan > 0 ? Math.round((fact / plan) * 100) : null;
-      const networkFact = factOf(null);
+
+      // Прогноз выручки к концу месяца по текущему темпу (только для текущего месяца).
+      const almaty = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Almaty" }).format(new Date());
+      const isCur = period === almaty.slice(0, 7);
+      const dayN = isCur ? Number(almaty.slice(8, 10)) : 0;
+      const [py, pm] = period.split("-").map(Number);
+      const daysInMonth = new Date(py, pm, 0).getDate();
+      const forecastOf = (fact: number) => (isCur && dayN > 0 ? Math.round((fact / dayN) * daysInMonth) : fact);
+
+      // Прибыль: план (planRev−planExp), ожидаемая (прогноз выручки−план расходов),
+      // факт на сегодня (факт выручки−факт расходов).
+      const profitBlock = (branchId: string | null) => {
+        const planRev = planOf(branchId), planExp = planExpOf(branchId);
+        const factRev = factOf(branchId), factExp = factExpOf(branchId);
+        const forecastRev = forecastOf(factRev);
+        return {
+          plannedRevenue: planRev, plannedExpense: planExp,
+          factRevenue: factRev, factExpense: factExp, forecastRevenue: forecastRev,
+          plannedProfit: planRev !== null && planExp !== null ? planRev - planExp : null,
+          expectedProfit: planExp !== null ? forecastRev - planExp : null,
+          factProfit: factRev - factExp,
+        };
+      };
+      // Для сети план/факт расходов из суммы филиалов, если по сети строки нет.
+      const netFactExp = factExpOf(null);
+      const netFactRev = factOf(null);
+      const netForecast = forecastOf(netFactRev);
+      const networkProfit = {
+        plannedRevenue: networkPlan, plannedExpense: networkPlanExp,
+        factRevenue: netFactRev, factExpense: netFactExp, forecastRevenue: netForecast,
+        plannedProfit: networkPlan !== null && networkPlanExp !== null ? networkPlan - networkPlanExp : null,
+        expectedProfit: networkPlanExp !== null ? netForecast - networkPlanExp : null,
+        factProfit: netFactRev - netFactExp,
+      };
       const byBranch = branches.map((b) => {
         const plan = planOf(b.id);
         const fact = factOf(b.id);
-        return { branchId: b.id, name: b.name || b.city, plan, fact, pct: pct(fact, plan) };
+        return { branchId: b.id, name: b.name || b.city, plan, fact, pct: pct(fact, plan), ...profitBlock(b.id) };
       });
       res.json({
         period,
-        network: { plan: networkPlan, fact: networkFact, pct: pct(networkFact, networkPlan) },
+        network: { plan: networkPlan, fact: netFactRev, pct: pct(netFactRev, networkPlan), ...networkProfit },
         byBranch,
       });
     } catch (error: any) {
