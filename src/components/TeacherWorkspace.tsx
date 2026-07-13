@@ -12,6 +12,7 @@ import StudentManagementCard from './StudentManagementCard';
 import AttendanceJournalView from './AttendanceJournalView';
 import { EchoGrantPanel } from './OwnerExecutiveWorkspace';
 import { TeacherEarningsDashboard } from './TeacherEarningsDashboard';
+import { TeacherStandardsToday } from './TeacherStandardsToday';
 import { motion, AnimatePresence } from 'motion/react';
 // @ts-ignore
 import teacherProfileCard from '../assets/images/teacher_profile_card.png';
@@ -1051,6 +1052,16 @@ function DashboardView({ teacherName, teachers, groups, students, announcements,
 
       {/* Экономика педагога: прогноз ЗП, категория, KPI, нарушения, геймификация */}
       <TeacherEarningsDashboard teacherName={teacherName} teachers={teachers} />
+
+      {/* Стандарты работы на сегодня — центральный чек-лист педагога */}
+      <TeacherStandardsToday
+        teacherName={teacherName}
+        students={students}
+        groups={groups}
+        scheduleItems={scheduleItems}
+        onNavigate={(tab) => onNavigate?.(tab)}
+        onOpenLessonPlan={onOpenLessonPlan}
+      />
 
       {/* Quick Actions / Bento Grid */}
       <div>
