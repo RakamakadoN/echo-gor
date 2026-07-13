@@ -7,16 +7,20 @@
 import type { Branch, Group, Student, Payment, Teacher } from "./types";
 import { getEnrollmentMonths, needsRenewal, prevMonthUnpaid } from "./studentSegments";
 
-export type PeriodKey = "today" | "yesterday" | "week" | "month" | "quarter" | "year" | "custom";
+// "monthpick" — конкретный месяц (customStart = YYYY-MM), "day" — конкретный
+// день (customStart = YYYY-MM-DD), "custom" — произвольный период (ТЗ 13.07).
+export type PeriodKey = "today" | "yesterday" | "week" | "month" | "quarter" | "year" | "custom" | "monthpick" | "day";
 export type LevelKey = "network" | "branch" | "group" | "teacher";
 
 export interface DashFilters {
   period: PeriodKey;
-  level: LevelKey;
+  // level оставлен для совместимости; область видимости теперь определяется
+  // НЕЗАВИСИМЫМИ фильтрами: филиал + группа + педагог применяются вместе.
+  level?: LevelKey;
   branchId?: string;
   groupId?: string;
   teacherId?: string;
-  customStart?: string; // YYYY-MM-DD
+  customStart?: string; // YYYY-MM-DD (для monthpick — YYYY-MM)
   customEnd?: string;    // YYYY-MM-DD
 }
 
@@ -27,6 +31,7 @@ export interface MetricsSnapshot {
   branchId: string | null;
   revenue: number;
   activeSubscriptions: number;
+  activeStudents: number;   // уникальных учеников с активным абонементом
   avgCheck: number;
   retentionRate: number;
   attendanceRate: number;
@@ -114,6 +119,26 @@ export function resolveRanges(period: PeriodKey, now: Date, customStart?: string
       cur = mk(s, e, "Период");
       prev = mk(addDays(s, -(len + 1)), addDays(s, -1), "предыдущий период");
       yoy = yearShift(cur); break;
+    }
+    case "day": {
+      // Конкретный день по выбору (customStart = YYYY-MM-DD).
+      const d = customStart ? new Date(customStart + "T00:00:00") : today;
+      cur = mk(d, d, d.toLocaleDateString("ru-RU", { day: "numeric", month: "long" }));
+      prev = mk(addDays(d, -1), addDays(d, -1), "днём ранее");
+      yoy = yearShift(cur); break;
+    }
+    case "monthpick": {
+      // Конкретный месяц по выбору (customStart = YYYY-MM).
+      const [yStr2, mStr] = (customStart || iso(today).slice(0, 7)).split("-");
+      const y = Number(yStr2), m0 = Number(mStr) - 1;
+      const s = new Date(y, m0, 1);
+      const monthEnd = new Date(y, m0 + 1, 0);
+      // Текущий месяц — до сегодняшнего дня, прошедшие/будущие — целиком.
+      const e = (y === today.getFullYear() && m0 === today.getMonth()) ? today : monthEnd;
+      const monthName = s.toLocaleDateString("ru-RU", { month: "long", year: "numeric" });
+      cur = mk(s, e, monthName.charAt(0).toUpperCase() + monthName.slice(1));
+      prev = mk(new Date(y, m0 - 1, 1), new Date(y, m0, 0), "прошлый месяц");
+      yoy = yearShift({ start: iso(s), end: iso(monthEnd), label: "" }); break;
     }
     case "month":
     default: {
@@ -238,6 +263,8 @@ export interface DailyReport {
   // статуса и перезаписи на новую дату): был-не-купил / не пришёл.
   trialYesterdayLost: DailyReportEntry;
   trialYesterdayMissed: DailyReportEntry;
+  // Записи на пробный урок на БУДУЩИЕ даты (незакрытые отметки, ТЗ 13.07).
+  upcomingTrials: DailyReportEntry;
   overloadedGroups: { count: number; groupIds: string[]; studentIds: string[] };
   lowFillGroups: { count: number; groupIds: string[]; studentIds: string[] };
   retentionDropBranches: { count: number; branchIds: string[]; studentIds: string[] };
@@ -255,11 +282,13 @@ export interface OwnerDashboardModel {
     new: number; regular: number; returning: number;
     momPct: number | null; yoyPct: number | null;
   };
-  avgCheck: { all: number | null; new: number | null; regular: number | null; returning: number | null; momPct: number | null };
+  avgCheck: { all: number | null; new: number | null; regular: number | null; returning: number | null; momPct: number | null; yoyPct: number | null };
   // count — активных абонементов, students — уникальных учеников с абонементом:
   // это ДВА разных показателя (у одного ученика может быть два абонемента).
   activeSubs: { count: number; students: number; momPct: number | null; yoyPct: number | null };
-  occupancy: { pct: number | null; filled: number; capacity: number; byBranch: { id: string; name: string; pct: number | null; filled: number; capacity: number }[] };
+  // Уникальные ученики с активным абонементом + сравнение мес/год (из снапшотов).
+  uniqueStudents: { count: number; momPct: number | null; yoyPct: number | null };
+  occupancy: { pct: number | null; filled: number; capacity: number; freeSpots: number | null; byBranch: { id: string; name: string; pct: number | null; filled: number; capacity: number }[] };
   retention: { pct: number | null; activeStudents: number; totalStudents: number; momPct: number | null; yoyPct: number | null };
   debtors: { total: number; debtAmount: number; aging: { d1_7: number; d8_14: number; d14plus: number } | null };
   futureEnrollments: { total: number; byBranch: { name: string; n: number }[]; byAge: { label: string; n: number }[]; isProxy: boolean };
@@ -305,6 +334,9 @@ export interface OwnerDashboardModel {
   };
   attention: string[];
   growth: string[];
+  // Категоризированные версии (ТЗ 13.07): те же данные, сгруппированы по темам.
+  growthGroups: { title: string; items: string[] }[];
+  attentionGroups: { title: string; items: string[] }[];
   brief: string[];
   ratings: {
     branches: { byRevenue: BranchRating[]; byRetention: BranchRating[]; byAvgCheck: BranchRating[]; byGrowth: BranchRating[] };
@@ -323,30 +355,34 @@ export function computeOwnerDashboard(
   const todayStr = iso(startOfDay(now));
   const yStr = iso(addDays(startOfDay(now), -1));
 
-  // --- область видимости (уровень анализа) ---
+  // --- область видимости: филиал + группа + педагог применяются ВМЕСТЕ
+  // (независимые фильтры, ТЗ 13.07) ---
   let students = all.students.slice();
   let groups = all.groups.slice();
   let branches = all.branches.slice();
   const teachers = all.teachers.slice();
-  let scopeLabel = "Вся сеть";
+  const scopeParts: string[] = [];
 
-  if (filters.level === "branch" && filters.branchId) {
+  if (filters.branchId) {
     branches = branches.filter((b) => b.id === filters.branchId);
     groups = groups.filter((g) => g.branchId === filters.branchId);
     students = students.filter((s) => s.branchId === filters.branchId);
-    scopeLabel = "Филиал: " + (branches[0]?.name || branches[0]?.city || "—");
-  } else if (filters.level === "group" && filters.groupId) {
+    scopeParts.push("Филиал: " + (branches[0]?.name || branches[0]?.city || "—"));
+  }
+  if (filters.groupId) {
     groups = groups.filter((g) => g.id === filters.groupId);
     const gids = new Set(groups.map((g) => g.id));
     students = students.filter((s) => (s.groupIds || []).some((id) => gids.has(id)));
     branches = branches.filter((b) => groups.some((g) => g.branchId === b.id));
-    scopeLabel = "Группа: " + (groups[0]?.name || "—");
-  } else if (filters.level === "teacher" && filters.teacherId) {
+    scopeParts.push("Группа: " + (groups[0]?.name || "—"));
+  }
+  if (filters.teacherId) {
     groups = groups.filter((g) => g.teacherId === filters.teacherId);
     students = students.filter((s) => s.teacherId === filters.teacherId);
-    branches = branches.filter((b) => groups.some((g) => g.branchId === b.id));
-    scopeLabel = "Педагог: " + (teachers.find((t) => t.id === filters.teacherId)?.name || "—");
+    if (!filters.branchId && !filters.groupId) branches = branches.filter((b) => groups.some((g) => g.branchId === b.id));
+    scopeParts.push("Педагог: " + (teachers.find((t) => t.id === filters.teacherId)?.name || "—"));
   }
+  const scopeLabel = scopeParts.length ? scopeParts.join(" · ") : "Вся сеть";
 
   const studentIds = new Set(students.map((s) => s.id));
   const payments = all.payments.filter((p) => studentIds.has(p.studentId));
@@ -403,9 +439,20 @@ export function computeOwnerDashboard(
   const renewals = { d3: exp3.length, d7: exp7.length, d14: exp14.length };
 
   // --- новые ученики ---
+  // «Новый ученик» = появился в периоде И совершил целевое действие в этом же
+  // периоде: продан абонемент ИЛИ записан пробный урок (ТЗ заказчика). Просто
+  // новый лид (создан, но без абонемента и без пробного) новым НЕ считается.
+  const soldInRange = (s: Student) => (s.subscriptions || []).some((sub) => {
+    if (sub.status === "deleted") return false;
+    const sold = (sub.soldOn || sub.startsOn || "").slice(0, 10);
+    return Boolean(sold) && inRange(sold, ranges.cur);
+  });
+  const trialMarkInRange = (s: Student) => Object.values(s.attendance || {}).some((a: any) =>
+    Boolean(a) && (Boolean(a.isTrial) || a.status === "trial") && inRange(String(a.date || "").slice(0, 10), ranges.cur));
+  const isNewInRange = (s: Student) => soldInRange(s) || trialMarkInRange(s);
   const hasCreated = students.some((s) => s.createdAt);
-  const newPeriodStudents = students.filter((s) => s.createdAt && inRange(s.createdAt.slice(0, 10), ranges.cur));
-  const newTodayStudents = students.filter((s) => s.createdAt && s.createdAt.slice(0, 10) === todayStr);
+  const newPeriodStudents = students.filter((s) => s.createdAt && inRange(s.createdAt.slice(0, 10), ranges.cur) && isNewInRange(s));
+  const newTodayStudents = students.filter((s) => s.createdAt && s.createdAt.slice(0, 10) === todayStr && isNewInRange(s));
   const newPeriod = newPeriodStudents.length;
   const newToday = newTodayStudents.length;
 
@@ -428,17 +475,17 @@ export function computeOwnerDashboard(
     // Записан на пробный, но отметки в журнале ещё нет — считаем по дате создания.
     if (s.status === "trial" && s.createdAt && inRange(s.createdAt.slice(0, 10), ranges.cur)) signedSet.add(s.id);
   });
-  const firstPurchaseInRange = (s: Student) => {
-    const dates = (s.subscriptions || [])
-      .filter((sub) => sub.status !== "deleted")
-      .map((sub) => (sub.soldOn || sub.startsOn || "").slice(0, 10))
-      .filter(Boolean)
-      .sort();
-    return dates.length > 0 && inRange(dates[0], ranges.cur);
-  };
+  const boughtInRange = (s: Student) => (s.subscriptions || []).some((sub) => {
+    if (sub.status === "deleted") return false;
+    const sold = (sub.soldOn || sub.startsOn || "").slice(0, 10);
+    return Boolean(sold) && inRange(sold, ranges.cur);
+  });
   const signed = signedSet.size;
   const came = cameSet.size;
-  const bought = students.filter(firstPurchaseInRange).length;
+  // «Купили» в воронке = пришедшие на пробный и купившие абонемент в этом же
+  // периоде (путь пробного). Купившие БЕЗ пробного сюда не входят — иначе
+  // конверсия пришёл→купил превышала бы 100%; они видны в «Продажах».
+  const bought = students.filter((s) => cameSet.has(s.id) && boughtInRange(s)).length;
   const month = {
     signed, came, bought,
     convCame: signed ? Math.round((came / signed) * 100) : null,
@@ -467,7 +514,7 @@ export function computeOwnerDashboard(
     return { month: mm, cur: c ? Math.round(sumMonth(curY, i) / c) : null, prev: anyPrevYear && pc ? Math.round(sumMonth(curY - 1, i) / pc) : null };
   });
   // активные абонементы / удержание помесячно — только из снапшотов
-  const snaps = (extras.snapshots || []).filter((s) => s.branchId === (filters.level === "branch" ? filters.branchId : null) || filters.level === "network");
+  const snaps = (extras.snapshots || []).filter((s) => filters.branchId ? s.branchId === filters.branchId : s.branchId === null);
   const subsByMonth = months.map((mm, i) => {
     const key = `${curY}-${mm}-01`;
     const sn = snaps.find((s) => s.periodMonth === key);
@@ -488,7 +535,7 @@ export function computeOwnerDashboard(
   if (retentionByDay.every((p) => p.value === null)) retentionByDay = null;
 
   // --- удержание MoM/YoY из снапшотов ---
-  const networkSnaps = (extras.snapshots || []).filter((s) => filters.level === "network" ? s.branchId === null : s.branchId === filters.branchId);
+  const networkSnaps = (extras.snapshots || []).filter((s) => filters.branchId ? s.branchId === filters.branchId : s.branchId === null);
   const snapAt = (back: number) => {
     const d = new Date(curY, now.getMonth() - back, 1);
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
@@ -600,14 +647,20 @@ export function computeOwnerDashboard(
   const attention: string[] = risks.filter((r) => r.severity !== "low").map((r) => `${r.title} — ${r.detail}`);
   if (attention.length === 0) attention.push("Острых проблем нет — ключевые показатели в норме.");
 
-  const growth: string[] = [];
-  halfEmpty.forEach((g) => growth.push(`Свободные места в группе «${g.name}» (${g.capacity ? Math.round(g.studentCount / g.capacity * 100) : 0}%) — усилить набор.`));
   const topTeacher = teacherRatings.byRetention[0];
-  if (topTeacher && topTeacher.retention !== null) growth.push(`Лучшее удержание у педагога ${topTeacher.name} (${topTeacher.retention}%) — масштабировать подход.`);
   const topBranch = branchRatings.byRevenue[0];
+  const topGroup = groupRatings.byRevenue[0];
+
+  // Плоский список (для AI-анализа месяца, обратная совместимость). Свободные
+  // места указываем ЧИСЛОМ мест (ТЗ 13.07), а не процентом.
+  const freeOf = (g: typeof halfEmpty[number]) => g.capacity ? Math.max(0, g.capacity - g.studentCount) : 0;
+  const growth: string[] = [];
+  halfEmpty.forEach((g) => growth.push(`Группа «${g.name}»: ${freeOf(g)} свободных мест — усилить набор.`));
+  if (topTeacher && topTeacher.retention !== null) growth.push(`Лучшее удержание у педагога ${topTeacher.name} (${topTeacher.retention}%) — масштабировать подход.`);
   if (topBranch) growth.push(`Филиал ${topBranch.name} — лидер по выручке (${topBranch.revenue.toLocaleString("ru-RU")} ₸).`);
   if (over100.length > 0) growth.push(`Перегруженные группы (${over100.length}) — кандидаты на открытие параллельных групп / набор педагогов.`);
   if (growth.length === 0) growth.push("Резервы роста: расширять успешные группы и удерживать заполняемость.");
+  const totalFree = halfEmpty.reduce((s, g) => s + freeOf(g), 0);
 
   // future enrollments
   // Прокси для «записей на будущее»: лиды + записанные на пробный (будущие записи).
@@ -688,9 +741,18 @@ export function computeOwnerDashboard(
   const trialLostYesterday = yesterdayTrialUnprocessed("came");
   const trialMissedYesterday = yesterdayTrialUnprocessed("missed");
 
+  // --- Записи на пробный на будущие даты (ТЗ 13.07): незакрытая отметка
+  // пробного с датой сегодня/позже, либо статус «пробный» без отметок вовсе. ---
+  const upcomingTrialStudents = students.filter((s) => {
+    if (s.status === "archived" || (s as any).archivedAt) return false;
+    const entries = Object.values(s.attendance || {}).filter(isTrialMark) as any[];
+    if (entries.some((a) => String(a.date || "").slice(0, 10) >= todayStr && a.status === "unmarked")) return true;
+    return s.status === "trial" && entries.length === 0; // записан, отметки ещё нет
+  });
+
   // --- Отток: ушедшие в текущем месяце (из архива учеников в области видимости) ---
   const archiveScoped = (all.archive || []).filter((a: any) =>
-    (filters.level !== "branch" || !filters.branchId || a.branchId === filters.branchId));
+    (!filters.branchId || a.branchId === filters.branchId));
   const leftThisMonth = archiveScoped.filter((a: any) => {
     const d = String(a.leftOn || a.archivedAt || a.archived_at || "").slice(0, 7);
     return d === curMonthKey;
@@ -712,13 +774,15 @@ export function computeOwnerDashboard(
   const ltvBase = students.filter((s) =>
     s.status !== "left" && s.status !== "archived" && !(s as any).archivedAt &&
     s.status !== "lead" && s.status !== "trial");
+  // Границы по фактическому числу месяцев обучения (getEnrollmentMonths): срок
+  // 8 мес → бакет «7–8», 6 мес → «5–6» (раньше границы были сдвинуты на месяц).
   const LTV_BUCKETS: { key: string; label: string; match: (mo: number) => boolean }[] = [
-    { key: "1-2", label: "1–2 мес", match: (mo) => mo <= 1 },      // 0–1 полный месяц = занимается 1–2-й месяц
-    { key: "3-4", label: "3–4 мес", match: (mo) => mo >= 2 && mo <= 3 },
-    { key: "5-6", label: "5–6 мес", match: (mo) => mo >= 4 && mo <= 5 },
-    { key: "7-8", label: "7–8 мес", match: (mo) => mo >= 6 && mo <= 7 },
-    { key: "9-12", label: "9–12 мес", match: (mo) => mo >= 8 && mo <= 11 },
-    { key: "12+", label: "Больше года", match: (mo) => mo >= 12 },
+    { key: "1-2", label: "1–2 мес", match: (mo) => mo <= 2 },
+    { key: "3-4", label: "3–4 мес", match: (mo) => mo >= 3 && mo <= 4 },
+    { key: "5-6", label: "5–6 мес", match: (mo) => mo >= 5 && mo <= 6 },
+    { key: "7-8", label: "7–8 мес", match: (mo) => mo >= 7 && mo <= 8 },
+    { key: "9-12", label: "9–12 мес", match: (mo) => mo >= 9 && mo <= 12 },
+    { key: "12+", label: "Больше года", match: (mo) => mo > 12 },
   ];
   const ltvBuckets = LTV_BUCKETS.map((b) => ({ key: b.key, label: b.label, count: 0, ids: [] as string[] }));
   let ltvMonthsSum = 0;
@@ -788,6 +852,40 @@ export function computeOwnerDashboard(
     .map((t) => ({ id: t.id, name: t.name, retention: t.retention as number }))
     .sort((a, b) => a.retention - b.retention);
 
+  // --- Категоризированные «Точки роста» и «Требуют внимания» (ТЗ 13.07):
+  // упорядочены по темам; свободные места указываются числом мест. ---
+  const money0 = (v: number) => v.toLocaleString("ru-RU") + " ₸";
+  const growthGroups: { title: string; items: string[] }[] = [];
+  const recruitItems: string[] = [];
+  if (totalFree > 0) recruitItems.push(`Всего ${totalFree} свободных мест в недозаполненных группах`);
+  halfEmpty.forEach((g) => recruitItems.push(`«${g.name}» — ${freeOf(g)} свободных мест, усилить набор`));
+  if (over100.length > 0) recruitItems.push(`${over100.length} перегруженных групп — открыть параллельные / набрать педагогов`);
+  if (recruitItems.length) growthGroups.push({ title: "Набор и заполняемость", items: recruitItems });
+  const strongItems: string[] = [];
+  if (topTeacher && topTeacher.retention !== null) strongItems.push(`Лучшее удержание — педагог ${topTeacher.name} (${topTeacher.retention}%), масштабировать подход`);
+  if (topBranch && topBranch.revenue > 0) strongItems.push(`Лидер по выручке — филиал ${topBranch.name} (${money0(topBranch.revenue)})`);
+  if (topGroup && topGroup.revenue > 0) strongItems.push(`Топ-группа по выручке — «${topGroup.name}» (${money0(topGroup.revenue)})`);
+  if (strongItems.length) growthGroups.push({ title: "Сильные стороны — масштабировать", items: strongItems });
+  if (growthGroups.length === 0) growthGroups.push({ title: "Резервы роста", items: ["Расширять успешные группы и удерживать заполняемость."] });
+
+  const attentionGroups: { title: string; items: string[] }[] = [];
+  const finItems: string[] = [];
+  if (debtorStudents.length > 0) finItems.push(`Должники: ${debtorStudents.length}${debtAmount > 0 ? ` на ${money0(debtAmount)}` : ""}`);
+  if (unpaidCurrent.length > 0) finItems.push(`Не оплатили текущий месяц: ${unpaidCurrent.length}`);
+  if (unpaidPrev.length > 0) finItems.push(`Не оплатили прошлый месяц: ${unpaidPrev.length}`);
+  if (finItems.length) attentionGroups.push({ title: "Финансы и оплаты", items: finItems });
+  const fillItems: string[] = [];
+  if (over100.length > 0) fillItems.push(`${over100.length} групп перегружены (>100%)`);
+  else if (overloaded.length > 0) fillItems.push(`${overloaded.length} групп близки к пределу заполняемости`);
+  if (halfEmpty.length > 0) fillItems.push(`${halfEmpty.length} полупустых групп (${totalFree} свободных мест)`);
+  if (fillItems.length) attentionGroups.push({ title: "Заполняемость", items: fillItems });
+  const retItems: string[] = [];
+  if (retentionDropBranchList.length > 0) retItems.push(`${retentionDropBranchList.length} филиалов с падением удержания`);
+  if (teacherLowRetentionTable.length > 0) retItems.push(`${teacherLowRetentionTable.length} педагогов с удержанием ниже нормы`);
+  if (leftThisMonth > 0) retItems.push(`Отток за месяц: ${leftThisMonth}${churn.pct !== null ? ` (${churn.pct}%)` : ""}`);
+  if (retItems.length) attentionGroups.push({ title: "Удержание и отток", items: retItems });
+  if (attentionGroups.length === 0) attentionGroups.push({ title: "Всё в норме", items: ["Острых проблем нет — ключевые показатели в норме."] });
+
   const dailyRisks: DailyRiskItem[] = [];
   const pushRisk = (id: string, severity: "high" | "mid" | "low", title: string, detail: string, kind: DailyRiskItem["kind"], studentIds: string[], label: string) => {
     if (studentIds.length === 0) return;
@@ -834,6 +932,7 @@ export function computeOwnerDashboard(
     unpaidPrevMonth: { count: unpaidPrev.length, ids: unpaidPrev.map((s) => s.id) },
     trialYesterdayLost: { count: trialLostYesterday.length, ids: trialLostYesterday.map((s) => s.id) },
     trialYesterdayMissed: { count: trialMissedYesterday.length, ids: trialMissedYesterday.map((s) => s.id) },
+    upcomingTrials: { count: upcomingTrialStudents.length, ids: upcomingTrialStudents.map((s) => s.id) },
     overloadedGroups: { count: overloaded.length, groupIds: overloadedGroupIds, studentIds: studentsOfGroups(new Set(overloadedGroupIds)) },
     lowFillGroups: { count: halfEmpty.length, groupIds: lowFillGroupIds, studentIds: studentsOfGroups(new Set(lowFillGroupIds)) },
     retentionDropBranches: { count: retentionDropBranchList.length, branchIds: retentionDropBranchIds, studentIds: studentsOfBranches(new Set(retentionDropBranchIds)) },
@@ -854,7 +953,8 @@ export function computeOwnerDashboard(
       new: cNew ? Math.round(curRev.new / cNew) : null,
       regular: cReg ? Math.round(curRev.regular / cReg) : null,
       returning: cRet ? Math.round(curRev.returning / cRet) : null,
-      momPct: prevAvg !== null && avgAll !== null ? delta(avgAll, prevAvg).pct : null
+      momPct: prevAvg !== null && avgAll !== null ? delta(avgAll, prevAvg).pct : null,
+      yoyPct: snYoY && snYoY.avgCheck && avgAll !== null ? delta(avgAll, snYoY.avgCheck).pct : null
     },
     activeSubs: {
       count: activeSubsCount,
@@ -862,7 +962,12 @@ export function computeOwnerDashboard(
       momPct: snPrev ? delta(activeSubsCount, snPrev.activeSubscriptions).pct : null,
       yoyPct: snYoY ? delta(activeSubsCount, snYoY.activeSubscriptions).pct : null
     },
-    occupancy: { pct: capTotal ? Math.round((filledTotal / capTotal) * 100) : null, filled: filledTotal, capacity: capTotal, byBranch: occByBranch },
+    uniqueStudents: {
+      count: activeStud,
+      momPct: snPrev && snPrev.activeStudents ? delta(activeStud, snPrev.activeStudents).pct : null,
+      yoyPct: snYoY && snYoY.activeStudents ? delta(activeStud, snYoY.activeStudents).pct : null
+    },
+    occupancy: { pct: capTotal ? Math.round((filledTotal / capTotal) * 100) : null, filled: filledTotal, capacity: capTotal, freeSpots: capTotal ? Math.max(0, capTotal - filledTotal) : null, byBranch: occByBranch },
     retention: {
       pct: retentionPct, activeStudents: activeStud, totalStudents: students.length,
       momPct: snPrev ? delta(retentionPct ?? 0, snPrev.retentionRate).pct : null,
@@ -883,7 +988,7 @@ export function computeOwnerDashboard(
       overloadGroups: overloadTable,
       teacherLowRetention: teacherLowRetentionTable,
     },
-    attention, growth, brief,
+    attention, growth, growthGroups, attentionGroups, brief,
     ratings: { branches: branchRatings, teachers: teacherRatings, groups: groupRatings }
   };
 }

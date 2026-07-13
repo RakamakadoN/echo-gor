@@ -297,6 +297,7 @@ export function BranchManagerWorkspace({
               branches={branches}
               archivedGroups={archivedGroups}
               onDeleteGroup={onDeleteGroup}
+              onUpdateGroup={onUpdateGroup}
               onRestoreGroup={onRestoreGroup}
               onDeleteGroupPermanent={onDeleteGroupPermanent}
             />
@@ -1172,7 +1173,7 @@ function formatMoney(value: number) {
   return `${Math.abs(value).toLocaleString("ru-RU")} ₸`;
 }
 
-function ScheduleView({ branchId, groups, teachers, halls, scheduleItems, scheduleLoading, onLoadSchedule, onCreateLesson, onUpdateLesson, onDeleteLesson, branches = [], archivedGroups = [], onDeleteGroup, onRestoreGroup, onDeleteGroupPermanent }: any) {
+function ScheduleView({ branchId, groups, teachers, halls, scheduleItems, scheduleLoading, onLoadSchedule, onCreateLesson, onUpdateLesson, onDeleteLesson, branches = [], archivedGroups = [], onDeleteGroup, onUpdateGroup, onRestoreGroup, onDeleteGroupPermanent }: any) {
   const today = new Date().toISOString().slice(0, 10);
   const weekAhead = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
 
@@ -1296,7 +1297,8 @@ function ScheduleView({ branchId, groups, teachers, halls, scheduleItems, schedu
       )}
 
       {schedMode === "halls" && <GroupScheduleGrid groups={groups} halls={halls || []} />}
-      {schedMode === "list" && <GroupsTable groups={groups} branches={branches} teachers={teachers} halls={halls} onArchiveGroup={onDeleteGroup} />}
+      {schedMode === "list" && <GroupsTable groups={groups} branches={branches} teachers={teachers} halls={halls} onArchiveGroup={onDeleteGroup}
+        onToggleEnrollment={onUpdateGroup ? (id: string, open: boolean) => onUpdateGroup(id, { enrollmentOpen: open }) : undefined} />}
       {schedMode === "archive" && (
         <GroupsArchivePanel
           archivedGroups={(archivedGroups || []).filter((g: any) => !branchId || g.branchId === branchId)}

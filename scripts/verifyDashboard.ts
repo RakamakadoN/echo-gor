@@ -26,7 +26,7 @@ const m = computeOwnerDashboard(
     teachers: boot.teachers || [],
     archive,
   },
-  { period: "month", level: "network" },
+  { period: "monthpick", customStart: new Date().toLocaleDateString("sv-SE").slice(0, 7) },
   new Date(),
   extras
 );
@@ -44,6 +44,7 @@ const out = {
     avgCheck: m.avgCheck.all,
     trialYesterdayLost: m.dailyReport.trialYesterdayLost.count,
     trialYesterdayMissed: m.dailyReport.trialYesterdayMissed.count,
+    upcomingTrials: m.dailyReport.upcomingTrials.count,
   },
   finance: {
     revenueTotalPeriod: m.revenue.total,
