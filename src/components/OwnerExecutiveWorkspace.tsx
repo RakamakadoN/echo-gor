@@ -4229,22 +4229,24 @@ function AcctReconcileTab() {
       {/* Таблица сверки */}
       <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.02]">
         <div className="border-b border-white/10 px-4 py-3"><h4 className="text-sm font-black text-white">Сверка CRM ↔ фактические поступления</h4></div>
-        <table className="w-full text-left text-sm">
-          <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Направление</th><th className="px-4 py-2 text-right font-bold">В CRM</th><th className="px-4 py-2 text-right font-bold">Факт</th><th className="px-4 py-2 text-right font-bold">Расхожд.</th><th className="px-4 py-2 font-bold">Статус</th></tr></thead>
-          <tbody>
-            {rows.map((r, i) => (
-              <tr key={i} className="border-t border-white/5">
-                <td className="px-4 py-2 font-bold text-white">{r.dir}</td>
-                <td className="px-4 py-2 text-right text-slate-300">{money(r.crm)}</td>
-                <td className="px-4 py-2 text-right text-slate-300">{money(r.fact)}</td>
-                <td className={`px-4 py-2 text-right font-bold ${r.diff === 0 ? "text-slate-500" : "text-rose-300"}`}>{r.diff === 0 ? "0 ₸" : money(r.diff)}</td>
-                <td className="px-4 py-2">
-                  <span className={`rounded-lg px-2 py-1 text-[11px] font-bold ${r.diff === 0 ? "bg-emerald-500/15 text-emerald-300" : "bg-rose-500/15 text-rose-300"}`}>{r.diff === 0 ? "Сошлось" : "Расхождение"}</span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Направление</th><th className="px-4 py-2 text-right font-bold">В CRM</th><th className="px-4 py-2 text-right font-bold">Факт</th><th className="px-4 py-2 text-right font-bold">Расхожд.</th><th className="px-4 py-2 font-bold">Статус</th></tr></thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={i} className="border-t border-white/5">
+                  <td className="px-4 py-2 font-bold text-white">{r.dir}</td>
+                  <td className="px-4 py-2 text-right text-slate-300">{money(r.crm)}</td>
+                  <td className="px-4 py-2 text-right text-slate-300">{money(r.fact)}</td>
+                  <td className={`px-4 py-2 text-right font-bold ${r.diff === 0 ? "text-slate-500" : "text-rose-300"}`}>{r.diff === 0 ? "0 ₸" : money(r.diff)}</td>
+                  <td className="px-4 py-2">
+                    <span className={`rounded-lg px-2 py-1 text-[11px] font-bold ${r.diff === 0 ? "bg-emerald-500/15 text-emerald-300" : "bg-rose-500/15 text-rose-300"}`}>{r.diff === 0 ? "Сошлось" : "Расхождение"}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section className="rounded-[1.5rem] border border-[#C5A059]/25 bg-gradient-to-br from-[#1a1710] to-black p-5">
@@ -4287,20 +4289,22 @@ function AcctTaxesTab() {
 
       <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.02]">
         <div className="border-b border-white/10 px-4 py-3"><h4 className="text-sm font-black text-white">История начислений</h4></div>
-        <table className="w-full text-left text-sm">
-          <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Период</th><th className="px-4 py-2 text-right font-bold">База</th><th className="px-4 py-2 text-right font-bold">Налог</th><th className="px-4 py-2 font-bold">Срок</th><th className="px-4 py-2 font-bold">Статус</th></tr></thead>
-          <tbody>
-            {periods.map((p, i) => (
-              <tr key={i} className="border-t border-white/5">
-                <td className="px-4 py-2 font-bold text-white">{p.period}</td>
-                <td className="px-4 py-2 text-right text-slate-300">{money(p.base)}</td>
-                <td className="px-4 py-2 text-right text-slate-300">{money(p.tax)}</td>
-                <td className="px-4 py-2 text-slate-400">{p.due}</td>
-                <td className="px-4 py-2"><span className="rounded-lg bg-emerald-500/15 px-2 py-1 text-[11px] font-bold text-emerald-300">{p.status}</span></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Период</th><th className="px-4 py-2 text-right font-bold">База</th><th className="px-4 py-2 text-right font-bold">Налог</th><th className="px-4 py-2 font-bold">Срок</th><th className="px-4 py-2 font-bold">Статус</th></tr></thead>
+            <tbody>
+              {periods.map((p, i) => (
+                <tr key={i} className="border-t border-white/5">
+                  <td className="px-4 py-2 font-bold text-white">{p.period}</td>
+                  <td className="px-4 py-2 text-right text-slate-300">{money(p.base)}</td>
+                  <td className="px-4 py-2 text-right text-slate-300">{money(p.tax)}</td>
+                  <td className="px-4 py-2 text-slate-400">{p.due}</td>
+                  <td className="px-4 py-2"><span className="rounded-lg bg-emerald-500/15 px-2 py-1 text-[11px] font-bold text-emerald-300">{p.status}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
     </div>
   );
@@ -4377,20 +4381,22 @@ function AcctHeaderSummary({ data, ops = [], branches = [], requests = [], perio
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="overflow-hidden rounded-[2rem] border border-white/10 bg-[#121212]">
           <div className="px-5 pt-5"><h3 className="font-black text-white">Сверка CRM ↔ фактические поступления</h3></div>
-          <table className="mt-4 w-full text-left text-sm">
-            <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-5 py-2 font-bold">Направление</th><th className="px-5 py-2 text-right font-bold">В CRM</th><th className="px-5 py-2 text-right font-bold">Факт</th><th className="px-5 py-2 text-right font-bold">Расхожд.</th><th className="px-5 py-2 text-right font-bold">Статус</th></tr></thead>
-            <tbody>
-              {recon.map((r, i) => (
-                <tr key={i} className="border-t border-white/5">
-                  <td className="px-5 py-3 font-bold text-white">{r.dir}</td>
-                  <td className="px-5 py-3 text-right text-slate-300">{money(r.crm)}</td>
-                  <td className="px-5 py-3 text-right text-slate-300">{money(r.fact)}</td>
-                  <td className={`px-5 py-3 text-right font-bold ${r.diff === 0 ? "text-slate-500" : "text-rose-300"}`}>{r.diff === 0 ? "0 ₸" : money(r.diff)}</td>
-                  <td className="px-5 py-3 text-right"><span className={`rounded-lg px-2 py-1 text-[11px] font-bold ${r.diff === 0 ? "bg-emerald-500/15 text-emerald-300" : "bg-rose-500/15 text-rose-300"}`}>{r.diff === 0 ? "Сошлось" : "Расхождение"}</span></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto">
+            <table className="mt-4 w-full text-left text-sm">
+              <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-5 py-2 font-bold">Направление</th><th className="px-5 py-2 text-right font-bold">В CRM</th><th className="px-5 py-2 text-right font-bold">Факт</th><th className="px-5 py-2 text-right font-bold">Расхожд.</th><th className="px-5 py-2 text-right font-bold">Статус</th></tr></thead>
+              <tbody>
+                {recon.map((r, i) => (
+                  <tr key={i} className="border-t border-white/5">
+                    <td className="px-5 py-3 font-bold text-white">{r.dir}</td>
+                    <td className="px-5 py-3 text-right text-slate-300">{money(r.crm)}</td>
+                    <td className="px-5 py-3 text-right text-slate-300">{money(r.fact)}</td>
+                    <td className={`px-5 py-3 text-right font-bold ${r.diff === 0 ? "text-slate-500" : "text-rose-300"}`}>{r.diff === 0 ? "0 ₸" : money(r.diff)}</td>
+                    <td className="px-5 py-3 text-right"><span className={`rounded-lg px-2 py-1 text-[11px] font-bold ${r.diff === 0 ? "bg-emerald-500/15 text-emerald-300" : "bg-rose-500/15 text-rose-300"}`}>{r.diff === 0 ? "Сошлось" : "Расхождение"}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
 
         <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
@@ -5226,25 +5232,27 @@ export function DocumentologistView() {
           ) : filtered.length === 0 ? (
             <p className="py-16 text-center text-sm text-slate-500">В этой папке пока нет договоров.</p>
           ) : (
-            <table className="w-full text-sm">
-              <thead><tr className="border-b border-white/5 text-[11px] uppercase tracking-wider text-slate-500">
-                <th className="p-3 text-left">Контрагент</th><th className="p-3 text-left">Предмет</th><th className="p-3 text-left">Папка</th>
-                <th className="p-3 text-right">Сумма</th><th className="p-3 text-left">Срок</th><th className="p-3 text-left">Статус</th><th className="p-3 text-left">Скан</th>
-              </tr></thead>
-              <tbody>
-                {filtered.map((d) => (
-                  <tr key={d.id} onClick={() => setEditDoc(d)} className="cursor-pointer border-b border-white/5 transition hover:bg-white/[0.03]">
-                    <td className="p-3 font-bold text-white">{d.contractor || "—"}</td>
-                    <td className="p-3 text-slate-400">{d.subject || "—"}</td>
-                    <td className="p-3 text-slate-400">{d.category || "—"}</td>
-                    <td className="p-3 text-right text-slate-200">{d.amount ? money(d.amount) : "—"}</td>
-                    <td className="p-3"><ExpiryBadge doc={d} /></td>
-                    <td className="p-3"><span className={`rounded-lg border px-2 py-0.5 text-[11px] font-bold ${DOC_STATUS_META[d.status]?.cls}`}>{DOC_STATUS_META[d.status]?.label}</span></td>
-                    <td className="p-3">{d.scanUrl ? <span className="text-[11px] text-emerald-400">есть</span> : <span className="text-[11px] text-slate-600">нет</span>}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="border-b border-white/5 text-[11px] uppercase tracking-wider text-slate-500">
+                  <th className="p-3 text-left">Контрагент</th><th className="p-3 text-left">Предмет</th><th className="p-3 text-left">Папка</th>
+                  <th className="p-3 text-right">Сумма</th><th className="p-3 text-left">Срок</th><th className="p-3 text-left">Статус</th><th className="p-3 text-left">Скан</th>
+                </tr></thead>
+                <tbody>
+                  {filtered.map((d) => (
+                    <tr key={d.id} onClick={() => setEditDoc(d)} className="cursor-pointer border-b border-white/5 transition hover:bg-white/[0.03]">
+                      <td className="p-3 font-bold text-white">{d.contractor || "—"}</td>
+                      <td className="p-3 text-slate-400">{d.subject || "—"}</td>
+                      <td className="p-3 text-slate-400">{d.category || "—"}</td>
+                      <td className="p-3 text-right text-slate-200">{d.amount ? money(d.amount) : "—"}</td>
+                      <td className="p-3"><ExpiryBadge doc={d} /></td>
+                      <td className="p-3"><span className={`rounded-lg border px-2 py-0.5 text-[11px] font-bold ${DOC_STATUS_META[d.status]?.cls}`}>{DOC_STATUS_META[d.status]?.label}</span></td>
+                      <td className="p-3">{d.scanUrl ? <span className="text-[11px] text-emerald-400">есть</span> : <span className="text-[11px] text-slate-600">нет</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       </div>
@@ -7424,26 +7432,28 @@ function ExecutiveAnalyticsView({
       {teacherData.length > 0 && (
         <AnalyticsSection title="Эффективность преподавателей">
           <div className="overflow-hidden rounded-[2rem] border border-white/8 bg-white/3">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-white/8">
-                  <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest text-slate-500">Преподаватель</th>
-                  <th className="px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest text-slate-500">Учеников</th>
-                  <th className="px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest text-slate-500">Удержание</th>
-                  <th className="px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest text-slate-500">Посещ.</th>
-                </tr>
-              </thead>
-              <tbody>
-                {teacherData.map((t, i) => (
-                  <tr key={t.teacherId} className={i < teacherData.length - 1 ? "border-b border-white/5" : ""}>
-                    <td className="px-5 py-3 font-semibold text-white">{t.teacherName}</td>
-                    <td className="px-4 py-3 text-center text-slate-300">{t.studentsCount}</td>
-                    <td className={`px-4 py-3 text-center font-bold ${retentionColor(t.retentionRate)}`}>{t.retentionRate}%</td>
-                    <td className={`px-4 py-3 text-center font-bold ${attendanceColor(t.averageAttendance)}`}>{t.averageAttendance}%</td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-white/8">
+                    <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest text-slate-500">Преподаватель</th>
+                    <th className="px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest text-slate-500">Учеников</th>
+                    <th className="px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest text-slate-500">Удержание</th>
+                    <th className="px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest text-slate-500">Посещ.</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {teacherData.map((t, i) => (
+                    <tr key={t.teacherId} className={i < teacherData.length - 1 ? "border-b border-white/5" : ""}>
+                      <td className="px-5 py-3 font-semibold text-white">{t.teacherName}</td>
+                      <td className="px-4 py-3 text-center text-slate-300">{t.studentsCount}</td>
+                      <td className={`px-4 py-3 text-center font-bold ${retentionColor(t.retentionRate)}`}>{t.retentionRate}%</td>
+                      <td className={`px-4 py-3 text-center font-bold ${attendanceColor(t.averageAttendance)}`}>{t.averageAttendance}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </AnalyticsSection>
       )}
@@ -8114,19 +8124,21 @@ function ReportsTrialsTab({ students }: any) {
           <h4 className="text-sm font-black text-white">История отказов и причины ухода</h4>
           <span className="text-[11px] text-slate-500">Ушедших: {leftList.length}</span>
         </div>
-        <table className="w-full text-left text-sm">
-          <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Ученик</th><th className="px-4 py-2 font-bold">Причина ухода</th><th className="px-4 py-2 text-right font-bold"></th></tr></thead>
-          <tbody>
-            {leftList.length === 0 && <tr><td colSpan={3} className="px-4 py-6 text-center text-slate-500">Отказов нет.</td></tr>}
-            {leftList.slice(0, 100).map((s: Student) => (
-              <tr key={s.id} className="border-t border-white/5">
-                <td className="px-4 py-2 font-bold text-white">{s.name}</td>
-                <td className="px-4 py-2 text-slate-400">{s.archiveReason || "—"}</td>
-                <td className="px-4 py-2 text-right"><button onClick={() => window.open(`https://wa.me/${(s.parentPhone || "").replace(/\D/g, "")}?text=${encodeURIComponent("Здравствуйте! Скучаем по вам в Эхо Гор — возвращайтесь, для вас спецпредложение 🎁")}`, "_blank")} className="rounded-lg border border-[#C5A059]/30 bg-[#C5A059]/10 px-2.5 py-1 text-[11px] font-bold text-[#C5A059]">↩ Возврат с оффером</button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Ученик</th><th className="px-4 py-2 font-bold">Причина ухода</th><th className="px-4 py-2 text-right font-bold"></th></tr></thead>
+            <tbody>
+              {leftList.length === 0 && <tr><td colSpan={3} className="px-4 py-6 text-center text-slate-500">Отказов нет.</td></tr>}
+              {leftList.slice(0, 100).map((s: Student) => (
+                <tr key={s.id} className="border-t border-white/5">
+                  <td className="px-4 py-2 font-bold text-white">{s.name}</td>
+                  <td className="px-4 py-2 text-slate-400">{s.archiveReason || "—"}</td>
+                  <td className="px-4 py-2 text-right"><button onClick={() => window.open(`https://wa.me/${(s.parentPhone || "").replace(/\D/g, "")}?text=${encodeURIComponent("Здравствуйте! Скучаем по вам в Эхо Гор — возвращайтесь, для вас спецпредложение 🎁")}`, "_blank")} className="rounded-lg border border-[#C5A059]/30 bg-[#C5A059]/10 px-2.5 py-1 text-[11px] font-bold text-[#C5A059]">↩ Возврат с оффером</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
     </div>
   );
@@ -8142,16 +8154,18 @@ function ReportsMarketingTab({ students, leadSources }: any) {
     <div className="space-y-4">
       <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.02]">
         <div className="border-b border-white/10 px-4 py-3"><h4 className="text-sm font-black text-white">Лиды по источникам</h4></div>
-        <table className="w-full text-left text-sm">
-          <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Источник</th><th className="px-4 py-2 text-right font-bold">Учеников</th></tr></thead>
-          <tbody>
-            {bySource.length === 0 && <tr><td colSpan={2} className="px-4 py-6 text-center text-slate-500">Источники не заданы.</td></tr>}
-            {bySource.map((s: any) => (
-              <tr key={s.name} className="border-t border-white/5"><td className="px-4 py-2 font-bold text-white">{s.name}</td><td className="px-4 py-2 text-right text-[#C5A059]">{s.count}</td></tr>
-            ))}
-            {noSource > 0 && <tr className="border-t border-white/5"><td className="px-4 py-2 text-slate-400">Без источника</td><td className="px-4 py-2 text-right text-slate-400">{noSource}</td></tr>}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Источник</th><th className="px-4 py-2 text-right font-bold">Учеников</th></tr></thead>
+            <tbody>
+              {bySource.length === 0 && <tr><td colSpan={2} className="px-4 py-6 text-center text-slate-500">Источники не заданы.</td></tr>}
+              {bySource.map((s: any) => (
+                <tr key={s.name} className="border-t border-white/5"><td className="px-4 py-2 font-bold text-white">{s.name}</td><td className="px-4 py-2 text-right text-[#C5A059]">{s.count}</td></tr>
+              ))}
+              {noSource > 0 && <tr className="border-t border-white/5"><td className="px-4 py-2 text-slate-400">Без источника</td><td className="px-4 py-2 text-right text-slate-400">{noSource}</td></tr>}
+            </tbody>
+          </table>
+        </div>
       </section>
       <section className="rounded-[1.5rem] border border-white/10 bg-white/[0.02] p-5 text-sm text-slate-400">
         <h4 className="text-sm font-black text-white">Воронка продаж · от лида до продления</h4>
@@ -8202,15 +8216,17 @@ function ReportsHistoryTab({ cur, prev, yoy, comment, setComment, onSaveComment,
       </section>
       <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.02]">
         <div className="border-b border-white/10 px-4 py-3"><h4 className="text-sm font-black text-white">История сохранённых отчётов</h4></div>
-        <table className="w-full text-left text-sm">
-          <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Снимок</th><th className="px-4 py-2 font-bold">Область</th><th className="px-4 py-2 text-right font-bold">Поступления</th><th className="px-4 py-2 text-right font-bold">Операций</th></tr></thead>
-          <tbody>
-            {(!snapshots || snapshots.length === 0) && <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-500">Снимков пока нет. Нажмите «Сохранить снимок периода».</td></tr>}
-            {(snapshots || []).map((s: any) => (
-              <tr key={s.id} className="border-t border-white/5"><td className="px-4 py-2 text-slate-300">{s.date}</td><td className="px-4 py-2 text-slate-400">{s.scope}</td><td className="px-4 py-2 text-right text-emerald-400">{money(s.revenue)}</td><td className="px-4 py-2 text-right text-slate-300">{s.ops}</td></tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Снимок</th><th className="px-4 py-2 font-bold">Область</th><th className="px-4 py-2 text-right font-bold">Поступления</th><th className="px-4 py-2 text-right font-bold">Операций</th></tr></thead>
+            <tbody>
+              {(!snapshots || snapshots.length === 0) && <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-500">Снимков пока нет. Нажмите «Сохранить снимок периода».</td></tr>}
+              {(snapshots || []).map((s: any) => (
+                <tr key={s.id} className="border-t border-white/5"><td className="px-4 py-2 text-slate-300">{s.date}</td><td className="px-4 py-2 text-slate-400">{s.scope}</td><td className="px-4 py-2 text-right text-emerald-400">{money(s.revenue)}</td><td className="px-4 py-2 text-right text-slate-300">{s.ops}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
     </div>
   );
@@ -9150,47 +9166,49 @@ function PlanTab({ data, period, busy, onSave }: any) {
               <button onClick={() => setExpenses((es) => [...es, { key: `cat-${Date.now()}`, label: "Новая категория", planned: 0, mode: "manual" }])}
                 className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-[11px] font-bold text-slate-300 hover:text-white"><Plus className="h-3.5 w-3.5" /> Категория</button>
             </div>
-            <table className="w-full text-left text-sm">
-              <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Категория</th><th className="px-4 py-2 text-right font-bold">План, ₸</th><th className="px-4 py-2 font-bold">Режим</th><th className="px-2 py-2"></th></tr></thead>
-              <tbody>
-                {expenses.map((e) => (
-                  <React.Fragment key={e.key}>
-                    <tr className="border-t border-white/5">
-                      <td className="px-4 py-2">
-                        {e.children ? (
-                          <button onClick={() => setOpenExp((o) => ({ ...o, [e.key]: !o[e.key] }))} className="flex items-center gap-1.5 font-black text-white">
-                            <Chevron open={!!openExp[e.key]} /> {e.label}
-                          </button>
-                        ) : <span className="font-black text-white">{e.label}</span>}
-                      </td>
-                      <td className="px-4 py-2 text-right">
-                        {e.children ? <span className="font-black text-white">{Number(expSum(e)).toLocaleString("ru-RU")}</span>
-                          : <input type="number" value={e.planned} onChange={(ev) => updExp(e.key, Number(ev.target.value))} className={`${numCls} w-32 text-right`} />}
-                      </td>
-                      <td className="px-4 py-2">{e.mode === "auto" ? <span className="rounded-md bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-300">авто</span> : <span className="rounded-md bg-white/10 px-2 py-0.5 text-[10px] font-bold text-slate-300">вручную</span>}</td>
-                      <td className="px-2 py-2"><button onClick={() => delExp(e.key)} className="text-slate-500 hover:text-rose-400"><X className="h-4 w-4" /></button></td>
-                    </tr>
-                    {e.children && openExp[e.key] && (
-                      <>
-                        {e.children.map((c: any, ci: number) => (
-                          <tr key={ci} className="border-t border-white/5 bg-white/[0.02]">
-                            <td className="py-1.5 pl-10 pr-4 text-slate-400">{c.label}</td>
-                            <td className="px-4 py-1.5 text-right"><input type="number" value={c.planned} onChange={(ev) => updChild(e.key, ci, Number(ev.target.value))} className={`${numCls} w-32 text-right`} /></td>
-                            <td colSpan={2}></td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Категория</th><th className="px-4 py-2 text-right font-bold">План, ₸</th><th className="px-4 py-2 font-bold">Режим</th><th className="px-2 py-2"></th></tr></thead>
+                <tbody>
+                  {expenses.map((e) => (
+                    <React.Fragment key={e.key}>
+                      <tr className="border-t border-white/5">
+                        <td className="px-4 py-2">
+                          {e.children ? (
+                            <button onClick={() => setOpenExp((o) => ({ ...o, [e.key]: !o[e.key] }))} className="flex items-center gap-1.5 font-black text-white">
+                              <Chevron open={!!openExp[e.key]} /> {e.label}
+                            </button>
+                          ) : <span className="font-black text-white">{e.label}</span>}
+                        </td>
+                        <td className="px-4 py-2 text-right">
+                          {e.children ? <span className="font-black text-white">{Number(expSum(e)).toLocaleString("ru-RU")}</span>
+                            : <input type="number" value={e.planned} onChange={(ev) => updExp(e.key, Number(ev.target.value))} className={`${numCls} w-32 text-right`} />}
+                        </td>
+                        <td className="px-4 py-2">{e.mode === "auto" ? <span className="rounded-md bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-300">авто</span> : <span className="rounded-md bg-white/10 px-2 py-0.5 text-[10px] font-bold text-slate-300">вручную</span>}</td>
+                        <td className="px-2 py-2"><button onClick={() => delExp(e.key)} className="text-slate-500 hover:text-rose-400"><X className="h-4 w-4" /></button></td>
+                      </tr>
+                      {e.children && openExp[e.key] && (
+                        <>
+                          {e.children.map((c: any, ci: number) => (
+                            <tr key={ci} className="border-t border-white/5 bg-white/[0.02]">
+                              <td className="py-1.5 pl-10 pr-4 text-slate-400">{c.label}</td>
+                              <td className="px-4 py-1.5 text-right"><input type="number" value={c.planned} onChange={(ev) => updChild(e.key, ci, Number(ev.target.value))} className={`${numCls} w-32 text-right`} /></td>
+                              <td colSpan={2}></td>
+                            </tr>
+                          ))}
+                          <tr className="border-t border-white/5 bg-white/[0.02]">
+                            <td className="py-1.5 pl-10 pr-4" colSpan={4}>
+                              <button onClick={() => addChild(e.key)} className="text-[11px] font-bold text-[#C5A059] hover:brightness-110">+ добавить строку</button>
+                            </td>
                           </tr>
-                        ))}
-                        <tr className="border-t border-white/5 bg-white/[0.02]">
-                          <td className="py-1.5 pl-10 pr-4" colSpan={4}>
-                            <button onClick={() => addChild(e.key)} className="text-[11px] font-bold text-[#C5A059] hover:brightness-110">+ добавить строку</button>
-                          </td>
-                        </tr>
-                      </>
-                    )}
-                  </React.Fragment>
-                ))}
-                <tr className="border-t border-white/10 bg-white/[0.03]"><td className="px-4 py-2 font-black text-white">Итого расходы</td><td className="px-4 py-2 text-right font-black text-rose-400">{money(expense)}</td><td colSpan={2}></td></tr>
-              </tbody>
-            </table>
+                        </>
+                      )}
+                    </React.Fragment>
+                  ))}
+                  <tr className="border-t border-white/10 bg-white/[0.03]"><td className="px-4 py-2 font-black text-white">Итого расходы</td><td className="px-4 py-2 text-right font-black text-rose-400">{money(expense)}</td><td colSpan={2}></td></tr>
+                </tbody>
+              </table>
+            </div>
           </section>
         )}
       </div>
@@ -9258,22 +9276,24 @@ function PlanFactRevenueTab({ data }: any) {
       </div>
       <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-[#141414]">
         <div className="border-b border-white/10 px-4 py-3"><h4 className="text-sm font-black text-white">Поступления по направлениям</h4></div>
-        <table className="w-full text-left text-sm">
-          <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Направление</th><th className="px-4 py-2 text-right font-bold">План</th><th className="px-4 py-2 text-right font-bold">Факт</th><th className="px-4 py-2 text-right font-bold">Выполнение</th></tr></thead>
-          <tbody>
-            {data.fact.incomeByDirection.map((r: any, i: number) => {
-              const pct = r.plan ? Math.round((r.fact / r.plan) * 100) : 0;
-              return (
-                <tr key={i} className="border-t border-white/5">
-                  <td className="px-4 py-2 font-bold text-white">{r.direction}</td>
-                  <td className="px-4 py-2 text-right text-slate-300">{money(r.plan)}</td>
-                  <td className="px-4 py-2 text-right text-emerald-400">{money(r.fact)}</td>
-                  <td className="px-4 py-2 text-right"><span className={pct >= 100 ? "text-emerald-400" : pct >= 75 ? "text-amber-300" : "text-rose-300"}>{pct}%</span></td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Направление</th><th className="px-4 py-2 text-right font-bold">План</th><th className="px-4 py-2 text-right font-bold">Факт</th><th className="px-4 py-2 text-right font-bold">Выполнение</th></tr></thead>
+            <tbody>
+              {data.fact.incomeByDirection.map((r: any, i: number) => {
+                const pct = r.plan ? Math.round((r.fact / r.plan) * 100) : 0;
+                return (
+                  <tr key={i} className="border-t border-white/5">
+                    <td className="px-4 py-2 font-bold text-white">{r.direction}</td>
+                    <td className="px-4 py-2 text-right text-slate-300">{money(r.plan)}</td>
+                    <td className="px-4 py-2 text-right text-emerald-400">{money(r.fact)}</td>
+                    <td className="px-4 py-2 text-right"><span className={pct >= 100 ? "text-emerald-400" : pct >= 75 ? "text-amber-300" : "text-rose-300"}>{pct}%</span></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </section>
     </div>
   );
@@ -9321,37 +9341,39 @@ function PlanVsFactTab({ data }: any) {
         </button>
         {openLevels && (
           <div className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-[#141414]">
-            <table className="w-full text-left text-sm">
-              <thead className="text-[10px] uppercase tracking-wider text-slate-500">
-                <tr>
-                  <th className="px-4 py-3 font-bold">Уровень</th>
-                  <th className="px-4 py-3 text-right font-bold">План</th>
-                  <th className="px-4 py-3 text-right font-bold">Факт</th>
-                  <th className="px-4 py-3 text-right font-bold">Отклонение</th>
-                  <th className="px-4 py-3 text-right font-bold">Выполнение</th>
-                </tr>
-              </thead>
-              <tbody>
-                {/* Родительская строка-итог */}
-                <tr className="border-t border-white/5 bg-[#C5A059]/10">
-                  <td className="px-4 py-3 font-black text-white">Доходы</td>
-                  <td className="px-4 py-3 text-right tabular-nums font-bold text-white">{nf(total.plan)}</td>
-                  <td className="px-4 py-3 text-right tabular-nums font-bold text-white">{nf(total.fact)}</td>
-                  <DevCell v={totalDev} />
-                  <DoneCell v={totalDone} />
-                </tr>
-                {/* Вложенные форматы */}
-                {rows.map((l, i) => (
-                  <tr key={i} className="border-t border-white/5">
-                    <td className="px-4 py-3 pl-8 font-semibold text-slate-200">{l.level}</td>
-                    <td className="px-4 py-3 text-right tabular-nums text-slate-300">{nf(l.plan)}</td>
-                    <td className="px-4 py-3 text-right tabular-nums text-slate-300">{nf(l.fact)}</td>
-                    <DevCell v={l.deviation} />
-                    <DoneCell v={l.done} />
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="text-[10px] uppercase tracking-wider text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3 font-bold">Уровень</th>
+                    <th className="px-4 py-3 text-right font-bold">План</th>
+                    <th className="px-4 py-3 text-right font-bold">Факт</th>
+                    <th className="px-4 py-3 text-right font-bold">Отклонение</th>
+                    <th className="px-4 py-3 text-right font-bold">Выполнение</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {/* Родительская строка-итог */}
+                  <tr className="border-t border-white/5 bg-[#C5A059]/10">
+                    <td className="px-4 py-3 font-black text-white">Доходы</td>
+                    <td className="px-4 py-3 text-right tabular-nums font-bold text-white">{nf(total.plan)}</td>
+                    <td className="px-4 py-3 text-right tabular-nums font-bold text-white">{nf(total.fact)}</td>
+                    <DevCell v={totalDev} />
+                    <DoneCell v={totalDone} />
+                  </tr>
+                  {/* Вложенные форматы */}
+                  {rows.map((l, i) => (
+                    <tr key={i} className="border-t border-white/5">
+                      <td className="px-4 py-3 pl-8 font-semibold text-slate-200">{l.level}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-slate-300">{nf(l.plan)}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-slate-300">{nf(l.fact)}</td>
+                      <DevCell v={l.deviation} />
+                      <DoneCell v={l.done} />
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </section>
@@ -9552,19 +9574,21 @@ function PlanMotivationTab({ data, busy, onSave }: any) {
         <h4 className="text-sm font-black text-white">Настройки мотивации · пороги выполнения плана и бонусы</h4>
         <button onClick={() => setRows([...rows, { level: "Новый уровень", threshold: 0, bonus: "" }])} className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-[11px] font-bold text-slate-300 hover:text-white"><Plus className="h-3.5 w-3.5" /> Уровень</button>
       </div>
-      <table className="w-full text-left text-sm">
-        <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Уровень</th><th className="px-4 py-2 text-right font-bold">Порог, %</th><th className="px-4 py-2 font-bold">Бонус</th><th className="px-2 py-2"></th></tr></thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i} className="border-t border-white/5">
-              <td className="px-4 py-2"><input value={r.level} onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, level: e.target.value } : x))} className="w-full rounded-lg border border-white/10 bg-black/40 px-2 py-1 text-white" /></td>
-              <td className="px-4 py-2 text-right"><input type="number" value={r.threshold} onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, threshold: Number(e.target.value) } : x))} className="w-20 rounded-lg border border-white/10 bg-black/40 px-2 py-1 text-right text-white" /></td>
-              <td className="px-4 py-2"><input value={r.bonus} onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, bonus: e.target.value } : x))} className="w-full rounded-lg border border-white/10 bg-black/40 px-2 py-1 text-white" /></td>
-              <td className="px-2 py-2"><button onClick={() => setRows(rows.filter((_, j) => j !== i))} className="text-slate-500 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-sm">
+          <thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2 font-bold">Уровень</th><th className="px-4 py-2 text-right font-bold">Порог, %</th><th className="px-4 py-2 font-bold">Бонус</th><th className="px-2 py-2"></th></tr></thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i} className="border-t border-white/5">
+                <td className="px-4 py-2"><input value={r.level} onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, level: e.target.value } : x))} className="w-full rounded-lg border border-white/10 bg-black/40 px-2 py-1 text-white" /></td>
+                <td className="px-4 py-2 text-right"><input type="number" value={r.threshold} onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, threshold: Number(e.target.value) } : x))} className="w-20 rounded-lg border border-white/10 bg-black/40 px-2 py-1 text-right text-white" /></td>
+                <td className="px-4 py-2"><input value={r.bonus} onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, bonus: e.target.value } : x))} className="w-full rounded-lg border border-white/10 bg-black/40 px-2 py-1 text-white" /></td>
+                <td className="px-2 py-2"><button onClick={() => setRows(rows.filter((_, j) => j !== i))} className="text-slate-500 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       <div className="flex justify-end border-t border-white/10 px-4 py-3">
         <button disabled={busy || !dirty} onClick={() => onSave(rows)} className="rounded-xl bg-[#C5A059] px-4 py-2 text-xs font-black text-black disabled:opacity-40">{dirty ? "Сохранить мотивацию" : "Сохранено"}</button>
       </div>
