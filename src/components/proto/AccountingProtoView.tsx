@@ -1,66 +1,16 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { Branch } from "../../types";
 import "./accounting-proto.css";
 
-/* ===== MOCK-ДАННЫЕ (перенесены из прототипа) ===== */
+/* ===== БУХГАЛТЕРИЯ — реальные данные через /api/mvp/accounting/* =====
+   Разделы без эндпоинта (сверка CRM↔факт) показывают заглушку «Данных пока нет».
+   Налоги/История строятся из реальных операций. */
 const PERIOD_DEFAULT = "Июнь 2026";
-
-const INCOMES_SEED: any[] = [
-  { date: "2026-06-03", sum: 120000, acc: "Наличные", dir: "Абонементы", pay: "Наличные", branch: "Эхо Гор Чокина 109/1", period: "Июнь 2026", note: "Абонементы наличными" },
-  { date: "2026-06-10", sum: 360000, acc: "Kaspi Pay", dir: "Абонементы", pay: "Kaspi Pay", branch: "Эхо Гор Чокина 109/1", period: "Июнь 2026", note: "Абонементы Kaspi" },
-  { date: "2026-06-14", sum: 45000, acc: "Наличные", dir: "Товары", pay: "Наличные", branch: "Сатпаева 210/1", period: "Июнь 2026", note: "Продажа формы" },
-  { date: "2026-06-20", sum: 150000, acc: "Расчётный счёт", dir: "Выступления", pay: "Расчётный счёт", branch: "Эхо Гор Чокина 109/1", period: "Июнь 2026", note: "Банкет" },
-];
-
-const RECON: any[] = [
-  { dir: "Абонементы — наличные", crm: 120000, fact: 120000 },
-  { dir: "Абонементы — Kaspi Pay", crm: 380000, fact: 360000 },
-  { dir: "Товары", crm: 45000, fact: 45000 },
-  { dir: "Выступления", crm: 200000, fact: 150000 },
-];
-
-const EXPENSES_SEED: any[] = [
-  { payDate: "2026-05-25", period: "Июнь 2026", sum: 200000, acc: "Расчётный счёт", cat: "Аренда", branch: "Эхо Гор Чокина 109/1", status: "Проведён", note: "Аренда филиала за июнь" },
-  { payDate: "2026-06-05", period: "Июнь 2026", sum: 180000, acc: "Kaspi Pay", cat: "Зарплата", branch: "Вся сеть", status: "Проведён", note: "Аванс педагогам" },
-  { payDate: "2026-06-08", period: "Июнь 2026", sum: 60000, acc: "Kaspi Pay", cat: "Реклама", branch: "Вся сеть", status: "Проведён", note: "Таргет Instagram" },
-  { payDate: "2026-06-12", period: "Июнь 2026", sum: 25000, acc: "Наличные", cat: "Коммунальные", branch: "Сатпаева 210/1", status: "Проведён", note: "Свет, вода" },
-  { payDate: "2026-06-18", period: "Июнь 2026", sum: 40000, acc: "Наличные", cat: "Костюмы", branch: "Эхо Гор Чокина 109/1", status: "Черновик", note: "Костюмы к концерту (не проведено)" },
-  { payDate: "2026-05-20", period: "Май 2026", sum: 200000, acc: "Расчётный счёт", cat: "Аренда", branch: "Эхо Гор Чокина 109/1", status: "Проведён", note: "Аренда за май" },
-  { payDate: "2026-05-06", period: "Май 2026", sum: 150000, acc: "Kaspi Pay", cat: "Зарплата", branch: "Вся сеть", status: "Проведён", note: "ЗП май" },
-];
-
-const REQUESTS_SEED: any[] = [
-  { id: 1, date: "2026-06-15", branch: "Сатпаева 210/1", type: "Расход", cat: "Ремонт", reason: "Замена зеркала в зале", sum: 35000, urgency: "Высокая", status: "на рассмотрении", student: "", group: "", posted: false },
-  { id: 2, date: "2026-06-11", branch: "Эхо Гор Чокина 109/1", type: "Возврат", cat: "Абонемент", reason: "Возврат за неиспользованный абонемент", sum: 12000, urgency: "Средняя", status: "на рассмотрении", student: "Карина Ахметова", group: "Соло", posted: false },
-  { id: 3, date: "2026-06-09", branch: "Сатпаева 210/1", type: "Расход", cat: "Материалы", reason: "Коврики для разминки", sum: 18000, urgency: "Низкая", status: "запрошено уточнение", student: "", group: "", posted: false },
-];
-
-const RETURNS_SEED: any[] = [
-  { date: "2026-06-22", period: "Июнь 2026", sum: 8000, acc: "Kaspi Pay", branch: "Эхо Гор Чокина 109/1", student: "Дамир Сериков", group: "Малыши", reason: "Возврат части абонемента" },
-];
-
-const TAXES_SEED: any[] = [
-  { period: "Июнь 2026", name: "ИПН (с ФОТ)", base: 330000, rate: 10, sum: 33000, status: "Начислен", due: "2026-07-15", branch: "Вся сеть" },
-  { period: "Июнь 2026", name: "Соц. отчисления", base: 330000, rate: 3.5, sum: 11550, status: "Начислен", due: "2026-07-15", branch: "Вся сеть" },
-  { period: "Май 2026", name: "ИПН (с ФОТ)", base: 300000, rate: 10, sum: 30000, status: "Оплачен", due: "2026-06-15", branch: "Вся сеть" },
-];
-
-const MONTH_REVENUE: any = { "Апрель 2026": 590000, "Май 2026": 620000, "Июнь 2026": 675000 };
-
-const HISTORY_SEED: any[] = [
-  { time: "2026-06-15 10:24", who: "Владелец", action: "Добавлен расход", detail: "Аренда · 200 000 ₸ · период Июнь 2026" },
-];
-
-const ACCOUNTS_SEED: any[] = [
-  { name: "Kaspi Pay", icon: "💳", start: 540000, archived: false },
-  { name: "Наличные", icon: "💵", start: 210000, archived: false },
-  { name: "Расчётный счёт", icon: "🏦", start: 880000, archived: false },
-];
-const CATEGORIES_SEED = ["Аренда", "Зарплата", "Реклама", "Коммунальные", "Ремонт", "Материалы", "Костюмы", "Налоги", "Товары / форма", "Прочее"];
-const DIRECTIONS_SEED = ["Абонементы", "Товары", "Выступления", "Другое"];
-const BRANCHES_SEED = ["Эхо Гор Чокина 109/1", "Сатпаева 210/1"];
+const H = { "x-demo-role": "owner" } as const;
+const HJ = { "Content-Type": "application/json", "x-demo-role": "owner" } as const;
 
 /* ===== HELPERS ===== */
-const money = (n: number) => Math.round(n).toLocaleString("ru-RU") + " ₸";
+const money = (n: number) => Math.round(n || 0).toLocaleString("ru-RU") + " ₸";
 const nowStr = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
@@ -70,6 +20,30 @@ const validNum = (v: any) => {
   return !isNaN(n) && n > 0 ? n : null;
 };
 const validDate = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v);
+
+const MONTHS_RU = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+const ymToLabel = (ym: string) => {
+  const [y, m] = String(ym).split("-");
+  const idx = parseInt(m, 10) - 1;
+  return idx >= 0 && idx < 12 ? `${MONTHS_RU[idx]} ${y}` : String(ym);
+};
+const labelToYm = (label: string) => {
+  const parts = String(label).split(" ");
+  const idx = MONTHS_RU.indexOf(parts[0]);
+  return idx >= 0 && parts[1] ? `${parts[1]}-${String(idx + 1).padStart(2, "0")}` : "";
+};
+const dateToLabel = (d: string) => ymToLabel(String(d).slice(0, 7));
+const periodMonthStart = (label: string) => {
+  const ym = labelToYm(label);
+  return ym ? `${ym}-01` : new Date().toISOString().slice(0, 10);
+};
+const today = () => new Date().toISOString().slice(0, 10);
+const iconForKind = (kind?: string) => (kind === "bank" ? "🏦" : kind === "card" ? "💳" : kind === "cash" ? "💵" : "💰");
+
+/* ===== ЗАГЛУШКА ===== */
+const Empty = ({ children }: { children?: any }) => (
+  <div className="hint" style={{ padding: 24, textAlign: "center", color: "var(--muted)" }}>{children || "Данных пока нет"}</div>
+);
 
 /* ===== ИКОНКИ ===== */
 const StarIcon = () => (
@@ -84,27 +58,101 @@ const SearchIcon = () => (
   </svg>
 );
 
-export function AccountingProtoView() {
+type OverviewData = {
+  accounts: any[];
+  categories: any[];
+  cashflow: { months: string[]; incomeRows: any[]; expenseRows: any[]; incomeByMonth: number[]; expenseByMonth: number[]; netByMonth: number[] };
+  pnl: any[];
+  calendar: any[];
+  totals: { income: number; expense: number; profit: number; plannedIn: number; plannedOut: number; balanceTotal: number };
+};
+const EMPTY_OVERVIEW: OverviewData = {
+  accounts: [], categories: [],
+  cashflow: { months: [], incomeRows: [], expenseRows: [], incomeByMonth: [], expenseByMonth: [], netByMonth: [] },
+  pnl: [], calendar: [], totals: { income: 0, expense: 0, profit: 0, plannedIn: 0, plannedOut: 0, balanceTotal: 0 },
+};
+
+export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) {
   /* ===== STATE ===== */
   const [period, setPeriod] = useState(PERIOD_DEFAULT);
   const [fBranch, setFBranch] = useState("");
   const [fAccount, setFAccount] = useState("");
   const [view, setView] = useState<"ops" | "req" | "an" | "set" | "tax" | "hist">("ops");
 
-  const [INCOMES, setINCOMES] = useState<any[]>(INCOMES_SEED);
-  const [EXPENSES, setEXPENSES] = useState<any[]>(EXPENSES_SEED);
-  const [REQUESTS, setREQUESTS] = useState<any[]>(REQUESTS_SEED);
-  const [RETURNS, setRETURNS] = useState<any[]>(RETURNS_SEED);
-  const [TAXES, setTAXES] = useState<any[]>(TAXES_SEED);
-  const [HISTORY, setHISTORY] = useState<any[]>(HISTORY_SEED);
+  /* ---- данные с сервера ---- */
+  const [overview, setOverview] = useState<OverviewData>(EMPTY_OVERVIEW);
+  const [operations, setOperations] = useState<any[]>([]);
+  const [expReqs, setExpReqs] = useState<any[]>([]);
+  const [refundReqs, setRefundReqs] = useState<any[]>([]);
 
-  const [ACCOUNTS, setACCOUNTS] = useState<any[]>(ACCOUNTS_SEED);
-  const [CATEGORIES, setCATEGORIES] = useState<string[]>(CATEGORIES_SEED);
-  const [DIRECTIONS, setDIRECTIONS] = useState<string[]>(DIRECTIONS_SEED);
-  const [BRANCHES, setBRANCHES] = useState<string[]>(BRANCHES_SEED);
+  /* ---- локальные списки-справочники (seed из реальных данных) ---- */
+  const [ACCOUNTS, setACCOUNTS] = useState<any[]>([]);
+  const [CATEGORIES, setCATEGORIES] = useState<string[]>([]);
+  const [DIRECTIONS, setDIRECTIONS] = useState<string[]>([]);
+  const [BRANCHES, setBRANCHES] = useState<string[]>([]);
+  const [HISTORY, setHISTORY] = useState<any[]>([]);
 
-  const [nextReqId, setNextReqId] = useState(4);
+  /* ===== ЗАГРУЗКА ===== */
+  const load = useCallback(async () => {
+    try {
+      const [ovR, opR, erR, rrR] = await Promise.all([
+        fetch("/api/mvp/accounting/overview", { headers: H }),
+        fetch("/api/mvp/accounting/operations", { headers: H }),
+        fetch("/api/mvp/accounting/expense-requests", { headers: H }),
+        fetch("/api/mvp/accounting/refund-requests", { headers: H }),
+      ]);
+      const ov = ovR.ok ? await ovR.json() : {};
+      const op = opR.ok ? await opR.json() : {};
+      const er = erR.ok ? await erR.json() : {};
+      const rr = rrR.ok ? await rrR.json() : {};
+      setOverview({
+        accounts: ov.accounts || [],
+        categories: ov.categories || [],
+        cashflow: ov.cashflow || EMPTY_OVERVIEW.cashflow,
+        pnl: ov.pnl || [],
+        calendar: ov.calendar || [],
+        totals: ov.totals || EMPTY_OVERVIEW.totals,
+      });
+      setOperations(op.operations || []);
+      setExpReqs(er.requests || []);
+      setRefundReqs(rr.requests || []);
+    } catch {
+      /* сеть/сервер недоступны — оставляем пустые состояния, не падаем */
+    }
+  }, []);
+  useEffect(() => { load(); }, [load]);
 
+  /* seed справочников из реальных данных */
+  useEffect(() => {
+    setACCOUNTS(overview.accounts.map((a) => ({
+      id: a.id, name: a.name, kind: a.kind, currency: a.currency,
+      icon: iconForKind(a.kind), start: Number(a.openingBalance) || 0, balance: Number(a.balance) || 0, archived: false,
+    })));
+  }, [overview.accounts]);
+  useEffect(() => {
+    setCATEGORIES(overview.categories.filter((c) => c.kind === "expense").map((c) => c.name));
+    setDIRECTIONS(overview.categories.filter((c) => c.kind === "income").map((c) => c.name));
+  }, [overview.categories]);
+  useEffect(() => { setBRANCHES((branches || []).map((b) => b.name)); }, [branches]);
+
+  /* дефолтный период — последний месяц с данными */
+  const monthLabels = useMemo(() => (overview.cashflow.months || []).map(ymToLabel), [overview.cashflow.months]);
+  useEffect(() => {
+    if (monthLabels.length && !monthLabels.includes(period)) setPeriod(monthLabels[monthLabels.length - 1]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [monthLabels]);
+
+  /* резолверы имён/id */
+  const catById = useCallback((id?: string) => overview.categories.find((c) => c.id === id)?.name || "Без статьи", [overview.categories]);
+  const catId = useCallback((name: string, kind: "income" | "expense") =>
+    overview.categories.find((c) => c.name === name && c.kind === kind)?.id
+    || overview.categories.find((c) => c.name === name)?.id || null, [overview.categories]);
+  const accById = useCallback((id?: string) => overview.accounts.find((a) => a.id === id)?.name || "—", [overview.accounts]);
+  const accId = useCallback((name: string) => ACCOUNTS.find((a) => a.name === name)?.id || overview.accounts.find((a) => a.name === name)?.id || null, [ACCOUNTS, overview.accounts]);
+  const branchName = useCallback((id?: string | null) => branches.find((b) => b.id === id)?.name || "Вся сеть", [branches]);
+  const branchIdByName = useCallback((name: string) => (name === "Вся сеть" ? null : branches.find((b) => b.name === name)?.id || null), [branches]);
+
+  /* ===== ТОСТЫ / ИСТОРИЯ (сессионная) ===== */
   const [toasts, setToasts] = useState<any[]>([]);
   let toastSeq = 0;
   const toast = (msg: string, type?: string) => {
@@ -112,10 +160,18 @@ export function AccountingProtoView() {
     setToasts((prev) => [...prev, { id, msg, type }]);
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
   };
-
   const logHistory = (action: string, detail: string) => {
     setHISTORY((prev) => [{ time: nowStr(), who: "Владелец", action, detail }, ...prev]);
   };
+  /* базовая история — из последних операций */
+  useEffect(() => {
+    setHISTORY(operations.slice(0, 50).map((o) => ({
+      time: o.date, who: "—",
+      action: o.type === "income" ? "Поступление" : "Расход",
+      detail: `${catById(o.categoryId)} · ${money(Number(o.amount))}`,
+    })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [operations, overview.categories]);
 
   /* ops-фильтры */
   const [opsSearch, setOpsSearch] = useState("");
@@ -169,124 +225,157 @@ export function AccountingProtoView() {
   /* поля формы налога */
   const [txName, setTxName] = useState("");
   const [txPeriod, setTxPeriod] = useState("Июнь 2026");
-  const [txDue, setTxDue] = useState("2026-07-15");
+  const [txDue, setTxDue] = useState(today());
   const [txBase, setTxBase] = useState("");
   const [txRate, setTxRate] = useState("");
   const [txSum, setTxSum] = useState("");
   const [txBranch, setTxBranch] = useState("Вся сеть");
 
-  /* ===== ВЫЧИСЛЕНИЯ ===== */
+  /* ===== ПРОИЗВОДНЫЕ ОТ ОПЕРАЦИЙ (реальные) ===== */
   const activeAccounts = () => ACCOUNTS.filter((a) => !a.archived);
   const inBranch = (b: string) => !fBranch || b === fBranch || b === "Вся сеть";
-  const returnsOf = (p: string) => RETURNS.filter((r) => r.period === p && inBranch(r.branch)).reduce((s, r) => s + r.sum, 0);
-  const grossRevenueOf = (p: string) => INCOMES.filter((i) => i.period === p && inBranch(i.branch)).reduce((s, i) => s + i.sum, 0);
-  const revenueOf = (p: string) => grossRevenueOf(p) - returnsOf(p);
-  const expenseOf = (p: string) => EXPENSES.filter((e) => e.period === p && e.status === "Проведён" && inBranch(e.branch)).reduce((s, e) => s + e.sum, 0);
 
-  const rev = revenueOf(period);
-  const exp = expenseOf(period);
-  const profit = rev - exp;
-  const margin = rev ? (profit / rev) * 100 : 0;
+  const INCOMES = useMemo(() => operations.filter((o) => o.type === "income").map((o) => ({
+    id: o.id, date: o.date, sum: Number(o.amount), acc: accById(o.accountId), dir: catById(o.categoryId),
+    pay: accById(o.accountId), branch: "Вся сеть", period: dateToLabel(o.date), note: o.description || o.counterparty || "", status: o.status,
+  })), [operations, accById, catById]);
+  const EXPENSES = useMemo(() => operations.filter((o) => o.type === "expense").map((o) => ({
+    id: o.id, payDate: o.date, period: dateToLabel(o.date), sum: Number(o.amount), acc: accById(o.accountId),
+    cat: catById(o.categoryId), branch: "Вся сеть", status: o.status === "planned" ? "Черновик" : "Проведён", note: o.description || o.counterparty || "",
+  })), [operations, accById, catById]);
+  const RETURNS: any[] = [];
+
+  const returnsOf = (_p: string) => 0;
+  const grossRevenueOf = (p: string) => INCOMES.filter((i) => i.period === p && inBranch(i.branch)).reduce((s, i) => s + i.sum, 0);
+
+  /* KPI ← pnl текущего месяца (реальные) */
+  const pnlRow = overview.pnl.find((p) => p.month === labelToYm(period));
+  const rev = pnlRow ? Number(pnlRow.revenue) : grossRevenueOf(period);
+  const exp = pnlRow ? Number(pnlRow.expense) : EXPENSES.filter((e) => e.period === period && e.status === "Проведён").reduce((s, e) => s + e.sum, 0);
+  const profit = pnlRow ? Number(pnlRow.profit) : rev - exp;
+  const margin = pnlRow ? Number(pnlRow.margin) : rev ? (profit / rev) * 100 : 0;
   const ret = returnsOf(period);
 
-  /* ===== СОХРАНЕНИЕ РАСХОДА ===== */
+  /* ===== СОХРАНЕНИЕ РАСХОДА (реально) ===== */
   const openExp = () => {
-    setEDate("2026-06-25"); setEPeriod("Июнь 2026"); setESum(""); setENote("");
+    setEDate(today()); setEPeriod(period); setESum(""); setENote("");
     setEAcc(activeAccounts()[0]?.name || ""); setECat(CATEGORIES[0] || ""); setEBranch("Вся сеть"); setEStatus("Проведён");
     setExpOpen(true);
   };
-  const saveExp = () => {
+  const saveExp = async () => {
     const sum = validNum(eSum);
     if (!sum) return toast("Сумма должна быть больше нуля", "err");
     if (!validDate(eDate)) return toast("Укажите корректную дату оплаты", "err");
     if (!eAcc) return toast("Выберите счёт списания", "err");
     if (!eCat) return toast("Выберите категорию", "err");
-    setEXPENSES((prev) => [...prev, { payDate: eDate, period: ePeriod, sum, acc: eAcc, cat: eCat, branch: eBranch, status: eStatus, note: eNote }]);
-    logHistory("Добавлен расход", `${eCat} · ${money(sum)} · период ${ePeriod} · ${eStatus}`);
-    toast("Расход добавлен: " + money(sum) + " (" + eCat + ", период " + ePeriod + ")");
-    setExpOpen(false);
+    try {
+      const res = await fetch("/api/mvp/accounting/operations", {
+        method: "POST", headers: HJ,
+        body: JSON.stringify({ type: "expense", status: eStatus === "Проведён" ? "actual" : "planned", amount: sum, date: eDate, categoryId: catId(eCat, "expense"), accountId: accId(eAcc), branchId: branchIdByName(eBranch), description: eNote || null }),
+      });
+      if (!res.ok) return toast("Не удалось сохранить расход", "err");
+      logHistory("Добавлен расход", `${eCat} · ${money(sum)} · ${eStatus}`);
+      toast("Расход добавлен: " + money(sum) + " (" + eCat + ")");
+      setExpOpen(false); await load();
+    } catch { toast("Ошибка сети", "err"); }
   };
 
-  /* ===== СОХРАНЕНИЕ ПОСТУПЛЕНИЯ ===== */
+  /* ===== СОХРАНЕНИЕ ПОСТУПЛЕНИЯ (реально) ===== */
   const openInc = () => {
-    setIDate("2026-06-25"); setISum(""); setINote("");
+    setIDate(today()); setISum(""); setINote("");
     setIAcc(activeAccounts()[0]?.name || ""); setIDir(DIRECTIONS[0] || ""); setIPay("Наличные"); setIBranch(BRANCHES[0] || "");
     setIncOpen(true);
   };
-  const saveInc = () => {
+  const saveInc = async () => {
     const sum = validNum(iSum);
     if (!sum) return toast("Сумма должна быть больше нуля", "err");
     if (!validDate(iDate)) return toast("Укажите корректную дату", "err");
     if (!iAcc) return toast("Выберите счёт", "err");
-    setINCOMES((prev) => [...prev, { date: iDate, sum, acc: iAcc, dir: iDir, pay: iPay, branch: iBranch, period, note: iNote }]);
-    logHistory("Добавлено поступление", `${iDir} · ${money(sum)} · счёт ${iAcc}`);
-    toast("Поступление добавлено: " + money(sum));
-    setIncOpen(false);
+    try {
+      const res = await fetch("/api/mvp/accounting/operations", {
+        method: "POST", headers: HJ,
+        body: JSON.stringify({ type: "income", status: "actual", amount: sum, date: iDate, categoryId: catId(iDir, "income"), accountId: accId(iAcc), branchId: branchIdByName(iBranch), description: iNote || null }),
+      });
+      if (!res.ok) return toast("Не удалось сохранить поступление", "err");
+      logHistory("Добавлено поступление", `${iDir} · ${money(sum)} · счёт ${iAcc}`);
+      toast("Поступление добавлено: " + money(sum));
+      setIncOpen(false); await load();
+    } catch { toast("Ошибка сети", "err"); }
   };
 
-  /* ===== ЗАЯВКА ===== */
+  /* ===== СОЗДАНИЕ ЗАЯВКИ (реально) ===== */
   const openReq = () => {
     setRType("Расход"); setRSum(""); setRReason(""); setRStudent(""); setRGroup("");
     setRBranch(BRANCHES[0] || ""); setRCat(CATEGORIES[0] || ""); setRUrg("Низкая");
     setReqOpen(true);
   };
-  const saveReq = () => {
+  const saveReq = async () => {
     const sum = validNum(rSum);
     if (!sum) return toast("Сумма должна быть больше нуля", "err");
     const isReturn = rType === "Возврат";
     if (isReturn && !rStudent.trim()) return toast("Для возврата укажите ученика", "err");
-    setREQUESTS((prev) => [
-      {
-        id: nextReqId, date: nowStr().slice(0, 10), branch: rBranch, type: rType, cat: rCat,
-        reason: rReason || "—", sum, urgency: rUrg, status: "на рассмотрении",
-        student: isReturn ? rStudent || "" : "", group: isReturn ? rGroup || "" : "", posted: false,
-      },
-      ...prev,
-    ]);
-    setNextReqId((n) => n + 1);
-    logHistory("Создана заявка", `${rType} · ${money(sum)} · ${rBranch}`);
-    toast("Заявка отправлена владельцу: " + rType + " " + money(sum));
-    setReqOpen(false);
-    setView("req");
+    try {
+      const branchId = branchIdByName(rBranch);
+      const res = isReturn
+        ? await fetch("/api/mvp/accounting/refund-requests", { method: "POST", headers: HJ, body: JSON.stringify({ amount: sum, studentName: rStudent.trim(), reason: rReason || null, branchId }) })
+        : await fetch("/api/mvp/accounting/expense-requests", { method: "POST", headers: HJ, body: JSON.stringify({ amount: sum, categoryId: catId(rCat, "expense"), description: rReason || null, branchId }) });
+      if (!res.ok) return toast("Не удалось создать заявку", "err");
+      logHistory("Создана заявка", `${rType} · ${money(sum)} · ${rBranch}`);
+      toast("Заявка отправлена: " + rType + " " + money(sum));
+      setReqOpen(false); await load(); setView("req");
+    } catch { toast("Ошибка сети", "err"); }
   };
 
-  /* ===== РАССМОТРЕНИЕ ЗАЯВКИ ===== */
+  /* ===== ЗАЯВКИ (реальные из expense-requests + refund-requests) ===== */
+  const statusRu = (s: string) => (s === "pending" ? "на рассмотрении" : s === "approved" ? "выплачено / начислено" : s === "rejected" ? "отклонено" : s);
+  const REQUESTS = useMemo(() => {
+    const exp = expReqs.map((r) => ({
+      id: "e" + r.id, _id: r.id, _kind: "expense", date: String(r.createdAt || "").slice(0, 10), branch: branchName(r.branchId),
+      type: "Расход", cat: catById(r.categoryId), reason: r.description || "—", sum: Number(r.amount), urgency: "—",
+      status: statusRu(r.status), student: "", group: "", posted: r.status !== "pending",
+    }));
+    const ref = refundReqs.map((r) => ({
+      id: "r" + r.id, _id: r.id, _kind: "refund", date: String(r.createdAt || "").slice(0, 10), branch: branchName(r.branchId),
+      type: "Возврат", cat: "Возврат", reason: r.reason || "—", sum: Number(r.amount), urgency: "—",
+      status: statusRu(r.status), student: r.studentName || "", group: "", posted: r.status !== "pending",
+    }));
+    return [...exp, ...ref].sort((a, b) => (a.date > b.date ? -1 : 1));
+  }, [expReqs, refundReqs, branchName, catById]);
+
+  /* ===== РАССМОТРЕНИЕ ЗАЯВКИ (реально) ===== */
   const openReview = (i: number) => {
     setReviewIdx(i);
     setRevAcc(activeAccounts()[0]?.name || "");
-    setRevPeriod("Июнь 2026");
+    setRevPeriod(period);
     setRevNote("");
     setRevOpen(true);
   };
   const closeReview = () => { setRevOpen(false); setReviewIdx(null); };
-  const decideReq = (action: string) => {
+  const decideReq = async (action: string) => {
     if (reviewIdx === null) return;
     const r = REQUESTS[reviewIdx];
-    if (r.posted) { toast("Заявка уже проведена — повторное проведение запрещено", "err"); return; }
-    if (action === "reject") {
-      setREQUESTS((prev) => prev.map((x, idx) => (idx === reviewIdx ? { ...x, status: "отклонено" } : x)));
-      logHistory("Заявка отклонена", `${r.type} · ${money(r.sum)} · ${r.branch}`);
-      toast("Заявка отклонена"); closeReview(); setView("req"); return;
-    }
-    if (action === "clarify") {
-      setREQUESTS((prev) => prev.map((x, idx) => (idx === reviewIdx ? { ...x, status: "запрошено уточнение" } : x)));
-      logHistory("Запрошено уточнение", `${r.type} · ${money(r.sum)} · ${r.branch}`);
-      toast("Запрошено уточнение у управляющего"); closeReview(); setView("req"); return;
-    }
-    // approve
-    if (!revAcc) { toast("Выберите счёт", "err"); return; }
-    if (r.type === "Возврат") {
-      setRETURNS((prev) => [...prev, { date: nowStr().slice(0, 10), period: revPeriod, sum: r.sum, acc: revAcc, branch: r.branch, student: r.student || "", group: r.group || "", reason: r.reason, fromRequest: true }]);
-      logHistory("Проведён возврат", `${money(r.sum)} · ${r.student || "—"} · счёт ${revAcc} · период ${revPeriod}`);
-      toast("Возврат начислен: " + money(r.sum) + " со счёта " + revAcc);
-    } else {
-      const note = r.reason + (revNote ? " · " + revNote : "");
-      setEXPENSES((prev) => [...prev, { payDate: nowStr().slice(0, 10), period: revPeriod, sum: r.sum, acc: revAcc, branch: r.branch, cat: r.cat, status: "Проведён", note, fromRequest: true }]);
-      logHistory("Проведён расход по заявке", `${r.cat} · ${money(r.sum)} · счёт ${revAcc} · период ${revPeriod}`);
-      toast("Расход проведён: " + money(r.sum) + " со счёта " + revAcc);
-    }
-    setREQUESTS((prev) => prev.map((x, idx) => (idx === reviewIdx ? { ...x, status: "выплачено / начислено", posted: true } : x)));
-    closeReview(); setView("req");
+    if (!r) return;
+    if (r.posted) { toast("Заявка уже обработана", "err"); return; }
+    const base = r._kind === "refund" ? "refund-requests" : "expense-requests";
+    if (action === "clarify") { toast("Уточнение недоступно — одобрите или отклоните", "err"); return; }
+    try {
+      if (action === "reject") {
+        const res = await fetch(`/api/mvp/accounting/${base}/${r._id}/reject`, { method: "POST", headers: HJ, body: JSON.stringify({ comment: revNote || null }) });
+        if (!res.ok) return toast("Не удалось отклонить заявку", "err");
+        logHistory("Заявка отклонена", `${r.type} · ${money(r.sum)} · ${r.branch}`);
+        toast("Заявка отклонена"); closeReview(); await load(); setView("req"); return;
+      }
+      // approve
+      if (!revAcc) { toast("Выберите счёт", "err"); return; }
+      const res = await fetch(`/api/mvp/accounting/${base}/${r._id}/approve`, {
+        method: "POST", headers: HJ,
+        body: JSON.stringify({ accountId: accId(revAcc), date: periodMonthStart(revPeriod), comment: revNote || null }),
+      });
+      if (!res.ok) return toast("Не удалось одобрить заявку", "err");
+      if (r.type === "Возврат") { logHistory("Проведён возврат", `${money(r.sum)} · ${r.student || "—"} · счёт ${revAcc}`); toast("Возврат начислен: " + money(r.sum)); }
+      else { logHistory("Проведён расход по заявке", `${r.cat} · ${money(r.sum)} · счёт ${revAcc}`); toast("Расход проведён: " + money(r.sum)); }
+      closeReview(); await load(); setView("req");
+    } catch { toast("Ошибка сети", "err"); }
   };
 
   /* ===== НАСТРОЙКИ ===== */
@@ -297,69 +386,72 @@ export function AccountingProtoView() {
     if (listName === "CATEGORIES") setCATEGORIES((p) => [...p, val]);
     else if (listName === "DIRECTIONS") setDIRECTIONS((p) => [...p, val]);
     else if (listName === "BRANCHES") setBRANCHES((p) => [...p, val]);
-    logHistory("Добавлено в настройки", val); toast("Добавлено: " + val); setView("set");
+    toast("Добавлено (в сессии): " + val); setView("set");
   };
   const delItem = (listName: string, i: number) => {
-    const arr = listName === "CATEGORIES" ? CATEGORIES : listName === "DIRECTIONS" ? DIRECTIONS : BRANCHES;
-    const name = arr[i];
     const setter = listName === "CATEGORIES" ? setCATEGORIES : listName === "DIRECTIONS" ? setDIRECTIONS : setBRANCHES;
-    setter((p) => p.filter((_, idx) => idx !== i));
-    logHistory("Удалено из настроек", name); toast("Удалено: " + name); setView("set");
+    setter((p) => p.filter((_, idx) => idx !== i)); setView("set");
   };
-  const addAccount = () => {
+  const addAccount = async () => {
     const name = window.prompt("Название счёта:");
     if (!name || !name.trim()) return;
-    const icon = window.prompt("Эмодзи-иконка (например 💳):", "💳") || "💳";
+    const kindIn = (window.prompt("Тип счёта: cash / bank / card", "cash") || "cash").trim();
+    const kind = ["cash", "bank", "card"].includes(kindIn) ? kindIn : "cash";
     const start = parseInt(window.prompt("Стартовый остаток, ₸:", "0") || "0", 10) || 0;
-    setACCOUNTS((p) => [...p, { name: name.trim(), icon: icon.trim() || "💳", start, archived: false }]);
-    logHistory("Добавлен счёт", `${name.trim()} · старт ${money(start)}`);
-    toast("Счёт добавлен: " + name.trim()); setView("set");
+    try {
+      const res = await fetch("/api/mvp/accounting/accounts", { method: "POST", headers: HJ, body: JSON.stringify({ name: name.trim(), kind, currency: "KZT", openingBalance: start }) });
+      if (!res.ok) return toast("Не удалось создать счёт", "err");
+      logHistory("Добавлен счёт", `${name.trim()} · старт ${money(start)}`);
+      toast("Счёт добавлен: " + name.trim()); await load(); setView("set");
+    } catch { toast("Ошибка сети", "err"); }
   };
   const archiveAccount = (i: number) => {
     setACCOUNTS((p) => p.map((a, idx) => (idx === i ? { ...a, archived: true } : a)));
-    logHistory("Счёт в архив", ACCOUNTS[i].name);
-    toast("Счёт «" + ACCOUNTS[i].name + "» в архиве — операции сохранены, но новые на него нельзя"); setView("set");
+    toast("Счёт «" + ACCOUNTS[i].name + "» скрыт (в сессии)"); setView("set");
   };
   const unarchiveAccount = (i: number) => {
     setACCOUNTS((p) => p.map((a, idx) => (idx === i ? { ...a, archived: false } : a)));
-    logHistory("Счёт возвращён из архива", ACCOUNTS[i].name); toast("Счёт возвращён"); setView("set");
+    toast("Счёт возвращён"); setView("set");
   };
   const delAccount = (i: number) => {
     const name = ACCOUNTS[i].name;
-    if (!window.confirm("Удалить счёт «" + name + "»? По нему нет операций.")) return;
+    if (!window.confirm("Скрыть счёт «" + name + "»?")) return;
     setACCOUNTS((p) => p.filter((_, idx) => idx !== i));
-    logHistory("Удалён счёт", name); toast("Счёт удалён: " + name); setView("set");
+    toast("Счёт скрыт (в сессии): " + name); setView("set");
   };
 
-  /* ===== НАЛОГИ ===== */
+  /* ===== НАЛОГИ (из реальных расходов категории «Налог*») ===== */
   const openTax = () => {
-    setTxName(""); setTxBase(""); setTxRate(""); setTxSum(""); setTxDue("2026-07-15"); setTxPeriod("Июнь 2026"); setTxBranch("Вся сеть");
+    setTxName(""); setTxBase(""); setTxRate(""); setTxSum(""); setTxDue(today()); setTxPeriod(period); setTxBranch("Вся сеть");
     setTaxOpen(true);
   };
   const calcTax = (base: string, rate: string) => {
     const b = parseFloat(base) || 0, r = parseFloat(rate) || 0;
     if (b && r) setTxSum(String(Math.round((b * r) / 100)));
   };
-  const saveTax = () => {
+  const saveTax = async () => {
     const name = txName.trim();
     if (!name) return toast("Введите название налога", "err");
     const sum = validNum(txSum);
     if (!sum) return toast("Введите сумму налога", "err");
-    if (!validDate(txDue)) return toast("Укажите срок уплаты", "err");
-    setTAXES((prev) => [...prev, { period: txPeriod, name, base: parseFloat(txBase) || 0, rate: parseFloat(txRate) || 0, sum, status: "Начислен", due: txDue, branch: txBranch }]);
-    logHistory("Добавлен налог", `${name} · ${money(sum)} · период ${txPeriod}`);
-    toast("Налог добавлен: " + name + " " + money(sum));
-    setTaxOpen(false); setView("tax");
+    try {
+      const taxCat = overview.categories.find((c) => c.kind === "expense" && /налог/i.test(c.name))?.id || catId(name, "expense") || null;
+      const res = await fetch("/api/mvp/accounting/operations", {
+        method: "POST", headers: HJ,
+        body: JSON.stringify({ type: "expense", status: "actual", amount: sum, date: periodMonthStart(txPeriod), categoryId: taxCat, accountId: accId(activeAccounts()[0]?.name || ""), branchId: branchIdByName(txBranch), description: name }),
+      });
+      if (!res.ok) return toast("Не удалось провести налог", "err");
+      logHistory("Проведён налог", `${name} · ${money(sum)}`);
+      toast("Налог проведён в расходы: " + name + " " + money(sum));
+      setTaxOpen(false); await load(); setView("tax");
+    } catch { toast("Ошибка сети", "err"); }
   };
-  const payTax = (i: number) => {
-    const t = TAXES[i];
-    if (t.status === "Оплачен") return;
-    setEXPENSES((prev) => [...prev, { payDate: nowStr().slice(0, 10), period: t.period, sum: t.sum, acc: activeAccounts()[0]?.name || "Расчётный счёт", cat: "Налоги", branch: t.branch, status: "Проведён", note: t.name }]);
-    setTAXES((prev) => prev.map((x, idx) => (idx === i ? { ...x, status: "Оплачен" } : x)));
-    logHistory("Оплачен налог", `${t.name} · ${money(t.sum)} · период ${t.period}`);
-    toast("Налог оплачен и проведён в расходы: " + t.name + " " + money(t.sum));
-    setView("tax");
-  };
+  const payTax = (_i: number) => { /* налоги здесь — уже проведённые расходы, отдельная оплата не требуется */ };
+
+  const TAXES = useMemo(() => operations
+    .filter((o) => o.type === "expense" && /налог/i.test(catById(o.categoryId)))
+    .map((o) => ({ period: dateToLabel(o.date), name: o.description || catById(o.categoryId), base: 0, rate: 0, sum: Number(o.amount), status: "Оплачен", due: o.date, branch: "Вся сеть" })),
+    [operations, catById]);
 
   /* ===== ФИЛЬТРАЦИЯ ОПЕРАЦИЙ ===== */
   const opsData = useMemo(() => {
@@ -385,44 +477,38 @@ export function AccountingProtoView() {
     const retSum = rows.filter((o) => o.kind === "ret").reduce((s, o) => s + o.sum, 0);
     return { rows, inSum, outSum, retSum };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [EXPENSES, INCOMES, RETURNS, period, fBranch, opsSearch, opsType, opsAcc, opsCat, opsStatus]);
+  }, [EXPENSES, INCOMES, period, fBranch, opsSearch, opsType, opsAcc, opsCat, opsStatus]);
   const resetOpsFilters = () => { setOpsSearch(""); setOpsType(""); setOpsAcc(""); setOpsCat(""); setOpsStatus(""); };
 
-  /* ===== АНАЛИТИКА ===== */
-  const profitByMonth = (m: string) => {
-    const grossRev = INCOMES.filter((i) => i.period === m).reduce((s, i) => s + i.sum, 0) || MONTH_REVENUE[m] || 0;
-    const rr = RETURNS.filter((r) => r.period === m).reduce((s, r) => s + r.sum, 0);
-    const ex = EXPENSES.filter((e) => e.period === m && e.status === "Проведён").reduce((s, e) => s + e.sum, 0);
-    return { gross: grossRev, ret: rr, rev: grossRev - rr, exp: ex, profit: grossRev - rr - ex };
-  };
+  /* ===== АНАЛИТИКА (← cashflow + pnl) ===== */
+  const monthIdx = overview.cashflow.months.indexOf(labelToYm(period));
   const anCats = (() => {
-    const cats: any = {};
-    EXPENSES.filter((e) => e.period === period && e.status === "Проведён").forEach((e) => (cats[e.cat] = (cats[e.cat] || 0) + e.sum));
-    const maxC = Math.max(1, ...Object.values(cats).map(Number));
-    return { entries: Object.entries(cats).sort((a: any, b: any) => b[1] - a[1]), max: maxC, raw: cats };
+    const entries = overview.cashflow.expenseRows
+      .map((r: any) => [r.category, monthIdx >= 0 ? Number(r.byMonth[monthIdx]) || 0 : Number(r.total) || 0] as [string, number])
+      .filter(([, v]) => v > 0)
+      .sort((a, b) => b[1] - a[1]);
+    const raw: any = {}; entries.forEach(([k, v]) => (raw[k] = v));
+    return { entries, max: Math.max(1, ...entries.map(([, v]) => v)), raw };
   })();
-  const anBranches = (() => {
-    const br: any = {};
-    EXPENSES.filter((e) => e.period === period && e.status === "Проведён").forEach((e) => (br[e.branch] = (br[e.branch] || 0) + e.sum));
-    const maxB = Math.max(1, ...Object.values(br).map(Number));
-    return { entries: Object.entries(br).sort((a: any, b: any) => b[1] - a[1]), max: maxB };
-  })();
-  const anMonths = ["Апрель 2026", "Май 2026", "Июнь 2026"];
-  const anMonthData = anMonths.map((m) => ({ m, ...profitByMonth(m) }));
+  const pnlByLabel = (label: string) => overview.pnl.find((p) => p.month === labelToYm(label));
+  const monthMetrics = (label: string) => {
+    const p = pnlByLabel(label);
+    return { rev: p ? Number(p.revenue) : 0, ret: 0, exp: p ? Number(p.expense) : 0, profit: p ? Number(p.profit) : 0 };
+  };
+  const anMonths = monthLabels;
+  const anMonthData = anMonths.map((m) => ({ m, ...monthMetrics(m) }));
   const maxP = Math.max(1, ...anMonthData.map((d) => Math.abs(d.profit)));
-  const momCur = profitByMonth(period);
+  const momCur = monthMetrics(period);
   const momIdx = anMonths.indexOf(period);
   const momPrevM = momIdx > 0 ? anMonths[momIdx - 1] : null;
-  const momPrev = momPrevM ? profitByMonth(momPrevM) : null;
+  const momPrev = momPrevM ? monthMetrics(momPrevM) : null;
 
-  /* ===== ЦИФРОВАЯ СВОДКА ===== */
+  /* ===== СВЕРКА CRM↔ФАКТ — эндпоинта нет ===== */
+  const RECON: any[] = [];
   const matched = RECON.filter((r) => r.crm === r.fact);
   const mismatched = RECON.filter((r) => r.crm !== r.fact);
   const recDiff = mismatched.reduce((s, r) => s + (r.crm - r.fact), 0);
-  const recDiffAll = RECON.reduce((s, r) => s + (r.crm - r.fact), 0);
-  const subCrm = RECON.filter((r) => r.dir.startsWith("Абонементы")).reduce((s, r) => s + r.crm, 0);
-  const subFact = RECON.filter((r) => r.dir.startsWith("Абонементы")).reduce((s, r) => s + r.fact, 0);
-  const subOk = subCrm === subFact;
+
   const pending = REQUESTS.filter((r) => r.status === "на рассмотрении");
   const pendingSum = pending.reduce((s, r) => s + r.sum, 0);
   const aiDateStr = "на " + new Date().toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
@@ -453,10 +539,11 @@ export function AccountingProtoView() {
         <div className="toolbar">
           <div className="filters">
             <select className="period" value={period} onChange={(e) => setPeriod(e.target.value)}>
-              <option>Июнь 2026</option>
-              <option>Май 2026</option>
-              <option>Апрель 2026</option>
-              <option>2 квартал 2026</option>
+              {monthLabels.length ? (
+                [...monthLabels].reverse().map((m) => <option key={m}>{m}</option>)
+              ) : (
+                <option>{period}</option>
+              )}
             </select>
             <select value={fBranch} onChange={(e) => setFBranch(e.target.value)}>
               <option value="">Вся сеть</option>
@@ -482,7 +569,7 @@ export function AccountingProtoView() {
           <div className="tile">
             <div className="lbl">Выручка</div>
             <div className="val">{money(rev)}</div>
-            <div className="sub">{ret > 0 ? `вал. ${money(grossRevenueOf(period))} − возвраты ${money(ret)}` : "за вычетом возвратов"}</div>
+            <div className="sub">{ret > 0 ? `вал. ${money(grossRevenueOf(period))} − возвраты ${money(ret)}` : "за период"}</div>
           </div>
           <div className="tile exp">
             <div className="lbl">Расходы</div>
@@ -510,28 +597,13 @@ export function AccountingProtoView() {
           </div>
           <div>
             <div className="digest">
-              <div className={"dg " + (mismatched.length ? "warn" : "ok")}>
+              <div className="dg">
                 <div className="dl">Сверка CRM ↔ факт</div>
-                <div className="dv">{matched.length}/{RECON.length} сошлось</div>
-                <div className="ds">
-                  {mismatched.length ? (
-                    <>
-                      <span className="dot-warn">●</span> расхождение {money(recDiff)} ({mismatched.map((m) => m.dir.replace("Абонементы — ", "")).join(", ")})
-                    </>
-                  ) : (
-                    <>
-                      <span className="dot-ok">●</span> всё сходится
-                    </>
-                  )}
-                </div>
+                <div className="ds" style={{ marginTop: 6 }}><span style={{ color: "var(--muted)" }}>Данных пока нет</span></div>
               </div>
-              <div className={"dg " + (subOk ? "ok" : "warn")}>
+              <div className="dg">
                 <div className="dl">Абонементы: CRM → факт</div>
-                <div className="dv">{money(subFact)}</div>
-                <div className="ds">
-                  в CRM {money(subCrm)} ·{" "}
-                  {subOk ? <span className="dot-ok">● получено всё</span> : <span className="dot-warn">● недополучено {money(subCrm - subFact)}</span>}
-                </div>
+                <div className="ds" style={{ marginTop: 6 }}><span style={{ color: "var(--muted)" }}>Данных пока нет</span></div>
               </div>
               <div className={"dg " + (pending.length ? "warn" : "ok")}>
                 <div className="dl">Заявки на расходы</div>
@@ -564,15 +636,11 @@ export function AccountingProtoView() {
                 • Крупнейшая статья расходов — <b>{topCat[0]}</b> ({money(topCat[1])}).
               </div>
             )}
-            {recDiffAll > 0 && (
+            {(overview.totals.plannedIn > 0 || overview.totals.plannedOut > 0) && (
               <div className="pt">
-                • Расхождение CRM↔факт <b>{money(recDiffAll)}</b>: недополучено по Kaspi (20 000 ₸) и выступлениям (50 000 ₸). Проверить поступления.
+                • Плановые: поступления <b>{money(overview.totals.plannedIn)}</b>, платежи <b>{money(overview.totals.plannedOut)}</b>.
               </div>
             )}
-            <div className="pt">
-              • Реклама {money(anCats.raw["Реклама"] || 0)} — в пределах нормы. Аренда учтена в июне по периоду, хотя оплачена 25 мая.
-            </div>
-            <div className="pt">• Рекомендация: закрыть расхождение по выступлениям — это 7.4% потенциальной выручки месяца.</div>
           </div>
         </div>
 
@@ -580,34 +648,38 @@ export function AccountingProtoView() {
         <div className="grid2">
           <div className="card">
             <h3>Сверка CRM ↔ фактические поступления</h3>
-            <table>
-              <thead>
-                <tr>
-                  <th>Направление</th>
-                  <th className="r">В CRM</th>
-                  <th className="r">Факт</th>
-                  <th className="r">Расхожд.</th>
-                  <th className="r">Статус</th>
-                </tr>
-              </thead>
-              <tbody>
-                {RECON.map((r, i) => {
-                  const diff = r.crm - r.fact;
-                  const ok = diff === 0;
-                  return (
-                    <tr key={i}>
-                      <td>{r.dir}</td>
-                      <td className="r">{money(r.crm)}</td>
-                      <td className="r">{money(r.fact)}</td>
-                      <td className="r" style={{ color: ok ? "var(--muted)" : "var(--red)" }}>{ok ? "0 ₸" : money(diff)}</td>
-                      <td className="r">
-                        <span className={"badge " + (ok ? "b-green" : "b-red")}>{ok ? "Сошлось" : "Расхождение"}</span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            {RECON.length ? (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Направление</th>
+                    <th className="r">В CRM</th>
+                    <th className="r">Факт</th>
+                    <th className="r">Расхожд.</th>
+                    <th className="r">Статус</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {RECON.map((r, i) => {
+                    const diff = r.crm - r.fact;
+                    const ok = diff === 0;
+                    return (
+                      <tr key={i}>
+                        <td>{r.dir}</td>
+                        <td className="r">{money(r.crm)}</td>
+                        <td className="r">{money(r.fact)}</td>
+                        <td className="r" style={{ color: ok ? "var(--muted)" : "var(--red)" }}>{ok ? "0 ₸" : money(diff)}</td>
+                        <td className="r">
+                          <span className={"badge " + (ok ? "b-green" : "b-red")}>{ok ? "Сошлось" : "Расхождение"}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            ) : (
+              <Empty>Сверка CRM ↔ факт появится, когда будет источник данных</Empty>
+            )}
           </div>
           <div className="card">
             <h3>Счета</h3>
@@ -616,11 +688,10 @@ export function AccountingProtoView() {
                 ACCOUNTS.map((a, i) => {
                   const inc = INCOMES.filter((x) => x.acc === a.name && x.period === period).reduce((s, x) => s + x.sum, 0);
                   const out = EXPENSES.filter((e) => e.acc === a.name && e.period === period && e.status === "Проведён").reduce((s, e) => s + e.sum, 0);
-                  const bal = a.start + inc - out;
                   return (
-                    <div className="acc" key={i} onClick={() => toast("История операций: " + a.name)}>
+                    <div className="acc" key={i} onClick={() => toast("Счёт: " + a.name)}>
                       <div className="nm">{a.icon} {a.name}</div>
-                      <div className="bal">{money(bal)}</div>
+                      <div className="bal">{money(a.balance)}</div>
                       <div className="flow">
                         <span className="in">+{money(inc)}</span> · <span className="out">−{money(out)}</span>
                       </div>
@@ -628,7 +699,7 @@ export function AccountingProtoView() {
                   );
                 })
               ) : (
-                <p className="hint">Счетов нет. Добавьте в Настройках.</p>
+                <Empty>Счетов нет. Добавьте в Настройках.</Empty>
               )}
             </div>
           </div>
@@ -752,7 +823,7 @@ export function AccountingProtoView() {
                   })
                 ) : (
                   <tr>
-                    <td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>Ничего не найдено по выбранным фильтрам</td>
+                    <td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>Данных пока нет</td>
                   </tr>
                 )}
               </tbody>
@@ -782,48 +853,52 @@ export function AccountingProtoView() {
                 </tr>
               </thead>
               <tbody>
-                {REQUESTS.map((r, idx) => {
-                  const typeBadge = r.type === "Возврат" ? <span className="badge b-blue">Возврат</span> : <span className="badge b-gray">Расход</span>;
-                  return (
-                    <tr key={r.id}>
-                      <td>{r.date}</td>
-                      <td>{r.branch}</td>
-                      <td>{typeBadge}</td>
-                      <td>{r.cat}</td>
-                      <td>
-                        {r.type === "Возврат" && (r.student || r.group) ? (
-                          <>
-                            <b>{r.student || "—"}</b>
-                            {r.group && (
-                              <>
-                                <br />
-                                <span style={{ color: "var(--muted)", fontSize: 12 }}>{r.group}</span>
-                              </>
-                            )}
-                          </>
-                        ) : (
-                          <span style={{ color: "var(--muted)" }}>—</span>
-                        )}
-                      </td>
-                      <td>{r.reason}</td>
-                      <td className="r">{money(r.sum)}</td>
-                      <td className="r"><span className={"badge " + (reqStatusBadge[r.status] || "b-gray")}>{r.status}</span></td>
-                      <td className="r">
-                        {r.status === "на рассмотрении" ? (
-                          <button className="btn-sm" onClick={() => openReview(idx)}>Рассмотреть</button>
-                        ) : r.status === "запрошено уточнение" ? (
-                          <button className="btn-sm" onClick={() => openReview(idx)}>Открыть</button>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {REQUESTS.length ? (
+                  REQUESTS.map((r, idx) => {
+                    const typeBadge = r.type === "Возврат" ? <span className="badge b-blue">Возврат</span> : <span className="badge b-gray">Расход</span>;
+                    return (
+                      <tr key={r.id}>
+                        <td>{r.date}</td>
+                        <td>{r.branch}</td>
+                        <td>{typeBadge}</td>
+                        <td>{r.cat}</td>
+                        <td>
+                          {r.type === "Возврат" && (r.student || r.group) ? (
+                            <>
+                              <b>{r.student || "—"}</b>
+                              {r.group && (
+                                <>
+                                  <br />
+                                  <span style={{ color: "var(--muted)", fontSize: 12 }}>{r.group}</span>
+                                </>
+                              )}
+                            </>
+                          ) : (
+                            <span style={{ color: "var(--muted)" }}>—</span>
+                          )}
+                        </td>
+                        <td>{r.reason}</td>
+                        <td className="r">{money(r.sum)}</td>
+                        <td className="r"><span className={"badge " + (reqStatusBadge[r.status] || "b-gray")}>{r.status}</span></td>
+                        <td className="r">
+                          {r.status === "на рассмотрении" ? (
+                            <button className="btn-sm" onClick={() => openReview(idx)}>Рассмотреть</button>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan={9} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>Данных пока нет</td>
+                  </tr>
+                )}
               </tbody>
             </table>
             <p className="hint">
-              Управляющий создаёт заявку → владелец одобряет/отклоняет → после одобрения владелец проводит расход. Для возврата указывается ученик, группа и филиал.
+              Управляющий создаёт заявку → владелец одобряет/отклоняет. При одобрении расход/возврат сразу проводится как фактическая операция.
             </p>
           </div>
         )}
@@ -867,7 +942,7 @@ export function AccountingProtoView() {
                     </tbody>
                   </table>
                 ) : (
-                  <p className="hint">Для сравнения нужен предыдущий месяц.</p>
+                  <Empty>Для сравнения нужен предыдущий месяц с данными</Empty>
                 )}
               </div>
             </div>
@@ -886,49 +961,43 @@ export function AccountingProtoView() {
                       </div>
                     ))
                   ) : (
-                    <p className="hint">Нет проведённых расходов.</p>
+                    <Empty>Нет проведённых расходов за период</Empty>
                   )}
                 </div>
               </div>
               <div className="card">
                 <h3>Расходы по филиалам</h3>
-                <div>
-                  {anBranches.entries.map(([k, v]: any) => (
-                    <div className="barrow" key={k}>
-                      <div className="bl">
-                        <span>{k}</span>
-                        <span>{money(v)}</span>
-                      </div>
-                      <div className="bar"><span style={{ width: (v / anBranches.max) * 100 + "%" }} /></div>
-                    </div>
-                  ))}
-                </div>
+                <Empty>Разбивка по филиалам пока недоступна</Empty>
               </div>
             </div>
             <div className="card">
               <h3>Динамика чистой прибыли по месяцам</h3>
               <div>
-                {anMonthData.map((d, idx) => {
-                  const prev = idx > 0 ? anMonthData[idx - 1].profit : null;
-                  const delta = prev !== null ? d.profit - prev : null;
-                  return (
-                    <div className="barrow" key={d.m}>
-                      <div className="bl">
-                        <span>
-                          {d.m}
-                          {delta !== null && (
-                            <span style={{ color: delta >= 0 ? "var(--green)" : "var(--red)", fontSize: 12 }}>
-                              {" "}
-                              {delta >= 0 ? "▲" : "▼"} {money(Math.abs(delta))}
-                            </span>
-                          )}
-                        </span>
-                        <span style={{ color: "var(--green)" }}>{money(d.profit)}</span>
+                {anMonthData.length ? (
+                  anMonthData.map((d, idx) => {
+                    const prev = idx > 0 ? anMonthData[idx - 1].profit : null;
+                    const delta = prev !== null ? d.profit - prev : null;
+                    return (
+                      <div className="barrow" key={d.m}>
+                        <div className="bl">
+                          <span>
+                            {d.m}
+                            {delta !== null && (
+                              <span style={{ color: delta >= 0 ? "var(--green)" : "var(--red)", fontSize: 12 }}>
+                                {" "}
+                                {delta >= 0 ? "▲" : "▼"} {money(Math.abs(delta))}
+                              </span>
+                            )}
+                          </span>
+                          <span style={{ color: "var(--green)" }}>{money(d.profit)}</span>
+                        </div>
+                        <div className="bar"><span style={{ width: (Math.abs(d.profit) / maxP) * 100 + "%", background: "var(--green)" }} /></div>
                       </div>
-                      <div className="bar"><span style={{ width: (Math.abs(d.profit) / maxP) * 100 + "%", background: "var(--green)" }} /></div>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                ) : (
+                  <Empty />
+                )}
               </div>
             </div>
           </>
@@ -945,25 +1014,25 @@ export function AccountingProtoView() {
                 <div>
                   {ACCOUNTS.length ? (
                     ACCOUNTS.map((a, i) => {
-                      const used = INCOMES.some((x) => x.acc === a.name) || EXPENSES.some((x) => x.acc === a.name) || RETURNS.some((x) => x.acc === a.name);
+                      const used = INCOMES.some((x) => x.acc === a.name) || EXPENSES.some((x) => x.acc === a.name);
                       return (
                         <div className="set-row" key={i} style={a.archived ? { opacity: 0.55 } : undefined}>
                           <span>
                             {a.icon} <b>{a.name}</b>{" "}
-                            <span style={{ color: "var(--muted)", fontSize: 13 }}>· старт {money(a.start)}{a.archived ? " · в архиве" : ""}</span>
+                            <span style={{ color: "var(--muted)", fontSize: 13 }}>· старт {money(a.start)}{a.archived ? " · скрыт" : ""}</span>
                           </span>
                           {a.archived ? (
                             <button className="btn-sm" onClick={() => unarchiveAccount(i)}>Вернуть</button>
                           ) : used ? (
-                            <button className="set-del" onClick={() => archiveAccount(i)}>В архив</button>
+                            <button className="set-del" onClick={() => archiveAccount(i)}>Скрыть</button>
                           ) : (
-                            <button className="set-del" onClick={() => delAccount(i)}>Удалить</button>
+                            <button className="set-del" onClick={() => delAccount(i)}>Скрыть</button>
                           )}
                         </div>
                       );
                     })
                   ) : (
-                    <p className="hint">Нет счетов.</p>
+                    <Empty>Нет счетов</Empty>
                   )}
                 </div>
               </div>
@@ -980,7 +1049,7 @@ export function AccountingProtoView() {
                       </div>
                     ))
                   ) : (
-                    <p className="hint">Нет филиалов.</p>
+                    <Empty>Нет филиалов</Empty>
                   )}
                 </div>
               </div>
@@ -991,12 +1060,16 @@ export function AccountingProtoView() {
                   Категории расходов <button className="btn-sm" onClick={() => addItem("CATEGORIES", "Название категории")}>+ Добавить</button>
                 </h3>
                 <div>
-                  {CATEGORIES.map((c, i) => (
-                    <div className="set-row" key={i}>
-                      <span>{c}</span>
-                      <button className="set-del" onClick={() => delItem("CATEGORIES", i)}>Удалить</button>
-                    </div>
-                  ))}
+                  {CATEGORIES.length ? (
+                    CATEGORIES.map((c, i) => (
+                      <div className="set-row" key={i}>
+                        <span>{c}</span>
+                        <button className="set-del" onClick={() => delItem("CATEGORIES", i)}>Удалить</button>
+                      </div>
+                    ))
+                  ) : (
+                    <Empty>Нет категорий</Empty>
+                  )}
                 </div>
               </div>
               <div className="card">
@@ -1004,15 +1077,20 @@ export function AccountingProtoView() {
                   Направления доходов <button className="btn-sm" onClick={() => addItem("DIRECTIONS", "Название направления")}>+ Добавить</button>
                 </h3>
                 <div>
-                  {DIRECTIONS.map((d, i) => (
-                    <div className="set-row" key={i}>
-                      <span>{d}</span>
-                      <button className="set-del" onClick={() => delItem("DIRECTIONS", i)}>Удалить</button>
-                    </div>
-                  ))}
+                  {DIRECTIONS.length ? (
+                    DIRECTIONS.map((d, i) => (
+                      <div className="set-row" key={i}>
+                        <span>{d}</span>
+                        <button className="set-del" onClick={() => delItem("DIRECTIONS", i)}>Удалить</button>
+                      </div>
+                    ))
+                  ) : (
+                    <Empty>Нет направлений</Empty>
+                  )}
                 </div>
               </div>
             </div>
+            <p className="hint">Категории, направления и филиалы редактируются в справочниках сети. Изменения здесь действуют в рамках сессии.</p>
           </>
         )}
 
@@ -1057,7 +1135,7 @@ export function AccountingProtoView() {
                   })
                 ) : (
                   <tr>
-                    <td colSpan={8} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>Нет налогов за период</td>
+                    <td colSpan={8} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>Данных пока нет</td>
                   </tr>
                 )}
               </tbody>
@@ -1067,7 +1145,7 @@ export function AccountingProtoView() {
               <span>Оплачено: <b className="in">{money(taxPaid)}</b></span>
               <span>К оплате: <b className="out">{money(taxTotal - taxPaid)}</b></span>
             </div>
-            <p className="hint">Налоги учитываются отдельно. Оплаченные налоги можно провести как расход категории «Налоги» в выбранном периоде.</p>
+            <p className="hint">Налоги учитываются как расходы категории «Налоги». Отдельного реестра начислений пока нет — показаны проведённые платежи.</p>
           </div>
         )}
 
@@ -1075,7 +1153,7 @@ export function AccountingProtoView() {
         {view === "hist" && (
           <div className="card">
             <h3>
-              История изменений <span style={{ fontWeight: 600, fontSize: 13, color: "var(--muted)" }}>не удаляется</span>
+              История операций <span style={{ fontWeight: 600, fontSize: 13, color: "var(--muted)" }}>последние записи</span>
             </h3>
             <table>
               <thead>
@@ -1098,7 +1176,7 @@ export function AccountingProtoView() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={4} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>История пуста</td>
+                    <td colSpan={4} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>Данных пока нет</td>
                   </tr>
                 )}
               </tbody>
@@ -1118,9 +1196,9 @@ export function AccountingProtoView() {
             <div className="form-grid">
               <div className="field"><label>Дата оплаты *</label><input type="date" value={eDate} onChange={(e) => setEDate(e.target.value)} /></div>
               <div className="field">
-                <label>Период расхода *</label>
+                <label>Период расхода</label>
                 <select value={ePeriod} onChange={(e) => setEPeriod(e.target.value)}>
-                  <option>Июнь 2026</option><option>Май 2026</option><option>Июль 2026</option><option>Апрель 2026</option>
+                  {monthLabels.length ? [...monthLabels].reverse().map((m) => <option key={m}>{m}</option>) : <option>{ePeriod}</option>}
                 </select>
               </div>
               <div className="field"><label>Сумма, ₸ *</label><input type="number" placeholder="150000" value={eSum} onChange={(e) => setESum(e.target.value)} /></div>
@@ -1146,14 +1224,14 @@ export function AccountingProtoView() {
               <div className="field">
                 <label>Статус</label>
                 <select value={eStatus} onChange={(e) => setEStatus(e.target.value)}>
-                  <option>Проведён</option><option>Черновик</option><option>Отменён</option>
+                  <option>Проведён</option><option>Черновик</option>
                 </select>
               </div>
               <div className="field"><label>Чек / файл</label><button className="btn-sm" type="button" onClick={() => toast("Прикрепление чека")}>📎 Прикрепить</button></div>
               <div className="field full"><label>Комментарий</label><input placeholder="Например: аренда филиала за июнь" value={eNote} onChange={(e) => setENote(e.target.value)} /></div>
             </div>
             <p className="hint">
-              Дата оплаты и период расхода — разные поля. В прибыль расход попадает по <b>периоду</b> (например, аренда за июнь учтётся в июне, даже если оплачена в мае).
+              Расход проводится по дате оплаты. Статус «Черновик» — плановая операция, «Проведён» — фактическая.
             </p>
             <div className="modal-foot">
               <button className="btn-ghost" onClick={() => setExpOpen(false)}>Отмена</button>
@@ -1251,7 +1329,7 @@ export function AccountingProtoView() {
               <div className="field full"><label>Причина / комментарий</label><input placeholder="За что возврат / на что расход" value={rReason} onChange={(e) => setRReason(e.target.value)} /></div>
             </div>
             {rType === "Возврат" && (
-              <p className="hint">Для возврата укажите ученика и группу — это связывает заявку с клиентом и филиалом для отчётности.</p>
+              <p className="hint">Для возврата укажите ученика — это связывает заявку с клиентом и филиалом для отчётности.</p>
             )}
             <div className="modal-foot">
               <button className="btn-ghost" onClick={() => setReqOpen(false)}>Отмена</button>
@@ -1298,7 +1376,7 @@ export function AccountingProtoView() {
               <div className="field">
                 <label>Период расхода *</label>
                 <select value={revPeriod} onChange={(e) => setRevPeriod(e.target.value)}>
-                  <option>Июнь 2026</option><option>Май 2026</option><option>Июль 2026</option>
+                  {monthLabels.length ? [...monthLabels].reverse().map((m) => <option key={m}>{m}</option>) : <option>{revPeriod}</option>}
                 </select>
               </div>
               <div className="field full"><label>Комментарий владельца</label><input placeholder="Необязательно" value={revNote} onChange={(e) => setRevNote(e.target.value)} /></div>
@@ -1306,8 +1384,8 @@ export function AccountingProtoView() {
             <p className="hint">
               {reviewReq
                 ? reviewIsReturn
-                  ? "При одобрении сумма зачтётся как ВОЗВРАТ — спишется со счёта и уменьшит выручку периода (отдельная статья «Возвраты»). У ученика " + (reviewReq.student || "—") + " зафиксируется возврат."
-                  : "При одобрении расход спишется с выбранного счёта и сразу станет проведённой операцией за выбранный период."
+                  ? "При одобрении сумма спишется со счёта как возврат ученику " + (reviewReq.student || "—") + " и станет фактической операцией."
+                  : "При одобрении расход спишется с выбранного счёта и сразу станет проведённой операцией."
                 : ""}
             </p>
             <div className="modal-foot" style={{ justifyContent: "space-between" }}>
@@ -1336,10 +1414,10 @@ export function AccountingProtoView() {
               <div className="field">
                 <label>Период *</label>
                 <select value={txPeriod} onChange={(e) => setTxPeriod(e.target.value)}>
-                  <option>Июнь 2026</option><option>Май 2026</option><option>Июль 2026</option>
+                  {monthLabels.length ? [...monthLabels].reverse().map((m) => <option key={m}>{m}</option>) : <option>{txPeriod}</option>}
                 </select>
               </div>
-              <div className="field"><label>Срок уплаты *</label><input type="date" value={txDue} onChange={(e) => setTxDue(e.target.value)} /></div>
+              <div className="field"><label>Срок уплаты</label><input type="date" value={txDue} onChange={(e) => setTxDue(e.target.value)} /></div>
               <div className="field"><label>База, ₸</label><input type="number" placeholder="330000" value={txBase} onChange={(e) => { setTxBase(e.target.value); calcTax(e.target.value, txRate); }} /></div>
               <div className="field"><label>Ставка, %</label><input type="number" step="0.1" placeholder="10" value={txRate} onChange={(e) => { setTxRate(e.target.value); calcTax(txBase, e.target.value); }} /></div>
               <div className="field"><label>Сумма налога, ₸ *</label><input type="number" placeholder="33000" value={txSum} onChange={(e) => setTxSum(e.target.value)} /></div>
@@ -1351,10 +1429,10 @@ export function AccountingProtoView() {
                 </select>
               </div>
             </div>
-            <p className="hint">Сумма считается как база × ставка, либо введите вручную.</p>
+            <p className="hint">Сумма считается как база × ставка, либо введите вручную. Налог проводится как расход категории «Налоги».</p>
             <div className="modal-foot">
               <button className="btn-ghost" onClick={() => setTaxOpen(false)}>Отмена</button>
-              <button className="btn-gold" onClick={saveTax}>Добавить</button>
+              <button className="btn-gold" onClick={saveTax}>Провести</button>
             </div>
           </div>
         </div>
