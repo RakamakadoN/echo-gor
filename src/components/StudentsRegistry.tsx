@@ -190,35 +190,35 @@ const loadColumnPrefs = (): Record<ColKey, boolean> => {
 /* ============================ Дизайн-токены прототипа ============================ */
 /* Палитра светлой темы crm-system-eta-nine (снята с прототипа один-в-один). */
 const CLR = {
-  border: "#DCE2E8",
-  fill: "#F1F4F7",
-  text: "#222B33",
-  strong: "#11171D",
-  muted: "#6B7682",
-  second: "#46505B",
-  gold: "#947C51",
+  border: "#E5E5EA",
+  fill: "#F5F5F7",
+  text: "#3A3A3A",
+  strong: "#0A0A0A",
+  muted: "#8A8A8E",
+  second: "#3A3A3A",
+  gold: "#F5A623",
 };
 
-// Цветовые схемы иконок KPI (снято с прототипа).
+// Цветовые схемы иконок KPI (палитра макета students.html: *-bg / * пары).
 const KPI_ICON: Record<string, { bg: string; color: string }> = {
-  gray: { bg: "#EDF1F5", color: "#5C6772" },
-  green: { bg: "#E9F0E6", color: "#4F8A63" },
-  orange: { bg: "#F2EDE2", color: "#947C51" },
-  red: { bg: "#F6E9E9", color: "#B14545" },
-  blue: { bg: "#EAF0F3", color: "#5E8194" },
-  purple: { bg: "#F2EDE2", color: "#947C51" },
+  gray: { bg: "#F5F5F7", color: "#8A8A8E" },
+  green: { bg: "#F0FBF4", color: "#1B7B3A" },
+  orange: { bg: "#FFF4E0", color: "#C87A00" },
+  red: { bg: "#FFF0F0", color: "#D32F2F" },
+  blue: { bg: "#EFF6FF", color: "#1A56DB" },
+  purple: { bg: "#F5F3FF", color: "#6D28D9" },
 };
 
-// Пилюли статусов по тону — сопоставлены с палитрой прототипа (pill-*).
+// Пилюли статусов по тону — палитра макета students.html (pill-*).
 const PILL_TONE: Record<string, string> = {
-  red: "bg-[#F6E9E9] text-[#B14545]",
+  red: "bg-[#FFF0F0] text-[#D32F2F]",
   yellow: "bg-[#FFFBEB] text-[#92400E]",
   orange: "bg-[#FFF7ED] text-[#C2410C]",
-  green: "bg-[#E9F0E6] text-[#166534]",
-  blue: "bg-[#EAF0F3] text-[#1E40AF]",
-  purple: "bg-[#F3E8FF] text-[#7E22CE]",
-  gray: "bg-[#EDF1F5] text-[#5C6772]",
-  neutral: "bg-[#EDF1F5] text-[#5C6772]",
+  green: "bg-[#F0FBF4] text-[#1B7B3A]",
+  blue: "bg-[#EFF6FF] text-[#1A56DB]",
+  purple: "bg-[#F5F3FF] text-[#6D28D9]",
+  gray: "bg-[#F5F5F7] text-[#8A8A8E]",
+  neutral: "bg-[#F5F5F7] text-[#8A8A8E]",
 };
 
 // Цвет пилюли с учётом настроек «Статусы»: переопределение из org_status_config
@@ -998,7 +998,7 @@ export default function StudentsRegistry({
             <FilterSelect value={presetIds ? "all" : ltvFilter} onChange={(v) => { clearPreset(); setLtvFilter(v); }} options={[{ value: "all", label: "Все LTV" }, ...LTV_SEGMENTS.map((s) => ({ value: s, label: s }))]} />
             <FilterSelect value={skillFilter} onChange={(v) => { clearPreset(); setSkillFilter(v); }} options={[{ value: "all", label: "Все уровни" }, ...SKILL_LEVELS.map((l) => ({ value: l, label: l }))]} />
             {/* Архив вынесен в отдельную вкладку «Архив» — список показывает только активных. */}
-            <button onClick={() => setShowColumnConfig((v) => !v)} className="inline-flex items-center justify-center gap-2 rounded-[10px] px-3.5 py-2 text-[13px] font-semibold transition" style={showColumnConfig ? { background: "#F2EDE2", border: `1px solid ${CLR.gold}`, color: CLR.gold } : { background: CLR.fill, border: `1px solid ${CLR.border}`, color: CLR.second }}>
+            <button onClick={() => setShowColumnConfig((v) => !v)} className="inline-flex items-center justify-center gap-2 rounded-[10px] px-3.5 py-2 text-[13px] font-semibold transition" style={showColumnConfig ? { background: "#FFF4E0", border: "1px solid #C87A00", color: "#C87A00" } : { background: CLR.fill, border: `1px solid ${CLR.border}`, color: CLR.second }}>
               <SlidersHorizontal className="h-4 w-4" /> Настроить таблицу
             </button>
             <button onClick={() => setShowStatusSettings(true)} className="inline-flex items-center justify-center gap-2 rounded-[10px] px-3.5 py-2 text-[13px] font-semibold transition" style={{ background: CLR.fill, border: `1px solid ${CLR.border}`, color: CLR.second }}>
@@ -1035,8 +1035,8 @@ export default function StudentsRegistry({
 
           {/* Панель массовых действий */}
           {selected.size > 0 && (
-            <div className="flex flex-wrap items-center gap-2 rounded-[14px] p-3 text-sm" style={{ background: "#F2EDE2", border: `1px solid ${CLR.gold}` }}>
-              <span className="font-bold" style={{ color: CLR.gold }}>Выбрано: {selected.size}</span>
+            <div className="flex flex-wrap items-center gap-2 rounded-[14px] p-3 text-sm" style={{ background: "#FFF4E0", border: `1px solid ${CLR.gold}` }}>
+              <span className="font-bold" style={{ color: "#C87A00" }}>Выбрано: {selected.size}</span>
               <span style={{ color: CLR.border }}>|</span>
               {onUpdateStudent && (
                 <select onChange={(e) => { massTransferGroup(e.target.value); e.target.value = ""; }} defaultValue="" className="rounded-[10px] px-3 py-1.5 text-[12px] font-semibold" style={{ background: "#fff", border: `1px solid ${CLR.border}`, color: CLR.second }}>
