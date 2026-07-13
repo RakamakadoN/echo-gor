@@ -144,11 +144,8 @@ export default function App() {
 
   // Active role
   const [activeRole, setActiveRole] = useState<string>("owner");
-  const [themeMode, setThemeMode] = useState<"dark" | "day" | "iman">(() => {
-    if (typeof window === "undefined") return "day";
-    const saved = window.localStorage.getItem("echogor-theme");
-    return saved === "day" || saved === "iman" || saved === "dark" ? saved : "day";
-  });
+  // Тема одна — дневная (остальные убраны, выбора темы нет).
+  const [themeMode, setThemeMode] = useState<"dark" | "day" | "iman">("day");
   const [isThemeMenuOpen, setIsThemeMenuOpen] = useState<boolean>(false);
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -3117,14 +3114,6 @@ export default function App() {
           <div>
             <h1 className="text-sm md:text-base font-bold tracking-wider uppercase text-white leading-tight flex items-center gap-2">
               Эхо <span className="text-[#C5A059]">Гор</span>
-              <button
-                onClick={() => setIsPlayingPromo(true)}
-                className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-[#C5A059]/15 hover:bg-[#C5A059]/30 text-[#C5A059] hover:text-[#D5B069] border border-[#C5A059]/25 hover:border-[#C5A059]/40 rounded-full text-[9px] font-bold uppercase tracking-wider transition-all shadow-md cursor-pointer"
-                title="Воспроизвести промо-видео"
-              >
-                <Video className="w-2.5 h-2.5 animate-pulse" />
-                <span>Промо</span>
-              </button>
             </h1>
             <p className="hidden md:block text-[10px] text-slate-500 uppercase tracking-widest leading-none">
               Студия кавказского танца
@@ -3165,50 +3154,6 @@ export default function App() {
 
         {/* Right Status */}
         <div className="hidden xl:flex items-center space-x-4">
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setIsThemeMenuOpen((open) => !open)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all outline-none ${
-                themeMode === "day"
-                  ? "bg-sky-100 text-slate-900 border border-sky-200 shadow-sm"
-                  : themeMode === "iman"
-                  ? "bg-[#C9A861]/15 border border-[#C9A861]/40 text-[#D8BC7E]"
-                  : "bg-white/5 border border-white/10 hover:bg-[#C5A059]/20 hover:text-[#C5A059] text-slate-300"
-              }`}
-              title="Выбрать тему оформления"
-            >
-              {themeMode === "day" ? <Sun className="w-3.5 h-3.5" /> : themeMode === "iman" ? <Sparkles className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
-              <span>{themeMode === "day" ? "Дневная" : themeMode === "iman" ? "Iman Ver 1.0" : "Ночная"}</span>
-              <ChevronDown className={`w-3 h-3 transition-transform ${isThemeMenuOpen ? "rotate-180" : ""}`} />
-            </button>
-            {isThemeMenuOpen && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setIsThemeMenuOpen(false)} />
-                <div className="absolute right-0 mt-2 w-48 z-50 rounded-xl border border-white/10 bg-[#141414] shadow-2xl shadow-black/50 overflow-hidden py-1">
-                  {([
-                    { id: "dark", label: "Ночная", Icon: Moon },
-                    { id: "day", label: "Дневная", Icon: Sun },
-                    { id: "iman", label: "Iman Ver 1.0", Icon: Sparkles },
-                  ] as const).map(({ id, label, Icon }) => (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => { setThemeMode(id); setIsThemeMenuOpen(false); }}
-                      className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 text-xs font-semibold text-left transition-colors ${
-                        themeMode === id ? "bg-[#C5A059]/15 text-[#C5A059]" : "text-slate-300 hover:bg-white/5"
-                      }`}
-                    >
-                      <Icon className="w-3.5 h-3.5 shrink-0" />
-                      <span>{label}</span>
-                      {themeMode === id && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-[#C5A059]" />}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-
           <button
             onClick={() => {
               setIsMobileSimulatorOpen(!isMobileSimulatorOpen);
@@ -3228,12 +3173,6 @@ export default function App() {
             <span>{isMobileSimulatorOpen ? "Закрыть симулятор" : "Мобильная версия"}</span>
           </button>
 
-          <div className="bg-white/5 px-3 py-1.5 rounded-full flex items-center space-x-2 border border-white/10">
-            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-            <span className="text-[10px] font-medium text-slate-400 uppercase tracking-widest">
-              Статус: Высокий приоритет
-            </span>
-          </div>
           {/* Active user dummy */}
           <div className="flex items-center space-x-2">
             <div className="text-right">
@@ -3506,12 +3445,12 @@ export default function App() {
 
         {/* Main Workspace Area */}
         <main className={`flex-1 flex flex-col p-4 md:p-6 space-y-6 overflow-y-auto min-w-0 ${activeRole === 'teacher' || activeRole === 'branch' || activeRole === 'owner' || activeRole === 'admin' ? 'p-0 md:p-0 space-y-0' : ''}`}>
-          <div className="fixed right-4 top-4 z-[80] hidden max-w-md rounded-2xl border border-white/10 bg-black/70 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-slate-300 backdrop-blur-xl md:block">
-            <span className={mvpDataMode === "supabase" ? "text-emerald-400" : "text-[#C5A059]"}>
-              {mvpDataMode === "supabase" ? "Supabase DB" : "Mock fallback"}
-            </span>
-            {mvpDataError && <span className="ml-2 text-rose-300">• {mvpDataError.slice(0, 80)}</span>}
-          </div>
+          {/* Индикатор источника данных виден только при ошибке подключения. */}
+          {mvpDataError && (
+            <div className="fixed right-4 top-4 z-[80] hidden max-w-md rounded-2xl border border-rose-400/30 bg-black/70 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-rose-300 backdrop-blur-xl md:block">
+              Нет связи с базой • {mvpDataError.slice(0, 80)}
+            </div>
+          )}
 
           {activeRole === "chart" ? (
             <AnimatedBarChartShowcase />
@@ -6532,21 +6471,6 @@ export default function App() {
       </div>
 
       {/* Bottom Context Bar */}
-      <footer className="h-12 bg-[#0F0F0F] border-t border-white/5 px-4 md:px-6 flex items-center justify-between flex-shrink-0 select-none">
-        <div className="flex space-x-4 md:space-x-8 text-[9px] md:text-[10px] uppercase tracking-widest text-slate-500">
-          <span>Версия 1.1.2 - "Lezginka Edition"</span>
-          <span className="hidden md:inline">Облачная синхронизация активна</span>
-          <span className="hidden lg:inline">Безопасность: Ролевой протокол</span>
-        </div>
-        <div className="flex space-x-3 items-center">
-          <span className="text-[9px] md:text-[10px] text-[#C5A059] uppercase tracking-wider font-bold">
-            100% Локальный демо-режим
-          </span>
-          <div className="w-2 h-2 rounded-full bg-[#C5A059]"></div>
-        </div>
-      </footer>
-
-
       {/* FORM MODAL: REGISTER NEW STUDENT */}
       {showAddStudentModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-55 p-4">

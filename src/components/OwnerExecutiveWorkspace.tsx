@@ -364,7 +364,6 @@ export function OwnerExecutiveWorkspace({
           <div className="border-b border-white/5 px-6 py-5">
             <img src={ownerLogoDay} alt="Эхо Гор" className="day-logo w-full max-w-[168px]" />
             <img src={ownerLogoNight} alt="Эхо Гор" className="night-logo w-full max-w-[168px]" />
-            <p className="mt-2 text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">Владелец сети</p>
           </div>
           {/* Навигация (референс .nav) — прокручиваемая */}
           <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
