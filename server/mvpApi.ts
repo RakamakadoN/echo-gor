@@ -922,6 +922,7 @@ export function registerMvpApi(app: express.Express) {
       const snapshots = snapsRaw.map((s) => ({
         periodMonth: toDate(s.period_month), branchId: s.branch_id,
         revenue: Number(s.revenue || 0), activeSubscriptions: s.active_subscriptions || 0,
+        activeStudents: s.active_students || 0,
         avgCheck: Number(s.avg_check || 0), retentionRate: Number(s.retention_rate || 0),
         attendanceRate: Number(s.attendance_rate || 0), newStudents: s.new_students || 0
       }));

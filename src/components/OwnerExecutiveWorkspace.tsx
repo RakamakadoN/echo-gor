@@ -1012,8 +1012,9 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
       {/* ЗДОРОВЬЕ СТУДИИ ЗА 30 СЕКУНД */}
       <CollapsibleSection id="daily" icon={ClipboardList} title="Здоровье студии за 30 секунд" hint="Ключевые показатели дня — всё кликабельно"
         locked open={sectionOpen("daily")} onToggle={() => toggleSection("daily")}>
-        <DailyManagerReport m={m} bdrPct={bdr?.network?.pct ?? null} scopeLabel={m.scope.label} periodLabel={m.ranges.cur.label}
-          onOpenList={openList} onPayments={openPaymentsToday} onRetention={openRetention} onAvgCheck={openAvgCheck} onBdr={openBdr} />
+        <DailyManagerReport m={m} bdr={bdr} scopeLabel={m.scope.label} periodLabel={m.ranges.cur.label}
+          onOpenList={openList} onPayments={openPaymentsToday} onRetention={openRetention} onAvgCheck={openAvgCheck}
+          onRevenue={openRevenue} onBdr={openBdr} onOccupancy={openOccupancy} />
       </CollapsibleSection>
 
       {/* ТРЕБУЮТ РЕШЕНИЯ: заявки на расходы/возвраты + необработанные пробные */}
@@ -1293,12 +1294,12 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
       </>)}
 
       {dashTab === "ratings" && (<>
-      {/* ТРЕБУЮТ ВНИМАНИЯ + ТОЧКИ РОСТА */}
+      {/* ТРЕБУЮТ ВНИМАНИЯ + ТОЧКИ РОСТА — по категориям (ТЗ 13.07) */}
       <CollapsibleSection id="growth" icon={TrendingUp} title="Точки роста и внимание"
         locked open={sectionOpen("growth")} onToggle={() => toggleSection("growth")}>
       <div className="grid gap-4 xl:grid-cols-2">
-        <ListPanel icon={AlertTriangle} tone="rose" title="Требуют внимания" items={m.attention} />
-        <ListPanel icon={TrendingUp} tone="emerald" title="Точки роста" items={m.growth} />
+        <CategorizedPanel icon={AlertTriangle} tone="rose" title="Требуют внимания" groups={m.attentionGroups} />
+        <CategorizedPanel icon={TrendingUp} tone="emerald" title="Точки роста" groups={m.growthGroups} />
       </div>
       </CollapsibleSection>
 
@@ -1580,32 +1581,65 @@ function RiskTile({ severity, title, detail, onClick }: { key?: React.Key; sever
 // ОПЛАТ; ученики и абонементы — два разных показателя; вместо «истекают через
 // N дней» — неоплаты текущего/прошлого месяца; добавлены удержание, средний
 // чек и % выполнения плана БДР.
-function DailyManagerReport({ m, bdrPct, scopeLabel, periodLabel, onOpenList, onPayments, onRetention, onAvgCheck, onBdr }: {
+// KPI-карточка «Здоровья студии» по образцу заказчика: заголовок с иконкой,
+// крупная цифра слева, справа сравнение «мес. назад / год назад» (или доп. текст).
+function HealthKpi({ icon: Icon, label, value, valueTone = "white", momPct, yoyPct, extra, onClick }: {
+  icon: React.ElementType; label: string; value: React.ReactNode;
+  valueTone?: "gold" | "white" | "rose" | "emerald" | "amber";
+  momPct?: number | null; yoyPct?: number | null; extra?: React.ReactNode; onClick?: () => void;
+}) {
+  const valColor = { gold: "text-[#C5A059]", white: "text-white", rose: "text-rose-400", emerald: "text-emerald-400", amber: "text-amber-400" }[valueTone];
+  const hasCompare = momPct !== undefined || yoyPct !== undefined;
+  return (
+    <section onClick={onClick}
+      className={`rounded-2xl border border-white/10 bg-white/[0.03] p-4 transition ${onClick ? "cursor-pointer hover:border-[#C5A059]/45 hover:bg-white/[0.06]" : ""}`}>
+      <div className="flex items-center gap-2">
+        <Icon className="h-4 w-4 shrink-0 text-[#C5A059]" />
+        <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">{label}</p>
+      </div>
+      <div className="mt-2 flex items-end justify-between gap-3">
+        <p className={`text-2xl font-black leading-none ${valColor}`}>{value}</p>
+        {(hasCompare || extra) && (
+          <div className="shrink-0 space-y-0.5 text-right">
+            {momPct !== undefined && (
+              <div className="flex items-center justify-end gap-2 text-[11px] text-slate-500">мес. назад <DeltaBadge pct={momPct ?? null} /></div>
+            )}
+            {yoyPct !== undefined && (
+              <div className="flex items-center justify-end gap-2 text-[11px] text-slate-500">год назад <DeltaBadge pct={yoyPct ?? null} /></div>
+            )}
+            {extra}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function DailyManagerReport({ m, bdr, scopeLabel, periodLabel, onOpenList, onPayments, onRetention, onAvgCheck, onRevenue, onBdr, onOccupancy }: {
   m: any;
-  bdrPct: number | null;
+  bdr: { network: { plan: number | null; fact: number; pct: number | null } | null } | null;
   scopeLabel: string;
   periodLabel: string;
   onOpenList: (preset: RegistryPreset) => void;
   onPayments: () => void;
   onRetention: () => void;
   onAvgCheck: () => void;
+  onRevenue: () => void;
   onBdr: () => void;
+  onOccupancy: () => void;
 }) {
   const report = m.dailyReport as DailyReport;
-  const toneCls: Record<string, string> = {
-    gold: "text-[#C5A059]", white: "text-white", rose: "text-rose-400", emerald: "text-emerald-400", amber: "text-amber-400",
-  };
-  const stats: { label: string; value: React.ReactNode; tone: string; hint?: string; onClick: () => void }[] = [
+  const bdrPct = bdr?.network?.pct ?? null;
+  const openActive = () => onOpenList({ segment: "active", label: "Ученики с активным абонементом" });
+
+  // Компактные плитки-действия (клик открывает список/окно).
+  const actions: { label: string; value: React.ReactNode; tone: string; hint?: string; onClick: () => void }[] = [
     { label: "Выручка сегодня", value: money(report.revenueToday), tone: "gold", hint: `${report.paymentsToday} ${report.paymentsToday === 1 ? "оплата" : report.paymentsToday >= 2 && report.paymentsToday <= 4 ? "оплаты" : "оплат"} — список`, onClick: onPayments },
-    { label: "Уникальных учеников", value: m.activeSubs.students, tone: "white", hint: "с активным абонементом", onClick: () => onOpenList({ segment: "active", label: "Ученики с активным абонементом" }) },
-    { label: "Активных абонементов", value: m.activeSubs.count, tone: "white", hint: "у ученика может быть два", onClick: () => onOpenList({ segment: "active", label: "Ученики с активным абонементом" }) },
-    { label: "План БДР", value: bdrPct === null ? "—" : `${bdrPct}%`, tone: bdrPct === null ? "white" : bdrPct >= 100 ? "emerald" : bdrPct >= 70 ? "amber" : "rose", hint: bdrPct === null ? "план не задан" : "по филиалам", onClick: onBdr },
     { label: "Записи на пробный", value: report.upcomingTrials.count, tone: report.upcomingTrials.count > 0 ? "gold" : "white", hint: "на будущие даты", onClick: () => onOpenList({ ids: report.upcomingTrials.ids, label: "Записаны на пробный (будущие даты)" }) },
-    { label: "Не оплачен текущий месяц", value: report.unpaidCurrentMonth.count, tone: report.unpaidCurrentMonth.count > 0 ? "rose" : "emerald", onClick: () => onOpenList({ ids: report.unpaidCurrentMonth.ids, label: "Не оплатили текущий месяц" }) },
-    { label: "Не оплатили прошлый месяц", value: report.unpaidPrevMonth.count, tone: report.unpaidPrevMonth.count > 0 ? "amber" : "emerald", onClick: () => onOpenList({ ids: report.unpaidPrevMonth.ids, label: "Не оплатили прошлый месяц" }) },
-    { label: "Удержание (мес→мес)", value: m.retention.pct === null ? "—" : `${m.retention.pct}%`, tone: "emerald", hint: "конверсия из месяца в месяц", onClick: onRetention },
-    { label: "Средний чек", value: m.avgCheck.all === null ? "—" : money(m.avgCheck.all), tone: "gold", onClick: onAvgCheck },
+    { label: "Не оплачен текущий месяц", value: report.unpaidCurrentMonth.count, tone: report.unpaidCurrentMonth.count > 0 ? "rose" : "emerald", hint: "открыть список", onClick: () => onOpenList({ ids: report.unpaidCurrentMonth.ids, label: "Не оплатили текущий месяц" }) },
+    { label: "Не оплатили прошлый месяц", value: report.unpaidPrevMonth.count, tone: report.unpaidPrevMonth.count > 0 ? "amber" : "emerald", hint: "открыть список", onClick: () => onOpenList({ ids: report.unpaidPrevMonth.ids, label: "Не оплатили прошлый месяц" }) },
   ];
+  const toneCls: Record<string, string> = { gold: "text-[#C5A059]", white: "text-white", rose: "text-rose-400", emerald: "text-emerald-400", amber: "text-amber-400" };
 
   return (
     <section className="rounded-[2rem] border border-[#C5A059]/25 bg-gradient-to-br from-[#1B160B] via-[#121212] to-black p-5 md:p-6">
@@ -1618,9 +1652,24 @@ function DailyManagerReport({ m, bdrPct, scopeLabel, periodLabel, onOpenList, on
         </div>
       </div>
 
-      {/* Кликабельные показатели */}
-      <div className="mt-4 grid grid-cols-2 gap-2.5 md:grid-cols-3">
-        {stats.map((s) => (
+      {/* Ключевые KPI со сравнением мес/год назад (формат образца) */}
+      <div className="mt-4 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+        <HealthKpi icon={Wallet} label="Выручка за период" value={money(m.revenue.total)} valueTone="gold" momPct={m.revenue.momPct} yoyPct={m.revenue.yoyPct} onClick={onRevenue} />
+        <HealthKpi icon={Users} label="Уникальных учеников" value={m.uniqueStudents.count} valueTone="white" momPct={m.uniqueStudents.momPct} yoyPct={m.uniqueStudents.yoyPct} onClick={openActive} />
+        <HealthKpi icon={Ticket} label="Активных абонементов" value={m.activeSubs.count} valueTone="white" momPct={m.activeSubs.momPct} yoyPct={m.activeSubs.yoyPct} onClick={openActive} />
+        <HealthKpi icon={CreditCard} label="Средний чек" value={m.avgCheck.all === null ? "—" : money(m.avgCheck.all)} valueTone="gold" momPct={m.avgCheck.momPct} yoyPct={m.avgCheck.yoyPct} onClick={onAvgCheck} />
+        <HealthKpi icon={TrendingUp} label="Удержание (мес→мес)" value={m.retention.pct === null ? "—" : `${m.retention.pct}%`} valueTone="emerald" momPct={m.retention.momPct} yoyPct={m.retention.yoyPct} onClick={onRetention} />
+        <HealthKpi icon={LineChart} label="План БДР" value={bdrPct === null ? "—" : `${bdrPct}%`} valueTone={bdrPct === null ? "white" : bdrPct >= 100 ? "emerald" : bdrPct >= 70 ? "amber" : "rose"} onClick={onBdr}
+          extra={<p className="text-[11px] text-slate-500">{bdr?.network?.plan ? `${money(bdr.network.fact)} из ${money(bdr.network.plan)}` : "план не задан"}</p>} />
+        <HealthKpi icon={BarChart3} label="Заполненность" value={m.occupancy.pct === null ? "—" : `${m.occupancy.pct}%`} valueTone="white" onClick={onOccupancy}
+          extra={<p className="text-[11px] text-slate-500">{m.occupancy.capacity ? `${m.occupancy.filled} / ${m.occupancy.capacity} мест` : "мест не задано"}</p>} />
+        <HealthKpi icon={UserRound} label="Свободных мест" value={m.occupancy.freeSpots === null ? "—" : `${m.occupancy.freeSpots} шт.`} valueTone={m.occupancy.freeSpots && m.occupancy.freeSpots > 0 ? "emerald" : "white"} onClick={onOccupancy}
+          extra={<p className="text-[11px] text-slate-500">{m.occupancy.capacity ? "по всем группам" : "укажите вместимость"}</p>} />
+      </div>
+
+      {/* Быстрые действия дня */}
+      <div className="mt-2.5 grid grid-cols-2 gap-2.5 md:grid-cols-4">
+        {actions.map((s) => (
           <button key={s.label} onClick={s.onClick}
             className="group rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 text-left transition hover:border-[#C5A059]/45 hover:bg-white/[0.06]">
             <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">{s.label}</p>
@@ -2040,6 +2089,28 @@ function ListPanel({ icon: Icon, tone, title, items }: { icon: React.ElementType
       <ul className="mt-3 space-y-2">
         {items.map((t, i) => <li key={i} className="flex gap-2 text-sm text-slate-200"><span className={c}>•</span><span>{t}</span></li>)}
       </ul>
+    </section>
+  );
+}
+
+// Панель с подкатегориями (ТЗ 13.07): пункты сгруппированы по темам с подзаголовками.
+function CategorizedPanel({ icon: Icon, tone, title, groups }: {
+  icon: React.ElementType; tone: "rose" | "emerald"; title: string; groups: { title: string; items: string[] }[];
+}) {
+  const c = tone === "rose" ? "text-rose-400" : "text-emerald-400";
+  return (
+    <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+      <div className={`flex items-center gap-2 ${c}`}><Icon className="h-4 w-4" /><h2 className="text-sm font-black uppercase tracking-wider">{title}</h2></div>
+      <div className="mt-3 space-y-4">
+        {(groups || []).map((g, gi) => (
+          <div key={gi}>
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">{g.title}</p>
+            <ul className="mt-1.5 space-y-1.5">
+              {g.items.map((t, i) => <li key={i} className="flex gap-2 text-sm text-slate-200"><span className={c}>•</span><span>{t}</span></li>)}
+            </ul>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }

@@ -31,6 +31,7 @@ export interface MetricsSnapshot {
   branchId: string | null;
   revenue: number;
   activeSubscriptions: number;
+  activeStudents: number;   // уникальных учеников с активным абонементом
   avgCheck: number;
   retentionRate: number;
   attendanceRate: number;
@@ -281,11 +282,13 @@ export interface OwnerDashboardModel {
     new: number; regular: number; returning: number;
     momPct: number | null; yoyPct: number | null;
   };
-  avgCheck: { all: number | null; new: number | null; regular: number | null; returning: number | null; momPct: number | null };
+  avgCheck: { all: number | null; new: number | null; regular: number | null; returning: number | null; momPct: number | null; yoyPct: number | null };
   // count — активных абонементов, students — уникальных учеников с абонементом:
   // это ДВА разных показателя (у одного ученика может быть два абонемента).
   activeSubs: { count: number; students: number; momPct: number | null; yoyPct: number | null };
-  occupancy: { pct: number | null; filled: number; capacity: number; byBranch: { id: string; name: string; pct: number | null; filled: number; capacity: number }[] };
+  // Уникальные ученики с активным абонементом + сравнение мес/год (из снапшотов).
+  uniqueStudents: { count: number; momPct: number | null; yoyPct: number | null };
+  occupancy: { pct: number | null; filled: number; capacity: number; freeSpots: number | null; byBranch: { id: string; name: string; pct: number | null; filled: number; capacity: number }[] };
   retention: { pct: number | null; activeStudents: number; totalStudents: number; momPct: number | null; yoyPct: number | null };
   debtors: { total: number; debtAmount: number; aging: { d1_7: number; d8_14: number; d14plus: number } | null };
   futureEnrollments: { total: number; byBranch: { name: string; n: number }[]; byAge: { label: string; n: number }[]; isProxy: boolean };
@@ -331,6 +334,9 @@ export interface OwnerDashboardModel {
   };
   attention: string[];
   growth: string[];
+  // Категоризированные версии (ТЗ 13.07): те же данные, сгруппированы по темам.
+  growthGroups: { title: string; items: string[] }[];
+  attentionGroups: { title: string; items: string[] }[];
   brief: string[];
   ratings: {
     branches: { byRevenue: BranchRating[]; byRetention: BranchRating[]; byAvgCheck: BranchRating[]; byGrowth: BranchRating[] };
@@ -641,14 +647,20 @@ export function computeOwnerDashboard(
   const attention: string[] = risks.filter((r) => r.severity !== "low").map((r) => `${r.title} — ${r.detail}`);
   if (attention.length === 0) attention.push("Острых проблем нет — ключевые показатели в норме.");
 
-  const growth: string[] = [];
-  halfEmpty.forEach((g) => growth.push(`Свободные места в группе «${g.name}» (${g.capacity ? Math.round(g.studentCount / g.capacity * 100) : 0}%) — усилить набор.`));
   const topTeacher = teacherRatings.byRetention[0];
-  if (topTeacher && topTeacher.retention !== null) growth.push(`Лучшее удержание у педагога ${topTeacher.name} (${topTeacher.retention}%) — масштабировать подход.`);
   const topBranch = branchRatings.byRevenue[0];
+  const topGroup = groupRatings.byRevenue[0];
+
+  // Плоский список (для AI-анализа месяца, обратная совместимость). Свободные
+  // места указываем ЧИСЛОМ мест (ТЗ 13.07), а не процентом.
+  const freeOf = (g: typeof halfEmpty[number]) => g.capacity ? Math.max(0, g.capacity - g.studentCount) : 0;
+  const growth: string[] = [];
+  halfEmpty.forEach((g) => growth.push(`Группа «${g.name}»: ${freeOf(g)} свободных мест — усилить набор.`));
+  if (topTeacher && topTeacher.retention !== null) growth.push(`Лучшее удержание у педагога ${topTeacher.name} (${topTeacher.retention}%) — масштабировать подход.`);
   if (topBranch) growth.push(`Филиал ${topBranch.name} — лидер по выручке (${topBranch.revenue.toLocaleString("ru-RU")} ₸).`);
   if (over100.length > 0) growth.push(`Перегруженные группы (${over100.length}) — кандидаты на открытие параллельных групп / набор педагогов.`);
   if (growth.length === 0) growth.push("Резервы роста: расширять успешные группы и удерживать заполняемость.");
+  const totalFree = halfEmpty.reduce((s, g) => s + freeOf(g), 0);
 
   // future enrollments
   // Прокси для «записей на будущее»: лиды + записанные на пробный (будущие записи).
@@ -840,6 +852,40 @@ export function computeOwnerDashboard(
     .map((t) => ({ id: t.id, name: t.name, retention: t.retention as number }))
     .sort((a, b) => a.retention - b.retention);
 
+  // --- Категоризированные «Точки роста» и «Требуют внимания» (ТЗ 13.07):
+  // упорядочены по темам; свободные места указываются числом мест. ---
+  const money0 = (v: number) => v.toLocaleString("ru-RU") + " ₸";
+  const growthGroups: { title: string; items: string[] }[] = [];
+  const recruitItems: string[] = [];
+  if (totalFree > 0) recruitItems.push(`Всего ${totalFree} свободных мест в недозаполненных группах`);
+  halfEmpty.forEach((g) => recruitItems.push(`«${g.name}» — ${freeOf(g)} свободных мест, усилить набор`));
+  if (over100.length > 0) recruitItems.push(`${over100.length} перегруженных групп — открыть параллельные / набрать педагогов`);
+  if (recruitItems.length) growthGroups.push({ title: "Набор и заполняемость", items: recruitItems });
+  const strongItems: string[] = [];
+  if (topTeacher && topTeacher.retention !== null) strongItems.push(`Лучшее удержание — педагог ${topTeacher.name} (${topTeacher.retention}%), масштабировать подход`);
+  if (topBranch && topBranch.revenue > 0) strongItems.push(`Лидер по выручке — филиал ${topBranch.name} (${money0(topBranch.revenue)})`);
+  if (topGroup && topGroup.revenue > 0) strongItems.push(`Топ-группа по выручке — «${topGroup.name}» (${money0(topGroup.revenue)})`);
+  if (strongItems.length) growthGroups.push({ title: "Сильные стороны — масштабировать", items: strongItems });
+  if (growthGroups.length === 0) growthGroups.push({ title: "Резервы роста", items: ["Расширять успешные группы и удерживать заполняемость."] });
+
+  const attentionGroups: { title: string; items: string[] }[] = [];
+  const finItems: string[] = [];
+  if (debtorStudents.length > 0) finItems.push(`Должники: ${debtorStudents.length}${debtAmount > 0 ? ` на ${money0(debtAmount)}` : ""}`);
+  if (unpaidCurrent.length > 0) finItems.push(`Не оплатили текущий месяц: ${unpaidCurrent.length}`);
+  if (unpaidPrev.length > 0) finItems.push(`Не оплатили прошлый месяц: ${unpaidPrev.length}`);
+  if (finItems.length) attentionGroups.push({ title: "Финансы и оплаты", items: finItems });
+  const fillItems: string[] = [];
+  if (over100.length > 0) fillItems.push(`${over100.length} групп перегружены (>100%)`);
+  else if (overloaded.length > 0) fillItems.push(`${overloaded.length} групп близки к пределу заполняемости`);
+  if (halfEmpty.length > 0) fillItems.push(`${halfEmpty.length} полупустых групп (${totalFree} свободных мест)`);
+  if (fillItems.length) attentionGroups.push({ title: "Заполняемость", items: fillItems });
+  const retItems: string[] = [];
+  if (retentionDropBranchList.length > 0) retItems.push(`${retentionDropBranchList.length} филиалов с падением удержания`);
+  if (teacherLowRetentionTable.length > 0) retItems.push(`${teacherLowRetentionTable.length} педагогов с удержанием ниже нормы`);
+  if (leftThisMonth > 0) retItems.push(`Отток за месяц: ${leftThisMonth}${churn.pct !== null ? ` (${churn.pct}%)` : ""}`);
+  if (retItems.length) attentionGroups.push({ title: "Удержание и отток", items: retItems });
+  if (attentionGroups.length === 0) attentionGroups.push({ title: "Всё в норме", items: ["Острых проблем нет — ключевые показатели в норме."] });
+
   const dailyRisks: DailyRiskItem[] = [];
   const pushRisk = (id: string, severity: "high" | "mid" | "low", title: string, detail: string, kind: DailyRiskItem["kind"], studentIds: string[], label: string) => {
     if (studentIds.length === 0) return;
@@ -907,7 +953,8 @@ export function computeOwnerDashboard(
       new: cNew ? Math.round(curRev.new / cNew) : null,
       regular: cReg ? Math.round(curRev.regular / cReg) : null,
       returning: cRet ? Math.round(curRev.returning / cRet) : null,
-      momPct: prevAvg !== null && avgAll !== null ? delta(avgAll, prevAvg).pct : null
+      momPct: prevAvg !== null && avgAll !== null ? delta(avgAll, prevAvg).pct : null,
+      yoyPct: snYoY && snYoY.avgCheck && avgAll !== null ? delta(avgAll, snYoY.avgCheck).pct : null
     },
     activeSubs: {
       count: activeSubsCount,
@@ -915,7 +962,12 @@ export function computeOwnerDashboard(
       momPct: snPrev ? delta(activeSubsCount, snPrev.activeSubscriptions).pct : null,
       yoyPct: snYoY ? delta(activeSubsCount, snYoY.activeSubscriptions).pct : null
     },
-    occupancy: { pct: capTotal ? Math.round((filledTotal / capTotal) * 100) : null, filled: filledTotal, capacity: capTotal, byBranch: occByBranch },
+    uniqueStudents: {
+      count: activeStud,
+      momPct: snPrev && snPrev.activeStudents ? delta(activeStud, snPrev.activeStudents).pct : null,
+      yoyPct: snYoY && snYoY.activeStudents ? delta(activeStud, snYoY.activeStudents).pct : null
+    },
+    occupancy: { pct: capTotal ? Math.round((filledTotal / capTotal) * 100) : null, filled: filledTotal, capacity: capTotal, freeSpots: capTotal ? Math.max(0, capTotal - filledTotal) : null, byBranch: occByBranch },
     retention: {
       pct: retentionPct, activeStudents: activeStud, totalStudents: students.length,
       momPct: snPrev ? delta(retentionPct ?? 0, snPrev.retentionRate).pct : null,
@@ -936,7 +988,7 @@ export function computeOwnerDashboard(
       overloadGroups: overloadTable,
       teacherLowRetention: teacherLowRetentionTable,
     },
-    attention, growth, brief,
+    attention, growth, growthGroups, attentionGroups, brief,
     ratings: { branches: branchRatings, teachers: teacherRatings, groups: groupRatings }
   };
 }
