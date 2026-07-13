@@ -47,13 +47,13 @@
 
 :root.day-theme body {
   background: #E8ECF1;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: 'Manrope', 'Inter', system-ui, -apple-system, sans-serif;
 }
 
 :root.day-theme .day-theme-app {
   background: #E8ECF1 !important;
   color: #222B33 !important;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: 'Manrope', 'Inter', system-ui, -apple-system, sans-serif;
 }
 
 /* Reference typography — Inter for headings too (matches prototype: wide, bold,
@@ -61,7 +61,7 @@
 :root.day-theme .day-theme-app h1,
 :root.day-theme .day-theme-app h2,
 :root.day-theme .day-theme-app h3 {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: 'Manrope', 'Inter', system-ui, -apple-system, sans-serif;
   letter-spacing: -0.02em;
   color: #11171D !important;
 }
@@ -219,13 +219,13 @@
 :root.day-theme .day-theme-app [class*="text-4xl"],
 :root.day-theme .day-theme-app [class*="text-5xl"],
 :root.day-theme .day-theme-app [class*="text-6xl"] {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: 'Manrope', 'Inter', system-ui, -apple-system, sans-serif;
   letter-spacing: -0.02em;
 }
 
 /* ---- Buttons — primary gold CTA & neutral controls (reference .btn) ---- */
 :root.day-theme .day-theme-app button {
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: 'Manrope', 'Inter', system-ui, sans-serif;
 }
 
 /* ---- Pills / badges keep the reference pill geometry (rounded-full already
