@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
+import type { Teacher, Branch, Group, Student } from "../../types";
 import "./teachers-proto.css";
 
 /* =========================================================================
@@ -13,101 +14,118 @@ const KPI_WEIGHTS: any = { ret: 35, funnel: 30, reviews: 17.5, standards: 17.5 }
 const RATES: any = { new: { 1: 1250, 2: 1500, 3: 1500 }, reg: { 1: 2500, 2: 3000, 3: 3000 }, regCont: { 3: 3500 } };
 const RETENTION_BONUS: any = { 1: 0.2, 2: 0.2, 3: 0.3 };
 const TEACHER_OF_MONTH_BONUS = 20000;
-const MONTHS: string[] = ["Январь 2026", "Февраль 2026", "Март 2026", "Апрель 2026", "Май 2026", "Июнь 2026"];
+const MONTHS: string[] = ["Январь 2026", "Февраль 2026", "Март 2026", "Апрель 2026", "Май 2026", "Июнь 2026", "Июль 2026"];
 
-/* ===== DATA ===== */
-const INITIAL_TEACHERS: any[] = [
-  {
-    id: 1, name: "Аслан Плиев", initials: "АП", phone: "+7 701 441 11 22", login: "+7 701 441 11 22", pass: "aslan2026",
-    spec: "Лезгинка, ансамблевая подготовка", branch: "Эхо Гор Чокина 109/1",
-    cat: 3, role: "Преподаватель", status: "Активен",
-    birth: "14.03.1991", hired: "02.09.2021", years: "4 г. 9 мес.", thanks: 57, ltvMonths: 7,
-    fines: { "Май 2026": [{ date: "14.05.2026", reason: "Опоздание", sum: 2000, note: "Урок 18:00, пришёл без фото прихода", by: "Управляющий" }] },
-    leavers: {
-      "Май 2026": [
-        { name: "Тимур Алиев", group: "Лезгинка · дети 8–11", branch: "Эхо Гор Чокина 109/1", date: "12.05.2026", reason: "Переезд" },
-        { name: "Дана Касымова", group: "Лезгинка · взрослые (вечер)", branch: "Эхо Гор Чокина 109/1", date: "28.05.2026", reason: "Финансы" },
-      ],
-      "Июнь 2026": [
-        { name: "Арман Беков", group: "Лезгинка · дети 8–11", branch: "Эхо Гор Чокина 109/1", date: "09.06.2026", reason: "Потеря интереса" },
-      ],
-    },
-    byMonth: {
-      "Январь 2026": { ret: 62, funnel: 55, rev: 4.6, std: 90, students: 26, newCnt: 4, regCnt: 22, regCont: 8, left: 1 },
-      "Февраль 2026": { ret: 64, funnel: 58, rev: 4.7, std: 92, students: 28, newCnt: 5, regCnt: 23, regCont: 9, left: 1 },
-      "Март 2026": { ret: 66, funnel: 60, rev: 4.7, std: 95, students: 29, newCnt: 4, regCnt: 25, regCont: 10, left: 2 },
-      "Апрель 2026": { ret: 67, funnel: 62, rev: 4.8, std: 96, students: 30, newCnt: 5, regCnt: 25, regCont: 11, left: 1 },
-      "Май 2026": { ret: 67.7, funnel: 64, rev: 4.8, std: 98, students: 31, newCnt: 6, regCnt: 25, regCont: 12, left: 2 },
-      "Июнь 2026": { ret: 69, funnel: 66, rev: 4.9, std: 100, students: 31, newCnt: 6, regCnt: 25, regCont: 12, left: 1 },
-    },
-    groups: [
-      { name: "Лезгинка · взрослые (вечер)", st: 14, free: 2, fill: 88, ret: 71, newCnt: 2, regCnt: 12, regCont: 0 },
-      { name: "Ансамбль «Эхо»", st: 12, free: 0, fill: 100, ret: 74, newCnt: 0, regCnt: 0, regCont: 12 },
-      { name: "Лезгинка · дети 8–11", st: 5, free: 5, fill: 50, ret: 58, newCnt: 4, regCnt: 1, regCont: 0 },
-    ],
-    standards: [
-      { nm: "Приход вовремя (за 20 мин до урока)", det: "Фото с отметкой времени · 21/22 дн.", s: "y", type: "photo" },
-      { nm: "Отметки в журнале проставлены", det: "Все занятия закрыты", s: "y", type: "journal" },
-      { nm: "План работы подготовлен заранее", det: "Загружен на каждую неделю", s: "y", type: "plan" },
-      { nm: "Оценка после открытого урока", det: "Проведён 18.05, оценка 9/10", s: "y", type: "open" },
-      { nm: "Оценка после отчётного концерта", det: "Концерт в июне — в процессе", s: "p", type: "concert" },
-    ],
-    training: [
-      { dir: "Начальные детские группы", st: "Аттестован", base: 1 },
-      { dir: "Начальные взрослые группы", st: "Аттестован", base: 1 },
-      { dir: "Продолжающие группы", st: "Аттестован", base: 1 },
-      { dir: "Ансамбль", st: "Аттестован", base: 1 },
-      { dir: "Лезгинка", st: "Аттестован", base: 0 },
-      { dir: "Вайнахский", st: "В процессе", base: 0 },
-      { dir: "Постановочная работа", st: "В процессе", base: 0 },
-    ],
-    attest: [
-      { date: "12.05.2026", dir: "Постановочная работа", res: "Промежуточный", mark: "—", note: "Сдаёт финальную постановку до 30.06" },
-      { date: "03.11.2025", dir: "Лезгинка", res: "Аттестован", mark: "9/10", note: "Отличная техника" },
-    ],
-    reviews: [
-      { who: "Родитель, гр. дети 8–11", src: "Личный кабинет", stars: 5, text: "Сын с радостью бежит на занятия, заметный прогресс. Дисциплина без давления." },
-      { who: "Ученик, ансамбль", src: "Личный кабинет", stars: 5, text: "Лучший наставник по технике лезгинки." },
-    ],
-    ai: {
-      pos: ["Дисциплина", "Техника", "Терпение", "Удержание"], neg: ["Заполняемость детской группы", "Незавершённая аттестация"],
-      verdict: "Сильный педагог 3 категории, стабильно высокий KPI и удержание. Динамика положительная.",
-      rec: "Подтвердить как кандидата в «Педагоги месяца». Дать ассистента на детскую группу.",
-    },
-  },
-  {
-    id: 2, name: "Хамит Муратович", initials: "ХМ", phone: "+7 (702) 123 46 58", login: "+7 (702) 123 46 58", pass: "khamit01",
-    spec: "High Heels", branch: "Сатпаева 210/1",
-    cat: 1, role: "Преподаватель", status: "Стажер",
-    birth: "09.07.1999", hired: "10.06.2026", years: "15 дней", thanks: 0, ltvMonths: 1,
-    fines: { "Июнь 2026": [{ date: "12.06.2026", reason: "Незакрытый журнал", sum: 5000, note: "Журнал не закрыт 2 дня подряд", by: "Владелец" }] },
-    leavers: {},
-    byMonth: {
-      "Январь 2026": null, "Февраль 2026": null, "Март 2026": null, "Апрель 2026": null, "Май 2026": null,
-      "Июнь 2026": { ret: 0, funnel: 20, rev: 0, std: 40, students: 1, newCnt: 1, regCnt: 0, regCont: 0, left: 0 },
-    },
-    groups: [{ name: "High Heels · вводная", st: 1, free: 11, fill: 8, ret: 0, newCnt: 1, regCnt: 0, regCont: 0 }],
-    standards: [
-      { nm: "Приход вовремя (за 20 мин до урока)", det: "Фото не прикреплено 6/15 дн.", s: "p", type: "photo" },
-      { nm: "Отметки в журнале проставлены", det: "Журнал за сегодня не закрыт", s: "n", type: "journal" },
-      { nm: "План работы подготовлен заранее", det: "Загружен частично", s: "p", type: "plan" },
-      { nm: "Оценка после открытого урока", det: "Ещё не проводился", s: "n", type: "open" },
-      { nm: "Оценка после отчётного концерта", det: "Ещё не участвовал", s: "n", type: "concert" },
-    ],
-    training: [
-      { dir: "Начальные взрослые группы", st: "В процессе", base: 1 },
-      { dir: "Начальные детские группы", st: "Не начато", base: 1 },
-      { dir: "Женская техника", st: "В процессе", base: 0 },
-    ],
-    attest: [{ date: "—", dir: "—", res: "Аттестаций ещё не было", mark: "—", note: "Стажёр принят 10.06.2026" }],
-    reviews: [{ who: "—", src: "—", stars: 0, text: "Отзывов пока нет. Группа набирается." }],
-    ai: {
-      pos: ["Энергичность (отмечено наставником)"], neg: ["Не закрыт журнал", "Нет набора учеников"],
-      verdict: "Стажёр на ранней стадии, данных для оценки качества недостаточно.",
-      rec: "Закрепить наставника по набору группы. Проконтролировать заполнение журнала.",
-    },
-  },
-];
+/* Русские названия месяцев для конвертации period_month <-> ярлык */
+const RU_MONTHS = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+/* "2026-05" -> "Май 2026" */
+const periodToLabel = (pm: string): string => {
+  if (!pm || pm.indexOf("-") < 0) return pm || "—";
+  const [y, m] = pm.split("-");
+  const idx = parseInt(m, 10) - 1;
+  return (RU_MONTHS[idx] || m) + " " + y;
+};
+/* "Май 2026" -> "2026-05" */
+const labelToPeriod = (label: string): string => {
+  const parts = (label || "").trim().split(" ");
+  if (parts.length < 2) return new Date().toISOString().slice(0, 7);
+  const idx = RU_MONTHS.indexOf(parts[0]);
+  const y = parts[1];
+  return y + "-" + String(idx >= 0 ? idx + 1 : 1).padStart(2, "0");
+};
+/* ISO -> dd.mm.yyyy */
+const isoToDate = (iso: string): string => {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  return String(d.getDate()).padStart(2, "0") + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + d.getFullYear();
+};
+const initialsOf = (name: string): string => {
+  const parts = (name || "").trim().split(/\s+/);
+  return ((parts[0]?.[0] || "") + (parts[1]?.[0] || "")).toUpperCase() || "—";
+};
+const roleLabel = (role?: string): string => {
+  switch (role) {
+    case "admin": return "Администратор";
+    case "branch_manager": return "Управляющий";
+    case "owner": return "Владелец";
+    case "teacher": default: return "Преподаватель";
+  }
+};
+const SCHEME_LABEL: Record<string, string> = {
+  percent: "Процент от выручки", per_lesson: "За занятие", fixed: "Фиксированный оклад", mixed: "Смешанная схема",
+};
+const DEMO_HEADERS = { "x-demo-role": "owner" };
+
+/* Заглушка «данных пока нет» — приглушённый блок, не пустота */
+function Empty({ children }: { children?: any }) {
+  return (
+    <div style={{ padding: "16px 14px", background: "var(--gold-soft, #f6f1e7)", border: "1px dashed var(--line, #e4ddce)", borderRadius: 12, color: "var(--muted, #8a8676)", fontSize: 14, textAlign: "center" }}>
+      {children || "Данных пока нет"}
+    </div>
+  );
+}
+
+/* Построить массив педагогов в форме, которую ждёт вёрстка, из РЕАЛЬНЫХ данных.
+   Штрафы (fines) прикручиваются отдельно из penalties. KPI/byMonth система не хранит → null. */
+function buildTeachers(teachers: Teacher[], branches: Branch[], groups: Group[], students: Student[]): any[] {
+  const branchName = (id?: string | null) => branches.find((b) => b.id === id)?.name || "—";
+  return (teachers || []).map((t) => {
+    const tGroups = (groups || []).filter((g) => g.teacherId === t.id);
+    const tGroupIds = new Set(tGroups.map((g) => g.id));
+    const studentsCount = (students || []).filter((s) => s.teacherId === t.id || (Array.isArray(s.groupIds) && s.groupIds.some((gid) => tGroupIds.has(gid)))).length;
+    const isTeacherRole = !t.role || t.role === "teacher";
+    const status = isTeacherRole && ((t.experienceYears || 0) === 0 || tGroups.length === 0) ? "Стажер" : "Активен";
+    return {
+      id: t.id,
+      name: t.name,
+      initials: initialsOf(t.name),
+      phone: t.phone || "—",
+      login: t.phone || "—",
+      pass: "",
+      spec: t.specialties && t.specialties.length ? t.specialties.join(", ") : "—",
+      branch: branchName(t.branchId),
+      cat: null,
+      role: roleLabel(t.role),
+      status,
+      birth: "—",
+      hired: "—",
+      years: t.experienceYears ? t.experienceYears + " г." : "—",
+      thanks: 0,
+      ltvMonths: 0,
+      bio: t.bio || "",
+      studentsCount,
+      fines: {},
+      leavers: {},
+      byMonth: Object.fromEntries(MONTHS.map((mn) => [mn, null])),
+      groups: tGroups.map((g) => ({
+        name: g.name,
+        st: g.studentCount ?? 0,
+        free: Math.max(0, (g.capacity || 0) - (g.studentCount || 0)),
+        fill: g.capacity ? Math.round(((g.studentCount || 0) / g.capacity) * 100) : 0,
+        ret: null, newCnt: null, regCnt: null, regCont: null,
+      })),
+      standards: [],
+      training: [],
+      attest: [],
+      reviews: [],
+      ai: null,
+    };
+  });
+}
+
+/* Сгруппировать penalties по ярлыку месяца для одного педагога */
+function finesForTeacher(penalties: any[], t: any): Record<string, any[]> {
+  const out: Record<string, any[]> = {};
+  (penalties || []).forEach((p) => {
+    const match = p.teacherId ? p.teacherId === t.id : p.teacherName === t.name;
+    if (!match) return;
+    const label = periodToLabel(p.period_month);
+    if (!out[label]) out[label] = [];
+    out[label].push({ id: p.id, date: isoToDate(p.created_at), reason: p.reason, sum: Number(p.amount) || 0, note: p.comment || "", by: p.created_by || "—" });
+  });
+  return out;
+}
 
 /* Колонки таблицы (порядок важен для меню и заголовков) */
 const COLUMN_DEFS: any[] = [
@@ -136,7 +154,7 @@ const FINE_REASONS = ["Опоздание", "Незакрытый журнал",
 /* ===== HELPERS ===== */
 const money = (n: number) => Math.round(n).toLocaleString("ru-RU") + " тг";
 const retClass = (v: number) => (v >= 60 ? "" : v >= 40 ? "warn" : "bad");
-const catName = (c: any) => c + " категория";
+const catName = (c: any) => (c == null ? "Не задана" : c + " категория");
 const starsStr = (n: number) => "★".repeat(n) + "☆".repeat(5 - n);
 const fillColor = (v: number) => (v >= 70 ? "var(--green)" : v >= 45 ? "var(--gold)" : "var(--red)");
 
@@ -191,13 +209,54 @@ const IconArchive = () => (
 );
 
 /* ========================================================================= */
-export function TeachersProtoView() {
-  const [teachers, setTeachers] = useState<any[]>(INITIAL_TEACHERS);
+interface TeachersProtoViewProps {
+  teachers?: Teacher[];
+  branches?: Branch[];
+  groups?: Group[];
+  students?: Student[];
+}
+
+export function TeachersProtoView({ teachers: teachersProp = [], branches = [], groups = [], students = [] }: TeachersProtoViewProps = {}) {
+  /* Реальные данные, приведённые к форме вёрстки */
+  const baseTeachers = useMemo(() => buildTeachers(teachersProp, branches, groups, students), [teachersProp, branches, groups, students]);
+
+  const [penalties, setPenalties] = useState<any[]>([]);
+  const [payroll, setPayroll] = useState<{ comp: Record<string, any>; lessons: Record<string, number>; paid: Record<string, number> }>({ comp: {}, lessons: {}, paid: {} });
+
+  const [teachers, setTeachers] = useState<any[]>(baseTeachers);
   const [fMonth, setFMonth] = useState<string>(MONTHS[MONTHS.length - 1]);
   const [fBranch, setFBranch] = useState<string>("");
-  const [fCat, setFCat] = useState<string>("");
   const [fStatus, setFStatus] = useState<string>("");
-  const [winnerId, setWinnerId] = useState<number>(1);
+  const [winnerId, setWinnerId] = useState<string | null>(null);
+
+  /* Список реальных филиалов для фильтра/форм */
+  const branchNames = useMemo(() => {
+    const set = new Set<string>();
+    branches.forEach((b) => b?.name && set.add(b.name));
+    baseTeachers.forEach((t) => t.branch && t.branch !== "—" && set.add(t.branch));
+    return Array.from(set);
+  }, [branches, baseTeachers]);
+
+  /* Пересобрать список педагогов из реальных данных + прикрутить штрафы */
+  useEffect(() => {
+    setTeachers(baseTeachers.map((t) => ({ ...t, fines: finesForTeacher(penalties, t) })));
+  }, [baseTeachers, penalties]);
+
+  /* Загрузка штрафов */
+  const loadPenalties = () => {
+    fetch("/api/mvp/teachers/penalties", { headers: DEMO_HEADERS })
+      .then((r) => (r.ok ? r.json() : { penalties: [] }))
+      .then((d) => setPenalties(Array.isArray(d?.penalties) ? d.penalties : []))
+      .catch(() => setPenalties([]));
+  };
+  /* Загрузка зарплатной ведомости */
+  const loadPayroll = () => {
+    fetch("/api/mvp/teachers/payroll?period=month", { headers: DEMO_HEADERS })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setPayroll({ comp: d?.comp || {}, lessons: d?.lessons || {}, paid: d?.paid || {} }))
+      .catch(() => setPayroll({ comp: {}, lessons: {}, paid: {} }));
+  };
+  useEffect(() => { loadPenalties(); loadPayroll(); }, []);
 
   const [columns, setColumns] = useState<any[]>(COLUMN_DEFS.map((c) => ({ ...c })));
   const [colMenuOpen, setColMenuOpen] = useState(false);
@@ -205,15 +264,15 @@ export function TeachersProtoView() {
   const [detailKind, setDetailKind] = useState<string | null>(null);
   const [openSubs, setOpenSubs] = useState<Record<string, boolean>>({});
 
-  const [cardId, setCardId] = useState<number | null>(null);
+  const [cardId, setCardId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>("info");
 
   const [formOpen, setFormOpen] = useState(false);
-  const [editId, setEditId] = useState<number | null>(null);
-  const [form, setForm] = useState<any>({ name: "", phone: "", birth: "", hired: "", br: "Эхо Гор Чокина 109/1", ct: "1", rl: "Преподаватель", spec: "", st: "Активен", login: "", pass: "", loginTouched: false, ava: "+" });
+  const [editId, setEditId] = useState<string | null>(null);
+  const [form, setForm] = useState<any>({ name: "", phone: "", birth: "", hired: "", br: "", ct: "", rl: "Преподаватель", spec: "", st: "Активен", login: "", pass: "", loginTouched: false, ava: "+" });
 
   const [payOpen, setPayOpen] = useState(false);
-  const [payWho, setPayWho] = useState<number>(INITIAL_TEACHERS[0].id);
+  const [payWho, setPayWho] = useState<string>("");
   const [payMonth, setPayMonth] = useState<string>(MONTHS[MONTHS.length - 1]);
 
   const [finesLogOpen, setFinesLogOpen] = useState(false);
@@ -221,7 +280,7 @@ export function TeachersProtoView() {
   const [logWho, setLogWho] = useState<string>("");
 
   const [fineOpen, setFineOpen] = useState(false);
-  const [fineId, setFineId] = useState<number | null>(null);
+  const [fineId, setFineId] = useState<string | null>(null);
   const [fineMonth, setFineMonth] = useState<string>(MONTHS[MONTHS.length - 1]);
   const [fineReason, setFineReason] = useState<string>("Опоздание");
   const [fineSum, setFineSum] = useState<string>("");
@@ -239,8 +298,9 @@ export function TeachersProtoView() {
 
   /* ===== derived ===== */
   const filtered = teachers.filter(
-    (t) => (!fBranch || t.branch === fBranch) && (!fCat || catName(t.cat) === fCat) && (!fStatus || t.status === fStatus)
+    (t) => (!fBranch || t.branch === fBranch) && (!fStatus || t.status === fStatus)
   );
+  const finesSumForMonth = (t: any, mn: string): number => (t.fines?.[mn] || []).reduce((s: number, f: any) => s + (f.sum || 0), 0);
   const withM = teachers.map((t) => ({ t, m: monthData(t, fMonth) })).filter((x) => x.m);
   const avgRet = withM.length ? withM.reduce((s, x) => s + x.m.ret, 0) / withM.length : 0;
   const avgKpi = withM.length ? withM.reduce((s, x) => s + kpiTotal(kpiComponents(x.m)), 0) / withM.length : 0;
@@ -254,21 +314,23 @@ export function TeachersProtoView() {
   const showDetail = (kind: string) => { setDetailKind(kind); };
   const closeDetail = () => setDetailKind(null);
   const toggleSub = (id: string) => setOpenSubs((s) => ({ ...s, [id]: !s[id] }));
-  const approveTOM = (id: number) => { setWinnerId(id); const t = teachers.find((x) => x.id === id); toast("Педагог месяца утверждён: " + t.name + " (+20 000 тг)"); };
+  const approveTOM = (id: string) => { setWinnerId(id); const t = teachers.find((x) => x.id === id); if (t) toast("Педагог месяца утверждён: " + t.name + " (+20 000 тг)"); };
 
-  const openCard = (id: number) => { setCardId(id); setActiveTab("info"); setDetailKind(null); };
+  const openCard = (id: string) => { setCardId(id); setActiveTab("info"); setDetailKind(null); };
   const closeCard = () => setCardId(null);
 
   const toggleCol = (id: string, on: boolean) => setColumns((cols) => cols.map((c) => (c.id === id ? { ...c, on } : c)));
 
-  const openForm = (id?: number) => {
-    if (typeof id === "number") {
+  const defaultBranch = () => branchNames[0] || "";
+  const openForm = (id?: string) => {
+    if (id != null) {
       const t = teachers.find((x) => x.id === id);
+      if (!t) return;
       setEditId(id);
-      setForm({ name: t.name, phone: t.phone, birth: "", hired: "", br: t.branch, ct: String(t.cat), rl: t.role, spec: t.spec, st: t.status, login: t.login || t.phone, pass: t.pass || "", loginTouched: false, ava: t.initials });
+      setForm({ name: t.name, phone: t.phone, birth: "", hired: "", br: t.branch, ct: t.cat == null ? "" : String(t.cat), rl: t.role, spec: t.spec === "—" ? "" : t.spec, st: t.status, login: t.login || t.phone, pass: t.pass || "", loginTouched: false, ava: t.initials });
     } else {
       setEditId(null);
-      setForm({ name: "", phone: "", birth: "", hired: "", br: "Эхо Гор Чокина 109/1", ct: "1", rl: "Преподаватель", spec: "", st: "Активен", login: "", pass: "", loginTouched: false, ava: "+" });
+      setForm({ name: "", phone: "", birth: "", hired: "", br: defaultBranch(), ct: "", rl: "Преподаватель", spec: "", st: "Активен", login: "", pass: "", loginTouched: false, ava: "+" });
     }
     setFormOpen(true);
   };
@@ -288,31 +350,24 @@ export function TeachersProtoView() {
     const initials = ((parts[0][0] || "") + (parts[1] ? parts[1][0] : "")).toUpperCase();
     if (editId) {
       setTeachers((list) => list.map((t) => t.id === editId ? {
-        ...t, name, phone: form.phone, spec: form.spec, branch: form.br, cat: +form.ct, role: form.rl, status: form.st,
+        ...t, name, phone: form.phone, spec: form.spec.trim() || "—", branch: form.br, role: form.rl, status: form.st,
         initials, login: form.login.trim() || form.phone.trim(), pass: form.pass,
       } : t));
       toast("Сохранено: " + name);
     } else {
       setTeachers((list) => {
-        const id = Math.max(...list.map((t) => t.id)) + 1;
-        const cat = +form.ct;
+        const id = "local-" + Date.now();
         const nt = {
-          id, name, initials, phone: form.phone, spec: form.spec || "—", branch: form.br, cat, role: form.rl, status: form.st,
+          id, name, initials, phone: form.phone, spec: form.spec.trim() || "—", branch: form.br, cat: null, role: form.rl, status: form.st,
           login: form.login.trim() || form.phone.trim(), pass: form.pass,
-          birth: "—", hired: form.hired || "—", years: "новый", thanks: 0, ltvMonths: 0, fines: {}, leavers: {},
+          birth: "—", hired: form.hired || "—", years: "—", thanks: 0, ltvMonths: 0, bio: "", studentsCount: 0, fines: {}, leavers: {},
           byMonth: Object.fromEntries(MONTHS.map((mn) => [mn, null])),
           groups: [],
-          standards: [
-            { nm: "Приход вовремя (за 20 мин до урока)", det: "Нет данных", s: "n", type: "photo" },
-            { nm: "Отметки в журнале проставлены", det: "Нет данных", s: "n", type: "journal" },
-            { nm: "План работы подготовлен заранее", det: "Нет данных", s: "n", type: "plan" },
-            { nm: "Оценка после открытого урока", det: "Ещё не проводился", s: "n", type: "open" },
-            { nm: "Оценка после отчётного концерта", det: "Ещё не участвовал", s: "n", type: "concert" },
-          ],
+          standards: [],
           training: [],
-          attest: [{ date: "—", dir: "—", res: "Аттестаций ещё не было", mark: "—", note: "Новый сотрудник" }],
-          reviews: [{ who: "—", src: "—", stars: 0, text: "Отзывов пока нет." }],
-          ai: { pos: ["—"], neg: ["—"], verdict: "Новый сотрудник, данных пока нет.", rec: "Запустить программу обучения и набор группы." },
+          attest: [],
+          reviews: [],
+          ai: null,
         };
         return [...list, nt];
       });
@@ -320,8 +375,9 @@ export function TeachersProtoView() {
     }
     closeForm();
   };
-  const archive = (id: number) => {
+  const archive = (id: string) => {
     const t = teachers.find((x) => x.id === id);
+    if (!t) return;
     if (window.confirm("Архивировать преподавателя «" + t.name + "»? Это действие можно отменить в разделе «Архив».")) {
       setTeachers((list) => list.filter((x) => x.id !== id));
       toast("В архив: " + t.name);
@@ -334,10 +390,10 @@ export function TeachersProtoView() {
   const openFinesLog = () => { setLogMonth(fMonth); setLogWho(""); setFinesLogOpen(true); };
   const closeFinesLog = () => setFinesLogOpen(false);
 
-  const openPayroll = () => { setPayWho(teachers[0].id); setPayMonth(MONTHS[MONTHS.length - 1]); setPayOpen(true); };
+  const openPayroll = () => { setPayWho(teachers[0]?.id || ""); setPayMonth(MONTHS[MONTHS.length - 1]); setPayOpen(true); };
   const closePayroll = () => setPayOpen(false);
 
-  const openFine = (id: number, mn?: string) => {
+  const openFine = (id: string, mn?: string) => {
     setFineId(id);
     setFineMonth(mn || fMonth);
     setFineReason("Опоздание");
@@ -347,7 +403,8 @@ export function TeachersProtoView() {
     setFineOpen(true);
   };
   const openFineFromLog = () => {
-    const id = logWho ? +logWho : teachers[0].id;
+    const id = logWho || teachers[0]?.id;
+    if (!id) { toast("Нет преподавателей для начисления штрафа"); return; }
     setFinesLogOpen(false);
     openFine(id, logMonth || undefined);
   };
@@ -356,18 +413,34 @@ export function TeachersProtoView() {
     const sum = parseInt(fineSum, 10);
     if (!sum || sum <= 0) { toast("Введите сумму штрафа"); return; }
     const t = teachers.find((x) => x.id === fineId);
-    const mn = fineMonth;
-    const d = new Date();
-    const date = String(d.getDate()).padStart(2, "0") + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + d.getFullYear();
-    setTeachers((list) => list.map((x) => {
-      if (x.id !== fineId) return x;
-      const fines = { ...(x.fines || {}) };
-      fines[mn] = [...(fines[mn] || []), { date, reason: fineReason, sum, note: fineNote.trim(), by: fineBy }];
-      return { ...x, fines };
-    }));
-    toast("Штраф начислен: " + t.name + " — " + money(sum) + " (" + fineReason + ")");
+    if (!t) { toast("Преподаватель не найден"); return; }
+    const body = {
+      teacherId: t.id,
+      teacherName: t.name,
+      reason: fineReason,
+      amount: sum,
+      period_month: labelToPeriod(fineMonth),
+      created_by: fineBy,
+      comment: fineNote.trim(),
+    };
+    fetch("/api/mvp/teachers/penalties", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...DEMO_HEADERS },
+      body: JSON.stringify(body),
+    })
+      .then((r) => { if (!r.ok) throw new Error("fail"); return r.json(); })
+      .then(() => { loadPenalties(); toast("Штраф начислен: " + t.name + " — " + money(sum) + " (" + fineReason + ")"); })
+      .catch(() => toast("Не удалось начислить штраф"));
     setFineOpen(false);
     if (cardId != null) setActiveTab("fines");
+  };
+  const deleteFine = (fine: any) => {
+    if (!fine?.id) { toast("Штраф без идентификатора нельзя удалить"); return; }
+    if (!window.confirm("Удалить штраф на сумму " + money(fine.sum) + "?")) return;
+    fetch("/api/mvp/teachers/penalties/" + fine.id, { method: "DELETE", headers: DEMO_HEADERS })
+      .then((r) => { if (!r.ok) throw new Error("fail"); return r.json(); })
+      .then(() => { loadPenalties(); toast("Штраф удалён"); })
+      .catch(() => toast("Не удалось удалить штраф"));
   };
 
   /* ===== cell renderer ===== */
@@ -378,9 +451,9 @@ export function TeachersProtoView() {
       case "cat": return <span className="badge b-role">{catName(t.cat)}</span>;
       case "ret": return m ? (<><div className={"meter " + retClass(m.ret)}><span style={{ width: m.ret + "%" }} /></div><small style={{ color: "var(--muted)" }}>{m.ret}%</small></>) : "—";
       case "kpi": return <b>{m ? k : "—"}</b>;
-      case "fines": return sal && sal.finesSum ? <span style={{ color: "var(--red)", fontWeight: 700 }}>− {money(sal.finesSum)}</span> : <span style={{ color: "var(--muted)" }}>—</span>;
+      case "fines": { const fs = finesSumForMonth(t, fMonth); return fs ? <span style={{ color: "var(--red)", fontWeight: 700 }}>− {money(fs)}</span> : <span style={{ color: "var(--muted)" }}>—</span>; }
       case "sal": return sal ? money(sal.total) : "—";
-      case "students": return m ? m.students : "—";
+      case "students": return t.studentsCount;
       case "funnel": return m ? m.funnel + "%" : "—";
       case "rev": return m && m.rev ? m.rev.toFixed(1) + " ★" : "—";
       case "std": return m ? m.std + "%" : "—";
@@ -413,10 +486,10 @@ export function TeachersProtoView() {
     let rows: any = null;
     if (detailKind === "all") {
       title = "Все преподаватели сети";
-      rows = teachers.map((t) => { const m = monthData(t, mn); return detailRow(t, <><b>{m ? m.students : 0}</b> уч. · {t.status}</>); });
+      rows = teachers.map((t) => detailRow(t, <><b>{t.studentsCount}</b> уч. · {t.status}</>));
     } else if (detailKind === "active") {
       title = "Активные преподаватели";
-      rows = teachers.filter((t) => t.status === "Активен").map((t) => { const m = monthData(t, mn); return detailRow(t, <><b>{m ? m.students : 0}</b> уч.</>); });
+      rows = teachers.filter((t) => t.status === "Активен").map((t) => detailRow(t, <><b>{t.studentsCount}</b> уч.</>));
     } else if (detailKind === "intern") {
       title = "Стажёры";
       rows = teachers.filter((t) => t.status === "Стажер").map((t) => detailRow(t, <>принят {t.hired}</>));
@@ -483,63 +556,49 @@ export function TeachersProtoView() {
     );
   };
 
-  /* ===== salary detail (shared card tab + payroll) ===== */
-  const salaryDetail = (t: any, m: any, sal: any, mn: string, variant: "card" | "payroll") => {
-    if (!sal) return <p className="note">За {mn} расчёта нет — нет учеников в этом месяце.</p>;
+  /* ===== salary detail (shared card tab + payroll) =====
+     Показываем РЕАЛЬНУЮ зарплатную схему из /payroll (comp/lessons/paid).
+     Итоговую сумму система здесь не считает (нужна выручка) — не выдумываем число. */
+  const salaryDetail = (t: any, mn: string, variant: "card" | "payroll") => {
+    const comp = payroll.comp[t.id];
+    const lessons = payroll.lessons[t.id] ?? 0;
+    const paidSum = payroll.paid[t.id] ?? 0;
+    const finesSum = finesSumForMonth(t, mn);
+    const fineList = t.fines?.[mn] || [];
+    if (!comp) {
+      return (
+        <>
+          <Empty>Схема оплаты для этого педагога ещё не задана.</Empty>
+          <div className="modal-foot" style={{ justifyContent: "flex-start", marginTop: 12 }}>
+            <button className="btn-sm" onClick={() => openFine(t.id, mn)} style={{ borderColor: "var(--red)", color: "var(--red)" }}>Начислить штраф</button>
+          </div>
+        </>
+      );
+    }
     return (
       <>
         <div className="sal-hero">
-          <div className="k">{variant === "card" ? "Ожидаемая ЗП · " + mn : "ЗП к начислению · " + mn}</div>
-          <div className="v">{money(sal.total)}</div>
-          <div className="sub">{variant === "card" ? "прогноз в реальном времени · " + catName(t.cat) + " · обновляется по ходу месяца" : t.name + " · " + catName(t.cat)}</div>
+          <div className="k">Схема оплаты · {mn}</div>
+          <div className="v" style={{ fontSize: 24 }}>{SCHEME_LABEL[comp.scheme] || comp.scheme}</div>
+          <div className="sub">{t.name}{comp.comment ? " · " + comp.comment : ""}</div>
         </div>
-        <h4>Детализация по группам</h4>
-        <table className="sal-table">
-          <thead><tr><th>Группа</th><th className="r">Новенькие</th><th className="r">Постоянные</th><th className="r">Продолж.</th><th className="r">Сумма</th></tr></thead>
-          <tbody>
-            {t.groups.map((g: any, i: number) => {
-              const c = t.cat;
-              const contInG = c === 3 ? g.regCont || 0 : 0;
-              const plainInG = Math.max(0, g.regCnt || 0);
-              const gnew = g.newCnt * RATES.new[c];
-              const greg = plainInG * RATES.reg[c];
-              const gcont = c === 3 ? contInG * RATES.regCont[3] : 0;
-              return (
-                <tr key={i}><td>{g.name}</td><td className="r">{g.newCnt}×{RATES.new[c]}</td><td className="r">{plainInG}×{RATES.reg[c]}</td><td className="r">{c === 3 ? contInG + "×" + RATES.regCont[3] : "—"}</td><td className="r"><b>{money(gnew + greg + gcont)}</b></td></tr>
-              );
-            })}
-          </tbody>
-        </table>
-        <h4>Итоговый расчёт</h4>
-        {sal.newCnt ? <div className="sal-line"><span>Новенькие · {sal.newCnt} × {money(RATES.new[t.cat])}</span><span>{money(sal.newSum)}</span></div> : null}
-        {sal.plainReg ? <div className="sal-line"><span>Постоянные · {sal.plainReg} × {money(RATES.reg[t.cat])}</span><span>{money(sal.regSum)}</span></div> : null}
-        {sal.contCnt ? <div className="sal-line"><span>Постоянные, продолжающая · {sal.contCnt} × {money(RATES.regCont[3])}</span><span>{money(sal.contSum)}</span></div> : null}
-        <div className="sal-line"><span><b>Базовая часть</b></span><span><b>{money(sal.base)}</b></span></div>
-        <div className="sal-line">
-          <span>Бонус удержания {sal.retOk ? "(+" + RETENTION_BONUS[t.cat] * 100 + "%" + (variant === "card" ? ", ушло ≤2" : "") + ")" : "(не начислен" + (variant === "card" ? ", ушло >2" : "") + ")"}</span>
-          <span className={sal.retOk ? "pos" : ""}>{sal.retOk ? "+ " + money(sal.retBonus) : money(0)}</span>
+        <h4>Параметры схемы</h4>
+        <div className="sal-line"><span>Оклад (фикс. часть)</span><span>{comp.baseSalary ? money(comp.baseSalary) : "—"}</span></div>
+        <div className="sal-line"><span>Процент от выручки</span><span>{comp.percent ? comp.percent + "%" : "—"}</span></div>
+        <div className="sal-line"><span>Ставка за занятие</span><span>{comp.perLessonRate ? money(comp.perLessonRate) : "—"}</span></div>
+        <div className="sal-line"><span>Проведено занятий за период</span><span><b>{lessons}</b></span></div>
+        <h4>Штрафы за {mn}</h4>
+        {fineList.length ? fineList.map((f: any, i: number) => (
+          <div className="sal-line" key={i}><span style={{ color: "var(--red)" }}>Штраф · {f.reason} <span style={{ color: "var(--muted)", fontSize: 13 }}>({f.date}{f.by ? " · " + f.by : ""})</span></span><span style={{ color: "var(--red)", fontWeight: 700 }}>− {money(f.sum)}</span></div>
+        )) : <p className="note">Штрафов за месяц нет.</p>}
+        <div className="sal-line"><span>Штрафы итого {finesSum ? "" : "(нет)"}</span><span style={{ color: "var(--red)", fontWeight: 700 }}>{finesSum ? "− " + money(finesSum) : money(0)}</span></div>
+        <div className="sal-line total"><span>Уже выплачено за период</span><span>{money(paidSum)}</span></div>
+        <div className="modal-foot" style={{ justifyContent: "flex-start" }}>
+          {variant === "card"
+            ? <button className="btn-sm" onClick={() => setActiveTab("fines")} style={{ borderColor: "var(--red)", color: "var(--red)" }}>Управлять штрафами →</button>
+            : <button className="btn-sm" onClick={() => openFine(t.id, mn)} style={{ borderColor: "var(--red)", color: "var(--red)" }}>Начислить штраф</button>}
         </div>
-        <div className="sal-line">
-          <span>Бонус «Педагог месяца»{variant === "card" ? (sal.tomBonus ? "" : " (не присвоен)") : ""}</span>
-          <span className={sal.tomBonus ? "pos" : ""}>{sal.tomBonus ? "+ " + money(sal.tomBonus) : money(0)}</span>
-        </div>
-        {sal.fineList.map((f: any, i: number) => (
-          <div className="sal-line" key={i}><span style={{ color: "var(--red)" }}>Штраф · {f.reason} <span style={{ color: "var(--muted)", fontSize: 13 }}>({f.date}{variant === "card" ? (f.note ? " · " + f.note : "") : f.by ? " · " + f.by : ""})</span></span><span style={{ color: "var(--red)", fontWeight: 700 }}>− {money(f.sum)}</span></div>
-        ))}
-        <div className="sal-line"><span>Штрафы итого {sal.finesSum ? "" : "(нет)"}</span><span style={{ color: "var(--red)", fontWeight: 700 }}>{sal.finesSum ? "− " + money(sal.finesSum) : money(0)}</span></div>
-        <div className="sal-line total"><span>Итого к выплате</span><span>{money(sal.total)}</span></div>
-        {variant === "card" ? (
-          <div className="modal-foot" style={{ justifyContent: "flex-start" }}>
-            <button className="btn-gold" onClick={() => toast("ЗП начислена: " + t.name + " — " + money(sal.total))}>Начислить ЗП</button>
-            <button className="btn-sm" onClick={() => setActiveTab("fines")} style={{ borderColor: "var(--red)", color: "var(--red)" }}>Управлять штрафами →</button>
-          </div>
-        ) : (
-          <div className="modal-foot" style={{ justifyContent: "flex-start" }}>
-            <button className="btn-gold" onClick={() => toast("ЗП начислена: " + t.name + " — " + money(sal.total) + " за " + mn)}>Начислить и провести</button>
-            <button className="btn-sm" onClick={() => openFine(t.id, mn)} style={{ borderColor: "var(--red)", color: "var(--red)" }}>Начислить штраф</button>
-          </div>
-        )}
-        <p className="note">{variant === "card" ? "Ставки и бонусы — по системе оплаты Эхо Гор 2025–2026. Виден педагогу, владельцу и управляющему." : "Считается автоматически из учеников групп. По системе оплаты Эхо Гор 2025–2026."}</p>
+        <p className="note">Итоговая сумма к выплате рассчитывается бухгалтерией из схемы оплаты, числа проведённых занятий и выручки групп. Штрафы вычитаются автоматически.</p>
       </>
     );
   };
@@ -566,10 +625,13 @@ export function TeachersProtoView() {
           <>
             <h4>История штрафов</h4>
             {allRows.map((f, i) => (
-              <div className="row-item" key={i}>
+              <div className="row-item" key={f.id || i}>
                 <div><div className="ttl" style={{ color: "var(--red)" }}>{f.reason} · {money(f.sum)}</div>
                   <div className="det">{f.month} · {f.date}{f.note ? " · " + f.note : ""} · начислил: {f.by || "—"}</div></div>
-                <div><span className={"badge " + (f.month === mn ? "b-red" : "b-gray")}>{f.month === mn ? "текущий месяц" : f.month}</span></div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span className={"badge " + (f.month === mn ? "b-red" : "b-gray")}>{f.month === mn ? "текущий месяц" : f.month}</span>
+                  <button className="btn-sm" onClick={() => deleteFine(f)} style={{ borderColor: "var(--red)", color: "var(--red)" }}>Удалить</button>
+                </div>
               </div>
             ))}
             <p className="note">Штрафы вычитаются из итоговой ЗП автоматически. Начисляют владелец и управляющий.</p>
@@ -581,7 +643,7 @@ export function TeachersProtoView() {
 
   /* ===== card panes ===== */
   const renderCardPanes = (t: any, m: any) => {
-    const comp = kpiComponents(m); const k = kpiTotal(comp); const sal = salary(t, m, fMonth, winnerId);
+    const comp = kpiComponents(m); const k = kpiTotal(comp);
     const pane = (key: string, body: any, extra?: any) => (
       <div className={"pane" + (activeTab === key ? " active" : "")} id={"pane-" + key} key={key} style={extra}>{body}</div>
     );
@@ -644,43 +706,45 @@ export function TeachersProtoView() {
       pane("groups", (
         <>
           <h4>Закреплённые группы</h4>
-          {t.groups.map((g: any, i: number) => (
+          {t.groups.length ? t.groups.map((g: any, i: number) => (
             <div className="row-item" key={i}>
-              <div><div className="ttl">{g.name}</div><div className="det">{g.st} учеников · свободно {g.free} · удержание {g.ret}%</div></div>
+              <div><div className="ttl">{g.name}</div><div className="det">{g.st} учеников · свободно {g.free} · удержание {g.ret == null ? "—" : g.ret + "%"}</div></div>
               <div style={{ textAlign: "right" }}><div className={"meter " + retClass(g.fill)} style={{ marginLeft: "auto" }}><span style={{ width: g.fill + "%" }} /></div><small style={{ color: "var(--muted)" }}>заполн. {g.fill}%</small></div>
             </div>
-          ))}
+          )) : <Empty>У педагога пока нет закреплённых групп.</Empty>}
         </>
       )),
       /* STANDARDS */
       pane("std", (
         <>
           <h4>Базовые стандарты · {fMonth}</h4>
-          {t.standards.map((x: any, i: number) => (
+          {t.standards.length ? t.standards.map((x: any, i: number) => (
             <div className="std" key={i}><div className={"ck " + x.s}>{sLabel[x.s]}</div><div className="body"><div className="nm">{x.nm}</div><div className="det">{x.det}</div></div><div className="act">{stdBtn(x)}</div></div>
-          ))}
+          )) : <Empty>Данных о выполнении стандартов пока нет.</Empty>}
           <p className="note"><b>Как это фиксируется:</b> приход — фото с серверным штампом времени и геометкой филиала, сравнивается с расписанием (вовремя = за 20 мин). План — файл/текст с привязкой к неделе. Оценки — через личный кабинет родителя и авто-запрос после открытого урока/концерта. Выполнение стандартов даёт % (вес {KPI_WEIGHTS.standards}% в KPI) и влияет на бонусы и звание.</p>
         </>
       )),
       /* TRAIN */
       pane("train", (
-        <>
-          <div className="sec-label">Базовая программа</div>
-          {base.map((x: any, i: number) => (<div className="train-item" key={"b" + i}><div className="hd"><span className="nm">{x.dir}</span><span className={"badge " + tb(x.st)}>{x.st}</span></div></div>))}
-          <div className="sec-label">Дополнительные направления</div>
-          {extra.map((x: any, i: number) => (<div className="train-item" key={"e" + i}><div className="hd"><span className="nm">{x.dir}</span><span className={"badge " + tb(x.st)}>{x.st}</span></div></div>))}
-        </>
+        t.training.length ? (
+          <>
+            <div className="sec-label">Базовая программа</div>
+            {base.map((x: any, i: number) => (<div className="train-item" key={"b" + i}><div className="hd"><span className="nm">{x.dir}</span><span className={"badge " + tb(x.st)}>{x.st}</span></div></div>))}
+            <div className="sec-label">Дополнительные направления</div>
+            {extra.map((x: any, i: number) => (<div className="train-item" key={"e" + i}><div className="hd"><span className="nm">{x.dir}</span><span className={"badge " + tb(x.st)}>{x.st}</span></div></div>))}
+          </>
+        ) : <Empty>Данных об обучении и аттестации направлений пока нет.</Empty>
       )),
       /* ATT */
       pane("att", (
         <>
           <h4>История аттестаций</h4>
-          {t.attest.map((a: any, i: number) => (
+          {t.attest.length ? t.attest.map((a: any, i: number) => (
             <div className="row-item" key={i}>
               <div><div className="ttl">{a.dir} {a.mark !== "—" ? "· " + a.mark : ""}</div><div className="det">{a.note}</div></div>
               <div style={{ textAlign: "right" }}><span className={"badge " + (a.res === "Аттестован" ? "b-green" : "b-gray")}>{a.res}</span><div className="det">{a.date}</div></div>
             </div>
-          ))}
+          )) : <Empty>Аттестаций пока не было.</Empty>}
           <div className="modal-foot" style={{ justifyContent: "flex-start" }}><button className="btn-sm" onClick={() => toast("Назначить аттестацию (только владелец)")}>Назначить аттестацию</button></div>
           <p className="note">История сохраняется бессрочно.</p>
         </>
@@ -689,9 +753,9 @@ export function TeachersProtoView() {
       pane("rev", (
         <>
           <h4>Отзывы и оценки</h4>
-          {t.reviews.map((r: any, i: number) => (
+          {t.reviews.length ? t.reviews.map((r: any, i: number) => (
             <div className="review" key={i}><div className="hd"><div><span className="stars">{r.stars ? starsStr(r.stars) : ""}</span> <span className="src">{r.who} · {r.src}</span></div></div><p>{r.text}</p></div>
-          ))}
+          )) : <Empty>Отзывов о педагоге пока нет.</Empty>}
           <div className="modal-foot" style={{ justifyContent: "flex-start" }}>
             <button className="btn-sm" onClick={() => toast("Загрузить отзыв (скрин/фото/видео/ссылка)")}>Прикрепить отзыв</button>
             <button className="btn-sm" onClick={() => toast("Ссылка на оценку отправлена родителям в WhatsApp")}>Запросить у родителей</button>
@@ -700,32 +764,34 @@ export function TeachersProtoView() {
       )),
       /* AI */
       pane("ai", (
-        <div className="ai-box">
-          <div className="ttl"><IconSpark />AI-анализ работы · {fMonth}</div>
-          <div className="sec-label">Сильные стороны</div><div className="pill-list">{t.ai.pos.map((p: string, i: number) => (<span className="pill b-green" key={i}>{p}</span>))}</div>
-          <div className="sec-label">Замечания</div><div className="pill-list">{t.ai.neg.map((p: string, i: number) => (<span className="pill b-red" key={i}>{p}</span>))}</div>
-          <div className="sec-label">Заключение</div><p>{t.ai.verdict}</p>
-          <div className="sec-label">Рекомендация по «Педагогу месяца»</div><p>{t.ai.rec}</p>
-        </div>
+        t.ai ? (
+          <div className="ai-box">
+            <div className="ttl"><IconSpark />AI-анализ работы · {fMonth}</div>
+            <div className="sec-label">Сильные стороны</div><div className="pill-list">{t.ai.pos.map((p: string, i: number) => (<span className="pill b-green" key={i}>{p}</span>))}</div>
+            <div className="sec-label">Замечания</div><div className="pill-list">{t.ai.neg.map((p: string, i: number) => (<span className="pill b-red" key={i}>{p}</span>))}</div>
+            <div className="sec-label">Заключение</div><p>{t.ai.verdict}</p>
+            <div className="sec-label">Рекомендация по «Педагогу месяца»</div><p>{t.ai.rec}</p>
+          </div>
+        ) : <Empty>AI-анализ появится, когда накопятся данные по KPI, отзывам и стандартам.</Empty>
       )),
       /* FINES */
       pane("fines", finesTab(t)),
       /* SAL */
-      pane("sal", salaryDetail(t, m, sal, fMonth, "card")),
+      pane("sal", salaryDetail(t, fMonth, "card")),
     ];
   };
 
-  /* ===== fines log rows ===== */
+  /* ===== fines log rows (из реальных penalties) ===== */
   const renderFinesLog = () => {
-    let rows: any[] = [];
-    teachers.forEach((t) => {
-      if (logWho && +logWho !== t.id) return;
-      const all = t.fines || {};
-      Object.keys(all).forEach((month) => {
-        if (logMonth && logMonth !== month) return;
-        (all[month] || []).forEach((f: any) => rows.push({ ...f, month, tName: t.name, tCat: t.cat, tId: t.id }));
-      });
-    });
+    const rows = (penalties || []).filter((p) => {
+      const monthLabel = periodToLabel(p.period_month);
+      if (logWho && p.teacherId !== logWho) return false;
+      if (logMonth && logMonth !== monthLabel) return false;
+      return true;
+    }).map((p) => ({
+      id: p.id, tName: p.teacherName || "Преподаватель", reason: p.reason, sum: Number(p.amount) || 0,
+      month: periodToLabel(p.period_month), date: isoToDate(p.created_at), note: p.comment || "", by: p.created_by || "—",
+    }));
     const total = rows.reduce((s, f) => s + f.sum, 0);
     return (
       <>
@@ -733,10 +799,14 @@ export function TeachersProtoView() {
         <div className="modal-foot" style={{ justifyContent: "flex-start", marginBottom: 14 }}>
           <button className="btn-sm" onClick={openFineFromLog} style={{ borderColor: "var(--red)", color: "var(--red)" }}>+ Начислить новый штраф</button>
         </div>
-        {!rows.length ? <p className="note">Штрафов по выбранному фильтру нет.</p> : rows.map((f, i) => (
-          <div className="row-item" key={i}><div>
-            <div className="ttl" style={{ color: "var(--red)" }}>{f.tName} · {f.reason} · {money(f.sum)}</div>
-            <div className="det">{catName(f.tCat)} · {f.month} · {f.date}{f.note ? " · " + f.note : ""} · начислил: {f.by || "—"}</div></div></div>
+        {!rows.length ? <Empty>Штрафов по выбранному фильтру нет.</Empty> : rows.map((f, i) => (
+          <div className="row-item" key={f.id || i}>
+            <div>
+              <div className="ttl" style={{ color: "var(--red)" }}>{f.tName} · {f.reason} · {money(f.sum)}</div>
+              <div className="det">{f.month} · {f.date}{f.note ? " · " + f.note : ""} · начислил: {f.by || "—"}</div>
+            </div>
+            <div><button className="btn-sm" onClick={() => deleteFine(f)} style={{ borderColor: "var(--red)", color: "var(--red)" }}>Удалить</button></div>
+          </div>
         ))}
       </>
     );
@@ -745,8 +815,6 @@ export function TeachersProtoView() {
   const cardTeacher = cardId != null ? teachers.find((t) => t.id === cardId) : null;
   const cardMonth = cardTeacher ? monthData(cardTeacher, fMonth) : null;
   const payTeacher = teachers.find((t) => t.id === payWho) || teachers[0];
-  const payM = payTeacher ? monthData(payTeacher, payMonth) : null;
-  const paySal = payTeacher ? salary(payTeacher, payM, payMonth, winnerId) : null;
   const fineTeacher = fineId != null ? teachers.find((t) => t.id === fineId) : null;
 
   /* ========================================================================= */
@@ -762,13 +830,9 @@ export function TeachersProtoView() {
           </select>
           <select value={fBranch} onChange={(e) => setFBranch(e.target.value)}>
             <option value="">Вся сеть</option>
-            <option>Эхо Гор Чокина 109/1</option>
-            <option>Сатпаева 210/1</option>
+            {branchNames.map((b) => (<option key={b} value={b}>{b}</option>))}
           </select>
-          <select value={fCat} onChange={(e) => setFCat(e.target.value)}>
-            <option value="">Все категории</option>
-            <option>1 категория</option><option>2 категория</option><option>3 категория</option>
-          </select>
+          {/* Фильтр по категории скрыт: система не хранит категории педагогов */}
           <select value={fStatus} onChange={(e) => setFStatus(e.target.value)}>
             <option value="">Любой статус</option>
             <option>Активен</option><option>Стажер</option>
@@ -801,8 +865,8 @@ export function TeachersProtoView() {
         <div className="tile" onClick={() => showDetail("all")}><div className="lbl">Всего</div><div className="val">{teachers.length}</div><div className="sub">в сети →</div></div>
         <div className="tile" onClick={() => showDetail("active")}><div className="lbl">Активные</div><div className="val">{teachers.filter((t) => t.status === "Активен").length}</div><div className="sub">работают →</div></div>
         <div className="tile" onClick={() => showDetail("intern")}><div className="lbl">Стажёры</div><div className="val">{teachers.filter((t) => t.status === "Стажер").length}</div><div className="sub">статус «Стажер» →</div></div>
-        <div className="tile" onClick={() => showDetail("ret")}><div className="lbl">Ср. удержание</div><div className="val">{avgRet.toFixed(1)}%</div><div className="sub">м/м · детально →</div></div>
-        <div className="tile" onClick={() => showDetail("kpi")}><div className="lbl">Ср. KPI</div><div className="val">{Math.round(avgKpi)}</div><div className="sub">из 100 · детально →</div></div>
+        <div className="tile" onClick={() => showDetail("ret")}><div className="lbl">Ср. удержание</div><div className="val">{withM.length ? avgRet.toFixed(1) + "%" : "—"}</div><div className="sub">м/м · детально →</div></div>
+        <div className="tile" onClick={() => showDetail("kpi")}><div className="lbl">Ср. KPI</div><div className="val">{withM.length ? Math.round(avgKpi) : "—"}</div><div className="sub">из 100 · детально →</div></div>
       </div>
 
       {/* DETAIL PANEL */}
@@ -812,14 +876,14 @@ export function TeachersProtoView() {
       <div className="cards">
         {filtered.map((t) => {
           const m = monthData(t, fMonth); const k = kpiTotal(kpiComponents(m)); const win = winnerId === t.id;
-          const sal = salary(t, m, fMonth, winnerId); const fSum = sal ? sal.finesSum : 0;
+          const sal = salary(t, m, fMonth, winnerId); const fSum = finesSumForMonth(t, fMonth);
           return (
             <div className={"tcard" + (win ? " winner" : "")} key={t.id}>
               <div className="catpill">{catName(t.cat)}</div>
               {win ? <div className="wbadge"><IconWbadge />Педагог месяца</div> : null}
               <div className="top"><div className="ava">{t.initials}</div><h3>{t.name}</h3></div>
               <div className="stat-grid">
-                <div className="st"><div className="k">Ученики</div><div className="v">{m ? m.students : "—"}</div></div>
+                <div className="st"><div className="k">Ученики</div><div className="v">{t.studentsCount}</div></div>
                 <div className="st"><div className="k">Удержание</div><div className="v">{m ? m.ret + "%" : "—"}</div></div>
                 <div className="st"><div className="k">KPI</div><div className="v">{m ? k : "—"}</div></div>
                 <div className="st"><div className="k">Ожид. ЗП</div><div className="v" style={{ fontSize: 17 }}>{sal ? money(sal.total) : "—"}</div></div>
@@ -867,7 +931,7 @@ export function TeachersProtoView() {
               const m = monthData(t, fMonth); const k = kpiTotal(kpiComponents(m)); const sal = salary(t, m, fMonth, winnerId);
               return (
                 <tr key={t.id} onClick={() => openCard(t.id)}>
-                  <td className="who"><b>{t.name}</b><span>{t.phone} · {m ? m.students : 0} уч.</span></td>
+                  <td className="who"><b>{t.name}</b><span>{t.phone} · {t.studentsCount} уч.</span></td>
                   {activeCols.map((c) => (<td key={c.id}>{renderCell(c.id, t, m, k, sal)}</td>))}
                   <td onClick={(e) => e.stopPropagation()}>
                     <div className="acts">
@@ -919,7 +983,7 @@ export function TeachersProtoView() {
                 <div className="field"><label>Телефон *</label><input value={form.phone} placeholder="+7 ___ ___ __ __" onChange={(e) => setForm((f: any) => ({ ...f, phone: e.target.value, login: f.loginTouched ? f.login : e.target.value }))} /></div>
                 <div className="field"><label>Дата рождения</label><input type="date" value={form.birth} onChange={(e) => setForm((f: any) => ({ ...f, birth: e.target.value }))} /></div>
                 <div className="field"><label>Дата приёма</label><input type="date" value={form.hired} onChange={(e) => setForm((f: any) => ({ ...f, hired: e.target.value }))} /></div>
-                <div className="field"><label>Филиал *</label><select value={form.br} onChange={(e) => setForm((f: any) => ({ ...f, br: e.target.value }))}><option>Эхо Гор Чокина 109/1</option><option>Сатпаева 210/1</option></select></div>
+                <div className="field"><label>Филиал *</label><select value={form.br} onChange={(e) => setForm((f: any) => ({ ...f, br: e.target.value }))}>{form.br && !branchNames.includes(form.br) ? <option value={form.br}>{form.br}</option> : null}{branchNames.length ? branchNames.map((b) => (<option key={b} value={b}>{b}</option>)) : <option value="">Нет филиалов</option>}</select></div>
                 <div className="field"><label>Категория</label><select value={form.ct} onChange={(e) => setForm((f: any) => ({ ...f, ct: e.target.value }))}><option value="1">1 категория</option><option value="2">2 категория</option><option value="3">3 категория</option></select></div>
                 <div className="field"><label>Роль</label><select value={form.rl} onChange={(e) => setForm((f: any) => ({ ...f, rl: e.target.value }))}><option>Преподаватель</option><option>Администратор</option><option>Управляющий</option></select></div>
                 <div className="field full"><label>Специализация</label><input value={form.spec} placeholder="Лезгинка, High Heels..." onChange={(e) => setForm((f: any) => ({ ...f, spec: e.target.value }))} /></div>
@@ -950,15 +1014,15 @@ export function TeachersProtoView() {
         <div className="overlay open" onClick={(e) => { if (e.target === e.currentTarget) closePayroll(); }}>
           <div className="sheet">
             <div className="sheet-head">
-              <div><h2>Расчёт зарплаты</h2><div className="meta">Автоматически из учеников групп · по системе оплаты Эхо Гор</div></div>
+              <div><h2>Расчёт зарплаты</h2><div className="meta">Реальная схема оплаты и число проведённых занятий</div></div>
               <button className="close" onClick={closePayroll}>×</button>
             </div>
             <div className="pane active" style={{ display: "block" }}>
               <div className="form-grid" style={{ marginBottom: 8 }}>
-                <div className="field"><label>Преподаватель</label><select value={payWho} onChange={(e) => setPayWho(+e.target.value)}>{teachers.map((t) => (<option key={t.id} value={t.id}>{t.name}</option>))}</select></div>
+                <div className="field"><label>Преподаватель</label><select value={payWho} onChange={(e) => setPayWho(e.target.value)}>{teachers.map((t) => (<option key={t.id} value={t.id}>{t.name}</option>))}</select></div>
                 <div className="field"><label>Месяц</label><select value={payMonth} onChange={(e) => setPayMonth(e.target.value)}>{MONTHS.map((mn) => (<option key={mn} value={mn}>{mn}</option>))}</select></div>
               </div>
-              <div>{salaryDetail(payTeacher, payM, paySal, payMonth, "payroll")}</div>
+              <div>{payTeacher ? salaryDetail(payTeacher, payMonth, "payroll") : <Empty>Нет преподавателей для расчёта.</Empty>}</div>
             </div>
           </div>
         </div>
