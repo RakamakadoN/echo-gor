@@ -1234,7 +1234,7 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
       {/* РЕКОМЕНДАЦИИ ПО НАБОРУ: статус набора по группам + куда и сколько набрать */}
       <CollapsibleSection id="recruit" icon={Megaphone} title="Рекомендации по набору" hint="Набор открыт/закрыт по группам · куда и сколько учеников набрать"
         locked open={sectionOpen("recruit")} onToggle={() => toggleSection("recruit")}>
-        <EnrollmentPlanner groups={rawGroups || []} branches={rawBranches || []} teachers={rawTeachers || []} onGoMarketing={() => go("marketing")} />
+        <EnrollmentPlanner groups={rawGroups || []} branches={rawBranches || []} teachers={rawTeachers || []} branchId={branchId} onGoMarketing={() => go("marketing")} />
       </CollapsibleSection>
 
       {/* РИСКИ ПО ГРУППАМ И ФИЛИАЛАМ */}
@@ -1817,9 +1817,13 @@ function BdrProgressPanel({ bdr, onGoPlanning }: {
 // переключает прямо здесь, управляющие видят тот же флаг. Система считает,
 // куда и сколько учеников можно набрать (только группы с ОТКРЫТЫМ набором),
 // и ведёт в «Маркетинг» — собирать заявки рассылкой или рекламным оффером.
-function EnrollmentPlanner({ groups, branches, teachers, onGoMarketing }: {
-  groups: Group[]; branches: Branch[]; teachers: Teacher[]; onGoMarketing: () => void;
+function EnrollmentPlanner({ groups, branches, teachers, branchId, onGoMarketing }: {
+  groups: Group[]; branches: Branch[]; teachers: Teacher[]; branchId?: string; onGoMarketing: () => void;
 }) {
+  // Групп в сети 60+ — список показываем ТОЛЬКО по выбранному филиалу.
+  // Свой селектор внутри блока; фильтр филиала с дашборда подхватывается.
+  const [selBranch, setSelBranch] = useState<string>(branchId || (branches.length === 1 ? branches[0].id : ""));
+  useEffect(() => { if (branchId) setSelBranch(branchId); }, [branchId]);
   // Оптимистичное переключение: локальный override до перезагрузки bootstrap.
   const [override, setOverride] = useState<Record<string, boolean>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -1843,13 +1847,18 @@ function EnrollmentPlanner({ groups, branches, teachers, onGoMarketing }: {
   const branchNameOf = (id?: string) => { const b = branches.find((x) => x.id === id); return b?.name || b?.city || "—"; };
   const teacherNameOf = (id?: string) => teachers.find((t) => t.id === id)?.name || "—";
 
-  const rows = groups
+  const allRows = groups
     .filter((g) => (g as any).status !== "archived")
     .map((g) => {
       const cap = g.capacity || 0;
       const free = cap > 0 ? Math.max(0, cap - (g.studentCount || 0)) : null;
       return { g, cap, free, open: isOpen(g) };
-    })
+    });
+  // Сводка по сети — из всех групп; список — только выбранного филиала.
+  const netOpen = allRows.filter((r) => r.open);
+  const netCanRecruit = netOpen.reduce((s, r) => s + (r.free ?? 0), 0);
+  const rows = allRows
+    .filter((r) => !selBranch || r.g.branchId === selBranch)
     .sort((a, b) => (b.free ?? -1) - (a.free ?? -1));
   const openRows = rows.filter((r) => r.open);
   const closedCount = rows.length - openRows.length;
@@ -1863,27 +1872,41 @@ function EnrollmentPlanner({ groups, branches, teachers, onGoMarketing }: {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">Куда набирать</p>
-          <p className="mt-1.5 text-sm leading-relaxed text-slate-100">
-            {recruitTargets.length > 0
-              ? <>Набор открыт в {openRows.length} из {rows.length} групп — можно набрать ещё <span className="font-black text-[#C5A059]">{canRecruit}</span> учеников. Приоритет: {recruitTargets.slice(0, 3).map((r) => `«${r.g.name}» (${r.free} мест)`).join(", ")}.</>
-              : openRows.length === 0
-                ? "Набор закрыт во всех группах — рекомендации появятся, когда откроете набор."
-                : "Свободных мест в группах с открытым набором нет — можно открыть параллельные группы или расширить вместимость."}
-            {closedCount > 0 && ` Закрыт набор: ${closedCount} групп.`}
-          </p>
-          {noCapacityCount > 0 && (
+          {selBranch ? (
+            <p className="mt-1.5 text-sm leading-relaxed text-slate-100">
+              {recruitTargets.length > 0
+                ? <>Набор открыт в {openRows.length} из {rows.length} групп филиала — можно набрать ещё <span className="font-black text-[#C5A059]">{canRecruit}</span> учеников. Приоритет: {recruitTargets.slice(0, 3).map((r) => `«${r.g.name}» (${r.free} мест)`).join(", ")}.</>
+                : openRows.length === 0
+                  ? "Набор закрыт во всех группах филиала — рекомендации появятся, когда откроете набор."
+                  : "Свободных мест в группах с открытым набором нет — можно открыть параллельные группы или расширить вместимость."}
+              {closedCount > 0 && ` Закрыт набор: ${closedCount} групп.`}
+            </p>
+          ) : (
+            <p className="mt-1.5 text-sm leading-relaxed text-slate-100">
+              По сети набор открыт в {netOpen.length} из {allRows.length} групп{netCanRecruit > 0 ? <> — всего можно набрать ещё <span className="font-black text-[#C5A059]">{netCanRecruit}</span> учеников</> : ""}. Выберите филиал, чтобы увидеть группы и управлять набором.
+            </p>
+          )}
+          {selBranch && noCapacityCount > 0 && (
             <p className="mt-1 text-[11px] text-amber-400">У {noCapacityCount} групп не задана вместимость — укажите её в настройках группы, иначе свободные места не считаются.</p>
           )}
         </div>
-        <button onClick={onGoMarketing}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-2xl bg-[#C5A059] px-4 py-2 text-xs font-black uppercase tracking-wider text-black transition hover:brightness-110">
-          <Megaphone className="h-3.5 w-3.5" /> В Маркетинг: собрать заявки ›
-        </button>
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <button onClick={onGoMarketing}
+            className="inline-flex items-center gap-1.5 rounded-2xl bg-[#C5A059] px-4 py-2 text-xs font-black uppercase tracking-wider text-black transition hover:brightness-110">
+            <Megaphone className="h-3.5 w-3.5" /> В Маркетинг: собрать заявки ›
+          </button>
+          <select value={selBranch} onChange={(e) => setSelBranch(e.target.value)}
+            className="rounded-xl border border-[#C5A059]/30 bg-black/40 px-3 py-1.5 text-xs font-bold text-slate-100 outline-none">
+            <option value="">Выберите филиал…</option>
+            {branches.map((b) => <option key={b.id} value={b.id}>{b.name || b.city}</option>)}
+          </select>
+        </div>
       </div>
 
-      {/* Группы со статусом набора */}
+      {/* Группы выбранного филиала со статусом набора */}
       <div className="mt-4 space-y-2">
-        {rows.map(({ g, cap, free, open }) => (
+        {!selBranch && <p className="py-6 text-center text-sm text-slate-500">Групп в сети {allRows.length} — выберите филиал, чтобы не листать все сразу.</p>}
+        {selBranch && rows.map(({ g, cap, free, open }) => (
           <div key={g.id} className="flex flex-wrap items-center gap-3 rounded-2xl border border-white/10 bg-[#161616] px-3.5 py-2.5">
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-bold text-white">{g.name}</p>
@@ -1899,9 +1922,9 @@ function EnrollmentPlanner({ groups, branches, teachers, onGoMarketing }: {
             </button>
           </div>
         ))}
-        {rows.length === 0 && <p className="py-6 text-center text-sm text-slate-500">Групп пока нет.</p>}
+        {selBranch && rows.length === 0 && <p className="py-6 text-center text-sm text-slate-500">В этом филиале групп пока нет.</p>}
       </div>
-      <p className="mt-3 text-[11px] text-slate-500">Клик по статусу переключает набор — это видят и управляющие. Группы с закрытым набором не попадают в рекомендации и рекламные офферы.</p>
+      <p className="mt-3 text-[11px] text-slate-500">Клик по статусу переключает набор — это видят и управляющие. Группы с закрытым набором не попадают в рекомендации и рекламные офферы. Тот же переключатель есть в «Расписании».</p>
     </section>
   );
 }
@@ -10768,13 +10791,13 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
                 .sort((a: any, b: any) => bName(a.branchId).localeCompare(bName(b.branchId)) || tName(a.teacherId).localeCompare(tName(b.teacherId)) || String(a.name).localeCompare(String(b.name)));
               return (
                 <div className="overflow-x-auto rounded-3xl border border-white/10 bg-[#111]">
-                  <table className="w-full min-w-[720px] text-sm">
+                  <table className="w-full min-w-[820px] text-sm">
                     <thead><tr className="border-b border-white/10 text-left text-[10px] font-black uppercase tracking-widest text-slate-500">
-                      <th className="px-4 py-3">Группа</th><th className="px-3 py-3">Филиал</th><th className="px-3 py-3">Педагог</th><th className="px-3 py-3">Зал</th><th className="px-3 py-3">Расписание</th><th className="px-3 py-3 text-center">Учеников</th><th className="px-3 py-3" />
+                      <th className="px-4 py-3">Группа</th><th className="px-3 py-3">Филиал</th><th className="px-3 py-3">Педагог</th><th className="px-3 py-3">Зал</th><th className="px-3 py-3">Расписание</th><th className="px-3 py-3 text-center">Учеников</th><th className="px-3 py-3 text-center">Набор</th><th className="px-3 py-3" />
                     </tr></thead>
                     <tbody>
                       {sorted.length === 0 ? (
-                        <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500">Активных групп нет.</td></tr>
+                        <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-500">Активных групп нет.</td></tr>
                       ) : sorted.map((g: any) => (
                         <tr key={g.id} className="border-b border-white/5">
                           <td className="px-4 py-2.5 font-bold text-white">{g.name}</td>
@@ -10783,6 +10806,17 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
                           <td className="px-3 py-2.5 text-slate-400">{hName(g.hallId)}</td>
                           <td className="px-3 py-2.5 text-slate-400">{[(g.days || []).join(", "), g.time].filter(Boolean).join(" · ") || "—"}</td>
                           <td className="px-3 py-2.5 text-center text-slate-300">{g.studentCount ?? 0}</td>
+                          <td className="px-3 py-2.5 text-center">
+                            {/* Набор открыт/закрыт — тот же флаг, что в «Рекомендациях по набору» на дашборде */}
+                            <button
+                              disabled={!onUpdateGroup}
+                              onClick={() => onUpdateGroup?.(g.id, { enrollmentOpen: !(g.enrollmentOpen !== false) })}
+                              title="Переключить набор"
+                              className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[10px] font-black uppercase tracking-wider transition ${g.enrollmentOpen !== false ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-rose-500/30 bg-rose-500/10 text-rose-300"} ${onUpdateGroup ? "cursor-pointer hover:brightness-125" : "cursor-default"}`}>
+                              <span className={`h-1.5 w-1.5 rounded-full ${g.enrollmentOpen !== false ? "bg-emerald-400" : "bg-rose-400"}`} />
+                              {g.enrollmentOpen !== false ? "Открыт" : "Закрыт"}
+                            </button>
+                          </td>
                           <td className="px-3 py-2.5 text-right">
                             {onDeleteGroup && <button onClick={() => { if (window.confirm(`Архивировать группу «${g.name}»?`)) onDeleteGroup(g.id); }} className="rounded-lg border border-white/10 px-2.5 py-1 text-[11px] font-bold text-slate-400 hover:text-rose-300">В архив</button>}
                           </td>

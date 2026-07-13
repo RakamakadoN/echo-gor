@@ -1198,7 +1198,8 @@ function CalendarView({ groups, teachers, branches, halls, scheduleItems, schedu
       </div>
 
       {schedMode === "halls" && <GroupScheduleGrid groups={groups} halls={halls || []} />}
-      {schedMode === "groups" && <GroupsTable groups={groups} branches={branches} teachers={teachers} halls={halls} onArchiveGroup={onDeleteGroup} />}
+      {schedMode === "groups" && <GroupsTable groups={groups} branches={branches} teachers={teachers} halls={halls} onArchiveGroup={onDeleteGroup}
+        onToggleEnrollment={onUpdateGroup ? (id: string, open: boolean) => onUpdateGroup(id, { enrollmentOpen: open }) : undefined} />}
       {schedMode === "archive" && (
         <GroupsArchivePanel archivedGroups={archivedGroups} branches={branches} onRestoreGroup={onRestoreGroup} onDeleteGroupPermanent={onDeleteGroupPermanent} />
       )}
