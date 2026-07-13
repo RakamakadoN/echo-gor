@@ -7,7 +7,7 @@
 CREATE TABLE IF NOT EXISTS teacher_arrivals (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-  teacher_id UUID REFERENCES teachers(id) ON DELETE CASCADE,
+  teacher_id UUID,                       -- педагог (users.id); без FK — таблицы teachers в БД нет
   branch_id UUID REFERENCES branches(id) ON DELETE SET NULL,
   arrival_date DATE NOT NULL,            -- дата прихода (Asia/Almaty)
   arrival_time TEXT NOT NULL,            -- 'HH:MM'
