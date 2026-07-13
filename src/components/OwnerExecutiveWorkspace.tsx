@@ -450,7 +450,7 @@ export function OwnerExecutiveWorkspace({
           {activeTab === "finance" && <AccountingProtoView branches={branches} />}
           {activeTab === "planning" && <PlanningProtoView branches={branches} />}
           {activeTab === "meetings" && <MeetingsView />}
-          {activeTab === "reports" && <ReportsProtoView />}
+          {activeTab === "reports" && <ReportsProtoView students={students} payments={payments} branches={branches} groups={groups} teachers={teachers} leadSources={leadSources} />}
           {activeTab === "performances" && <PerformancesView />}
           {activeTab === "products" && <ProductsView />}
           {activeTab === "documents" && <DocumentologistView />}

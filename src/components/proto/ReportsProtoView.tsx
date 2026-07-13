@@ -1,9 +1,13 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { Student, Payment, Branch, Group, Teacher, LeadSource } from "../../types";
 import "./reports-proto.css";
 
 /* ============================================================
-   ЭХО ГОР — Отчётность (порт статического прототипа)
-   Данные-заглушки (в оригинале читались из БДР в localStorage).
+   ЭХО ГОР — Отчётность
+   Реальные данные: props (ученики/платежи/филиалы/группы/
+   преподаватели/источники) + /api/mvp/accounting/* (финансы).
+   Где источника нет (рекламный бюджет/CPL/CAC/ROMI, снимки,
+   AI-выводы) — заглушка «Данных пока нет».
    ============================================================ */
 
 const MONTHS_RU = [
@@ -11,39 +15,7 @@ const MONTHS_RU = [
   "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
 ];
 
-const CONV = { lead2signup: 0.55, signup2visit: 0.7, visit2buy: 0.5, buy2renew: 0.85 };
-
-const LEAD_SOURCES = ["WhatsApp", "Instagram", "Facebook", "TikTok", "Google", "2GIS", "Рекомендации", "Другое"];
-
-const BRANCHES_REP: any[] = [
-  { id: "astana203", name: "Астана 203" },
-  { id: "polnoformat", name: "Полноформат" },
-];
-
-/* Единый набор-заглушка (в проде — агрегаты из БДР) */
-const MOCK_BDR: any = {
-  groups: [
-    { name: "Вокал · младшие", zone: "Астана 203", teacher: "Алия К.", chek: 25000, post: 14, new: 4, manualPlan: 0 },
-    { name: "Гитара · база", zone: "Астана 203", teacher: "Дамир Т.", chek: 30000, post: 11, new: 3, manualPlan: 0 },
-    { name: "Фортепиано", zone: "Астана 203", teacher: "Сауле М.", chek: 35000, post: 9, new: 2, manualPlan: 0 },
-    { name: "Хореография", zone: "Полноформат", teacher: "Инкар Б.", chek: 22000, post: 16, new: 5, manualPlan: 0 },
-    { name: "Барабаны", zone: "Полноформат", teacher: "Ерлан С.", chek: 28000, post: 8, new: 3, manualPlan: 0 },
-    { name: "Академ · сольфеджио", zone: "Полноформат", teacher: "Жанна Р.", chek: 20000, post: 12, new: 4, manualPlan: 0 },
-  ],
-  expenses: [
-    { name: "Аренда", mode: "auto", val: 450000 },
-    { name: "Зарплаты преподавателей", mode: "auto", val: 520000 },
-    { name: "Реклама", mode: "manual", val: 340000 },
-    { name: "Коммунальные", mode: "auto", val: 95000 },
-    { name: "Инвентарь", mode: "manual", val: 60000 },
-  ],
-};
-
-const DEMO_REFUSALS: any[] = [
-  { name: "Иванов А.", phone: "+7 707 100 20 30", reason: "Неудобное расписание", date: "2026-06-05", comment: "" },
-  { name: "Петрова М.", phone: "+7 701 200 30 40", reason: "Дорого", date: "2026-06-12", comment: "" },
-  { name: "Сидоров К.", phone: "+7 705 300 40 50", reason: "Неудобное расписание", date: "2026-06-18", comment: "" },
-];
+const H = { "x-demo-role": "owner" } as const;
 
 const WINBACK_OFFERS: any[] = [
   { id: "discount", name: "Скидка на возврат", text: "Здравствуйте, {name}! Мы скучаем по вам в студии «Эхо Гор» 💛 Возвращайтесь — дарим скидку 30% на первый месяц. Записать вас на удобное время?" },
@@ -52,28 +24,8 @@ const WINBACK_OFFERS: any[] = [
   { id: "custom", name: "Свой текст", text: "Здравствуйте, {name}! " },
 ];
 
-const MKT_BUDGET = 340000;
-
 function fmt(n: number) {
-  return Math.round(n).toLocaleString("ru-RU");
-}
-function bdrRevenue(b: any) {
-  if (!b || !b.groups) return 0;
-  return b.groups.reduce((s: number, g: any) => s + (g.manualPlan > 0 ? g.manualPlan : g.chek * (g.post + g.new)), 0);
-}
-function bdrExpense(b: any) {
-  if (!b || !b.expenses) return 0;
-  return b.expenses.reduce((s: number, e: any) => {
-    if (e.items && e.items.length) return s + e.items.reduce((ss: number, it: any) => ss + (+it.val || 0), 0);
-    return s + (+e.val || 0);
-  }, 0);
-}
-function seasonNote(m: number) {
-  if (m === 5 || m === 6 || m === 7) return "летний сезон (традиционный спад посещаемости)";
-  if (m === 8) return "старт нового учебного года (пик набора)";
-  if (m === 11) return "новогодние праздники";
-  if (m === 4) return "период отчётных концертов";
-  return "";
+  return Math.round(n || 0).toLocaleString("ru-RU");
 }
 function onlyDigits(p: any) {
   return String(p || "").replace(/[^\d]/g, "");
@@ -85,6 +37,29 @@ function monthName(ym: string) {
 }
 function winbackMsg(c: any, tpl: string) {
   return tpl.replace(/\{name\}/g, (c.name || "").split(" ")[0] || c.name || "");
+}
+function datePart(s: any) {
+  return String(s || "").slice(0, 10);
+}
+function almatyToday() {
+  try {
+    return new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Almaty" }).format(new Date());
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+}
+function addDays(ymd: string, n: number) {
+  const d = new Date((ymd || almatyToday()) + "T00:00:00");
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+function lastDayOf(y: number, m1: number) {
+  return new Date(y, m1, 0).getDate();
+}
+
+/* ===== ЗАГЛУШКА «Данных пока нет» ===== */
+function Empty({ children }: { children?: any }) {
+  return <div className="rep-stub">{children || "Данных пока нет"}</div>;
 }
 
 function KpiCard({ lbl, val, sub, color }: any) {
@@ -106,32 +81,71 @@ const SUBTABS: any[] = [
   { id: "history", label: "История" },
 ];
 
-export function ReportsProtoView() {
+interface ReportsProtoViewProps {
+  students?: Student[];
+  payments?: Payment[];
+  branches?: Branch[];
+  groups?: Group[];
+  teachers?: Teacher[];
+  leadSources?: LeadSource[];
+}
+
+export function ReportsProtoView({
+  students = [],
+  payments = [],
+  branches = [],
+  groups = [],
+  teachers = [],
+  leadSources = [],
+}: ReportsProtoViewProps) {
   const now = new Date();
   const nowMonthVal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const todayStr = almatyToday();
 
   const [subtab, setSubtab] = useState("fin");
   const [period, setPeriod] = useState("month");
   const [monthVal, setMonthVal] = useState(nowMonthVal);
-  const [dateVal, setDateVal] = useState(now.toISOString().slice(0, 10));
+  const [dateVal, setDateVal] = useState(todayStr);
   const [fromVal, setFromVal] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`);
-  const [toVal, setToVal] = useState(now.toISOString().slice(0, 10));
+  const [toVal, setToVal] = useState(todayStr);
   const [scope, setScope] = useState("all");
   const [finType, setFinType] = useState("all");
   const [cmpPeriod, setCmpPeriod] = useState("prev");
   const [ownerComment, setOwnerComment] = useState("");
-  const [leads, setLeads] = useState<any[]>([
-    { source: "Instagram", count: 120, campaign: "Летний набор", comment: "" },
-    { source: "WhatsApp", count: 85, campaign: "Рекомендации", comment: "" },
-    { source: "2GIS", count: 40, campaign: "Карточка", comment: "" },
-    { source: "TikTok", count: 60, campaign: "Reels", comment: "" },
-  ]);
   const [winbackOpen, setWinbackOpen] = useState(false);
   const [wbMonth, setWbMonth] = useState("all");
   const [wbReason, setWbReason] = useState("all");
   const [wbOfferId, setWbOfferId] = useState("discount");
   const [wbText, setWbText] = useState(WINBACK_OFFERS[0].text);
   const [toast, setToast] = useState("");
+
+  /* ===== ФИНАНСЫ (реальные, /api/mvp/accounting/*) ===== */
+  const [operations, setOperations] = useState<any[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [accounts, setAccounts] = useState<any[]>([]);
+  const [pnl, setPnl] = useState<any[]>([]);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const [ovR, opR] = await Promise.all([
+          fetch("/api/mvp/accounting/overview", { headers: H }),
+          fetch("/api/mvp/accounting/operations", { headers: H }),
+        ]);
+        const ov = ovR.ok ? await ovR.json() : {};
+        const op = opR.ok ? await opR.json() : {};
+        if (!alive) return;
+        setCategories(ov.categories || []);
+        setAccounts(ov.accounts || []);
+        setPnl(ov.pnl || []);
+        setOperations(op.operations || []);
+      } catch {
+        /* 403/503/сеть — оставляем пустые состояния, без падения */
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
 
   function flash(msg: string) {
     setToast(msg);
@@ -157,88 +171,110 @@ export function ReportsProtoView() {
 
   function scopeName() {
     if (scope === "all") return "Вся сеть";
-    const b = BRANCHES_REP.filter((x) => x.id === scope)[0];
-    return b ? b.name : "—";
+    const br = branches.find((x) => x.id === scope);
+    return br ? br.name : "—";
   }
 
-  const b = MOCK_BDR;
-  const rev = bdrRevenue(b);
-  const exp = bdrExpense(b);
-  const profit = rev - exp;
-  const margin = rev > 0 ? Math.round((profit / rev) * 100) : 0;
-  const totalLeads = leads.reduce((s, l) => s + (+l.count || 0), 0);
+  /* ---- диапазон периода [pFrom, pTo] в YYYY-MM-DD ---- */
+  const [pFrom, pTo] = useMemo(() => {
+    if (period === "today") { const d = dateVal || todayStr; return [d, d]; }
+    if (period === "yesterday") { const d = addDays(dateVal || todayStr, -1); return [d, d]; }
+    if (period === "week") { const end = dateVal || todayStr; return [addDays(end, -6), end]; }
+    if (period === "month") { const from = `${monthVal}-01`; const to = `${monthVal}-${String(lastDayOf(year, month + 1)).padStart(2, "0")}`; return [from, to]; }
+    if (period === "quarter") { const q = Math.floor(month / 3); const sm = q * 3 + 1; const em = q * 3 + 3; return [`${year}-${String(sm).padStart(2, "0")}-01`, `${year}-${String(em).padStart(2, "0")}-${String(lastDayOf(year, em)).padStart(2, "0")}`]; }
+    if (period === "year") return [`${year}-01-01`, `${year}-12-31`];
+    if (period === "custom") return [fromVal || "0000-01-01", toVal || "9999-12-31"];
+    return [`${monthVal}-01`, `${monthVal}-${String(lastDayOf(year, month + 1)).padStart(2, "0")}`];
+  }, [period, dateVal, monthVal, fromVal, toVal, year, month, todayStr]);
+
+  const inPeriod = (s: any) => { const d = datePart(s); return !!d && d >= pFrom && d <= pTo; };
+  const inScope = (branchId: any) => scope === "all" || branchId === scope;
 
   const showMonthInput = period === "month" || period === "quarter" || period === "year";
   const showDateInput = period === "today" || period === "yesterday" || period === "week";
   const showRange = period === "custom";
 
-  /* ---- 1. Финансовые операции ---- */
-  const ops: any[] = [];
-  b.groups.forEach((g: any) => {
-    const sum = g.manualPlan > 0 ? g.manualPlan : g.chek * (g.post + g.new);
-    if (sum <= 0) return;
-    ops.push({ date: label, branch: scopeName(), group: g.zone || "", who: g.name, type: "subs", typeLabel: "Абонементы (план)", sum, pay: "—", resp: g.teacher || "—" });
-  });
-  b.expenses.forEach((e: any) => {
-    const val = e.items && e.items.length ? e.items.reduce((s: number, it: any) => s + (+it.val || 0), 0) : +e.val || 0;
-    if (val <= 0) return;
-    ops.push({ date: label, branch: scopeName(), group: "—", who: e.name, type: "expense", typeLabel: "Расход", sum: -val, pay: e.mode === "auto" ? "из бухгалтерии" : "вручную", resp: "—" });
-  });
-  const finFiltered = finType === "all" ? ops : ops.filter((o) => o.type === finType);
-  const emptyTypes: any = { goods: "Продажа товаров", shows: "Выступления", refund: "Возвраты", income: "Поступления" };
+  const catById = (id?: string) => categories.find((c) => c.id === id)?.name || "Без статьи";
+  const accById = (id?: string) => accounts.find((a) => a.id === id)?.name || "—";
+  const filterSelStyle: any = { fontFamily: "'IBM Plex Sans',sans-serif", fontSize: 13, fontWeight: 600, padding: "7px 12px", borderRadius: 9, border: "1px solid var(--border-c)", background: "var(--control)", color: "var(--text)", cursor: "pointer" };
 
-  /* ---- 2. Абонементы ---- */
-  const students = b.groups.reduce((s: number, g: any) => s + g.post + g.new, 0);
-  const avgChek = b.groups.length ? Math.round(b.groups.reduce((s: number, g: any) => s + g.chek, 0) / b.groups.length) : 0;
+  /* ---- 1. Финансовые операции (реальные из бухгалтерии) ---- */
+  const opInScope = (o: any) => scope === "all" || !o.branchId || o.branchId === scope;
+  const periodOps = operations.filter((o) => inPeriod(o.date) && opInScope(o));
+  const rev = periodOps.filter((o) => o.type === "income").reduce((s, o) => s + Number(o.amount || 0), 0);
+  const exp = periodOps.filter((o) => o.type === "expense").reduce((s, o) => s + Number(o.amount || 0), 0);
+  const profit = rev - exp;
+  const margin = rev > 0 ? Math.round((profit / rev) * 100) : 0;
 
-  /* ---- 3. Пробные и отказы ---- */
-  const t_signup = Math.round(totalLeads * CONV.lead2signup);
-  const t_visit = Math.round(t_signup * CONV.signup2visit);
-  const t_buy = Math.round(t_visit * CONV.visit2buy);
-  const t_noShow = t_signup - t_visit;
-  const t_noBuy = t_visit - t_buy;
-  const refusals = DEMO_REFUSALS;
+  const opRows = periodOps.map((o) => {
+    const cat = catById(o.categoryId);
+    const isExp = o.type === "expense";
+    return {
+      date: datePart(o.date), branch: scopeName(), group: "—",
+      who: o.description || cat, cat, type: o.type,
+      typeLabel: isExp ? "Расход" : "Поступление",
+      sum: isExp ? -Number(o.amount || 0) : Number(o.amount || 0),
+      pay: accById(o.accountId), resp: "—",
+    };
+  });
+  function matchFinType(r: any) {
+    if (finType === "all") return true;
+    if (finType === "expense") return r.type === "expense";
+    if (finType === "income") return r.type === "income";
+    const c = String(r.cat || "").toLowerCase();
+    if (finType === "subs") return r.type === "income" && /абонемент/.test(c);
+    if (finType === "goods") return r.type === "income" && /товар/.test(c);
+    if (finType === "shows") return r.type === "income" && /(выступ|концерт)/.test(c);
+    if (finType === "refund") return /возврат/.test(c);
+    return true;
+  }
+  const finFiltered = opRows.filter(matchFinType);
+
+  /* ---- 2. Абонементы (реальные из платежей + подписок) ---- */
+  const subPayments = payments.filter((p) => p.type === "subscription" && inPeriod(p.date) && inScope(p.branchId));
+  const subCount = subPayments.length;
+  const subSum = subPayments.reduce((s, p) => s + Number(p.amount || 0), 0);
+  const subAvg = subCount ? Math.round(subSum / subCount) : 0;
+  const activeStudents = students.filter((s) => inScope(s.branchId) && ((s.computedStatus || s.status) === "active")).length;
+  const subRows: any[] = [];
+  students.forEach((s) => {
+    if (!inScope(s.branchId)) return;
+    (s.subscriptions || []).forEach((sub: any) => {
+      const when = sub.soldOn || sub.startsOn;
+      if (!inPeriod(when)) return;
+      subRows.push({ name: s.name, type: sub.name, soldOn: datePart(when), starts: datePart(sub.startsOn), status: sub.status, price: Number(sub.price || 0) });
+    });
+  });
+
+  /* ---- 3. Пробные и отказы (реальные из посещаемости и архива) ---- */
+  let tBooked = 0, tConverted = 0, tLost = 0;
+  students.forEach((s) => {
+    if (!inScope(s.branchId)) return;
+    let trialInPeriod = false, outcome: string | null = null;
+    Object.values(s.attendance || {}).forEach((a: any) => {
+      if (a && a.isTrial && inPeriod(a.date)) {
+        trialInPeriod = true;
+        if (a.trialOutcome === "converted") outcome = "converted";
+        else if (a.trialOutcome === "lost" && outcome !== "converted") outcome = "lost";
+        else if (!outcome) outcome = a.trialOutcome || "pending";
+      }
+    });
+    if (!trialInPeriod && (s.computedStatus || s.status) === "trial" && inPeriod(s.createdAt)) { trialInPeriod = true; outcome = "pending"; }
+    if (trialInPeriod) { tBooked++; if (outcome === "converted") tConverted++; else if (outcome === "lost") tLost++; }
+  });
+  const tAttended = tConverted + tLost;
+  const t_noShow = Math.max(0, tBooked - tAttended);
+
+  const refusals = students
+    .filter((s) => inScope(s.branchId) && (s.archivedAt || ["left", "archived"].includes(s.computedStatus || "") || ["left", "archived"].includes(s.status || "")))
+    .map((s) => ({ name: s.name, phone: s.parentPhone || s.phone || "", reason: s.archiveReason || "—", date: datePart(s.archivedAt), comment: s.archiveComment || "" }));
   const byReason: any = {};
   refusals.forEach((r) => { byReason[r.reason] = (byReason[r.reason] || 0) + 1; });
-  const topReason = Object.keys(byReason).sort((a, c) => byReason[c] - byReason[a])[0];
-  const topPct = topReason && refusals.length ? Math.round((byReason[topReason] / refusals.length) * 100) : 0;
+  const reasonRows = Object.keys(byReason).sort((a, c) => byReason[c] - byReason[a]).map((k) => ({ reason: k, count: byReason[k], pct: refusals.length ? Math.round((byReason[k] / refusals.length) * 100) : 0 }));
 
-  /* ---- 4. Маркетинг ---- */
-  const m_signup = Math.round(totalLeads * CONV.lead2signup);
-  const m_visit = Math.round(m_signup * CONV.signup2visit);
-  const m_buy = Math.round(m_visit * CONV.visit2buy);
-  const m_renew = Math.round(m_buy * CONV.buy2renew);
-  const spent = MKT_BUDGET;
-  const cpl = totalLeads > 0 ? Math.round(spent / totalLeads) : 0;
-  const cac = m_buy > 0 ? Math.round(spent / m_buy) : 0;
-  let newRev = 0;
-  b.groups.forEach((g: any) => {
-    const tot = g.post + g.new;
-    if (tot > 0) {
-      const plan = g.manualPlan > 0 ? g.manualPlan : g.chek * tot;
-      newRev += plan * (g.new / tot);
-    }
-  });
-  newRev = Math.round(newRev);
-  const romi = spent > 0 ? Math.round(((newRev - spent) / spent) * 100) : 0;
-
-  /* ---- 5. AI + сравнение ---- */
-  const ai_buy = Math.round(totalLeads * CONV.lead2signup * CONV.signup2visit * CONV.visit2buy);
-  const ai_cac = ai_buy > 0 ? Math.round(spent / ai_buy) : 0;
-  const season = seasonNote(month);
-  const prevRev =
-    cmpPeriod === "prev" ? Math.round(rev * 0.94) :
-    cmpPeriod === "year" ? Math.round(rev * 0.82) :
-    cmpPeriod === "avg3" ? Math.round(rev * 0.97) : Math.round(rev * 0.9);
-  const dev = prevRev > 0 ? Math.round(((rev - prevRev) / prevRev) * 100) : 0;
-  const cmpLabel =
-    cmpPeriod === "prev" ? "Предыдущий месяц" :
-    cmpPeriod === "year" ? "Тот же месяц год назад" :
-    cmpPeriod === "avg3" ? "Среднее за 3 мес" : "Среднее за 12 мес";
-
-  /* ---- Winback ---- */
-  const churn = DEMO_REFUSALS;
-  const wbReasons = Object.keys(churn.reduce((a: any, c: any) => { if (c.reason) a[c.reason] = 1; return a; }, {}));
+  /* ---- Winback (реальные ушедшие) ---- */
+  const churn = refusals;
+  const wbReasons = Object.keys(churn.reduce((a: any, c: any) => { if (c.reason && c.reason !== "—") a[c.reason] = 1; return a; }, {}));
   const wbMonths = Object.keys(churn.reduce((a: any, c: any) => { if (c.date) a[c.date.slice(0, 7)] = 1; return a; }, {})).sort().reverse();
   const wbFiltered = churn.filter((c: any) => {
     if (wbMonth !== "all" && (!c.date || c.date.slice(0, 7) !== wbMonth)) return false;
@@ -246,17 +282,52 @@ export function ReportsProtoView() {
     return true;
   });
 
-  function delLead(i: number) {
-    setLeads(leads.filter((_, idx) => idx !== i));
-  }
-  function addLead() {
-    const src = window.prompt("Источник (" + LEAD_SOURCES.join(" / ") + "):", "Instagram");
-    if (src === null) return;
-    const cnt = window.prompt("Количество лидов:", "0");
-    if (cnt === null) return;
-    const camp = window.prompt("Кампания:", "") || "";
-    setLeads([...leads, { source: src || "Другое", count: parseInt(cnt) || 0, campaign: camp, comment: "" }]);
-  }
+  /* ---- 4. Маркетинг (лиды реальные; рекламные метрики — нет данных) ---- */
+  const sourceName = (id?: string | null) => leadSources.find((ls) => ls.id === id)?.name || "Без источника";
+  const leadStudents = students.filter((s) => inScope(s.branchId) && inPeriod(s.createdAt));
+  const totalLeads = leadStudents.length;
+  const bySourceMap: any = {};
+  leadStudents.forEach((s) => { const n = sourceName(s.sourceId); bySourceMap[n] = (bySourceMap[n] || 0) + 1; });
+  const leadRows = Object.keys(bySourceMap).map((n) => ({ source: n, count: bySourceMap[n], pct: totalLeads ? Math.round((bySourceMap[n] / totalLeads) * 100) : 0 }));
+  let f_trial = 0, f_attend = 0, f_buy = 0, f_renew = 0, newRev = 0;
+  leadStudents.forEach((s) => {
+    const atts = Object.values(s.attendance || {}) as any[];
+    const hasTrial = atts.some((a) => a && a.isTrial) || (s.computedStatus || s.status) === "trial";
+    const attended = atts.some((a) => a && a.isTrial && (a.trialOutcome === "converted" || a.trialOutcome === "lost"));
+    const subs = (s.subscriptions || []).filter((x: any) => x.status !== "deleted");
+    if (hasTrial) f_trial++;
+    if (attended) f_attend++;
+    if (subs.length > 0) f_buy++;
+    if (subs.length > 1) f_renew++;
+    subs.forEach((sub: any) => { if (inPeriod(sub.soldOn || sub.startsOn)) newRev += Number(sub.price || 0); });
+  });
+
+  /* ---- 5. Сравнение периодов (реальный P&L из бухгалтерии) ---- */
+  const cmpLabel =
+    cmpPeriod === "prev" ? "Предыдущий месяц" :
+    cmpPeriod === "year" ? "Тот же месяц год назад" :
+    cmpPeriod === "avg3" ? "Среднее за 3 мес" : "Среднее за 12 мес";
+  const cmp = useMemo(() => {
+    if (!pnl.length) return null;
+    let curIdx = pnl.findIndex((p) => p.month === monthVal);
+    if (curIdx < 0) curIdx = pnl.length - 1;
+    const cur = pnl[curIdx];
+    if (!cur) return null;
+    const curRev = Number(cur.revenue || 0);
+    let cmpRev: number | null = null;
+    if (cmpPeriod === "prev") { const p = pnl[curIdx - 1]; cmpRev = p ? Number(p.revenue || 0) : null; }
+    else if (cmpPeriod === "year") {
+      const cm = String(cur.month).split("-"); const target = `${+cm[0] - 1}-${cm[1]}`;
+      const p = pnl.find((x) => x.month === target); cmpRev = p ? Number(p.revenue || 0) : null;
+    } else if (cmpPeriod === "avg3") {
+      const prev = pnl.slice(Math.max(0, curIdx - 3), curIdx); cmpRev = prev.length ? Math.round(prev.reduce((s, p) => s + Number(p.revenue || 0), 0) / prev.length) : null;
+    } else if (cmpPeriod === "avg12") {
+      const prev = pnl.slice(Math.max(0, curIdx - 12), curIdx); cmpRev = prev.length ? Math.round(prev.reduce((s, p) => s + Number(p.revenue || 0), 0) / prev.length) : null;
+    }
+    const dev = cmpRev != null && cmpRev > 0 ? Math.round(((curRev - cmpRev) / cmpRev) * 100) : null;
+    return { curRev, cmpRev, dev, monthLabel: monthName(cur.month) };
+  }, [pnl, monthVal, cmpPeriod]);
+
   function onOfferChange(id: string) {
     setWbOfferId(id);
     const o = WINBACK_OFFERS.filter((x) => x.id === id)[0];
@@ -272,8 +343,6 @@ export function ReportsProtoView() {
     flash("Открыто " + withPhone.length + " чатов WhatsApp");
   }
 
-  const filterSelStyle: any = { fontFamily: "'IBM Plex Sans',sans-serif", fontSize: 13, fontWeight: 600, padding: "7px 12px", borderRadius: 9, border: "1px solid var(--border-c)", background: "var(--control)", color: "var(--text)", cursor: "pointer" };
-
   return (
     <div className="proto-reports">
       <div className="bdr">
@@ -284,8 +353,8 @@ export function ReportsProtoView() {
             <div className="page-sub">Единый аналитический центр · что произошло · почему · что делать дальше</div>
           </div>
           <div className="head-actions" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <button className="btn btn-brand" onClick={() => flash("📸 Снимок периода «" + label + "» сохранён — данные заморожены")}>📸 Сохранить снимок периода</button>
-            <span style={{ fontSize: 11, color: "var(--text2)" }} title="Пока снимки хранятся в этом браузере. С подключением базы — в Supabase, доступны отовсюду.">ⓘ хранится локально</span>
+            <button className="btn btn-brand" onClick={() => flash("📸 Снимок периода «" + label + "» — сохранение снимков появится с подключением хранилища")}>📸 Сохранить снимок периода</button>
+            <span style={{ fontSize: 11, color: "var(--text2)" }} title="Персистентности снимков в системе пока нет.">ⓘ снимки пока не хранятся</span>
           </div>
         </div>
 
@@ -313,7 +382,7 @@ export function ReportsProtoView() {
           <label className="flabel" style={{ marginLeft: 8 }}>Область:</label>
           <select value={scope} onChange={(e) => setScope(e.target.value)}>
             <option value="all">Вся сеть</option>
-            {BRANCHES_REP.map((br) => <option key={br.id} value={br.id}>{br.name}</option>)}
+            {branches.map((br) => <option key={br.id} value={br.id}>{br.name}</option>)}
           </select>
           <span style={{ fontSize: 12, color: "var(--gold-c)", fontWeight: 700, marginLeft: "auto" }}>{label}</span>
         </div>
@@ -328,7 +397,7 @@ export function ReportsProtoView() {
         {/* ===== 1. ФИНАНСОВЫЕ ОПЕРАЦИИ ===== */}
         <div className={"rep-panel" + (subtab === "fin" ? " active" : "")}>
           <div className="kpi-cards">
-            <KpiCard lbl="Поступления" val={fmt(rev) + " ₸"} sub="план из БДР" />
+            <KpiCard lbl="Поступления" val={fmt(rev) + " ₸"} sub="за период" />
             <KpiCard lbl="Расходы" val={fmt(exp) + " ₸"} color="var(--red-c)" />
             <KpiCard lbl="Прибыль" val={fmt(profit) + " ₸"} sub={margin + "% маржа"} color="var(--green-c)" />
             <KpiCard lbl="Операций" val={fmt(finFiltered.length)} sub="показано" />
@@ -351,34 +420,28 @@ export function ReportsProtoView() {
               <table className="rep-table">
                 <thead>
                   <tr>
-                    <th>Дата</th><th>Филиал</th><th>Группа</th><th>Ученик/группа</th><th>Тип</th>
-                    <th style={{ textAlign: "right" }}>Сумма</th><th>Оплата</th><th>Ответственный</th>
+                    <th>Дата</th><th>Филиал</th><th>Статья</th><th>Описание</th><th>Тип</th>
+                    <th style={{ textAlign: "right" }}>Сумма</th><th>Счёт</th><th>Ответственный</th>
                   </tr>
                 </thead>
                 <tbody>
                   {finFiltered.length ? finFiltered.map((o, i) => (
                     <tr key={i}>
-                      <td>{o.date}</td><td>{o.branch}</td><td>{o.group}</td><td>{o.who}</td><td>{o.typeLabel}</td>
+                      <td>{o.date}</td><td>{o.branch}</td><td>{o.cat}</td><td>{o.who}</td><td>{o.typeLabel}</td>
                       <td style={{ textAlign: "right", fontWeight: 700, color: o.sum < 0 ? "var(--red-c)" : "var(--heading)" }}>{(o.sum < 0 ? "−" : "") + fmt(Math.abs(o.sum)) + " ₸"}</td>
                       <td>{o.pay}</td><td>{o.resp}</td>
                     </tr>
                   )) : (
-                    <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--text2)", padding: 18 }}>Нет операций этого типа за период</td></tr>
+                    <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--text2)", padding: 18 }}>Данных пока нет — операций этого типа за период не найдено</td></tr>
                   )}
                 </tbody>
               </table>
             </div>
-            {finType !== "all" && emptyTypes[finType] && (
-              <div className="rep-stub" style={{ marginTop: 14 }}>Операции типа «{emptyTypes[finType]}» появятся с подключением модулей <b>Бухгалтерия</b> и <b>Продажа товаров</b>.</div>
-            )}
-            {finType === "all" && (
-              <div className="rep-stub" style={{ marginTop: 14 }}>Сейчас показаны абонементы и расходы из БДР. Товары, выступления, возвраты подтянутся из <b>Бухгалтерии</b> и <b>Абонементов</b>.</div>
-            )}
             <div className="rep-export">
-              <button className="btn btn-secondary" onClick={() => flash("Экспорт «Финансовые операции» в PDF — подключается при интеграции с базой")}>📄 PDF</button>
-              <button className="btn btn-secondary" onClick={() => flash("Экспорт «Финансовые операции» в Excel — подключается при интеграции с базой")}>📊 Excel</button>
-              <button className="btn btn-secondary" onClick={() => flash("Экспорт «Финансовые операции» в WhatsApp — подключается при интеграции с базой")}>💬 WhatsApp</button>
-              <button className="btn btn-secondary" onClick={() => flash("Экспорт «Финансовые операции» в Email — подключается при интеграции с базой")}>✉️ Email</button>
+              <button className="btn btn-secondary" onClick={() => flash("Экспорт «Финансовые операции» в PDF — появится позже")}>📄 PDF</button>
+              <button className="btn btn-secondary" onClick={() => flash("Экспорт «Финансовые операции» в Excel — появится позже")}>📊 Excel</button>
+              <button className="btn btn-secondary" onClick={() => flash("Экспорт «Финансовые операции» в WhatsApp — появится позже")}>💬 WhatsApp</button>
+              <button className="btn btn-secondary" onClick={() => flash("Экспорт «Финансовые операции» в Email — появится позже")}>✉️ Email</button>
             </div>
           </div>
         </div>
@@ -386,47 +449,77 @@ export function ReportsProtoView() {
         {/* ===== 2. АБОНЕМЕНТЫ ===== */}
         <div className={"rep-panel" + (subtab === "subs" ? " active" : "")}>
           <div className="kpi-cards">
-            <KpiCard lbl="Активных учеников" val={fmt(students)} sub="из плана БДР" />
-            <KpiCard lbl="Средний чек" val={fmt(avgChek) + " ₸"} />
-            <KpiCard lbl="Продаж за период" val="—" sub="из Абонементов" />
-            <KpiCard lbl="Сумма продаж" val="—" sub="из Абонементов" />
+            <KpiCard lbl="Активных учеников" val={fmt(activeStudents)} sub="статус «активен»" />
+            <KpiCard lbl="Средний чек" val={subAvg ? fmt(subAvg) + " ₸" : "—"} sub={subAvg ? "по продажам периода" : "Данных пока нет"} />
+            <KpiCard lbl="Продаж за период" val={fmt(subCount)} sub="платежи · абонементы" />
+            <KpiCard lbl="Сумма продаж" val={fmt(subSum) + " ₸"} sub="за период" color="var(--green-c)" />
           </div>
           <div className="rep-card">
             <h3>Отчёт по абонементам</h3>
-            <div className="rep-stub">Отчёт по абонементам (ФИО, тип, дата продажи, дата начала действия, срок, скидка, стоимость, оплата) подтянется автоматически из вкладки <b>«Продажа абонементов»</b>. Поддержит два независимых фильтра: по <b>дате продажи</b> и по <b>дате начала действия</b> — для анализа ранних продаж и продаж на будущие периоды.</div>
+            {subRows.length ? (
+              <div className="rep-tablewrap">
+                <table className="rep-table">
+                  <thead><tr><th>Ученик</th><th>Тип</th><th>Дата продажи</th><th>Начало</th><th>Статус</th><th style={{ textAlign: "right" }}>Стоимость</th></tr></thead>
+                  <tbody>
+                    {subRows.map((r, i) => (
+                      <tr key={i}>
+                        <td>{r.name}</td><td>{r.type || "—"}</td><td>{r.soldOn || "—"}</td><td>{r.starts || "—"}</td>
+                        <td>{r.status === "active" ? "Активен" : r.status === "expired" ? "Истёк" : r.status === "suspended" ? "Приостановлен" : r.status || "—"}</td>
+                        <td style={{ textAlign: "right", fontWeight: 700 }}>{fmt(r.price)} ₸</td>
+                      </tr>
+                    ))}
+                    <tr style={{ borderTop: "2px solid var(--border-c)" }}>
+                      <td style={{ fontWeight: 700 }} colSpan={5}>Итого продаж</td>
+                      <td style={{ textAlign: "right", fontWeight: 800 }}>{fmt(subRows.reduce((s, r) => s + r.price, 0))} ₸</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <Empty>Данных пока нет — продаж абонементов за выбранный период не найдено</Empty>
+            )}
           </div>
         </div>
 
         {/* ===== 3. ПРОБНЫЕ И ОТКАЗЫ ===== */}
         <div className={"rep-panel" + (subtab === "trials" ? " active" : "")}>
           <div className="kpi-cards">
-            <KpiCard lbl="Записано" val={fmt(t_signup)} />
-            <KpiCard lbl="Пришло" val={fmt(t_visit)} sub={Math.round(CONV.signup2visit * 100) + "% от записи"} />
-            <KpiCard lbl="Купило" val={fmt(t_buy)} sub={Math.round(CONV.visit2buy * 100) + "% от прихода"} color="var(--green-c)" />
-            <KpiCard lbl="Не купило" val={fmt(t_noBuy)} color="var(--red-c)" />
+            <KpiCard lbl="Записано на пробный" val={fmt(tBooked)} />
+            <KpiCard lbl="Пришло" val={fmt(tAttended)} sub={tBooked > 0 ? Math.round((tAttended / tBooked) * 100) + "% от записи" : "—"} />
+            <KpiCard lbl="Купило" val={fmt(tConverted)} sub={tAttended > 0 ? Math.round((tConverted / tAttended) * 100) + "% от прихода" : "—"} color="var(--green-c)" />
+            <KpiCard lbl="Не купило" val={fmt(tLost)} color="var(--red-c)" />
           </div>
           <div className="rep-card">
             <h3>Воронка пробных уроков</h3>
-            <div className="funnel-row head"><span>Этап</span><span>Количество</span><span>Конверсия</span><span>Не прошло</span></div>
-            <FunRow name="Записано на пробный" cnt={t_signup} conv="—" lost={0} />
-            <FunRow name="Пришло на пробный" cnt={t_visit} conv={Math.round(CONV.signup2visit * 100) + "%"} lost={t_noShow} />
-            <FunRow name="Купило абонемент" cnt={t_buy} conv={Math.round(CONV.visit2buy * 100) + "%"} lost={t_noBuy} />
+            {tBooked > 0 ? (
+              <>
+                <div className="funnel-row head"><span>Этап</span><span>Количество</span><span>Конверсия</span><span>Не прошло</span></div>
+                <FunRow name="Записано на пробный" cnt={tBooked} conv="—" lost={0} />
+                <FunRow name="Пришло на пробный" cnt={tAttended} conv={tBooked > 0 ? Math.round((tAttended / tBooked) * 100) + "%" : "—"} lost={t_noShow} />
+                <FunRow name="Купило абонемент" cnt={tConverted} conv={tAttended > 0 ? Math.round((tConverted / tAttended) * 100) + "%" : "—"} lost={tLost} />
+              </>
+            ) : (
+              <Empty>Данных пока нет — пробных уроков за период не отмечено. Пробные считаются по отметкам посещаемости с признаком «пробное».</Empty>
+            )}
           </div>
           <div className="rep-card">
             <h3>История отказов и причины ухода
               <button className="btn btn-brand" style={{ float: "right", padding: "6px 14px", fontSize: 12 }} onClick={() => setWinbackOpen(!winbackOpen)}>↩ Запустить возврат с оффером</button>
             </h3>
-            <div className="rep-tablewrap">
-              <table className="rep-table">
-                <thead><tr><th>Ученик</th><th>Причина</th><th>Дата</th><th>Комментарий</th></tr></thead>
-                <tbody>
-                  {refusals.map((r, i) => (
-                    <tr key={i}><td>{r.name}</td><td>{r.reason}</td><td>{r.date}</td><td>{r.comment || "—"}</td></tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="rep-stub" style={{ marginTop: 12 }}>Пока показаны примеры. Реальные ушедшие появятся здесь, когда админ отметит уход кнопкой <b>«Отметить как ушедшего»</b> в карточке ученика.</div>
+            {refusals.length ? (
+              <div className="rep-tablewrap">
+                <table className="rep-table">
+                  <thead><tr><th>Ученик</th><th>Причина</th><th>Дата</th><th>Комментарий</th></tr></thead>
+                  <tbody>
+                    {refusals.map((r, i) => (
+                      <tr key={i}><td>{r.name}</td><td>{r.reason}</td><td>{r.date || "—"}</td><td>{r.comment || "—"}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <Empty>Данных пока нет — ушедших учеников не найдено. Записи появятся, когда ученик будет переведён в архив с указанием причины.</Empty>
+            )}
           </div>
 
           {winbackOpen && (
@@ -480,77 +573,95 @@ export function ReportsProtoView() {
                   </tbody>
                 </table>
               </div>
-              <div className="rep-stub" style={{ marginTop: 14 }}>Полностью автоматическая рассылка подключается через <b>WhatsApp Business API</b> при интеграции с сервером. Сейчас — отправка в один клик по каждому.</div>
             </div>
           )}
 
           <div className="ai-block">
-            <h4>✦ AI-анализ причин ухода</h4>
-            <p>Основная причина ухода за период — <b>«{topReason || "—"}»</b> ({topPct}% случаев).</p>
-            <p>Рекомендация: если причина связана с расписанием — рассмотрите открытие дополнительных вечерних групп в будни. Если «дорого» — проработайте рассрочку и акции на длительные абонементы.</p>
+            <h4>Распределение причин ухода</h4>
+            {reasonRows.length ? (
+              <div className="rep-tablewrap">
+                <table className="rep-table">
+                  <thead><tr><th>Причина</th><th style={{ textAlign: "right" }}>Учеников</th><th style={{ textAlign: "right" }}>Доля</th></tr></thead>
+                  <tbody>
+                    {reasonRows.map((r, i) => (
+                      <tr key={i}><td>{r.reason}</td><td style={{ textAlign: "right", fontWeight: 700 }}>{fmt(r.count)}</td><td style={{ textAlign: "right" }}>{r.pct}%</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="rep-stub" style={{ marginTop: 12 }}>Показано фактическое распределение причин ухода. AI-анализ и рекомендации — данных пока нет.</div>
+              </div>
+            ) : (
+              <Empty>Данных пока нет</Empty>
+            )}
           </div>
         </div>
 
         {/* ===== 4. МАРКЕТИНГ ===== */}
         <div className={"rep-panel" + (subtab === "mkt" ? " active" : "")}>
           <div className="kpi-cards">
-            <KpiCard lbl="Рекл. бюджет" val={fmt(MKT_BUDGET) + " ₸"} />
-            <KpiCard lbl="Потрачено" val={fmt(spent) + " ₸"} sub="из Бухгалтерии" />
-            <KpiCard lbl="Лиды" val={fmt(totalLeads)} sub="вручную" />
-            <KpiCard lbl="CPL" val={fmt(cpl) + " ₸"} sub="стоимость лида" />
-            <KpiCard lbl="CAC" val={fmt(cac) + " ₸"} sub="стоимость клиента" />
-            <KpiCard lbl="ROMI" val={romi + "%"} sub="возврат на маркетинг" color={romi >= 0 ? "var(--green-c)" : "var(--red-c)"} />
-            <KpiCard lbl="Новых клиентов" val={fmt(m_buy)} />
-            <KpiCard lbl="Выручка новых" val={fmt(newRev) + " ₸"} />
-            <KpiCard lbl="Средний чек" val={fmt(avgChek) + " ₸"} />
+            <KpiCard lbl="Рекл. бюджет" val="—" sub="Данных пока нет" color="var(--text2)" />
+            <KpiCard lbl="Потрачено" val="—" sub="Данных пока нет" color="var(--text2)" />
+            <KpiCard lbl="Лиды" val={fmt(totalLeads)} sub="новые ученики за период" />
+            <KpiCard lbl="CPL" val="—" sub="Данных пока нет" color="var(--text2)" />
+            <KpiCard lbl="CAC" val="—" sub="Данных пока нет" color="var(--text2)" />
+            <KpiCard lbl="ROMI" val="—" sub="Данных пока нет" color="var(--text2)" />
+            <KpiCard lbl="Купили абонемент" val={fmt(f_buy)} />
+            <KpiCard lbl="Выручка новых" val={fmt(newRev) + " ₸"} color="var(--green-c)" />
+            <KpiCard lbl="Средний чек" val={subAvg ? fmt(subAvg) + " ₸" : "—"} sub={subAvg ? undefined : "Данных пока нет"} />
           </div>
           <div className="rep-card">
-            <h3>Воронка продаж · от лида до продления</h3>
-            <div className="funnel-row head"><span>Этап</span><span>Количество</span><span>Конверсия</span><span>Стоимость</span></div>
-            <FunRowCost name="Лиды" cnt={totalLeads} conv="—" cost={cpl} />
-            <FunRowCost name="Запись на пробный" cnt={m_signup} conv={Math.round(CONV.lead2signup * 100) + "%"} cost={m_signup > 0 ? Math.round(spent / m_signup) : 0} />
-            <FunRowCost name="Приход" cnt={m_visit} conv={Math.round(CONV.signup2visit * 100) + "%"} cost={m_visit > 0 ? Math.round(spent / m_visit) : 0} />
-            <FunRowCost name="Покупка" cnt={m_buy} conv={Math.round(CONV.visit2buy * 100) + "%"} cost={cac} />
-            <FunRowCost name="Продление" cnt={m_renew} conv={Math.round(CONV.buy2renew * 100) + "%"} cost="—" />
+            <h3>Воронка · от лида до продления</h3>
+            {totalLeads > 0 ? (
+              <>
+                <div className="funnel-row head"><span>Этап</span><span>Количество</span><span>Конверсия</span><span>Стоимость</span></div>
+                <FunRowCost name="Лиды (новые ученики)" cnt={totalLeads} conv="—" cost="—" />
+                <FunRowCost name="Записаны на пробный" cnt={f_trial} conv={totalLeads > 0 ? Math.round((f_trial / totalLeads) * 100) + "%" : "—"} cost="—" />
+                <FunRowCost name="Пришли на пробный" cnt={f_attend} conv={f_trial > 0 ? Math.round((f_attend / f_trial) * 100) + "%" : "—"} cost="—" />
+                <FunRowCost name="Купили абонемент" cnt={f_buy} conv={f_attend > 0 ? Math.round((f_buy / f_attend) * 100) + "%" : "—"} cost="—" />
+                <FunRowCost name="Продлили" cnt={f_renew} conv={f_buy > 0 ? Math.round((f_renew / f_buy) * 100) + "%" : "—"} cost="—" />
+                <div className="rep-stub" style={{ marginTop: 12 }}>Стоимость этапов (CPL/CAC) — данных о рекламных расходах в системе пока нет.</div>
+              </>
+            ) : (
+              <Empty>Данных пока нет — новых учеников (лидов) за период не найдено</Empty>
+            )}
           </div>
           <div className="rep-card">
-            <h3>Лиды по источникам <button className="btn btn-secondary" style={{ float: "right", padding: "5px 12px", fontSize: 12 }} onClick={addLead}>+ Внести лиды</button></h3>
-            <div className="rep-tablewrap">
-              <table className="rep-table">
-                <thead><tr><th>Источник</th><th>Кампания</th><th style={{ textAlign: "right" }}>Лиды</th><th style={{ textAlign: "right" }}>CPL</th><th>Комментарий</th><th></th></tr></thead>
-                <tbody>
-                  {leads.map((l, i) => {
-                    const lcpl = l.count > 0 && totalLeads > 0 ? Math.round((spent * (l.count / totalLeads)) / l.count) : 0;
-                    return (
+            <h3>Лиды по источникам <button className="btn btn-secondary" style={{ float: "right", padding: "5px 12px", fontSize: 12 }} onClick={() => flash("Ручной ввод лидов и рекламных расходов появится с модулем «Маркетинг»")}>+ Внести лиды</button></h3>
+            {leadRows.length ? (
+              <div className="rep-tablewrap">
+                <table className="rep-table">
+                  <thead><tr><th>Источник</th><th style={{ textAlign: "right" }}>Лиды</th><th style={{ textAlign: "right" }}>Доля</th><th style={{ textAlign: "right" }}>CPL</th></tr></thead>
+                  <tbody>
+                    {leadRows.map((l, i) => (
                       <tr key={i}>
-                        <td>{l.source}</td><td>{l.campaign || "—"}</td>
+                        <td>{l.source}</td>
                         <td style={{ textAlign: "right", fontWeight: 700 }}>{fmt(l.count)}</td>
-                        <td style={{ textAlign: "right" }}>{fmt(lcpl)} ₸</td>
-                        <td>{l.comment || "—"}</td>
-                        <td><span onClick={() => delLead(i)} style={{ cursor: "pointer", color: "var(--text2)" }}>✕</span></td>
+                        <td style={{ textAlign: "right" }}>{l.pct}%</td>
+                        <td style={{ textAlign: "right", color: "var(--text2)" }}>—</td>
                       </tr>
-                    );
-                  })}
-                  <tr style={{ borderTop: "2px solid var(--border-c)" }}>
-                    <td style={{ fontWeight: 700 }}>Итого</td><td></td>
-                    <td style={{ textAlign: "right", fontWeight: 800 }}>{fmt(totalLeads)}</td>
-                    <td colSpan={3}></td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <div className="rep-stub" style={{ marginTop: 12 }}>Расходы на маркетинг подтягиваются из <b>Бухгалтерии</b> (без повторного ввода). Лиды вводятся вручную маркетологом, т.к. CRM не имеет доступа к рекламным кабинетам Meta/Google.</div>
+                    ))}
+                    <tr style={{ borderTop: "2px solid var(--border-c)" }}>
+                      <td style={{ fontWeight: 700 }}>Итого</td>
+                      <td style={{ textAlign: "right", fontWeight: 800 }}>{fmt(totalLeads)}</td>
+                      <td colSpan={2}></td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div className="rep-stub" style={{ marginTop: 12 }}>Источники берутся из карточек учеников (откуда о нас узнали). CPL и рекламные расходы — данных пока нет.</div>
+              </div>
+            ) : (
+              <Empty>Данных пока нет — источников лидов за период не найдено</Empty>
+            )}
           </div>
         </div>
 
         {/* ===== 5. AI-ОТЧЁТЫ ===== */}
         <div className={"rep-panel" + (subtab === "ai" ? " active" : "")}>
           <div className="ai-block">
-            <h4>✦ AI-отчёт за {label}</h4>
-            <p>📊 Поступления <b>{fmt(rev)} ₸</b>, расходы {fmt(exp)} ₸, прибыль <b>{fmt(profit)} ₸</b>.</p>
-            <p>📣 Маркетинг: {fmt(totalLeads)} лидов, ~{fmt(ai_buy)} новых клиентов, CAC {fmt(ai_cac)} ₸.</p>
-            {season && <p>📅 Сезонность: {season} — учитываю это при сравнении и не сопоставляю период напрямую с обычными месяцами.</p>}
-            <p>💡 Рекомендация: усильте источники с низким CPL и проработайте удержание — продление существующих дешевле привлечения новых.</p>
+            <h4>Сводка за {label}</h4>
+            <p>📊 Поступления <b>{fmt(rev)} ₸</b>, расходы {fmt(exp)} ₸, прибыль <b>{fmt(profit)} ₸</b> ({margin}% маржа).</p>
+            <p>📣 Маркетинг: {fmt(totalLeads)} новых учеников, {fmt(f_buy)} купили абонемент.</p>
+            <div className="rep-stub" style={{ marginTop: 8 }}>AI-выводы, сезонность и рекомендации — данных пока нет. Показаны только фактические показатели.</div>
           </div>
           <div className="rep-card">
             <h3>Сравнение периодов</h3>
@@ -563,24 +674,28 @@ export function ReportsProtoView() {
                 <option value="avg12">Средним за 12 месяцев</option>
               </select>
             </div>
-            <div className="rep-tablewrap">
-              <table className="rep-table">
-                <thead><tr><th>Показатель</th><th style={{ textAlign: "right" }}>Текущий</th><th style={{ textAlign: "right" }}>{cmpLabel}</th><th style={{ textAlign: "right" }}>Отклонение</th></tr></thead>
-                <tbody>
-                  <tr>
-                    <td>Поступления</td>
-                    <td style={{ textAlign: "right", fontWeight: 700 }}>{fmt(rev)}</td>
-                    <td style={{ textAlign: "right" }}>{fmt(prevRev)}</td>
-                    <td style={{ textAlign: "right", color: dev >= 0 ? "var(--green-c)" : "var(--red-c)", fontWeight: 700 }}>{(dev >= 0 ? "+" : "") + dev}%</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            {cmp ? (
+              <div className="rep-tablewrap">
+                <table className="rep-table">
+                  <thead><tr><th>Показатель</th><th style={{ textAlign: "right" }}>Текущий ({cmp.monthLabel})</th><th style={{ textAlign: "right" }}>{cmpLabel}</th><th style={{ textAlign: "right" }}>Отклонение</th></tr></thead>
+                  <tbody>
+                    <tr>
+                      <td>Поступления</td>
+                      <td style={{ textAlign: "right", fontWeight: 700 }}>{fmt(cmp.curRev)}</td>
+                      <td style={{ textAlign: "right" }}>{cmp.cmpRev != null ? fmt(cmp.cmpRev) : "нет данных"}</td>
+                      <td style={{ textAlign: "right", color: cmp.dev == null ? "var(--text2)" : cmp.dev >= 0 ? "var(--green-c)" : "var(--red-c)", fontWeight: 700 }}>{cmp.dev == null ? "—" : (cmp.dev >= 0 ? "+" : "") + cmp.dev + "%"}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <Empty>Данных пока нет — помесячный P&L из бухгалтерии недоступен</Empty>
+            )}
           </div>
           <div className="rep-card">
             <h3>Комментарий владельца</h3>
             <textarea value={ownerComment} onChange={(e) => setOwnerComment(e.target.value)} placeholder="Ваш комментарий к отчёту за период…" style={{ width: "100%", minHeight: 80, fontFamily: "'IBM Plex Sans',sans-serif", fontSize: 13, padding: 10, borderRadius: 10, border: "1px solid var(--border-c)", background: "var(--control)", color: "var(--text)", resize: "vertical" }} />
-            <button className="btn btn-brand" style={{ marginTop: 10 }} onClick={() => flash("Комментарий сохранён")}>Сохранить комментарий</button>
+            <button className="btn btn-brand" style={{ marginTop: 10 }} onClick={() => flash("Комментарий сохранён в этой сессии")}>Сохранить комментарий</button>
           </div>
         </div>
 
@@ -588,7 +703,7 @@ export function ReportsProtoView() {
         <div className={"rep-panel" + (subtab === "history" ? " active" : "")}>
           <div className="rep-card">
             <h3>История сохранённых отчётов</h3>
-            <div className="rep-stub">Сохранённых снимков пока нет. Нажмите <b>«Сохранить снимок периода»</b>, чтобы заморозить показатели закрытого месяца — потом их не сдвинут даже правки старых операций.</div>
+            <Empty>Данных пока нет — сохранённых снимков нет. Персистентное хранилище снимков появится позже.</Empty>
           </div>
         </div>
       </div>
