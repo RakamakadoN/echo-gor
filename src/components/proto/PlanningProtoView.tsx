@@ -1,131 +1,102 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import type { Branch } from "../../types";
 import "./planning-proto.css";
 
 /* ============================================================
-   Данные-заглушки (mock). Портированы из статического прототипа.
+   ПЛАНИРОВАНИЕ (БДР) — реальные данные через /api/mvp/planning/*
+   Вёрстка/CSS/интерактив сохранены. Меняется только источник данных.
+   Разделы без источника показывают заглушку «Данных пока нет».
    ============================================================ */
 const MONTHS_RU = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+const H = { "x-demo-role": "owner" } as const;
+const HJ = { "Content-Type": "application/json", "x-demo-role": "owner" } as const;
 
-const GROUPS_ASTANA: any[] = [
-  { zone: "Зал №2", name: "Ансамбль", type: "Ансамбль", teacher: "", chek: 17176, post: 17, new: 0, max: 18, retention: 90, factPrev: 292904, factPrev2: 257975, manualPlan: 0 },
-  { zone: "Зал №2", name: "Мужская взрослая 17:00", type: "Взрослая", teacher: "", chek: 21900, post: 10, new: 0, max: 22, retention: 90, factPrev: 209310, factPrev2: 199563, manualPlan: 0 },
-  { zone: "Зал №2", name: "Мужская взрослая 18:30", type: "Взрослая", teacher: "", chek: 20143, post: 7, new: 0, max: 22, retention: 90, factPrev: 143220, factPrev2: 137439, manualPlan: 0 },
-  { zone: "Зал №2", name: "Младший ансамбль", type: "Ансамбль", teacher: "", chek: 19961, post: 17, new: 0, max: 21, retention: 90, factPrev: 351547, factPrev2: 302746, manualPlan: 0 },
-  { zone: "Зал №1", name: "Мужская студия Сб Вс (Хамит)", type: "Взрослая", teacher: "Хамит", chek: 18914, post: 28, new: 0, max: 10, retention: 90, factPrev: 516272, factPrev2: 468250, manualPlan: 0 },
-  { zone: "Зал №1", name: "Мужская начальный Вт Чт (Тимур)", type: "Начальная", teacher: "Тимур", chek: 18338, post: 19, new: 1, max: 23, retention: 90, factPrev: 347843, factPrev2: 348696, manualPlan: 0 },
-  { zone: "Зал №1", name: "Продолжающая группа Сб Вс (Тимур)", type: "Продолжающая", teacher: "Тимур", chek: 20444, post: 27, new: 0, max: 22, retention: 90, factPrev: 509733, factPrev2: 501115, manualPlan: 0 },
-  { zone: "Зал №1", name: "Взрослая продолжающая Сб Вс (Дэйси)", type: "Продолжающая", teacher: "Дэйси", chek: 19089, post: 15, new: 0, max: 20, retention: 90, factPrev: 287619, factPrev2: 273819, manualPlan: 0 },
-  { zone: "Зал №1", name: "Девичья Ср Пт  (Дэйси)", type: "Взрослая", teacher: "Дэйси", chek: 19550, post: 12, new: 3, max: 15, retention: 90, factPrev: 278193, factPrev2: 282252, manualPlan: 0 },
-  { zone: "Зал №1", name: "Девичья 10:15 сб/вс (Дэйси)", type: "Взрослая", teacher: "Дэйси", chek: 20130, post: 27, new: 0, max: 22, retention: 90, factPrev: 557220, factPrev2: 478783, manualPlan: 0 },
-  { zone: "Зал №1", name: "Взрослая начальная Сб Вс (Мерей)", type: "Начальная", teacher: "Мерей", chek: 20174, post: 23, new: 0, max: 15, retention: 90, factPrev: 475489, factPrev2: 453673, manualPlan: 0 },
-  { zone: "Зал №1", name: "Взрослая продолжающая Сб Вс (Мерей)", type: "Продолжающая", teacher: "Мерей", chek: 19684, post: 19, new: 0, max: 22, retention: 90, factPrev: 360619, factPrev2: 337257, manualPlan: 0 },
-  { zone: "Зал №1", name: "Девичья 10:00 (Анжела)", type: "Взрослая", teacher: "Анжела", chek: 18572, post: 22, new: 0, max: 25, retention: 90, factPrev: 426740, factPrev2: 378807, manualPlan: 0 },
-  { zone: "Зал №1", name: "Женская продолжающая Анжела", type: "Продолжающая", teacher: "", chek: 19851, post: 37, new: 0, max: 7, retention: 90, factPrev: 684583, factPrev2: 656293, manualPlan: 0 },
-  { zone: "Зал №1", name: "Девичья 3-4 года (Анжела)", type: "Детская", teacher: "Анжела", chek: 20273, post: 11, new: 0, max: 22, retention: 90, factPrev: 229731, factPrev2: 215091, manualPlan: 0 },
-  { zone: "Зал №1", name: "Женская студия Анжела", type: "Взрослая", teacher: "", chek: 18357, post: 14, new: 0, max: 17, retention: 90, factPrev: 263404, factPrev2: 252413, manualPlan: 0 },
-  { zone: "Зал №1", name: "Женская взрослая Анжела 19:30", type: "Взрослая", teacher: "", chek: 18559, post: 16, new: 1, max: 22, retention: 90, factPrev: 312256, factPrev2: 320625, manualPlan: 0 },
-  { zone: "Зал №1", name: "Грузинская группа", type: "Другое", teacher: "", chek: 19709, post: 11, new: 0, max: 11, retention: 90, factPrev: 210123, factPrev2: 207538, manualPlan: 0 },
-  { zone: "Зал №1", name: "Девичья продолжающая вт/чт (Анжела)", type: "Продолжающая", teacher: "Анжела", chek: 19420, post: 22, new: 0, max: 22, retention: 90, factPrev: 439126, factPrev2: 412967, manualPlan: 0 },
-  { zone: "Зал №1", name: "Мужская 10:00 (Ислам)", type: "Взрослая", teacher: "Ислам", chek: 20700, post: 20, new: 0, max: 22, retention: 90, factPrev: 427257, factPrev2: 397783, manualPlan: 0 },
-  { zone: "Зал №1", name: "Продолжающая (Ислам)", type: "Продолжающая", teacher: "Ислам", chek: 20167, post: 12, new: 0, max: 12, retention: 90, factPrev: 244809, factPrev2: 214516, manualPlan: 0 },
-  { zone: "Зал №3", name: "Мини группа взрослая Ср Пт (Медина)", type: "Мини-группа", teacher: "Медина", chek: 16375, post: 7, new: 4, max: 10, retention: 90, factPrev: 171051, factPrev2: 165807, manualPlan: 0 },
-  { zone: "Зал №3", name: "Мини-группа взрослая ПН Ср (Хамит)", type: "Мини-группа", teacher: "Хамит", chek: 20389, post: 6, new: 3, max: 10, retention: 90, factPrev: 170724, factPrev2: 167461, manualPlan: 0 },
-  { zone: "Зал №3", name: "Индивидуальные Хамит", type: "Индивидуальные", teacher: "", chek: 47000, post: 6, new: 1, max: 6, retention: 90, factPrev: 306999, factPrev2: 302323, manualPlan: 0 },
-  { zone: "Зал №3", name: "Мини-группа детская Пн Ср (Хамит)", type: "Мини-группа", teacher: "Хамит", chek: 18750, post: 8, new: 1, max: 4, retention: 90, factPrev: 169195, factPrev2: 157119, manualPlan: 0 },
-  { zone: "Зал №3", name: "Мини группа детская Вт Чт (Тимур)", type: "Мини-группа", teacher: "Тимур", chek: 24219, post: 4, new: 0, max: 6, retention: 90, factPrev: 93787, factPrev2: 88092, manualPlan: 0 },
-  { zone: "Зал №3", name: "Мини-группа взрослая Вт Чт (Дэйси)", type: "Мини-группа", teacher: "Дэйси", chek: 22656, post: 8, new: 0, max: 2, retention: 90, factPrev: 173038, factPrev2: 183265, manualPlan: 0 },
-  { zone: "Зал №3", name: "Индивидуальные Дэйси", type: "Индивидуальные", teacher: "", chek: 22500, post: 2, new: 0, max: 0, retention: 90, factPrev: 45191, factPrev2: 43437, manualPlan: 0 },
-  { zone: "Зал №3", name: "Индивидуальный Тимур", type: "Индивидуальные", teacher: "", chek: 36750, post: 1, new: 0, max: 1, retention: 90, factPrev: 34627, factPrev2: 36091, manualPlan: 0 },
-  { zone: "Зал №3", name: "Индивидуальные Медина", type: "Индивидуальные", teacher: "", chek: 44063, post: 1, new: 1, max: 1, retention: 90, factPrev: 82947, factPrev2: 82232, manualPlan: 0 },
-  { zone: "Зал №3", name: "Индивидуальные Дана", type: "Индивидуальные", teacher: "", chek: 27625, post: 2, new: 0, max: 1, retention: 90, factPrev: 57937, factPrev2: 53570, manualPlan: 0 },
-].map((g, i) => ({ ...g, id: "g" + i }));
+/* ---------- заглушка ---------- */
+const Empty = ({ children }: { children?: any }) => (
+  <div className="hint" style={{ padding: 24, textAlign: "center", color: "var(--text2)", fontSize: 13 }}>{children || "Данных пока нет"}</div>
+);
 
-const BRANCHES: any[] = [
-  { id: "astana203", name: "Астана 203", manager: "Анель", groups: GROUPS_ASTANA },
-  { id: "polnoformat", name: "Полноформат", manager: "Марат", groups: [] },
-];
+/* ---------- типы данных сервера ---------- */
+type GroupRow = { name: string; teacher: string; check: number; permanent: number; new: number; total: number; free: number; factPrev: number; recommended: number; planned: number };
+type RoomRow = { name: string; groupsCount: number; studentsCount: number; total: number; groups: GroupRow[] };
+type ExpenseRow = { key?: string; label: string; planned: number; mode: "auto" | "manual"; children?: { label: string; planned: number }[] };
+type Overview = {
+  period: string; branchId: string | null; mode: string; source: string;
+  basis: { prevMonth: number; prevYear: number; avg6: number };
+  plan: { revenueLines: any[]; expenseLines: any[]; plannedRevenue: number; plannedExpense: number; plannedProfit: number; margin: number };
+  fact: { revenue: number; expense: number; profit: number; margin: number; donePct: number; incomeByDirection: any[] };
+  levels: { level: string; plan: number; fact: number; deviation: number; done: number }[];
+  funnel: { neededSales: number; trials: number; signups: number; leads: number };
+  motivation: { level: string; threshold: number; bonus: string }[];
+  daily: { date: string; revenue: number; trials: number; sales: number; comment: string; author: string }[];
+  detailed: {
+    branchName: string; branches: { id: string; name: string }[]; groupsCount: number; studentsCount: number; fillPct: number;
+    revenue: number; expense: number; profit: number; margin: number;
+    byType: { group: number; mini: number; individual: number };
+    byAudience: { permanent: number; new: number };
+    rooms: RoomRow[]; expenses: ExpenseRow[];
+    funnel: { neededSales: number; trialConv: number; trials: number; recordConv: number; records: number; leadConv: number; leads: number };
+  };
+};
 
-const FUNNEL = { lead2signup: 0.55, signup2visit: 0.7, visit2buy: 0.5, retention: 0.85 };
+const EMPTY_OVERVIEW: Overview = {
+  period: "", branchId: null, mode: "", source: "prev_month",
+  basis: { prevMonth: 0, prevYear: 0, avg6: 0 },
+  plan: { revenueLines: [], expenseLines: [], plannedRevenue: 0, plannedExpense: 0, plannedProfit: 0, margin: 0 },
+  fact: { revenue: 0, expense: 0, profit: 0, margin: 0, donePct: 0, incomeByDirection: [] },
+  levels: [], funnel: { neededSales: 0, trials: 0, signups: 0, leads: 0 }, motivation: [], daily: [],
+  detailed: {
+    branchName: "", branches: [], groupsCount: 0, studentsCount: 0, fillPct: 0,
+    revenue: 0, expense: 0, profit: 0, margin: 0,
+    byType: { group: 0, mini: 0, individual: 0 }, byAudience: { permanent: 0, new: 0 },
+    rooms: [], expenses: [], funnel: { neededSales: 0, trialConv: 0.5, trials: 0, recordConv: 0.7, records: 0, leadConv: 0.55, leads: 0 },
+  },
+};
 
-const DEFAULT_EXPENSES: any[] = [
-  { name: "Аренда", val: 1080450, mode: "auto" },
-  { name: "Ком. услуги", val: 55000, mode: "auto" },
-  { name: "Зарплаты", mode: "auto", items: [
-    { name: "Педагог · Хамит", val: 420000 }, { name: "Педагог · Тимур", val: 480000 },
-    { name: "Педагог · Дэйси", val: 390000 }, { name: "Управляющий · Анель", val: 350000 },
-    { name: "Администратор", val: 250000 }, { name: "Прочий персонал", val: 729025 },
-  ] },
-  { name: "Бонусы", mode: "auto", items: [
-    { name: "Бонус управляющего", val: 180000 }, { name: "Бонусы педагогов", val: 153700 },
-  ] },
-  { name: "Хоз. товары", val: 140000, mode: "manual" },
-  { name: "Маркетинг", val: 340000, mode: "auto" },
-  { name: "Сотовая связь и подписки", val: 147230, mode: "manual" },
-];
+/* ---------- локальные (редактируемые) формы, seed из detailed ---------- */
+type LocalGroup = { id: string; zone: string; name: string; teacher: string; chek: number; post: number; new: number; max: number; factPrev: number; recommended: number; manualPlan: number };
+type LocalExp = { name: string; val?: number; mode: "auto" | "manual"; items?: { name: string; val: number }[] };
 
-const DEFAULT_FACT_INCOME: any[] = [
-  { name: "Продажи абонементов", val: 12400000, mode: "auto", manual: false },
-  { name: "Продажа товаров", val: 1850000, mode: "auto", manual: false },
-  { name: "Выступления", val: 1200000, mode: "auto", manual: false },
-  { name: "Банкеты", val: 650000, mode: "auto", manual: false },
-  { name: "Возвраты", val: -200000, mode: "manual", manual: true },
-];
-
-const DEFAULT_FACT_EXPENSE: any[] = [
-  { name: "Зарплаты", val: 2580000, mode: "auto", manual: false },
-  { name: "Аренда", val: 1080450, mode: "auto", manual: false },
-  { name: "Маркетинг", val: 320000, mode: "auto", manual: false },
-  { name: "Коммунальные", val: 62000, mode: "auto", manual: false },
-  { name: "Прочее", val: 180000, mode: "manual", manual: true },
-];
-
-const PF_DATA: any[] = [
-  { lvl: 0, name: "Доходы", plan: 9177185, fact: 9029007 },
-  { lvl: 1, name: "Групповые", plan: 8628449, fact: 8474882 },
-  { lvl: 1, name: "Мини-группы", plan: 882486, fact: 810500 },
-  { lvl: 1, name: "Индивидуальные", plan: 551500, fact: 554125 },
-];
-
-const DEFAULT_MOT_SCALE: any[] = [
-  { from: 0, to: 80, bonus: 0 },
-  { from: 80, to: 90, bonus: 50000 },
-  { from: 90, to: 100, bonus: 150000 },
-  { from: 100, to: 110, bonus: 250000 },
-  { from: 110, to: 999, bonus: 400000 },
-];
-
-const SOURCE_OPTS = [
-  { title: "Прошлый месяц", desc: "Май 2026: 27,4 млн ₸", k: 1.0 },
-  { title: "Прошлый год", desc: "Июнь 2025: 24,1 млн ₸", k: 0.88 },
-  { title: "Среднее значение", desc: "6 мес: 26,0 млн ₸", k: 0.95 },
-  { title: "Вручную", desc: "С нуля", k: 0 },
-];
+function roomsToGroups(rooms: RoomRow[]): LocalGroup[] {
+  const out: LocalGroup[] = [];
+  rooms.forEach((r) => (r.groups || []).forEach((g, i) => out.push({
+    id: `${r.name}::${i}::${g.name}`,
+    zone: r.name,
+    name: g.name,
+    teacher: g.teacher && g.teacher !== "—" ? g.teacher : "",
+    chek: g.check, post: g.permanent, new: g.new,
+    max: g.total + g.free,
+    factPrev: g.factPrev, recommended: g.recommended, manualPlan: 0,
+  })));
+  return out;
+}
+function expsToLocal(exps: ExpenseRow[]): LocalExp[] {
+  return (exps || []).map((e) => e.children && e.children.length
+    ? { name: e.label, mode: e.mode, items: e.children.map((c) => ({ name: c.label, val: c.planned })) }
+    : { name: e.label, val: e.planned, mode: e.mode });
+}
 
 /* ============================================================
    Помощники
    ============================================================ */
-function fmt(n: number) { return Math.round(n).toLocaleString("ru-RU"); }
+function fmt(n: number) { return Math.round(n || 0).toLocaleString("ru-RU"); }
 function parseNum(s: any) {
-  const n = String(s).replace(/[\s  ]/g, "").replace("−", "-").replace(/[^0-9.-]/g, "");
+  const n = String(s).replace(/[\s  ]/g, "").replace("−", "-").replace(/[^0-9.-]/g, "");
   const v = parseFloat(n); return isNaN(v) ? 0 : v;
 }
-function loadCategory(g: any): string {
-  if (g.max <= 1) return "individual";
-  if (g.max <= 6) return "mini";
+function loadCategory(g: LocalGroup): string {
+  if (/индивид/i.test(g.name)) return "individual";
+  if (/мини/i.test(g.name)) return "mini";
   return "group";
 }
-const gStudents = (g: any) => g.post + g.new;
-const gSum = (g: any) => g.chek * gStudents(g);
-const gPlan = (g: any) => (g.manualPlan > 0 ? g.manualPlan : gSum(g));
-const gFree = (g: any) => Math.max(0, g.max - gStudents(g));
-function gRecommend(g: any) {
-  const avg = (g.factPrev + g.factPrev2) / 2;
-  const potential = gFree(g) * g.chek * 0.4;
-  return Math.round(avg + potential);
-}
-function expVal(e: any) {
-  if (e.items && e.items.length) return e.items.reduce((s: number, it: any) => s + (+it.val || 0), 0);
-  return +e.val || 0;
+const gStudents = (g: LocalGroup) => g.post + g.new;
+const gSum = (g: LocalGroup) => g.chek * gStudents(g);
+const gPlan = (g: LocalGroup) => (g.manualPlan > 0 ? g.manualPlan : gSum(g));
+const gFree = (g: LocalGroup) => Math.max(0, g.max - gStudents(g));
+const gRecommend = (g: LocalGroup) => (g.recommended > 0 ? g.recommended : Math.round(g.factPrev * 1.05));
+function expVal(e: LocalExp) {
+  if (e.items && e.items.length) return e.items.reduce((s, it) => s + (+it.val || 0), 0);
+  return +(e.val || 0);
 }
 
 const TABS = [
@@ -140,32 +111,73 @@ const TABS = [
 /* ============================================================
    Компонент
    ============================================================ */
-export function PlanningProtoView() {
+export function PlanningProtoView({ branches = [] }: { branches?: Branch[] }) {
   const now = new Date();
   const [tab, setTab] = useState("plan");
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
-  const [branchId, setBranchId] = useState("astana203");
-  const [groups, setGroups] = useState<any[]>(() => (BRANCHES[0].groups as any[]).map((g) => ({ ...g })));
+  const [branchId, setBranchId] = useState("all");
+
+  const [ov, setOv] = useState<Overview>(EMPTY_OVERVIEW);
+  const [loaded, setLoaded] = useState(false);
+
+  /* локальные редактируемые формы */
+  const [groups, setGroups] = useState<LocalGroup[]>([]);
+  const [expenses, setExpenses] = useState<LocalExp[]>([]);
+  const [motRows, setMotRows] = useState<{ level: string; threshold: number; bonus: string }[]>([]);
+
   const [collapsed, setCollapsed] = useState(false);
   const [zoneCollapsed, setZoneCollapsed] = useState<Record<string, boolean>>({});
-  const [summaryScope, setSummaryScope] = useState("all");
   const [summaryDetail, setSummaryDetail] = useState<string | null>(null);
-  const [sourceIdx, setSourceIdx] = useState(0);
-  const [expenses, setExpenses] = useState<any[]>(() => JSON.parse(JSON.stringify(DEFAULT_EXPENSES)));
   const [expExpanded, setExpExpanded] = useState<Record<number, boolean>>({ 2: true, 3: true });
   const [funnelNeed, setFunnelNeed] = useState("20");
-  const [factIncome, setFactIncome] = useState<any[]>(() => JSON.parse(JSON.stringify(DEFAULT_FACT_INCOME)));
-  const [factExpense, setFactExpense] = useState<any[]>(() => JSON.parse(JSON.stringify(DEFAULT_FACT_EXPENSE)));
   const [tasksDone, setTasksDone] = useState<Record<string, boolean>>({});
   const [streak, setStreak] = useState(0);
   const [points, setPoints] = useState(0);
-  const [motScale, setMotScale] = useState<any[]>(() => JSON.parse(JSON.stringify(DEFAULT_MOT_SCALE)));
-  const [motOklad, setMotOklad] = useState(350000);
-  const [motStep, setMotStep] = useState(3);
+  const [motStep, setMotStep] = useState(0);
   const [recoMsg, setRecoMsg] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  /* ---------- производные величины ---------- */
+  /* ежедневный отчёт — форма добавления */
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const [dDate, setDDate] = useState(todayStr);
+  const [dRevenue, setDRevenue] = useState("");
+  const [dTrials, setDTrials] = useState("");
+  const [dSales, setDSales] = useState("");
+  const [dComment, setDComment] = useState("");
+
+  const period = `${year}-${String(month + 1).padStart(2, "0")}`;
+
+  /* ---------- загрузка ---------- */
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/mvp/planning/overview?period=${period}&branch=${branchId}`, { headers: H });
+      if (!res.ok) { setLoaded(true); return; }
+      const data: Overview = await res.json();
+      setOv({ ...EMPTY_OVERVIEW, ...data, detailed: { ...EMPTY_OVERVIEW.detailed, ...(data.detailed || {}) } });
+      setGroups(roomsToGroups(data.detailed?.rooms || []));
+      setExpenses(expsToLocal(data.detailed?.expenses || []));
+      setMotRows((data.motivation || []).map((m) => ({ ...m })));
+      setMotStep(0);
+      setFunnelNeed(String(data.detailed?.funnel?.neededSales || data.funnel?.neededSales || 20));
+      setCollapsed(false);
+      setLoaded(true);
+    } catch {
+      /* сервер недоступен — оставляем пустые состояния, не падаем */
+      setLoaded(true);
+    }
+  }, [period, branchId]);
+  useEffect(() => { load(); }, [load]);
+
+  /* конверсии воронки — из detailed.funnel */
+  const CONV = {
+    visit2buy: ov.detailed.funnel.trialConv || 0.5,
+    signup2visit: ov.detailed.funnel.recordConv || 0.7,
+    lead2signup: ov.detailed.funnel.leadConv || 0.55,
+    retention: 0.85,
+  };
+
+  /* ---------- производные (из локальных редактируемых форм = реальный detailed) ---------- */
   const revenueTotal = useMemo(() => groups.reduce((s, g) => s + gPlan(g), 0), [groups]);
   const expenseTotal = useMemo(() => expenses.reduce((s, e) => s + expVal(e), 0), [expenses]);
   const planProfit = revenueTotal - expenseTotal;
@@ -177,9 +189,6 @@ export function PlanningProtoView() {
   const avgChek = groups.length ? Math.round(groups.reduce((s, g) => s + g.chek, 0) / groups.length) : 0;
   const fillRate = capacityTotal ? Math.round((studentsTotal / capacityTotal) * 100) : 0;
 
-  const factIncomeTotal = factIncome.reduce((s, x) => s + (+x.val || 0), 0);
-  const factExpenseTotal = factExpense.reduce((s, x) => s + (+x.val || 0), 0);
-
   const curPeriodLabel = `${MONTHS_RU[month]} ${year}`;
   const zones = useMemo(() => {
     const z: string[] = [];
@@ -187,99 +196,91 @@ export function PlanningProtoView() {
     return z;
   }, [groups]);
 
+  const branchOptions = useMemo(() => [{ id: "all", name: "Вся сеть" }, ...branches.map((b) => ({ id: b.id, name: b.name }))], [branches]);
+  const scopeName = branchId === "all" ? (ov.detailed.branchName ? `Вся сеть` : "Вся сеть") : (branches.find((b) => b.id === branchId)?.name || ov.detailed.branchName || "Филиал");
+
   /* ---------- обновления групп ---------- */
-  function setGroupField(id: string, field: string, raw: string) {
+  function setGroupField(id: string, field: keyof LocalGroup, raw: string) {
     setGroups((gs) => gs.map((g) => (g.id === id ? { ...g, [field]: parseNum(raw) } : g)));
   }
-  function delGroup(id: string) {
-    setGroups((gs) => gs.filter((g) => g.id !== id));
-  }
-  function onBranchChange(id: string) {
-    setBranchId(id);
-    const b = BRANCHES.find((x) => x.id === id);
-    setGroups((b ? (b.groups as any[]) : []).map((g) => ({ ...g })));
-    setCollapsed(false);
-  }
-  function pickSource(idx: number) {
-    setSourceIdx(idx);
-    const k = SOURCE_OPTS[idx].k;
-    setGroups((gs) => gs.map((g) => (k === 0
-      ? { ...g, post: 0, new: 0, manualPlan: 0 }
-      : { ...g, post: Math.round(g.post * k), manualPlan: 0 })));
-  }
+  function delGroup(id: string) { setGroups((gs) => gs.filter((g) => g.id !== id)); }
   function calcRecommendations() {
     setGroups((gs) => gs.map((g) => ({ ...g, manualPlan: gRecommend(g) })));
-    const b = BRANCHES.find((x) => x.id === branchId);
-    const needProlong = Math.round(studentsTotal * (1 - FUNNEL.retention));
+    const needProlong = Math.round(studentsTotal * (1 - CONV.retention));
     const needNew = Math.round(freeTotal * 0.4);
-    const needPU = Math.round(needNew / FUNNEL.visit2buy);
+    const needPU = CONV.visit2buy > 0 ? Math.round(needNew / CONV.visit2buy) : 0;
     setRecoMsg(
-      `По филиалу «${b ? b.name : "—"}» рекомендуется план ${fmt(revenueTotal)} ₸. ` +
+      `По скоупу «${scopeName}» рекомендуется план ${fmt(revenueTotal)} ₸. ` +
       `Основание: заполненность ${fillRate}%, свободно ${freeTotal} мест, средний чек ${fmt(avgChek)} ₸. ` +
       `Для выполнения: ~${needProlong} продлений, ~${needNew} новых абонементов, ~${needPU} пробных уроков.`
     );
   }
 
   /* ---------- обновления расходов ---------- */
-  function setExpVal(idx: number, raw: string) {
-    setExpenses((es) => es.map((e, i) => (i === idx ? { ...e, val: parseNum(raw) } : e)));
-  }
+  function setExpValFn(idx: number, raw: string) { setExpenses((es) => es.map((e, i) => (i === idx ? { ...e, val: parseNum(raw) } : e))); }
   function setExpItemVal(idx: number, j: number, raw: string) {
-    setExpenses((es) => es.map((e, i) => (i === idx ? { ...e, items: e.items.map((it: any, k: number) => (k === j ? { ...it, val: parseNum(raw) } : it)) } : e)));
+    setExpenses((es) => es.map((e, i) => (i === idx ? { ...e, items: (e.items || []).map((it, k) => (k === j ? { ...it, val: parseNum(raw) } : it)) } : e)));
   }
-  function toggleExpMode(idx: number) {
-    setExpenses((es) => es.map((e, i) => (i === idx ? { ...e, mode: e.mode === "auto" ? "manual" : "auto" } : e)));
-  }
-  function delExp(idx: number) {
-    setExpenses((es) => es.filter((_, i) => i !== idx));
-  }
-  function toggleExpExpand(idx: number) {
-    setExpExpanded((m) => ({ ...m, [idx]: !m[idx] }));
-  }
+  function toggleExpMode(idx: number) { setExpenses((es) => es.map((e, i) => (i === idx ? { ...e, mode: e.mode === "auto" ? "manual" : "auto" } : e))); }
+  function delExp(idx: number) { setExpenses((es) => es.filter((_, i) => i !== idx)); }
+  function toggleExpExpand(idx: number) { setExpExpanded((m) => ({ ...m, [idx]: !m[idx] })); }
 
-  /* ---------- факт ---------- */
-  function setFactVal(which: "income" | "expense", idx: number, raw: string) {
-    const setter = which === "income" ? setFactIncome : setFactExpense;
-    setter((arr) => arr.map((e, i) => (i === idx ? { ...e, val: parseNum(raw), manual: true, mode: "manual" } : e)));
-  }
-  function delFact(which: "income" | "expense", idx: number) {
-    const setter = which === "income" ? setFactIncome : setFactExpense;
-    setter((arr) => arr.filter((_, i) => i !== idx));
-  }
+  /* ---------- сохранение бюджета (POST budget) ---------- */
+  const saveBudget = useCallback(async (source?: string) => {
+    setSaving(true);
+    try {
+      const body = {
+        period,
+        branchId: branchId === "all" ? null : branchId,
+        source: source || ov.source,
+        revenueLines: groups.map((g) => ({ direction: g.name, planned: gPlan(g), mode: g.manualPlan > 0 ? "manual" : "auto" })),
+        expenseLines: expenses.map((e) => ({ category: e.name, planned: expVal(e), mode: e.mode })),
+      };
+      const res = await fetch("/api/mvp/planning/budget", { method: "POST", headers: HJ, body: JSON.stringify(body) });
+      if (res.ok) {
+        const base = await res.json();
+        setOv((prev) => ({ ...prev, ...base, detailed: prev.detailed }));
+      }
+    } catch { /* игнорируем сетевую ошибку, локальные формы сохранены */ }
+    finally { setSaving(false); }
+  }, [period, branchId, ov.source, groups, expenses]);
+
+  function pickSource(key: string) { saveBudget(key); }
 
   /* ---------- воронка ---------- */
   const needNew = parseNum(funnelNeed || 20);
-  const needVisits = FUNNEL.visit2buy > 0 ? Math.ceil(needNew / FUNNEL.visit2buy) : 0;
-  const needSignups = FUNNEL.signup2visit > 0 ? Math.ceil(needVisits / FUNNEL.signup2visit) : 0;
-  const needLeads = FUNNEL.lead2signup > 0 ? Math.ceil(needSignups / FUNNEL.lead2signup) : 0;
+  const needVisits = CONV.visit2buy > 0 ? Math.ceil(needNew / CONV.visit2buy) : 0;
+  const needSignups = CONV.signup2visit > 0 ? Math.ceil(needVisits / CONV.signup2visit) : 0;
+  const needLeads = CONV.lead2signup > 0 ? Math.ceil(needSignups / CONV.lead2signup) : 0;
 
   /* ---------- ежедневный отчёт ---------- */
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const passed = now.getDate();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const passed = (year === now.getFullYear() && month === now.getMonth()) ? now.getDate() : daysInMonth;
   const daysLeft = Math.max(1, daysInMonth - passed);
-  const dailyFact = factIncomeTotal > 0 ? factIncomeTotal : Math.round(revenueTotal * passed / daysInMonth);
+  const dailyFact = (ov.daily || []).reduce((s, d) => s + (+d.revenue || 0), 0);
   const dailyLeft = Math.max(0, revenueTotal - dailyFact);
   const perDay = Math.round(dailyLeft / daysLeft);
   const dailyPct = revenueTotal > 0 ? Math.round((dailyFact / revenueTotal) * 100) : 0;
-  const forecast = passed > 0 ? Math.min(150, Math.round((dailyFact / passed) * daysInMonth / revenueTotal * 100)) : 0;
-  function bonusForPct(pct: number) {
-    for (const s of motScale) { if (pct >= s.from && pct < s.to) return s.bonus; }
-    return motScale[motScale.length - 1].bonus;
-  }
-  const curBonus = bonusForPct(dailyPct);
-  const foreBonus = bonusForPct(forecast);
-  const salary = motOklad + foreBonus;
+  const forecast = passed > 0 && revenueTotal > 0 ? Math.min(150, Math.round((dailyFact / passed) * daysInMonth / revenueTotal * 100)) : 0;
+
+  /* достигнутый уровень мотивации по факту выполнения (реальные пороги) */
+  const reachedTier = useMemo(() => {
+    let best: { level: string; threshold: number; bonus: string } | null = null;
+    (ov.motivation || []).forEach((m) => { if (dailyPct >= m.threshold && (!best || m.threshold > best.threshold)) best = m; });
+    return best;
+  }, [ov.motivation, dailyPct]);
+
   const R = 52, C = 2 * Math.PI * R, ringPct = Math.min(100, dailyPct), dash = (C * ringPct) / 100;
   const ringColor = dailyPct >= 100 ? "#3a9d5d" : dailyPct >= 80 ? "#d4b46a" : dailyPct >= 50 ? "#e0a458" : "#c0654a";
   function coachMessage(pct: number) {
-    if (pct >= 100) return <>Огонь! План закрыт на <b>{pct}%</b>. Держи планку — каждый день выше нормы укрепляет твой стрик и бонус.</>;
-    if (pct >= 90) return <>Ты почти у цели — <b>{pct}%</b>. Осталось совсем чуть-чуть. Закрой задачи ниже и выйдешь на 100% уже сегодня.</>;
-    if (pct >= 70) return <>Хороший темп, <b>{pct}%</b>. Прогноз {forecast}%. Сфокусируйся на продлениях и пробных — это твой самый быстрый рост.</>;
+    if (pct >= 100) return <>Огонь! План закрыт на <b>{pct}%</b>. Держи планку — каждый день выше нормы укрепляет твой стрик.</>;
+    if (pct >= 90) return <>Ты почти у цели — <b>{pct}%</b>. Осталось совсем чуть-чуть. Закрой задачи ниже и выйдешь на 100%.</>;
+    if (pct >= 70) return <>Хороший темп, <b>{pct}%</b>. Прогноз {forecast}%. Сфокусируйся на продлениях и пробных.</>;
     if (pct >= 50) return <>Ты на половине пути — <b>{pct}%</b>. Не сбавляй. Выполни задачи дня, и прогноз пойдёт вверх.</>;
-    return <>Старт положен — <b>{pct}%</b>. Главное сейчас — ритм. Закрывай по 2-3 задачи в день, и план станет реальным.</>;
+    return <>Старт положен — <b>{pct}%</b>. Главное сейчас — ритм. Закрывай по 2-3 задачи в день.</>;
   }
   const dailyTasks = useMemo(() => {
-    const needProlong = Math.max(1, Math.round(studentsTotal * (1 - FUNNEL.retention) / daysLeft * 3));
+    const needProlong = Math.max(1, Math.round(studentsTotal * (1 - CONV.retention) / daysLeft * 3));
     const needPU = Math.max(1, Math.round(freeTotal * 0.4 / daysLeft * 2));
     return [
       { id: "prolong", text: `Продлить ${needProlong} учеников с истекающими абонементами`, pts: 30 },
@@ -301,29 +302,23 @@ export function PlanningProtoView() {
       return nm;
     });
   }
+  async function addDaily() {
+    const rev = parseNum(dRevenue);
+    if (!dDate || rev <= 0) return;
+    try {
+      const res = await fetch("/api/mvp/planning/daily", {
+        method: "POST", headers: HJ,
+        body: JSON.stringify({ date: dDate, revenue: rev, trials: parseNum(dTrials), sales: parseNum(dSales), comment: dComment.trim(), author: "Управляющий" }),
+      });
+      if (res.ok) {
+        const r = await res.json();
+        setOv((prev) => ({ ...prev, daily: r.daily || prev.daily }));
+        setDRevenue(""); setDTrials(""); setDSales(""); setDComment("");
+      }
+    } catch { /* сеть недоступна */ }
+  }
 
-  /* ---------- AI ---------- */
-  const factPrevSum = groups.reduce((s, g) => s + g.factPrev, 0);
-  const factPrev2Sum = groups.reduce((s, g) => s + g.factPrev2, 0);
-  const aiFact = factIncomeTotal > 0 ? factIncomeTotal : Math.round(revenueTotal * 0.53);
-  const aiPct = revenueTotal > 0 ? Math.round((aiFact / revenueTotal) * 100) : 0;
-  const devPrev = factPrevSum > 0 ? Math.round(((revenueTotal - factPrevSum) / factPrevSum) * 100) : 0;
-  const devPrev2 = factPrev2Sum > 0 ? Math.round(((revenueTotal - factPrev2Sum) / factPrev2Sum) * 100) : 0;
-  const worst = useMemo(() => {
-    let w: any = null;
-    groups.forEach((g) => {
-      const fill = g.max > 0 ? gStudents(g) / g.max : 1;
-      if (!w || fill < w.fill) w = { g, fill };
-    });
-    return w;
-  }, [groups]);
-  const prob = Math.max(40, Math.min(98, aiPct + Math.round((100 - fillRate) / -3) + 45));
-
-  /* ---------- мотивация ---------- */
-  const motCurBonus = motScale[motStep] ? motScale[motStep].bonus : 0;
-  const motSalary = motOklad + motCurBonus;
-
-  /* ---------- разбивка сводки ---------- */
+  /* ---------- разбивка сводки (локально из групп) ---------- */
   const byCat = useMemo(() => {
     const r: any = { group: 0, mini: 0, individual: 0 };
     groups.forEach((g) => { const c = loadCategory(g); r[c] = (r[c] || 0) + gPlan(g); });
@@ -338,15 +333,20 @@ export function PlanningProtoView() {
     return { post: Math.round(res.post), new: Math.round(res.new) };
   }, [groups]);
 
-  function branchRevenue(b: any) {
-    return (b.groups || []).reduce((s: number, g: any) => s + (g.manualPlan > 0 ? g.manualPlan : g.chek * (g.post + g.new)), 0);
+  /* ---------- мотивация ---------- */
+  function setMotBonus(i: number, val: string) { setMotRows((rs) => rs.map((r, k) => (k === i ? { ...r, bonus: val } : r))); }
+  function setMotThreshold(i: number, val: string) { setMotRows((rs) => rs.map((r, k) => (k === i ? { ...r, threshold: parseNum(val) } : r))); }
+  async function saveMotivation() {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/mvp/planning/motivation", { method: "PATCH", headers: HJ, body: JSON.stringify({ motivation: motRows }) });
+      if (res.ok) { const r = await res.json(); setOv((prev) => ({ ...prev, motivation: r.motivation || motRows })); }
+    } catch { /* сеть недоступна */ }
+    finally { setSaving(false); }
   }
-  const scopeRevenue = summaryScope === "all"
-    ? BRANCHES.reduce((s, b) => s + branchRevenue(b), 0)
-    : summaryScope === branchId ? revenueTotal : branchRevenue(BRANCHES.find((x) => x.id === summaryScope) || { groups: [] });
-  const scopeExpense = expenseTotal;
-  const scopeProfit = scopeRevenue - scopeExpense;
-  const scopeMargin = scopeRevenue > 0 ? Math.round((scopeProfit / scopeRevenue) * 100) : 0;
+  const motInitials = (ov.detailed.branchName || scopeName || "Ф").split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+
+  const hasGroups = groups.length > 0;
 
   /* ============================================================ */
   return (
@@ -364,9 +364,11 @@ export function PlanningProtoView() {
           <select className="period-sel" value={year} onChange={(e) => setYear(+e.target.value)}>
             {[2024, 2025, 2026, 2027, 2028].map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
-          <span className="bdr-status" style={{ background: "var(--gold-bg)", color: "var(--gold-c)" }}>БДР · черновик</span>
-          <button className="btn btn-brand">+ Создать БДР</button>
-          <button className="btn btn-secondary">История</button>
+          <span className="bdr-status" style={{ background: "var(--gold-bg)", color: "var(--gold-c)" }}>
+            БДР · {!loaded ? "загрузка…" : ov.mode === "db" ? "актуально" : "демо-режим"}
+          </span>
+          <button className="btn btn-brand" disabled={saving || !hasGroups} onClick={() => saveBudget()}>{saving ? "Сохранение…" : "+ Создать БДР"}</button>
+          <button className="btn btn-secondary" onClick={() => load()}>Обновить</button>
         </div>
       </div>
 
@@ -384,41 +386,44 @@ export function PlanningProtoView() {
           <div className="sum-card" style={{ gridColumn: "1 / -1" }}>
             <h4>
               <span>Общие показатели · План БДР · {curPeriodLabel}</span>
-              <select className="period-sel" style={{ fontSize: 12, padding: "5px 10px" }} value={summaryScope} onChange={(e) => setSummaryScope(e.target.value)}>
-                <option value="all">Вся сеть</option>
-                {BRANCHES.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              <select className="period-sel" style={{ fontSize: 12, padding: "5px 10px" }} value={branchId} onChange={(e) => setBranchId(e.target.value)}>
+                {branchOptions.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
             </h4>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-              <div className="sum-row" onClick={() => setSummaryDetail(summaryDetail === "rev" ? null : "rev")}>
-                <span className="lbl">Выручка</span><span className="val" style={{ color: "var(--heading)" }}>{fmt(scopeRevenue)} ₸</span>
-              </div>
-              <div className="sum-row" onClick={() => setSummaryDetail(summaryDetail === "exp" ? null : "exp")}>
-                <span className="lbl">Расходы</span><span className="val" style={{ color: "var(--red)" }}>{fmt(scopeExpense)} ₸</span>
-              </div>
-              <div className="sum-row" onClick={() => setSummaryDetail(summaryDetail === "pro" ? null : "pro")}>
-                <span className="lbl">Ожидаемая прибыль · {scopeMargin}%</span><span className="val" style={{ color: "var(--green)" }}>{fmt(scopeProfit)} ₸</span>
-              </div>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--border-c)" }}>
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text2)", padding: "0 10px 4px", textTransform: "uppercase", letterSpacing: ".04em" }}>По типу занятий</div>
-                <MiniRow lbl="Групповые абонементы" val={byCat.group} />
-                <MiniRow lbl="Мини-группы" val={byCat.mini} />
-                <MiniRow lbl="Индивидуальные" val={byCat.individual} />
-              </div>
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text2)", padding: "0 10px 4px", textTransform: "uppercase", letterSpacing: ".04em" }}>По аудитории</div>
-                <MiniRow lbl="Постоянные ученики" val={byAud.post} />
-                <MiniRow lbl="Новые ученики" val={byAud.new} />
-              </div>
-            </div>
-            {summaryDetail && (
-              <div className="sum-detail">
-                {summaryDetail === "rev" && <><b>Выручка по группам:</b><br />{groups.map((g) => `${g.name} — ${fmt(gPlan(g))} ₸`).join("; ")}</>}
-                {summaryDetail === "exp" && <><b>Расходы по категориям:</b><br />{expenses.map((e) => `${e.name} — ${fmt(expVal(e))} ₸`).join("; ")}</>}
-                {summaryDetail === "pro" && <><b>Прибыль = Выручка − Расходы</b><br />{fmt(scopeRevenue)} − {fmt(scopeExpense)} = {fmt(scopeProfit)} ₸</>}
-              </div>
+            {!hasGroups ? <Empty /> : (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                  <div className="sum-row" onClick={() => setSummaryDetail(summaryDetail === "rev" ? null : "rev")}>
+                    <span className="lbl">Выручка</span><span className="val" style={{ color: "var(--heading)" }}>{fmt(revenueTotal)} ₸</span>
+                  </div>
+                  <div className="sum-row" onClick={() => setSummaryDetail(summaryDetail === "exp" ? null : "exp")}>
+                    <span className="lbl">Расходы</span><span className="val" style={{ color: "var(--red)" }}>{fmt(expenseTotal)} ₸</span>
+                  </div>
+                  <div className="sum-row" onClick={() => setSummaryDetail(summaryDetail === "pro" ? null : "pro")}>
+                    <span className="lbl">Ожидаемая прибыль · {planMargin}%</span><span className="val" style={{ color: "var(--green)" }}>{fmt(planProfit)} ₸</span>
+                  </div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--border-c)" }}>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text2)", padding: "0 10px 4px", textTransform: "uppercase", letterSpacing: ".04em" }}>По типу занятий</div>
+                    <MiniRow lbl="Групповые абонементы" val={byCat.group} />
+                    <MiniRow lbl="Мини-группы" val={byCat.mini} />
+                    <MiniRow lbl="Индивидуальные" val={byCat.individual} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text2)", padding: "0 10px 4px", textTransform: "uppercase", letterSpacing: ".04em" }}>По аудитории</div>
+                    <MiniRow lbl="Постоянные ученики" val={byAud.post} />
+                    <MiniRow lbl="Новые ученики" val={byAud.new} />
+                  </div>
+                </div>
+                {summaryDetail && (
+                  <div className="sum-detail">
+                    {summaryDetail === "rev" && <><b>Выручка по группам:</b><br />{groups.map((g) => `${g.name} — ${fmt(gPlan(g))} ₸`).join("; ")}</>}
+                    {summaryDetail === "exp" && <><b>Расходы по категориям:</b><br />{expenses.map((e) => `${e.name} — ${fmt(expVal(e))} ₸`).join("; ")}</>}
+                    {summaryDetail === "pro" && <><b>Прибыль = Выручка − Расходы</b><br />{fmt(revenueTotal)} − {fmt(expenseTotal)} = {fmt(planProfit)} ₸</>}
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -428,8 +433,13 @@ export function PlanningProtoView() {
           <div className="source-title">Создать план на основе</div>
           <div className="source-sub">CRM автоматически подставит цифры. Любую сумму можно изменить вручную.</div>
           <div className="source-opts">
-            {SOURCE_OPTS.map((o, i) => (
-              <div key={i} className={"source-opt" + (sourceIdx === i ? " on" : "")} onClick={() => pickSource(i)}>
+            {[
+              { key: "prev_month", title: "Прошлый месяц", desc: loaded && ov.basis.prevMonth ? `${fmt(ov.basis.prevMonth)} ₸` : "Данных пока нет" },
+              { key: "prev_year", title: "Прошлый год", desc: loaded && ov.basis.prevYear ? `${fmt(ov.basis.prevYear)} ₸` : "Данных пока нет" },
+              { key: "avg6", title: "Среднее значение", desc: loaded && ov.basis.avg6 ? `6 мес: ${fmt(ov.basis.avg6)} ₸` : "Данных пока нет" },
+              { key: "manual", title: "Вручную", desc: "С нуля" },
+            ].map((o) => (
+              <div key={o.key} className={"source-opt" + (ov.source === o.key ? " on" : "")} onClick={() => pickSource(o.key)}>
                 <div className="source-opt-title">{o.title}</div>
                 <div className="source-opt-desc">{o.desc}</div>
               </div>
@@ -444,11 +454,10 @@ export function PlanningProtoView() {
             <h3>Выручка по группам</h3>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginLeft: "auto", flexWrap: "wrap" }}>
               <label style={{ fontSize: 12.5, color: "var(--text2)", fontWeight: 600 }}>Филиал:</label>
-              <select className="period-sel" value={branchId} onChange={(e) => onBranchChange(e.target.value)}>
-                {BRANCHES.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              <select className="period-sel" value={branchId} onChange={(e) => setBranchId(e.target.value)}>
+                {branchOptions.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
-              <button className="btn btn-secondary" style={{ padding: "7px 12px", fontSize: 12 }}>+ Открыть направление</button>
-              <button className="btn btn-brand" style={{ padding: "7px 12px", fontSize: 12 }} onClick={calcRecommendations}>✦ Рассчитать рекомендации</button>
+              <button className="btn btn-brand" style={{ padding: "7px 12px", fontSize: 12 }} onClick={calcRecommendations} disabled={!hasGroups}>✦ Рассчитать рекомендации</button>
               <span className="mode-pill auto"><span className="auto-dot" />авто из абонементов</span>
             </div>
           </div>
@@ -457,7 +466,7 @@ export function PlanningProtoView() {
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <span style={{ fontSize: 15, display: "inline-block", transform: `rotate(${collapsed ? "-90deg" : "0"})` }}>▾</span>
               <div>
-                <div style={{ fontWeight: 800, fontSize: 15, color: "var(--heading)" }}>{BRANCHES.find((b) => b.id === branchId)?.name || "—"}</div>
+                <div style={{ fontWeight: 800, fontSize: 15, color: "var(--heading)" }}>{scopeName}</div>
                 <div style={{ fontSize: 11.5, color: "var(--text2)" }}>{groups.length} групп · {studentsTotal} учеников · заполненность {fillRate}%</div>
               </div>
             </div>
@@ -467,8 +476,8 @@ export function PlanningProtoView() {
               <div><div style={{ color: "var(--text2)" }}>Прибыль</div><div style={{ fontWeight: 800, color: "var(--green)" }}>{fmt(planProfit)}</div></div>
             </div>
           </div>
-          {!collapsed && (groups.length === 0 ? (
-            <div style={{ padding: 24, textAlign: "center", color: "var(--text2)", fontSize: 13 }}>Группы этого филиала ещё не подтянулись из вкладки «Группы». Выберите другой филиал.</div>
+          {!collapsed && (!hasGroups ? (
+            <Empty>{loaded ? "Группы этого филиала ещё не подтянулись — данных пока нет." : "Загрузка…"}</Empty>
           ) : (
             <div style={{ padding: "0 14px 14px" }}>
               {zones.map((zone) => {
@@ -544,46 +553,48 @@ export function PlanningProtoView() {
         {/* Расходы */}
         <div className="slabel">Планирование расходов · ЗП и бонусы раскрываются по людям ▾</div>
         <div className="tree-card">
-          <div className="tree-head"><h3>Расходы</h3><button className="btn btn-secondary" style={{ padding: "6px 12px", fontSize: 12 }}>+ Категория</button></div>
-          <table>
-            <thead><tr><th>Категория</th><th className="num">План, ₸</th><th className="num">Режим</th><th /></tr></thead>
-            <tbody>
-              {expenses.map((e, idx) => {
-                const hasItems = e.items && e.items.length;
-                const open = !!expExpanded[idx];
-                const sum = expVal(e);
-                return (
-                  <Fragment key={"e" + idx}>
-                    <tr className="tree-row lvl1">
-                      <td>
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <div className="tree-head"><h3>Расходы</h3></div>
+          {expenses.length === 0 ? <Empty /> : (
+            <table>
+              <thead><tr><th>Категория</th><th className="num">План, ₸</th><th className="num">Режим</th><th /></tr></thead>
+              <tbody>
+                {expenses.map((e, idx) => {
+                  const hasItems = !!(e.items && e.items.length);
+                  const open = !!expExpanded[idx];
+                  const sum = expVal(e);
+                  return (
+                    <Fragment key={"e" + idx}>
+                      <tr className="tree-row lvl1">
+                        <td>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                            {hasItems
+                              ? <span style={{ cursor: "pointer", fontSize: 11, display: "inline-block", transform: `rotate(${open ? "0" : "-90"}deg)`, color: "var(--text2)" }} onClick={() => toggleExpExpand(idx)}>▾</span>
+                              : <span style={{ width: 11, display: "inline-block" }} />}
+                            <span style={{ fontWeight: 600 }}>{e.name}</span>
+                          </span>
+                        </td>
+                        <td className="num editable-cell">
                           {hasItems
-                            ? <span style={{ cursor: "pointer", fontSize: 11, display: "inline-block", transform: `rotate(${open ? "0" : "-90"}deg)`, color: "var(--text2)" }} onClick={() => toggleExpExpand(idx)}>▾</span>
-                            : <span style={{ width: 11, display: "inline-block" }} />}
-                          <span style={{ fontWeight: 600 }}>{e.name}</span>
-                        </span>
-                      </td>
-                      <td className="num editable-cell">
-                        {hasItems
-                          ? <span style={{ fontWeight: 700, paddingRight: 6 }}>{fmt(sum)}</span>
-                          : <input value={e.val || 0} onChange={(ev) => setExpVal(idx, ev.target.value)} />}
-                      </td>
-                      <td className="num"><span className={"mode-pill " + (e.mode || "manual")} style={{ cursor: "pointer" }} onClick={() => toggleExpMode(idx)}>{e.mode === "auto" ? "авто" : "вручную"}</span></td>
-                      <td className="num"><span style={{ cursor: "pointer", color: "var(--text2)", fontWeight: 700, padding: "0 6px" }} onClick={() => delExp(idx)}>✕</span></td>
-                    </tr>
-                    {hasItems && open && e.items.map((it: any, j: number) => (
-                      <tr key={"e" + idx + "i" + j} className="tree-row" style={{ background: "var(--inset)" }}>
-                        <td style={{ paddingLeft: 34, fontSize: 12, color: "var(--text2)" }}>{it.name}</td>
-                        <td className="num editable-cell"><input style={{ width: 90 }} value={it.val || 0} onChange={(ev) => setExpItemVal(idx, j, ev.target.value)} /></td>
-                        <td className="num" />
-                        <td className="num" />
+                            ? <span style={{ fontWeight: 700, paddingRight: 6 }}>{fmt(sum)}</span>
+                            : <input value={e.val || 0} onChange={(ev) => setExpValFn(idx, ev.target.value)} />}
+                        </td>
+                        <td className="num"><span className={"mode-pill " + (e.mode || "manual")} style={{ cursor: "pointer" }} onClick={() => toggleExpMode(idx)}>{e.mode === "auto" ? "авто" : "вручную"}</span></td>
+                        <td className="num"><span style={{ cursor: "pointer", color: "var(--text2)", fontWeight: 700, padding: "0 6px" }} onClick={() => delExp(idx)}>✕</span></td>
                       </tr>
-                    ))}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
+                      {hasItems && open && (e.items || []).map((it, j) => (
+                        <tr key={"e" + idx + "i" + j} className="tree-row" style={{ background: "var(--inset)" }}>
+                          <td style={{ paddingLeft: 34, fontSize: 12, color: "var(--text2)" }}>{it.name}</td>
+                          <td className="num editable-cell"><input style={{ width: 90 }} value={it.val || 0} onChange={(ev) => setExpItemVal(idx, j, ev.target.value)} /></td>
+                          <td className="num" />
+                          <td className="num" />
+                        </tr>
+                      ))}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
 
         {/* Воронка */}
@@ -596,11 +607,11 @@ export function PlanningProtoView() {
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <div className="funnel-step"><span>Нужно новых продаж</span><b>{needNew}</b></div>
-            <div className="funnel-arrow">↓ конверсия пробный→покупка {Math.round(FUNNEL.visit2buy * 100)}%</div>
+            <div className="funnel-arrow">↓ конверсия пробный→покупка {Math.round(CONV.visit2buy * 100)}%</div>
             <div className="funnel-step"><span>Провести пробных уроков</span><b>{needVisits}</b></div>
-            <div className="funnel-arrow">↓ запись→приход {Math.round(FUNNEL.signup2visit * 100)}%</div>
+            <div className="funnel-arrow">↓ запись→приход {Math.round(CONV.signup2visit * 100)}%</div>
             <div className="funnel-step"><span>Записать на пробный</span><b>{needSignups}</b></div>
-            <div className="funnel-arrow">↓ лид→запись {Math.round(FUNNEL.lead2signup * 100)}%</div>
+            <div className="funnel-arrow">↓ лид→запись {Math.round(CONV.lead2signup * 100)}%</div>
             <div className="funnel-step"><span>Нужно лидов</span><b>{needLeads}</b></div>
           </div>
         </div>
@@ -620,40 +631,80 @@ export function PlanningProtoView() {
           <div className="sum-card" style={{ gridColumn: "1 / -1" }}>
             <h4><span>Факт БДР · {curPeriodLabel}</span><span style={{ fontSize: 11, fontWeight: 600, color: "var(--text2)" }}>авто из CRM</span></h4>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-              <div className="sum-row"><span className="lbl">Поступления</span><span className="val" style={{ color: "var(--heading)" }}>{fmt(factIncomeTotal)} ₸</span></div>
-              <div className="sum-row"><span className="lbl">Расходы</span><span className="val" style={{ color: "var(--red)" }}>{fmt(factExpenseTotal)} ₸</span></div>
-              <div className="sum-row"><span className="lbl">Прибыль · {factIncomeTotal > 0 ? Math.round((factIncomeTotal - factExpenseTotal) / factIncomeTotal * 100) : 0}%</span><span className="val" style={{ color: "var(--green)" }}>{fmt(factIncomeTotal - factExpenseTotal)} ₸</span></div>
+              <div className="sum-row"><span className="lbl">Поступления</span><span className="val" style={{ color: "var(--heading)" }}>{fmt(ov.fact.revenue)} ₸</span></div>
+              <div className="sum-row"><span className="lbl">Расходы</span><span className="val" style={{ color: "var(--red)" }}>{fmt(ov.fact.expense)} ₸</span></div>
+              <div className="sum-row"><span className="lbl">Прибыль · {ov.fact.margin}%</span><span className="val" style={{ color: "var(--green)" }}>{fmt(ov.fact.profit)} ₸</span></div>
             </div>
           </div>
         </div>
         <div className="slabel">Поступления · автоматически из CRM</div>
-        <div className="tree-card"><FactTable which="income" col="Источник" rows={factIncome} onVal={setFactVal} onDel={delFact} /></div>
+        <div className="tree-card">
+          {(ov.fact.incomeByDirection || []).length === 0 ? <Empty /> : (
+            <table style={{ width: "100%" }}>
+              <thead><tr><th style={{ textAlign: "left" }}>Направление</th><th className="num">План, ₸</th><th className="num">Факт, ₸</th></tr></thead>
+              <tbody>
+                {ov.fact.incomeByDirection.map((r: any, idx: number) => (
+                  <tr key={idx} className="tree-row lvl1">
+                    <td>{r.direction}</td>
+                    <td className="num">{fmt(r.plan)}</td>
+                    <td className="num" style={{ fontWeight: 700 }}>{fmt(r.fact)}</td>
+                  </tr>
+                ))}
+                <tr style={{ borderTop: "2px solid var(--border-c)" }}>
+                  <td style={{ fontWeight: 700 }}>Итого</td>
+                  <td className="num" style={{ fontWeight: 700 }}>{fmt(ov.fact.incomeByDirection.reduce((s: number, r: any) => s + (+r.plan || 0), 0))}</td>
+                  <td className="num" style={{ fontWeight: 800 }}>{fmt(ov.fact.revenue)}</td>
+                </tr>
+              </tbody>
+            </table>
+          )}
+        </div>
         <div className="slabel">Расходы (факт) · из Бухгалтерии</div>
-        <div className="tree-card"><FactTable which="expense" col="Категория" rows={factExpense} onVal={setFactVal} onDel={delFact} /></div>
+        <div className="tree-card">
+          {ov.fact.expense > 0 ? (
+            <table style={{ width: "100%" }}>
+              <thead><tr><th style={{ textAlign: "left" }}>Категория</th><th className="num">Факт, ₸</th></tr></thead>
+              <tbody>
+                <tr className="tree-row lvl1"><td>Все расходы (агрегат)</td><td className="num" style={{ fontWeight: 800 }}>{fmt(ov.fact.expense)}</td></tr>
+              </tbody>
+            </table>
+          ) : <Empty />}
+          <Empty>Детализация фактических расходов по строкам пока недоступна</Empty>
+        </div>
       </div>
 
       {/* ============ ПЛАН / ФАКТ ============ */}
       <div className={"panel" + (tab === "pf" ? " active" : "")}>
         <div className="slabel">Выполнение плана · по уровням</div>
         <div className="tree-card">
-          <table>
-            <thead><tr><th>Уровень</th><th className="num">План</th><th className="num">Факт</th><th className="num">Отклонение</th><th className="num">Выполнение</th></tr></thead>
-            <tbody>
-              {PF_DATA.map((r, i) => {
-                const dev = r.fact - r.plan, pct = Math.round((r.fact / r.plan) * 100);
-                const bar = pct >= 100 ? "good" : pct >= 90 ? "mid" : "bad";
-                return (
-                  <tr key={i} className={"tree-row lvl" + r.lvl}>
-                    <td>{r.name}</td>
-                    <td className="num">{fmt(r.plan)}</td>
-                    <td className="num">{fmt(r.fact)}</td>
-                    <td className={"num " + (dev >= 0 ? "dev-pos" : "dev-neg")}>{dev >= 0 ? "+" : ""}{fmt(dev)}</td>
-                    <td className="num"><span className="pf-bar-wrap"><span className={"pf-bar " + bar} style={{ width: Math.min(pct, 100) + "%" }} /></span>{pct}%</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          {(ov.levels || []).length === 0 ? <Empty /> : (
+            <table>
+              <thead><tr><th>Уровень</th><th className="num">План</th><th className="num">Факт</th><th className="num">Отклонение</th><th className="num">Выполнение</th></tr></thead>
+              <tbody>
+                {(() => {
+                  const planSum = ov.levels.reduce((s, l) => s + l.plan, 0);
+                  const factSum = ov.levels.reduce((s, l) => s + l.fact, 0);
+                  const rows = [
+                    { lvl: 0, name: "Доходы", plan: planSum, fact: factSum },
+                    ...ov.levels.map((l) => ({ lvl: 1, name: l.level, plan: l.plan, fact: l.fact })),
+                  ];
+                  return rows.map((r, i) => {
+                    const dev = r.fact - r.plan, pct = r.plan > 0 ? Math.round((r.fact / r.plan) * 100) : 0;
+                    const bar = pct >= 100 ? "good" : pct >= 90 ? "mid" : "bad";
+                    return (
+                      <tr key={i} className={"tree-row lvl" + r.lvl}>
+                        <td>{r.name}</td>
+                        <td className="num">{fmt(r.plan)}</td>
+                        <td className="num">{fmt(r.fact)}</td>
+                        <td className={"num " + (dev >= 0 ? "dev-pos" : "dev-neg")}>{dev >= 0 ? "+" : ""}{fmt(dev)}</td>
+                        <td className="num"><span className="pf-bar-wrap"><span className={"pf-bar " + bar} style={{ width: Math.min(pct, 100) + "%" }} /></span>{pct}%</td>
+                      </tr>
+                    );
+                  });
+                })()}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
 
@@ -681,8 +732,9 @@ export function PlanningProtoView() {
           <DailyCard lbl="До плана" val={fmt(dailyLeft)} cls="red" />
           <DailyCard lbl="Нужно в день" val={fmt(perDay)} cls="brand" />
           <DailyCard lbl="Осталось дней" val={String(daysLeft)} />
-          <DailyCard lbl="Потенциальная ЗП" val={fmt(salary)} cls="green" />
+          <DailyCard lbl="Уровень мотивации" val={reachedTier ? reachedTier.level : "—"} cls="green" />
         </div>
+
         <div className="slabel" style={{ marginTop: 20 }}>Задачи на сегодня · {doneCount} из {dailyTasks.length} · закрой план</div>
         <div>
           {dailyTasks.map((t) => {
@@ -696,37 +748,54 @@ export function PlanningProtoView() {
             );
           })}
         </div>
-        <div className="slabel" style={{ marginTop: 18 }}>Заработок управляющего</div>
-        <div className="daily-grid">
-          <DailyCard lbl="Оклад" val={fmt(motOklad)} />
-          <DailyCard lbl={`Текущий бонус (${dailyPct}%)`} val={fmt(curBonus)} cls="brand" />
-          <DailyCard lbl={`Прогноз бонуса (${forecast}%)`} val={fmt(foreBonus)} cls="green" />
-          <DailyCard lbl="Итого к выплате" val={fmt(salary)} cls="green" />
+
+        <div className="slabel" style={{ marginTop: 18 }}>Мотивация управляющего · по факту выполнения</div>
+        {reachedTier ? (
+          <div className="daily-grid">
+            <DailyCard lbl="Выполнение плана" val={dailyPct + "%"} cls="brand" />
+            <DailyCard lbl="Достигнутый уровень" val={reachedTier.level} />
+            <div className="daily-card" style={{ gridColumn: "span 2" }}>
+              <div className="daily-card-lbl">Бонус за уровень</div>
+              <div className="daily-card-val green" style={{ fontSize: 15 }}>{reachedTier.bonus}</div>
+            </div>
+          </div>
+        ) : <Empty>Пороги мотивации ещё не достигнуты или не заданы</Empty>}
+
+        <div className="slabel" style={{ marginTop: 18 }}>История ежедневных отчётов</div>
+        <div className="tree-card" style={{ padding: 14 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
+            <input className="inline-input" style={{ width: 130 }} type="date" value={dDate} onChange={(e) => setDDate(e.target.value)} />
+            <input className="inline-input" style={{ width: 110 }} placeholder="Выручка ₸" value={dRevenue} onChange={(e) => setDRevenue(e.target.value)} />
+            <input className="inline-input" style={{ width: 80 }} placeholder="Пробных" value={dTrials} onChange={(e) => setDTrials(e.target.value)} />
+            <input className="inline-input" style={{ width: 80 }} placeholder="Продаж" value={dSales} onChange={(e) => setDSales(e.target.value)} />
+            <input className="inline-input" style={{ flex: 1, minWidth: 160 }} placeholder="Комментарий" value={dComment} onChange={(e) => setDComment(e.target.value)} />
+            <button className="btn btn-brand" style={{ padding: "7px 12px", fontSize: 12 }} onClick={addDaily}>+ Добавить</button>
+          </div>
+          {(ov.daily || []).length === 0 ? <Empty /> : (ov.daily || []).map((d, i) => (
+            <div key={i} className="task-item" style={{ cursor: "default" }}>
+              <div className="task-text">
+                <b>{d.date}</b> · {fmt(d.revenue)} ₸ · пробных {d.trials} · продаж {d.sales}
+                {d.comment ? <span style={{ color: "var(--text2)" }}> — {d.comment}</span> : null}
+                <span style={{ color: "var(--text2)", fontSize: 11 }}> · {d.author}</span>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
       {/* ============ AI АНАЛИТИКА ============ */}
       <div className={"panel" + (tab === "ai" ? " active" : "")}>
-        <div className="ai-prob">
-          <div className="ai-prob-circle"><span>{prob}%</span></div>
-          <div className="ai-prob-text">
-            <h4>Вероятность выполнения плана — {prob}%</h4>
-            <p>План {fmt(revenueTotal)} ₸. Заполненность сети {fillRate}%.</p>
-          </div>
+        <div className="slabel">Факт за период · реальные показатели</div>
+        <div className="kpi-grid">
+          <div className="kpi"><div className="kpi-val">{fmt(ov.fact.revenue)}</div><div className="kpi-lbl">Факт выручки</div></div>
+          <div className="kpi"><div className="kpi-val">{fmt(ov.fact.expense)}</div><div className="kpi-lbl">Факт расходов</div></div>
+          <div className="kpi"><div className="kpi-val" style={{ color: "var(--green)" }}>{fmt(ov.fact.profit)}</div><div className="kpi-lbl">Факт прибыли</div></div>
+          <div className="kpi"><div className="kpi-val">{ov.fact.donePct}%</div><div className="kpi-lbl">Выполнение плана</div></div>
         </div>
+        <div className="slabel" style={{ marginTop: 18 }}>AI-аналитик</div>
         <div className="ai-card">
           <div className="ai-lbl">✦ AI-аналитик · {curPeriodLabel}</div>
-          <div className="ai-text">
-            <p>📊 План {devPrev >= 0 ? "выше" : "ниже"} прошлого месяца на {Math.abs(devPrev)}%, {devPrev2 >= 0 ? "выше" : "ниже"} позапрошлого на {Math.abs(devPrev2)}%.</p>
-            <p>📉 {worst ? `Основное отклонение — группа «${worst.g.name}» (заполнена на ${Math.round(worst.fill * 100)}%).` : ""}</p>
-            <p>💰 Свободно {freeTotal} мест · средний чек {fmt(avgChek)} ₸ — есть потенциал дозагрузки.</p>
-          </div>
-        </div>
-        <div className="ai-recs">
-          <h4>Рекомендации для выполнения плана</h4>
-          {dailyTasks.map((t) => (
-            <div key={t.id} className="rec-item"><div className="rec-check">✓</div><div className="rec-text">{t.text}</div></div>
-          ))}
+          <Empty>Аналитика ИИ пока недоступна — данных нет</Empty>
         </div>
       </div>
 
@@ -736,23 +805,35 @@ export function PlanningProtoView() {
         <div className="mot-card">
           <div className="mot-head">
             <div className="mot-mgr">
-              <div className="mot-avatar">АН</div>
+              <div className="mot-avatar">{motInitials}</div>
               <div>
-                <div className="mot-name">Анель Нурбекова</div>
-                <div className="mot-branch">Астана 203 · оклад <input className="inline-input" style={{ width: 90, textAlign: "left" }} value={motOklad} onChange={(e) => setMotOklad(parseNum(e.target.value))} /> ₸</div>
+                <div className="mot-name">{ov.detailed.branchName || scopeName}</div>
+                <div className="mot-branch">Мотивация управляющего · пороги плана</div>
               </div>
             </div>
-            <div className="mot-salary"><div className="mot-salary-lbl">Прогноз ЗП</div><div className="mot-salary-val">{fmt(motSalary)} ₸</div></div>
+            <div className="mot-salary">
+              <div className="mot-salary-lbl">Выбранный уровень</div>
+              <div className="mot-salary-val" style={{ fontSize: 14 }}>{motRows[motStep]?.bonus || "—"}</div>
+            </div>
           </div>
-          <div className="kpi-ladder">
-            {motScale.map((s, i) => (
-              <div key={i} className={"ladder-step" + (i === motStep ? " current" : i < motStep ? " reached" : "")} onClick={() => setMotStep(i)}>
-                <div className="ladder-pct">{s.to >= 999 ? s.from + "%+" : s.from + "–" + (s.to - 1) + "%"}</div>
-                <input className="ladder-input" value={s.bonus} onClick={(e) => e.stopPropagation()} onChange={(e) => setMotScale((sc) => sc.map((x, k) => (k === i ? { ...x, bonus: parseNum(e.target.value) } : x)))} />
+          {motRows.length === 0 ? <Empty /> : (
+            <>
+              <div className="kpi-ladder">
+                {motRows.map((s, i) => (
+                  <div key={i} className={"ladder-step" + (i === motStep ? " current" : i < motStep ? " reached" : "")} onClick={() => setMotStep(i)}>
+                    <div className="ladder-pct">
+                      <input className="ladder-input" style={{ width: 54, textAlign: "center" }} value={s.threshold} onClick={(e) => e.stopPropagation()} onChange={(e) => setMotThreshold(i, e.target.value)} />%
+                    </div>
+                    <input className="ladder-input" value={s.bonus} onClick={(e) => e.stopPropagation()} onChange={(e) => setMotBonus(i, e.target.value)} />
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          <div style={{ fontSize: 11.5, color: "var(--text2)", marginTop: 10 }}>Все суммы редактируются. Кликните на ступень, чтобы выбрать текущее выполнение.</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 12 }}>
+                <button className="btn btn-brand" style={{ padding: "7px 14px", fontSize: 12 }} disabled={saving} onClick={saveMotivation}>{saving ? "Сохранение…" : "Сохранить лестницу"}</button>
+                <div style={{ fontSize: 11.5, color: "var(--text2)" }}>Порог (%) и бонус редактируются. Кликните на ступень, чтобы выбрать текущий уровень.</div>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -774,29 +855,6 @@ function DailyCard({ lbl, val, cls }: any) {
       <div className="daily-card-lbl">{lbl}</div>
       <div className={"daily-card-val " + (cls || "")}>{val}</div>
     </div>
-  );
-}
-function FactTable({ which, col, rows, onVal, onDel }: any) {
-  const total = rows.reduce((s: number, x: any) => s + (+x.val || 0), 0);
-  return (
-    <table style={{ width: "100%" }}>
-      <thead><tr><th style={{ textAlign: "left" }}>{col}</th><th className="num">Факт, ₸</th><th className="num">Режим</th><th /></tr></thead>
-      <tbody>
-        {rows.map((e: any, idx: number) => (
-          <tr key={idx} className="tree-row lvl1">
-            <td>{e.name}{e.manual ? <span style={{ fontSize: 10, color: "var(--gold-c)" }} title="Изменено вручную"> ✎ вручную</span> : null}</td>
-            <td className="num editable-cell"><input value={e.val} onChange={(ev) => onVal(which, idx, ev.target.value)} /></td>
-            <td className="num"><span className={"mode-pill " + e.mode}>{e.mode === "auto" ? "авто" : "вручную"}</span></td>
-            <td className="num"><span style={{ cursor: "pointer", color: "var(--text2)", fontWeight: 700, padding: "0 6px" }} onClick={() => onDel(which, idx)}>✕</span></td>
-          </tr>
-        ))}
-        <tr style={{ borderTop: "2px solid var(--border-c)" }}>
-          <td style={{ fontWeight: 700 }}>Итого</td>
-          <td className="num" style={{ fontWeight: 800 }}>{fmt(total)}</td>
-          <td colSpan={2} />
-        </tr>
-      </tbody>
-    </table>
   );
 }
 

@@ -448,7 +448,7 @@ export function OwnerExecutiveWorkspace({
           {activeTab === "students" && <StudentsNetworkView students={students} branches={branches} groups={groups} teachers={teachers} onCreateStudent={onCreateStudent} onUpdateStudent={onUpdateStudent} onDeleteStudent={onDeleteStudent} onOpenPayment={onOpenPayment} onSellSubscription={onSellSubscription} subscriptionPlans={subscriptionPlans} studentTrash={studentTrash} onRestoreStudent={onRestoreStudent} onConfirmDeleteStudent={onConfirmDeleteStudent} studentArchive={studentArchive} onArchiveStudent={onArchiveStudent} onUnarchiveStudent={onUnarchiveStudent} onEditArchive={onEditArchive} onBookTrial={onBookTrial} leadSources={leadSources} waitlist={waitlist} onAddToWaitlist={onAddToWaitlist} onRemoveFromWaitlist={onRemoveFromWaitlist} onCreateLeadSource={onCreateLeadSource} onUpdateLeadSource={onUpdateLeadSource} onDeleteLeadSource={onDeleteLeadSource} preset={studentsPreset} />}
           {activeTab === "teachers" && <TeachersProtoView teachers={teachers} branches={branches} groups={groups} students={students} />}
           {activeTab === "finance" && <AccountingProtoView branches={branches} />}
-          {activeTab === "planning" && <PlanningProtoView />}
+          {activeTab === "planning" && <PlanningProtoView branches={branches} />}
           {activeTab === "meetings" && <MeetingsView />}
           {activeTab === "reports" && <ReportsProtoView />}
           {activeTab === "performances" && <PerformancesView />}
