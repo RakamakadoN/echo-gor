@@ -92,6 +92,10 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
   const [BRANCHES, setBRANCHES] = useState<string[]>([]);
   const [HISTORY, setHISTORY] = useState<any[]>([]);
 
+  /* ---- реальные справочники статей и реестр налогов ---- */
+  const [CATOBJS, setCATOBJS] = useState<any[]>([]);
+  const [TAXES_REG, setTAXES_REG] = useState<any[]>([]);
+
   /* ===== ЗАГРУЗКА ===== */
   const load = useCallback(async () => {
     try {
@@ -122,6 +126,37 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  /* реальный список статей (доходы/расходы) */
+  const loadCategories = useCallback(async () => {
+    try {
+      const r = await fetch("/api/mvp/accounting/categories", { headers: H });
+      const j = r.ok ? await r.json() : {};
+      setCATOBJS(Array.isArray(j.categories) ? j.categories.filter((c: any) => c.isActive !== false) : []);
+    } catch { /* недоступно — оставляем пусто */ }
+  }, []);
+  /* реальный реестр налогов */
+  const loadTaxes = useCallback(async () => {
+    try {
+      const r = await fetch("/api/mvp/accounting/taxes", { headers: H });
+      const j = r.ok ? await r.json() : {};
+      setTAXES_REG(Array.isArray(j.taxes) ? j.taxes.filter((t: any) => t.isActive !== false) : []);
+    } catch { /* недоступно — оставляем пусто */ }
+  }, []);
+  useEffect(() => { loadCategories(); loadTaxes(); }, [loadCategories, loadTaxes]);
+
+  /* объединённый список статей: реальные из /categories + встречающиеся в overview (для резолва имён скрытых) */
+  const allCats = useMemo(() => {
+    const map = new Map<string, any>();
+    (overview.categories || []).forEach((c: any) => map.set(c.id, c));
+    CATOBJS.forEach((c: any) => map.set(c.id, c));
+    return Array.from(map.values());
+  }, [overview.categories, CATOBJS]);
+
+  /* объекты статей для настроек (с id — для переименования/удаления) */
+  const catSrc = CATOBJS.length ? CATOBJS : overview.categories;
+  const expenseCats = useMemo(() => catSrc.filter((c: any) => c.kind === "expense"), [catSrc]);
+  const incomeCats = useMemo(() => catSrc.filter((c: any) => c.kind === "income"), [catSrc]);
+
   /* seed справочников из реальных данных */
   useEffect(() => {
     setACCOUNTS(overview.accounts.map((a) => ({
@@ -130,9 +165,10 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
     })));
   }, [overview.accounts]);
   useEffect(() => {
-    setCATEGORIES(overview.categories.filter((c) => c.kind === "expense").map((c) => c.name));
-    setDIRECTIONS(overview.categories.filter((c) => c.kind === "income").map((c) => c.name));
-  }, [overview.categories]);
+    const src = CATOBJS.length ? CATOBJS : overview.categories;
+    setCATEGORIES(src.filter((c: any) => c.kind === "expense").map((c: any) => c.name));
+    setDIRECTIONS(src.filter((c: any) => c.kind === "income").map((c: any) => c.name));
+  }, [CATOBJS, overview.categories]);
   useEffect(() => { setBRANCHES((branches || []).map((b) => b.name)); }, [branches]);
 
   /* дефолтный период — последний месяц с данными */
@@ -143,10 +179,10 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
   }, [monthLabels]);
 
   /* резолверы имён/id */
-  const catById = useCallback((id?: string) => overview.categories.find((c) => c.id === id)?.name || "Без статьи", [overview.categories]);
+  const catById = useCallback((id?: string) => allCats.find((c) => c.id === id)?.name || "Без статьи", [allCats]);
   const catId = useCallback((name: string, kind: "income" | "expense") =>
-    overview.categories.find((c) => c.name === name && c.kind === kind)?.id
-    || overview.categories.find((c) => c.name === name)?.id || null, [overview.categories]);
+    allCats.find((c) => c.name === name && c.kind === kind)?.id
+    || allCats.find((c) => c.name === name)?.id || null, [allCats]);
   const accById = useCallback((id?: string) => overview.accounts.find((a) => a.id === id)?.name || "—", [overview.accounts]);
   const accId = useCallback((name: string) => ACCOUNTS.find((a) => a.name === name)?.id || overview.accounts.find((a) => a.name === name)?.id || null, [ACCOUNTS, overview.accounts]);
   const branchName = useCallback((id?: string | null) => branches.find((b) => b.id === id)?.name || "Вся сеть", [branches]);
@@ -222,14 +258,16 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
   const [revPeriod, setRevPeriod] = useState("Июнь 2026");
   const [revNote, setRevNote] = useState("");
 
-  /* поля формы налога */
+  /* поля формы налога (реестр) */
   const [txName, setTxName] = useState("");
-  const [txPeriod, setTxPeriod] = useState("Июнь 2026");
-  const [txDue, setTxDue] = useState(today());
-  const [txBase, setTxBase] = useState("");
+  const [txBaseType, setTxBaseType] = useState("revenue");
   const [txRate, setTxRate] = useState("");
-  const [txSum, setTxSum] = useState("");
+  const [txFixed, setTxFixed] = useState("");
+  const [txPeriodType, setTxPeriodType] = useState("month");
+  const [txCat, setTxCat] = useState("");
+  const [txAcc, setTxAcc] = useState("");
   const [txBranch, setTxBranch] = useState("Вся сеть");
+  const [txComment, setTxComment] = useState("");
 
   /* ===== ПРОИЗВОДНЫЕ ОТ ОПЕРАЦИЙ (реальные) ===== */
   const activeAccounts = () => ACCOUNTS.filter((a) => !a.archived);
@@ -378,20 +416,41 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
     } catch { toast("Ошибка сети", "err"); }
   };
 
-  /* ===== НАСТРОЙКИ ===== */
-  const addItem = (listName: string, promptText: string) => {
-    const v = window.prompt(promptText + ":");
+  /* ===== НАСТРОЙКИ: СТАТЬИ (реально через /accounting/categories) ===== */
+  const addCategory = async (kind: "income" | "expense") => {
+    const v = window.prompt(kind === "income" ? "Название направления доходов:" : "Название статьи расходов:");
     if (!v || !v.trim()) return;
-    const val = v.trim();
-    if (listName === "CATEGORIES") setCATEGORIES((p) => [...p, val]);
-    else if (listName === "DIRECTIONS") setDIRECTIONS((p) => [...p, val]);
-    else if (listName === "BRANCHES") setBRANCHES((p) => [...p, val]);
-    toast("Добавлено (в сессии): " + val); setView("set");
+    try {
+      const res = await fetch("/api/mvp/accounting/categories", { method: "POST", headers: HJ, body: JSON.stringify({ name: v.trim(), kind }) });
+      if (!res.ok) return toast("Не удалось добавить статью", "err");
+      logHistory("Добавлена статья", `${v.trim()} · ${kind === "income" ? "доход" : "расход"}`);
+      toast("Статья добавлена: " + v.trim());
+      await loadCategories(); await load(); setView("set");
+    } catch { toast("Ошибка сети", "err"); }
   };
-  const delItem = (listName: string, i: number) => {
-    const setter = listName === "CATEGORIES" ? setCATEGORIES : listName === "DIRECTIONS" ? setDIRECTIONS : setBRANCHES;
-    setter((p) => p.filter((_, idx) => idx !== i)); setView("set");
+  const renameCategory = async (c: any) => {
+    const v = window.prompt("Новое название статьи:", c.name);
+    if (!v || !v.trim() || v.trim() === c.name) return;
+    try {
+      const res = await fetch(`/api/mvp/accounting/categories/${c.id}`, { method: "PATCH", headers: HJ, body: JSON.stringify({ name: v.trim() }) });
+      if (!res.ok) return toast("Не удалось переименовать статью", "err");
+      logHistory("Переименована статья", `${c.name} → ${v.trim()}`);
+      toast("Статья переименована");
+      await loadCategories(); await load(); setView("set");
+    } catch { toast("Ошибка сети", "err"); }
   };
+  const deleteCategory = async (c: any) => {
+    if (!window.confirm("Скрыть статью «" + c.name + "»?")) return;
+    try {
+      const res = await fetch(`/api/mvp/accounting/categories/${c.id}`, { method: "DELETE", headers: HJ });
+      if (!res.ok) return toast("Не удалось скрыть статью", "err");
+      logHistory("Скрыта статья", c.name);
+      toast("Статья скрыта: " + c.name);
+      await loadCategories(); await load(); setView("set");
+    } catch { toast("Ошибка сети", "err"); }
+  };
+
+  /* ===== НАСТРОЙКИ: СЧЕТА (реально через /accounting/accounts) ===== */
   const addAccount = async () => {
     const name = window.prompt("Название счёта:");
     if (!name || !name.trim()) return;
@@ -405,53 +464,89 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
       toast("Счёт добавлен: " + name.trim()); await load(); setView("set");
     } catch { toast("Ошибка сети", "err"); }
   };
-  const archiveAccount = (i: number) => {
-    setACCOUNTS((p) => p.map((a, idx) => (idx === i ? { ...a, archived: true } : a)));
-    toast("Счёт «" + ACCOUNTS[i].name + "» скрыт (в сессии)"); setView("set");
+  const editAccount = async (a: any) => {
+    const v = window.prompt("Название счёта:", a.name);
+    if (!v || !v.trim() || v.trim() === a.name) return;
+    try {
+      const res = await fetch(`/api/mvp/accounting/accounts/${a.id}`, { method: "PATCH", headers: HJ, body: JSON.stringify({ name: v.trim() }) });
+      if (!res.ok) return toast("Не удалось изменить счёт", "err");
+      logHistory("Изменён счёт", `${a.name} → ${v.trim()}`);
+      toast("Счёт изменён: " + v.trim()); await load(); setView("set");
+    } catch { toast("Ошибка сети", "err"); }
   };
-  const unarchiveAccount = (i: number) => {
-    setACCOUNTS((p) => p.map((a, idx) => (idx === i ? { ...a, archived: false } : a)));
-    toast("Счёт возвращён"); setView("set");
-  };
-  const delAccount = (i: number) => {
-    const name = ACCOUNTS[i].name;
-    if (!window.confirm("Скрыть счёт «" + name + "»?")) return;
-    setACCOUNTS((p) => p.filter((_, idx) => idx !== i));
-    toast("Счёт скрыт (в сессии): " + name); setView("set");
+  const archiveAccount = async (a: any) => {
+    if (!window.confirm("Скрыть (архивировать) счёт «" + a.name + "»?")) return;
+    try {
+      const res = await fetch(`/api/mvp/accounting/accounts/${a.id}`, { method: "DELETE", headers: HJ });
+      if (!res.ok) return toast("Не удалось скрыть счёт", "err");
+      logHistory("Скрыт счёт", a.name);
+      toast("Счёт скрыт: " + a.name); await load(); setView("set");
+    } catch { toast("Ошибка сети", "err"); }
   };
 
-  /* ===== НАЛОГИ (из реальных расходов категории «Налог*») ===== */
+  /* ===== НАЛОГИ (реестр через /accounting/taxes) ===== */
+  const baseTypeRu = (b?: string) => (b === "revenue" ? "С выручки" : b === "profit" ? "С прибыли" : b === "payroll" ? "С ФОТ" : b === "fixed" ? "Фикс. сумма" : b || "—");
+  const taxPeriodRu = (p?: string) => (p === "month" ? "Ежемесячно" : p === "quarter" ? "Ежеквартально" : p === "year" ? "Ежегодно" : p || "—");
   const openTax = () => {
-    setTxName(""); setTxBase(""); setTxRate(""); setTxSum(""); setTxDue(today()); setTxPeriod(period); setTxBranch("Вся сеть");
+    setTxName(""); setTxBaseType("revenue"); setTxRate(""); setTxFixed(""); setTxPeriodType("month");
+    setTxCat(CATEGORIES[0] || ""); setTxAcc(activeAccounts()[0]?.name || ""); setTxBranch("Вся сеть"); setTxComment("");
     setTaxOpen(true);
-  };
-  const calcTax = (base: string, rate: string) => {
-    const b = parseFloat(base) || 0, r = parseFloat(rate) || 0;
-    if (b && r) setTxSum(String(Math.round((b * r) / 100)));
   };
   const saveTax = async () => {
     const name = txName.trim();
     if (!name) return toast("Введите название налога", "err");
-    const sum = validNum(txSum);
-    if (!sum) return toast("Введите сумму налога", "err");
+    const isFixed = txBaseType === "fixed";
+    const rate = parseFloat(txRate) || 0;
+    const fixedAmount = validNum(txFixed);
+    if (isFixed && !fixedAmount) return toast("Введите фиксированную сумму", "err");
+    if (!isFixed && !rate) return toast("Введите ставку, %", "err");
     try {
-      const taxCat = overview.categories.find((c) => c.kind === "expense" && /налог/i.test(c.name))?.id || catId(name, "expense") || null;
-      const res = await fetch("/api/mvp/accounting/operations", {
+      const res = await fetch("/api/mvp/accounting/taxes", {
         method: "POST", headers: HJ,
-        body: JSON.stringify({ type: "expense", status: "actual", amount: sum, date: periodMonthStart(txPeriod), categoryId: taxCat, accountId: accId(activeAccounts()[0]?.name || ""), branchId: branchIdByName(txBranch), description: name }),
+        body: JSON.stringify({
+          name, baseType: txBaseType, rate: isFixed ? 0 : rate, fixedAmount: isFixed ? fixedAmount : 0,
+          period: txPeriodType, categoryId: txCat ? catId(txCat, "expense") : null,
+          accountId: txAcc ? accId(txAcc) : null, branchId: branchIdByName(txBranch), comment: txComment || null,
+        }),
       });
-      if (!res.ok) return toast("Не удалось провести налог", "err");
-      logHistory("Проведён налог", `${name} · ${money(sum)}`);
-      toast("Налог проведён в расходы: " + name + " " + money(sum));
-      setTaxOpen(false); await load(); setView("tax");
+      if (!res.ok) return toast("Не удалось создать налог", "err");
+      logHistory("Добавлен налог в реестр", `${name} · ${baseTypeRu(txBaseType)}`);
+      toast("Налог добавлен в реестр: " + name);
+      setTaxOpen(false); await loadTaxes(); setView("tax");
     } catch { toast("Ошибка сети", "err"); }
   };
-  const payTax = (_i: number) => { /* налоги здесь — уже проведённые расходы, отдельная оплата не требуется */ };
-
-  const TAXES = useMemo(() => operations
-    .filter((o) => o.type === "expense" && /налог/i.test(catById(o.categoryId)))
-    .map((o) => ({ period: dateToLabel(o.date), name: o.description || catById(o.categoryId), base: 0, rate: 0, sum: Number(o.amount), status: "Оплачен", due: o.date, branch: "Вся сеть" })),
-    [operations, catById]);
+  const delTax = async (t: any) => {
+    if (!window.confirm("Удалить налог «" + t.name + "» из реестра?")) return;
+    try {
+      const res = await fetch(`/api/mvp/accounting/taxes/${t.id}`, { method: "DELETE", headers: HJ });
+      if (!res.ok) return toast("Не удалось удалить налог", "err");
+      logHistory("Удалён налог", t.name);
+      toast("Налог удалён: " + t.name); await loadTaxes(); setView("tax");
+    } catch { toast("Ошибка сети", "err"); }
+  };
+  /* предлагаемая сумма к оплате: ставка% × база периода (из overview.totals); фикс — fixedAmount */
+  const taxSuggested = (t: any) => {
+    if (t.baseType === "fixed") return Number(t.fixedAmount) || 0;
+    const base = t.baseType === "revenue" ? Number(overview.totals.income || 0) : t.baseType === "profit" ? Number(overview.totals.profit || 0) : 0;
+    return base ? Math.round((base * (Number(t.rate) || 0)) / 100) : 0;
+  };
+  const payTax = async (t: any) => {
+    const sug = taxSuggested(t);
+    const input = window.prompt(`Сумма к оплате по «${t.name}», ₸:`, sug ? String(sug) : "");
+    if (input === null) return;
+    const amount = validNum(input);
+    if (!amount) return toast("Введите сумму к оплате", "err");
+    try {
+      const res = await fetch(`/api/mvp/accounting/taxes/${t.id}/pay`, {
+        method: "POST", headers: HJ,
+        body: JSON.stringify({ amount, accountId: t.accountId || accId(activeAccounts()[0]?.name || "") || null, date: today() }),
+      });
+      if (!res.ok) return toast("Не удалось провести налог", "err");
+      logHistory("Оплачен налог", `${t.name} · ${money(amount)}`);
+      toast("Налог проведён: " + t.name + " " + money(amount));
+      await load(); await loadTaxes(); setView("tax");
+    } catch { toast("Ошибка сети", "err"); }
+  };
 
   /* ===== ФИЛЬТРАЦИЯ ОПЕРАЦИЙ ===== */
   const opsData = useMemo(() => {
@@ -514,10 +609,11 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
   const aiDateStr = "на " + new Date().toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
   const topCat: any = anCats.entries[0];
 
-  /* ===== НАЛОГИ: список за период ===== */
-  const taxList = TAXES.filter((t) => t.period === period && (fBranch === "" || t.branch === fBranch || t.branch === "Вся сеть"));
-  const taxTotal = taxList.reduce((s, t) => s + t.sum, 0);
-  const taxPaid = taxList.filter((t) => t.status === "Оплачен").reduce((s, t) => s + t.sum, 0);
+  /* ===== НАЛОГИ: реестр (фильтр по филиалу) ===== */
+  const taxList = useMemo(
+    () => TAXES_REG.filter((t) => fBranch === "" || t.branchId == null || branchName(t.branchId) === fBranch),
+    [TAXES_REG, fBranch, branchName]
+  );
 
   const reqStatusBadge: any = { "на рассмотрении": "b-gold", "одобрено": "b-green", "отклонено": "b-red", "запрошено уточнение": "b-blue", "выплачено / начислено": "b-green" };
   const reviewReq = reviewIdx !== null ? REQUESTS[reviewIdx] : null;
@@ -1013,24 +1109,18 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
                 </h3>
                 <div>
                   {ACCOUNTS.length ? (
-                    ACCOUNTS.map((a, i) => {
-                      const used = INCOMES.some((x) => x.acc === a.name) || EXPENSES.some((x) => x.acc === a.name);
-                      return (
-                        <div className="set-row" key={i} style={a.archived ? { opacity: 0.55 } : undefined}>
-                          <span>
-                            {a.icon} <b>{a.name}</b>{" "}
-                            <span style={{ color: "var(--muted)", fontSize: 13 }}>· старт {money(a.start)}{a.archived ? " · скрыт" : ""}</span>
-                          </span>
-                          {a.archived ? (
-                            <button className="btn-sm" onClick={() => unarchiveAccount(i)}>Вернуть</button>
-                          ) : used ? (
-                            <button className="set-del" onClick={() => archiveAccount(i)}>Скрыть</button>
-                          ) : (
-                            <button className="set-del" onClick={() => delAccount(i)}>Скрыть</button>
-                          )}
-                        </div>
-                      );
-                    })
+                    ACCOUNTS.map((a, i) => (
+                      <div className="set-row" key={i}>
+                        <span>
+                          {a.icon} <b>{a.name}</b>{" "}
+                          <span style={{ color: "var(--muted)", fontSize: 13 }}>· старт {money(a.start)}</span>
+                        </span>
+                        <span style={{ display: "flex", gap: 8 }}>
+                          <button className="btn-sm" onClick={() => editAccount(a)}>Изменить</button>
+                          <button className="set-del" onClick={() => archiveAccount(a)}>Скрыть</button>
+                        </span>
+                      </div>
+                    ))
                   ) : (
                     <Empty>Нет счетов</Empty>
                   )}
@@ -1038,14 +1128,14 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
               </div>
               <div className="card">
                 <h3>
-                  Филиалы <button className="btn-sm" onClick={() => addItem("BRANCHES", "Название филиала")}>+ Добавить</button>
+                  Филиалы <span style={{ fontWeight: 600, fontSize: 13, color: "var(--muted)" }}>справочник сети</span>
                 </h3>
                 <div>
                   {BRANCHES.length ? (
                     BRANCHES.map((b, i) => (
                       <div className="set-row" key={i}>
                         <span>{b}</span>
-                        <button className="set-del" onClick={() => delItem("BRANCHES", i)}>Удалить</button>
+                        <span style={{ color: "var(--muted)", fontSize: 12 }}>только просмотр</span>
                       </div>
                     ))
                   ) : (
@@ -1057,40 +1147,46 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
             <div className="grid2">
               <div className="card">
                 <h3>
-                  Категории расходов <button className="btn-sm" onClick={() => addItem("CATEGORIES", "Название категории")}>+ Добавить</button>
+                  Статьи расходов <button className="btn-sm" onClick={() => addCategory("expense")}>+ Добавить</button>
                 </h3>
                 <div>
-                  {CATEGORIES.length ? (
-                    CATEGORIES.map((c, i) => (
-                      <div className="set-row" key={i}>
-                        <span>{c}</span>
-                        <button className="set-del" onClick={() => delItem("CATEGORIES", i)}>Удалить</button>
+                  {expenseCats.length ? (
+                    expenseCats.map((c: any) => (
+                      <div className="set-row" key={c.id}>
+                        <span>{c.name}</span>
+                        <span style={{ display: "flex", gap: 8 }}>
+                          <button className="btn-sm" onClick={() => renameCategory(c)}>Изменить</button>
+                          <button className="set-del" onClick={() => deleteCategory(c)}>Скрыть</button>
+                        </span>
                       </div>
                     ))
                   ) : (
-                    <Empty>Нет категорий</Empty>
+                    <Empty>Нет статей расходов</Empty>
                   )}
                 </div>
               </div>
               <div className="card">
                 <h3>
-                  Направления доходов <button className="btn-sm" onClick={() => addItem("DIRECTIONS", "Название направления")}>+ Добавить</button>
+                  Статьи доходов <button className="btn-sm" onClick={() => addCategory("income")}>+ Добавить</button>
                 </h3>
                 <div>
-                  {DIRECTIONS.length ? (
-                    DIRECTIONS.map((d, i) => (
-                      <div className="set-row" key={i}>
-                        <span>{d}</span>
-                        <button className="set-del" onClick={() => delItem("DIRECTIONS", i)}>Удалить</button>
+                  {incomeCats.length ? (
+                    incomeCats.map((c: any) => (
+                      <div className="set-row" key={c.id}>
+                        <span>{c.name}</span>
+                        <span style={{ display: "flex", gap: 8 }}>
+                          <button className="btn-sm" onClick={() => renameCategory(c)}>Изменить</button>
+                          <button className="set-del" onClick={() => deleteCategory(c)}>Скрыть</button>
+                        </span>
                       </div>
                     ))
                   ) : (
-                    <Empty>Нет направлений</Empty>
+                    <Empty>Нет статей доходов</Empty>
                   )}
                 </div>
               </div>
             </div>
-            <p className="hint">Категории, направления и филиалы редактируются в справочниках сети. Изменения здесь действуют в рамках сессии.</p>
+            <p className="hint">Счета и статьи доходов/расходов сохраняются на сервере и используются в операциях и налогах. Филиалы редактируются в разделе «Филиалы» сети.</p>
           </>
         )}
 
@@ -1098,54 +1194,55 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
         {view === "tax" && (
           <div className="card">
             <h3>
-              Налоги · <span>{period}</span> <button className="btn-sm" onClick={openTax}>+ Добавить налог</button>
+              Налоги · реестр <button className="btn-sm" onClick={openTax}>+ Добавить налог</button>
             </h3>
             <table>
               <thead>
                 <tr>
                   <th>Налог</th>
-                  <th>Период</th>
-                  <th className="r">База</th>
-                  <th className="r">Ставка</th>
-                  <th className="r">Сумма</th>
-                  <th>Срок уплаты</th>
+                  <th>База</th>
+                  <th className="r">Ставка / сумма</th>
+                  <th>Периодичность</th>
+                  <th>Статья · счёт</th>
                   <th className="r">Статус</th>
                   <th className="r">Действие</th>
                 </tr>
               </thead>
               <tbody>
                 {taxList.length ? (
-                  taxList.map((t) => {
-                    const real = TAXES.indexOf(t);
-                    const sb = t.status === "Оплачен" ? "b-green" : t.status === "Начислен" ? "b-gold" : "b-gray";
-                    return (
-                      <tr key={real}>
-                        <td><b>{t.name}</b></td>
-                        <td>{t.period}</td>
-                        <td className="r">{t.base ? money(t.base) : "—"}</td>
-                        <td className="r">{t.rate ? t.rate + "%" : "—"}</td>
-                        <td className="r" style={{ color: "var(--red)", fontWeight: 700 }}>{money(t.sum)}</td>
-                        <td>{t.due}</td>
-                        <td className="r"><span className={"badge " + sb}>{t.status}</span></td>
-                        <td className="r">
-                          {t.status === "Начислен" ? <button className="btn-sm" onClick={() => payTax(real)}>Оплатить</button> : "—"}
-                        </td>
-                      </tr>
-                    );
-                  })
+                  taxList.map((t) => (
+                    <tr key={t.id}>
+                      <td><b>{t.name}</b>{t.comment ? <><br /><span style={{ color: "var(--muted)", fontSize: 12 }}>{t.comment}</span></> : null}</td>
+                      <td>{baseTypeRu(t.baseType)}</td>
+                      <td className="r" style={{ fontWeight: 700 }}>
+                        {t.baseType === "fixed" ? money(Number(t.fixedAmount) || 0) : (Number(t.rate) || 0) + "%"}
+                      </td>
+                      <td>{taxPeriodRu(t.period)}</td>
+                      <td>
+                        {catById(t.categoryId)}
+                        <br />
+                        <span style={{ color: "var(--muted)", fontSize: 12 }}>{accById(t.accountId)}</span>
+                      </td>
+                      <td className="r"><span className="badge b-green">Активен</span></td>
+                      <td className="r">
+                        <span style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                          <button className="btn-sm" onClick={() => payTax(t)}>Оплатить</button>
+                          <button className="set-del" onClick={() => delTax(t)}>Удалить</button>
+                        </span>
+                      </td>
+                    </tr>
+                  ))
                 ) : (
                   <tr>
-                    <td colSpan={8} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>Данных пока нет</td>
+                    <td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>Данных пока нет</td>
                   </tr>
                 )}
               </tbody>
             </table>
             <div className="ops-summary">
-              <span>Начислено: <b>{money(taxTotal)}</b></span>
-              <span>Оплачено: <b className="in">{money(taxPaid)}</b></span>
-              <span>К оплате: <b className="out">{money(taxTotal - taxPaid)}</b></span>
+              <span>Налогов в реестре: <b>{taxList.length}</b></span>
             </div>
-            <p className="hint">Налоги учитываются как расходы категории «Налоги». Отдельного реестра начислений пока нет — показаны проведённые платежи.</p>
+            <p className="hint">Реестр налогов. «Оплатить» проводит фактический расход по налогу за выбранный период; для налогов с базой (выручка/прибыль) сумма предлагается по данным периода, но подтверждается вручную.</p>
           </div>
         )}
 
@@ -1401,7 +1498,7 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
         </div>
       </div>
 
-      {/* ===== МОДАЛКА: НОВЫЙ НАЛОГ ===== */}
+      {/* ===== МОДАЛКА: НОВЫЙ НАЛОГ (реестр) ===== */}
       <div className={"overlay" + (taxOpen ? " open" : "")} onClick={(e) => { if (e.target === e.currentTarget) setTaxOpen(false); }}>
         <div className="sheet">
           <div className="sheet-head">
@@ -1412,15 +1509,41 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
             <div className="form-grid">
               <div className="field full"><label>Название налога *</label><input placeholder="ИПН, Соц. отчисления, ОСМС…" value={txName} onChange={(e) => setTxName(e.target.value)} /></div>
               <div className="field">
-                <label>Период *</label>
-                <select value={txPeriod} onChange={(e) => setTxPeriod(e.target.value)}>
-                  {monthLabels.length ? [...monthLabels].reverse().map((m) => <option key={m}>{m}</option>) : <option>{txPeriod}</option>}
+                <label>Тип базы *</label>
+                <select value={txBaseType} onChange={(e) => setTxBaseType(e.target.value)}>
+                  <option value="revenue">С выручки</option>
+                  <option value="profit">С прибыли</option>
+                  <option value="payroll">С ФОТ</option>
+                  <option value="fixed">Фиксированная сумма</option>
                 </select>
               </div>
-              <div className="field"><label>Срок уплаты</label><input type="date" value={txDue} onChange={(e) => setTxDue(e.target.value)} /></div>
-              <div className="field"><label>База, ₸</label><input type="number" placeholder="330000" value={txBase} onChange={(e) => { setTxBase(e.target.value); calcTax(e.target.value, txRate); }} /></div>
-              <div className="field"><label>Ставка, %</label><input type="number" step="0.1" placeholder="10" value={txRate} onChange={(e) => { setTxRate(e.target.value); calcTax(txBase, e.target.value); }} /></div>
-              <div className="field"><label>Сумма налога, ₸ *</label><input type="number" placeholder="33000" value={txSum} onChange={(e) => setTxSum(e.target.value)} /></div>
+              <div className="field">
+                <label>Периодичность *</label>
+                <select value={txPeriodType} onChange={(e) => setTxPeriodType(e.target.value)}>
+                  <option value="month">Ежемесячно</option>
+                  <option value="quarter">Ежеквартально</option>
+                  <option value="year">Ежегодно</option>
+                </select>
+              </div>
+              {txBaseType === "fixed" ? (
+                <div className="field"><label>Фикс. сумма, ₸ *</label><input type="number" placeholder="33000" value={txFixed} onChange={(e) => setTxFixed(e.target.value)} /></div>
+              ) : (
+                <div className="field"><label>Ставка, % *</label><input type="number" step="0.1" placeholder="10" value={txRate} onChange={(e) => setTxRate(e.target.value)} /></div>
+              )}
+              <div className="field">
+                <label>Статья расхода</label>
+                <select value={txCat} onChange={(e) => setTxCat(e.target.value)}>
+                  <option value="">— не выбрана —</option>
+                  {CATEGORIES.map((c) => (<option key={c}>{c}</option>))}
+                </select>
+              </div>
+              <div className="field">
+                <label>Счёт списания</label>
+                <select value={txAcc} onChange={(e) => setTxAcc(e.target.value)}>
+                  <option value="">— не выбран —</option>
+                  {activeAccounts().map((a) => (<option key={a.name}>{a.name}</option>))}
+                </select>
+              </div>
               <div className="field">
                 <label>Филиал</label>
                 <select value={txBranch} onChange={(e) => setTxBranch(e.target.value)}>
@@ -1428,11 +1551,12 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
                   {BRANCHES.map((b) => (<option key={b}>{b}</option>))}
                 </select>
               </div>
+              <div className="field full"><label>Комментарий</label><input placeholder="Необязательно" value={txComment} onChange={(e) => setTxComment(e.target.value)} /></div>
             </div>
-            <p className="hint">Сумма считается как база × ставка, либо введите вручную. Налог проводится как расход категории «Налоги».</p>
+            <p className="hint">Запись добавляется в реестр налогов. Фактический расход проводится позже кнопкой «Оплатить» в списке налогов — сумма подтверждается вручную.</p>
             <div className="modal-foot">
               <button className="btn-ghost" onClick={() => setTaxOpen(false)}>Отмена</button>
-              <button className="btn-gold" onClick={saveTax}>Провести</button>
+              <button className="btn-gold" onClick={saveTax}>Добавить в реестр</button>
             </div>
           </div>
         </div>

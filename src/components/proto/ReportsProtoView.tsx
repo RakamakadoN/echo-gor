@@ -302,6 +302,126 @@ export function ReportsProtoView({
     subs.forEach((sub: any) => { if (inPeriod(sub.soldOn || sub.startsOn)) newRev += Number(sub.price || 0); });
   });
 
+  /* ---- 4b. Рекламные расходы (реальные, /api/mvp/marketing/spend) ---- */
+  /* Месяц маркетинга завязан на общий фильтр периода вкладки: берём YYYY-MM
+     начала выбранного периода (для «Месяц» это совпадает с monthVal). */
+  const mktMonth = pFrom.slice(0, 7);
+  const [spend, setSpend] = useState<any[]>([]);
+  const [spendLoading, setSpendLoading] = useState(false);
+  const [spReload, setSpReload] = useState(0);
+  /* поля формы ввода расхода */
+  const [spAmount, setSpAmount] = useState("");
+  const [spSourceId, setSpSourceId] = useState("");
+  const [spChannel, setSpChannel] = useState("");
+  const [spLeads, setSpLeads] = useState("");
+  const [spBranch, setSpBranch] = useState("");
+  const [spComment, setSpComment] = useState("");
+  const [spSaving, setSpSaving] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        setSpendLoading(true);
+        const r = await fetch(`/api/mvp/marketing/spend?period=${mktMonth}`, { headers: H });
+        const j = r.ok ? await r.json() : {};
+        if (!alive) return;
+        setSpend(Array.isArray(j.spend) ? j.spend : []);
+      } catch {
+        if (alive) setSpend([]); /* сеть/403 — пустое состояние без падения */
+      } finally {
+        if (alive) setSpendLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [mktMonth, spReload]);
+
+  const spendScoped = spend.filter((s) => scope === "all" || !s.branchId || s.branchId === scope);
+  const hasSpend = spendScoped.length > 0;
+  const mktSpent = spendScoped.reduce((s, r) => s + Number(r.amount || 0), 0);
+  const spendLeadsTotal = spendScoped.reduce((s, r) => s + Number(r.leads || 0), 0);
+
+  /* Лиды: приоритет — реальные ученики за период (students.createdAt, totalLeads выше);
+     если их нет, используем суммарные leads из введённых расходов. */
+  const mktLeads = totalLeads > 0 ? totalLeads : spendLeadsTotal;
+  /* Новые оплатившие клиенты за период = продажи абонементов (payments type=subscription, subCount). */
+  const mktNewClients = subCount;
+  /* Выручка периода для ROMI: помесячный P&L из бухгалтерии (по всей сети),
+     иначе — сумма реальных платежей за месяц (с учётом выбранного филиала). */
+  const pnlMonth = pnl.find((p) => p.month === mktMonth);
+  const mktRevenue =
+    scope === "all" && pnlMonth
+      ? Number(pnlMonth.revenue || 0)
+      : payments
+          .filter((p) => inScope(p.branchId) && datePart(p.date).slice(0, 7) === mktMonth)
+          .reduce((s, p) => s + Number(p.amount || 0), 0);
+
+  const cpl = hasSpend && mktLeads > 0 ? Math.round(mktSpent / mktLeads) : null;
+  const cac = hasSpend && mktNewClients > 0 ? Math.round(mktSpent / mktNewClients) : null;
+  const romi = hasSpend && mktSpent > 0 ? Math.round(((mktRevenue - mktSpent) / mktSpent) * 100) : null;
+
+  /* Разбивка расходов по источникам/каналам (по имени) */
+  const spendByName: Record<string, { amount: number; leads: number }> = {};
+  spendScoped.forEach((s) => {
+    const name = s.sourceId ? sourceName(s.sourceId) : (s.channel || "Без канала");
+    if (!spendByName[name]) spendByName[name] = { amount: 0, leads: 0 };
+    spendByName[name].amount += Number(s.amount || 0);
+    spendByName[name].leads += Number(s.leads || 0);
+  });
+  /* Объединяем источники лидов (из карточек учеников) с источниками расходов */
+  const mktSourceNames = Array.from(new Set([...leadRows.map((r) => r.source), ...Object.keys(spendByName)]));
+  const mktSourceRows = mktSourceNames.map((name) => {
+    const lead = leadRows.find((r) => r.source === name);
+    const sp = spendByName[name];
+    const count = lead ? lead.count : 0;
+    const pct = lead ? lead.pct : 0;
+    const spent = sp ? sp.amount : 0;
+    const leadsForCpl = count > 0 ? count : sp ? sp.leads : 0;
+    const cplS = spent > 0 && leadsForCpl > 0 ? Math.round(spent / leadsForCpl) : null;
+    return { source: name, count, pct, spent, cpl: cplS };
+  }).sort((a, b) => b.spent - a.spent || b.count - a.count);
+
+  const branchNameById = (id?: string | null) => branches.find((b) => b.id === id)?.name || "—";
+
+  async function addSpend() {
+    const amt = Number(spAmount);
+    if (!amt || amt <= 0) { flash("Укажите сумму расхода"); return; }
+    if (!spSourceId && !spChannel.trim()) { flash("Выберите источник или укажите канал"); return; }
+    try {
+      setSpSaving(true);
+      const body: any = { periodMonth: mktMonth, amount: amt };
+      if (spSourceId) body.sourceId = spSourceId;
+      if (spChannel.trim()) body.channel = spChannel.trim();
+      if (spBranch) body.branchId = spBranch;
+      if (spLeads && Number(spLeads) > 0) body.leads = Number(spLeads);
+      if (spComment.trim()) body.comment = spComment.trim();
+      const r = await fetch("/api/mvp/marketing/spend", {
+        method: "POST",
+        headers: { ...H, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) { flash("Не удалось сохранить расход"); return; }
+      setSpAmount(""); setSpChannel(""); setSpLeads(""); setSpComment("");
+      setSpReload((x) => x + 1);
+      flash("Расход добавлен");
+    } catch {
+      flash("Ошибка сети — расход не сохранён");
+    } finally {
+      setSpSaving(false);
+    }
+  }
+
+  async function delSpend(id: string) {
+    try {
+      const r = await fetch("/api/mvp/marketing/spend/" + id, { method: "DELETE", headers: H });
+      if (!r.ok) { flash("Не удалось удалить расход"); return; }
+      setSpReload((x) => x + 1);
+      flash("Расход удалён");
+    } catch {
+      flash("Ошибка сети");
+    }
+  }
+
   /* ---- 5. Сравнение периодов (реальный P&L из бухгалтерии) ---- */
   const cmpLabel =
     cmpPeriod === "prev" ? "Предыдущий месяц" :
@@ -599,58 +719,126 @@ export function ReportsProtoView({
         {/* ===== 4. МАРКЕТИНГ ===== */}
         <div className={"rep-panel" + (subtab === "mkt" ? " active" : "")}>
           <div className="kpi-cards">
-            <KpiCard lbl="Рекл. бюджет" val="—" sub="Данных пока нет" color="var(--text2)" />
-            <KpiCard lbl="Потрачено" val="—" sub="Данных пока нет" color="var(--text2)" />
-            <KpiCard lbl="Лиды" val={fmt(totalLeads)} sub="новые ученики за период" />
-            <KpiCard lbl="CPL" val="—" sub="Данных пока нет" color="var(--text2)" />
-            <KpiCard lbl="CAC" val="—" sub="Данных пока нет" color="var(--text2)" />
-            <KpiCard lbl="ROMI" val="—" sub="Данных пока нет" color="var(--text2)" />
+            <KpiCard lbl="Рекл. бюджет" val={hasSpend ? fmt(mktSpent) + " ₸" : "—"} sub={hasSpend ? "факт = потрачено (план не задан)" : "Данных пока нет"} color={hasSpend ? undefined : "var(--text2)"} />
+            <KpiCard lbl="Потрачено" val={hasSpend ? fmt(mktSpent) + " ₸" : "—"} sub={hasSpend ? monthName(mktMonth) : "Данных пока нет"} color={hasSpend ? "var(--red-c)" : "var(--text2)"} />
+            <KpiCard lbl="Лиды" val={fmt(mktLeads)} sub={totalLeads > 0 ? "новые ученики за период" : hasSpend ? "по данным расходов" : "новые ученики за период"} />
+            <KpiCard lbl="CPL" val={cpl != null ? fmt(cpl) + " ₸" : "—"} sub={cpl != null ? "стоимость лида" : "Данных пока нет"} color={cpl != null ? undefined : "var(--text2)"} />
+            <KpiCard lbl="CAC" val={cac != null ? fmt(cac) + " ₸" : "—"} sub={cac != null ? "стоимость клиента" : "Данных пока нет"} color={cac != null ? undefined : "var(--text2)"} />
+            <KpiCard lbl="ROMI" val={romi != null ? (romi >= 0 ? "+" : "") + romi + "%" : "—"} sub={romi != null ? "возврат на маркетинг" : "Данных пока нет"} color={romi != null ? (romi >= 0 ? "var(--green-c)" : "var(--red-c)") : "var(--text2)"} />
             <KpiCard lbl="Купили абонемент" val={fmt(f_buy)} />
             <KpiCard lbl="Выручка новых" val={fmt(newRev) + " ₸"} color="var(--green-c)" />
             <KpiCard lbl="Средний чек" val={subAvg ? fmt(subAvg) + " ₸" : "—"} sub={subAvg ? undefined : "Данных пока нет"} />
           </div>
+          {/* ---- Ввод рекламных расходов по каналам ---- */}
+          <div className="rep-card">
+            <h3>Рекламные расходы · {monthName(mktMonth)}</h3>
+            <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 14 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <label className="flabel">Источник</label>
+                <select value={spSourceId} onChange={(e) => setSpSourceId(e.target.value)} style={filterSelStyle}>
+                  <option value="">— выбрать —</option>
+                  {leadSources.map((ls) => <option key={ls.id} value={ls.id}>{ls.name}</option>)}
+                </select>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <label className="flabel">Или канал</label>
+                <input value={spChannel} onChange={(e) => setSpChannel(e.target.value)} placeholder="Instagram, листовки…" style={{ ...filterSelStyle, cursor: "text", width: 150 }} />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <label className="flabel">Сумма, ₸</label>
+                <input type="number" value={spAmount} onChange={(e) => setSpAmount(e.target.value)} placeholder="0" style={{ ...filterSelStyle, cursor: "text", width: 120 }} />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <label className="flabel">Лиды (опц.)</label>
+                <input type="number" value={spLeads} onChange={(e) => setSpLeads(e.target.value)} placeholder="0" style={{ ...filterSelStyle, cursor: "text", width: 90 }} />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <label className="flabel">Филиал (опц.)</label>
+                <select value={spBranch} onChange={(e) => setSpBranch(e.target.value)} style={filterSelStyle}>
+                  <option value="">Вся сеть</option>
+                  {branches.map((br) => <option key={br.id} value={br.id}>{br.name}</option>)}
+                </select>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1, minWidth: 140 }}>
+                <label className="flabel">Комментарий (опц.)</label>
+                <input value={spComment} onChange={(e) => setSpComment(e.target.value)} placeholder="—" style={{ ...filterSelStyle, cursor: "text", width: "100%" }} />
+              </div>
+              <button className="btn btn-brand" onClick={addSpend} disabled={spSaving} style={{ padding: "8px 16px" }}>{spSaving ? "…" : "+ Добавить"}</button>
+            </div>
+            {spendScoped.length ? (
+              <div className="rep-tablewrap">
+                <table className="rep-table">
+                  <thead><tr><th>Канал / источник</th><th>Филиал</th><th style={{ textAlign: "right" }}>Сумма</th><th style={{ textAlign: "right" }}>Лиды</th><th>Комментарий</th><th style={{ textAlign: "right" }}></th></tr></thead>
+                  <tbody>
+                    {spendScoped.map((s) => (
+                      <tr key={s.id}>
+                        <td>{s.sourceId ? sourceName(s.sourceId) : (s.channel || "Без канала")}</td>
+                        <td>{s.branchId ? branchNameById(s.branchId) : "Вся сеть"}</td>
+                        <td style={{ textAlign: "right", fontWeight: 700, color: "var(--red-c)" }}>{fmt(Number(s.amount || 0))} ₸</td>
+                        <td style={{ textAlign: "right" }}>{s.leads ? fmt(Number(s.leads)) : "—"}</td>
+                        <td style={{ color: "var(--text2)" }}>{s.comment || "—"}</td>
+                        <td style={{ textAlign: "right" }}><button className="btn btn-secondary" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => delSpend(s.id)}>Удалить</button></td>
+                      </tr>
+                    ))}
+                    <tr style={{ borderTop: "2px solid var(--border-c)" }}>
+                      <td style={{ fontWeight: 700 }} colSpan={2}>Итого потрачено</td>
+                      <td style={{ textAlign: "right", fontWeight: 800 }}>{fmt(mktSpent)} ₸</td>
+                      <td style={{ textAlign: "right", fontWeight: 700 }}>{spendLeadsTotal ? fmt(spendLeadsTotal) : "—"}</td>
+                      <td colSpan={2}></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="rep-stub">{spendLoading ? "Загрузка…" : "Расходов за «" + monthName(mktMonth) + "» пока нет — добавьте первую запись выше, чтобы посчитать CPL/CAC/ROMI."}</div>
+            )}
+          </div>
+
           <div className="rep-card">
             <h3>Воронка · от лида до продления</h3>
             {totalLeads > 0 ? (
               <>
                 <div className="funnel-row head"><span>Этап</span><span>Количество</span><span>Конверсия</span><span>Стоимость</span></div>
-                <FunRowCost name="Лиды (новые ученики)" cnt={totalLeads} conv="—" cost="—" />
+                <FunRowCost name="Лиды (новые ученики)" cnt={totalLeads} conv="—" cost={cpl != null ? cpl : "—"} />
                 <FunRowCost name="Записаны на пробный" cnt={f_trial} conv={totalLeads > 0 ? Math.round((f_trial / totalLeads) * 100) + "%" : "—"} cost="—" />
                 <FunRowCost name="Пришли на пробный" cnt={f_attend} conv={f_trial > 0 ? Math.round((f_attend / f_trial) * 100) + "%" : "—"} cost="—" />
-                <FunRowCost name="Купили абонемент" cnt={f_buy} conv={f_attend > 0 ? Math.round((f_buy / f_attend) * 100) + "%" : "—"} cost="—" />
+                <FunRowCost name="Купили абонемент" cnt={f_buy} conv={f_attend > 0 ? Math.round((f_buy / f_attend) * 100) + "%" : "—"} cost={cac != null ? cac : "—"} />
                 <FunRowCost name="Продлили" cnt={f_renew} conv={f_buy > 0 ? Math.round((f_renew / f_buy) * 100) + "%" : "—"} cost="—" />
-                <div className="rep-stub" style={{ marginTop: 12 }}>Стоимость этапов (CPL/CAC) — данных о рекламных расходах в системе пока нет.</div>
+                <div className="rep-stub" style={{ marginTop: 12 }}>{hasSpend ? "CPL на этапе лидов и CAC на этапе покупки рассчитаны по введённым рекламным расходам за месяц." : "Стоимость этапов (CPL/CAC) появится после ввода рекламных расходов за месяц (форма выше)."}</div>
               </>
             ) : (
               <Empty>Данных пока нет — новых учеников (лидов) за период не найдено</Empty>
             )}
           </div>
           <div className="rep-card">
-            <h3>Лиды по источникам <button className="btn btn-secondary" style={{ float: "right", padding: "5px 12px", fontSize: 12 }} onClick={() => flash("Ручной ввод лидов и рекламных расходов появится с модулем «Маркетинг»")}>+ Внести лиды</button></h3>
-            {leadRows.length ? (
+            <h3>Лиды и расходы по источникам</h3>
+            {mktSourceRows.length ? (
               <div className="rep-tablewrap">
                 <table className="rep-table">
-                  <thead><tr><th>Источник</th><th style={{ textAlign: "right" }}>Лиды</th><th style={{ textAlign: "right" }}>Доля</th><th style={{ textAlign: "right" }}>CPL</th></tr></thead>
+                  <thead><tr><th>Источник / канал</th><th style={{ textAlign: "right" }}>Лиды</th><th style={{ textAlign: "right" }}>Доля</th><th style={{ textAlign: "right" }}>Потрачено</th><th style={{ textAlign: "right" }}>CPL</th></tr></thead>
                   <tbody>
-                    {leadRows.map((l, i) => (
+                    {mktSourceRows.map((l, i) => (
                       <tr key={i}>
                         <td>{l.source}</td>
                         <td style={{ textAlign: "right", fontWeight: 700 }}>{fmt(l.count)}</td>
                         <td style={{ textAlign: "right" }}>{l.pct}%</td>
-                        <td style={{ textAlign: "right", color: "var(--text2)" }}>—</td>
+                        <td style={{ textAlign: "right", color: l.spent > 0 ? "var(--red-c)" : "var(--text2)" }}>{l.spent > 0 ? fmt(l.spent) + " ₸" : "—"}</td>
+                        <td style={{ textAlign: "right", color: l.cpl != null ? "var(--heading)" : "var(--text2)", fontWeight: l.cpl != null ? 700 : 400 }}>{l.cpl != null ? fmt(l.cpl) + " ₸" : "—"}</td>
                       </tr>
                     ))}
                     <tr style={{ borderTop: "2px solid var(--border-c)" }}>
                       <td style={{ fontWeight: 700 }}>Итого</td>
                       <td style={{ textAlign: "right", fontWeight: 800 }}>{fmt(totalLeads)}</td>
-                      <td colSpan={2}></td>
+                      <td></td>
+                      <td style={{ textAlign: "right", fontWeight: 800 }}>{mktSpent > 0 ? fmt(mktSpent) + " ₸" : "—"}</td>
+                      <td style={{ textAlign: "right", fontWeight: 800 }}>{cpl != null ? fmt(cpl) + " ₸" : "—"}</td>
                     </tr>
                   </tbody>
                 </table>
-                <div className="rep-stub" style={{ marginTop: 12 }}>Источники берутся из карточек учеников (откуда о нас узнали). CPL и рекламные расходы — данных пока нет.</div>
+                <div className="rep-stub" style={{ marginTop: 12 }}>Лиды берутся из карточек учеников (откуда о нас узнали), расходы — из введённых рекламных затрат за месяц. CPL по источнику = потрачено / лиды этого источника (при отсутствии учеников используется поле «лиды» из расхода).</div>
               </div>
             ) : (
-              <Empty>Данных пока нет — источников лидов за период не найдено</Empty>
+              <Empty>Данных пока нет — источников лидов и расходов за период не найдено</Empty>
             )}
           </div>
         </div>

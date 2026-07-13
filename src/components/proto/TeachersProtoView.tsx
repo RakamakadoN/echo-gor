@@ -40,6 +40,8 @@ const isoToDate = (iso: string): string => {
   if (isNaN(d.getTime())) return "—";
   return String(d.getDate()).padStart(2, "0") + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + d.getFullYear();
 };
+/* ISO/дата -> yyyy-mm-dd для <input type="date"> */
+const isoToInput = (iso?: string | null): string => (iso ? String(iso).slice(0, 10) : "");
 const initialsOf = (name: string): string => {
   const parts = (name || "").trim().split(/\s+/);
   return ((parts[0]?.[0] || "") + (parts[1]?.[0] || "")).toUpperCase() || "—";
@@ -56,6 +58,7 @@ const SCHEME_LABEL: Record<string, string> = {
   percent: "Процент от выручки", per_lesson: "За занятие", fixed: "Фиксированный оклад", mixed: "Смешанная схема",
 };
 const DEMO_HEADERS = { "x-demo-role": "owner" };
+const JSON_HEADERS = { "Content-Type": "application/json", "x-demo-role": "owner" };
 
 /* Заглушка «данных пока нет» — приглушённый блок, не пустота */
 function Empty({ children }: { children?: any }) {
@@ -222,11 +225,14 @@ export function TeachersProtoView({ teachers: teachersProp = [], branches = [], 
 
   const [penalties, setPenalties] = useState<any[]>([]);
   const [payroll, setPayroll] = useState<{ comp: Record<string, any>; lessons: Record<string, number>; paid: Record<string, number> }>({ comp: {}, lessons: {}, paid: {} });
+  /* Профили педагогов (категория/даты/статус/заметки) — карта teacherId -> profile */
+  const [profiles, setProfiles] = useState<Record<string, any>>({});
 
   const [teachers, setTeachers] = useState<any[]>(baseTeachers);
   const [fMonth, setFMonth] = useState<string>(MONTHS[MONTHS.length - 1]);
   const [fBranch, setFBranch] = useState<string>("");
   const [fStatus, setFStatus] = useState<string>("");
+  const [fCat, setFCat] = useState<string>("");
   const [winnerId, setWinnerId] = useState<string | null>(null);
 
   /* Список реальных филиалов для фильтра/форм */
@@ -237,10 +243,21 @@ export function TeachersProtoView({ teachers: teachersProp = [], branches = [], 
     return Array.from(set);
   }, [branches, baseTeachers]);
 
-  /* Пересобрать список педагогов из реальных данных + прикрутить штрафы */
+  /* Пересобрать список педагогов из реальных данных + прикрутить штрафы и профиль */
   useEffect(() => {
-    setTeachers(baseTeachers.map((t) => ({ ...t, fines: finesForTeacher(penalties, t) })));
-  }, [baseTeachers, penalties]);
+    setTeachers(baseTeachers.map((t) => {
+      const pr = profiles[t.id];
+      return {
+        ...t,
+        fines: finesForTeacher(penalties, t),
+        cat: pr && pr.category != null ? Number(pr.category) : t.cat,
+        birth: pr && pr.birthDate ? isoToDate(pr.birthDate) : t.birth,
+        hired: pr && pr.hiredOn ? isoToDate(pr.hiredOn) : t.hired,
+        status: pr && pr.status ? pr.status : t.status,
+        notes: pr && pr.notes ? pr.notes : "",
+      };
+    }));
+  }, [baseTeachers, penalties, profiles]);
 
   /* Загрузка штрафов */
   const loadPenalties = () => {
@@ -256,6 +273,18 @@ export function TeachersProtoView({ teachers: teachersProp = [], branches = [], 
       .then((d) => setPayroll({ comp: d?.comp || {}, lessons: d?.lessons || {}, paid: d?.paid || {} }))
       .catch(() => setPayroll({ comp: {}, lessons: {}, paid: {} }));
   };
+  /* Загрузить профиль одного педагога в карту profiles (для таблицы/карточек) */
+  const fetchProfileInto = (id: string) => {
+    fetch("/api/mvp/teachers/" + id + "/profile", { headers: DEMO_HEADERS })
+      .then((r) => (r.ok ? r.json() : { profile: null }))
+      .then((d) => setProfiles((p) => ({ ...p, [id]: d?.profile || null })))
+      .catch(() => {});
+  };
+  /* Профили всех педагогов из props — чтобы категория была видна в таблице/карточках */
+  useEffect(() => {
+    (teachersProp || []).forEach((t) => fetchProfileInto(t.id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teachersProp]);
   useEffect(() => { loadPenalties(); loadPayroll(); }, []);
 
   const [columns, setColumns] = useState<any[]>(COLUMN_DEFS.map((c) => ({ ...c })));
@@ -267,9 +296,164 @@ export function TeachersProtoView({ teachers: teachersProp = [], branches = [], 
   const [cardId, setCardId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>("info");
 
+  /* ===== данные карточки открытого педагога ===== */
+  const [cardProfile, setCardProfile] = useState<any>(null);
+  const [cardKpi, setCardKpi] = useState<any[]>([]);
+  const [cardReviews, setCardReviews] = useState<any[]>([]);
+  const [cardAtt, setCardAtt] = useState<any[]>([]);
+  const [cardStd, setCardStd] = useState<any[]>([]);
+
+  /* редактор профиля/категории в карточке (вкладка «Общая») */
+  const [profEdit, setProfEdit] = useState<any>({ ct: "", birth: "", hired: "", st: "", notes: "" });
+  /* ввод KPI по месяцам */
+  const [kpiMonth, setKpiMonth] = useState<string>(labelToPeriod(MONTHS[MONTHS.length - 1]));
+  const [kpiForm, setKpiForm] = useState<any>({ retention: "", funnel: "", standards: "", reviewAvg: "", comment: "" });
+  /* формы отзыва / аттестации / стандарта */
+  const [revForm, setRevForm] = useState<any>({ author: "", source: "Родитель", stars: 5, text: "" });
+  const [attForm, setAttForm] = useState<any>({ date: "", direction: "", result: "Аттестован", mark: "", note: "" });
+  const [stdForm, setStdForm] = useState<any>({ title: "", detail: "" });
+
+  const loadCardProfile = (id: string) => {
+    fetch("/api/mvp/teachers/" + id + "/profile", { headers: DEMO_HEADERS })
+      .then((r) => (r.ok ? r.json() : { profile: null }))
+      .then((d) => {
+        const pr = d?.profile || null;
+        setCardProfile(pr);
+        setProfEdit({
+          ct: pr && pr.category != null ? String(pr.category) : "",
+          birth: isoToInput(pr?.birthDate), hired: isoToInput(pr?.hiredOn),
+          st: pr?.status || "", notes: pr?.notes || "",
+        });
+        setProfiles((p) => ({ ...p, [id]: pr }));
+      })
+      .catch(() => { setCardProfile(null); });
+  };
+  const loadCardKpi = (id: string) => {
+    fetch("/api/mvp/teachers/" + id + "/kpi", { headers: DEMO_HEADERS })
+      .then((r) => (r.ok ? r.json() : { kpi: [] }))
+      .then((d) => setCardKpi(Array.isArray(d?.kpi) ? d.kpi : []))
+      .catch(() => setCardKpi([]));
+  };
+  const loadCardReviews = (id: string) => {
+    fetch("/api/mvp/teachers/" + id + "/reviews", { headers: DEMO_HEADERS })
+      .then((r) => (r.ok ? r.json() : { reviews: [] }))
+      .then((d) => setCardReviews(Array.isArray(d?.reviews) ? d.reviews : []))
+      .catch(() => setCardReviews([]));
+  };
+  const loadCardAtt = (id: string) => {
+    fetch("/api/mvp/teachers/" + id + "/attestations", { headers: DEMO_HEADERS })
+      .then((r) => (r.ok ? r.json() : { attestations: [] }))
+      .then((d) => setCardAtt(Array.isArray(d?.attestations) ? d.attestations : []))
+      .catch(() => setCardAtt([]));
+  };
+  const loadCardStd = (id: string) => {
+    fetch("/api/mvp/teachers/" + id + "/standards", { headers: DEMO_HEADERS })
+      .then((r) => (r.ok ? r.json() : { standards: [] }))
+      .then((d) => setCardStd(Array.isArray(d?.standards) ? d.standards : []))
+      .catch(() => setCardStd([]));
+  };
+
+  /* при открытии карточки конкретного педагога — тянем все его данные */
+  useEffect(() => {
+    if (cardId == null) return;
+    loadCardProfile(cardId); loadCardKpi(cardId); loadCardReviews(cardId); loadCardAtt(cardId); loadCardStd(cardId);
+    setKpiMonth(labelToPeriod(fMonth));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardId]);
+
+  /* подставить существующий KPI выбранного месяца в форму ввода */
+  useEffect(() => {
+    const e = cardKpi.find((x) => x.periodMonth === kpiMonth);
+    setKpiForm(e
+      ? { retention: String(e.retention ?? ""), funnel: String(e.funnel ?? ""), standards: String(e.standards ?? ""), reviewAvg: String(e.reviewAvg ?? ""), comment: e.comment || "" }
+      : { retention: "", funnel: "", standards: "", reviewAvg: "", comment: "" });
+  }, [cardKpi, kpiMonth]);
+
+  /* ===== мутации данных карточки ===== */
+  const saveProfile = (id: string) => {
+    const body = {
+      category: profEdit.ct ? Number(profEdit.ct) : null,
+      birthDate: profEdit.birth || null,
+      hiredOn: profEdit.hired || null,
+      status: profEdit.st || null,
+      notes: profEdit.notes || null,
+    };
+    fetch("/api/mvp/teachers/" + id + "/profile", { method: "PATCH", headers: JSON_HEADERS, body: JSON.stringify(body) })
+      .then((r) => { if (!r.ok) throw new Error("fail"); return r.json(); })
+      .then(() => { loadCardProfile(id); toast("Профиль сохранён"); })
+      .catch(() => toast("Не удалось сохранить профиль"));
+  };
+  const saveKpi = (id: string) => {
+    const body = {
+      periodMonth: kpiMonth,
+      retention: Number(kpiForm.retention) || 0,
+      funnel: Number(kpiForm.funnel) || 0,
+      standards: Number(kpiForm.standards) || 0,
+      reviewAvg: Number(kpiForm.reviewAvg) || 0,
+      comment: (kpiForm.comment || "").trim(),
+    };
+    fetch("/api/mvp/teachers/" + id + "/kpi", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(body) })
+      .then((r) => { if (!r.ok) throw new Error("fail"); return r.json(); })
+      .then(() => { loadCardKpi(id); toast("KPI сохранён за " + periodToLabel(kpiMonth)); })
+      .catch(() => toast("Не удалось сохранить KPI"));
+  };
+  const addReview = (id: string) => {
+    if (!revForm.author.trim()) { toast("Укажите автора отзыва"); return; }
+    if (!revForm.text.trim()) { toast("Введите текст отзыва"); return; }
+    const body = { author: revForm.author.trim(), source: revForm.source || undefined, stars: Number(revForm.stars) || 5, text: revForm.text.trim() };
+    fetch("/api/mvp/teachers/" + id + "/reviews", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(body) })
+      .then((r) => { if (!r.ok) throw new Error("fail"); return r.json(); })
+      .then(() => { loadCardReviews(id); setRevForm({ author: "", source: "Родитель", stars: 5, text: "" }); toast("Отзыв добавлен"); })
+      .catch(() => toast("Не удалось добавить отзыв"));
+  };
+  const delReview = (id: string, rid: string) => {
+    if (!window.confirm("Удалить отзыв?")) return;
+    fetch("/api/mvp/teachers/" + id + "/reviews/" + rid, { method: "DELETE", headers: DEMO_HEADERS })
+      .then((r) => { if (!r.ok) throw new Error("fail"); return r.json(); })
+      .then(() => { loadCardReviews(id); toast("Отзыв удалён"); })
+      .catch(() => toast("Не удалось удалить отзыв"));
+  };
+  const addAtt = (id: string) => {
+    if (!attForm.direction.trim()) { toast("Укажите направление аттестации"); return; }
+    const body = { date: attForm.date || null, direction: attForm.direction.trim(), result: attForm.result, mark: attForm.mark.trim() || "—", note: attForm.note.trim() };
+    fetch("/api/mvp/teachers/" + id + "/attestations", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(body) })
+      .then((r) => { if (!r.ok) throw new Error("fail"); return r.json(); })
+      .then(() => { loadCardAtt(id); setAttForm({ date: "", direction: "", result: "Аттестован", mark: "", note: "" }); toast("Аттестация добавлена"); })
+      .catch(() => toast("Не удалось добавить аттестацию"));
+  };
+  const delAtt = (id: string, aid: string) => {
+    if (!window.confirm("Удалить запись об аттестации?")) return;
+    fetch("/api/mvp/teachers/" + id + "/attestations/" + aid, { method: "DELETE", headers: DEMO_HEADERS })
+      .then((r) => { if (!r.ok) throw new Error("fail"); return r.json(); })
+      .then(() => { loadCardAtt(id); toast("Аттестация удалена"); })
+      .catch(() => toast("Не удалось удалить аттестацию"));
+  };
+  const addStd = (id: string) => {
+    if (!stdForm.title.trim()) { toast("Введите название пункта стандарта"); return; }
+    const body = { title: stdForm.title.trim(), detail: stdForm.detail.trim() || undefined, state: "n", sort: cardStd.length };
+    fetch("/api/mvp/teachers/" + id + "/standards", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(body) })
+      .then((r) => { if (!r.ok) throw new Error("fail"); return r.json(); })
+      .then(() => { loadCardStd(id); setStdForm({ title: "", detail: "" }); toast("Пункт добавлен"); })
+      .catch(() => toast("Не удалось добавить пункт"));
+  };
+  const cycleStd = (id: string, s: any) => {
+    const next = s.state === "y" ? "p" : s.state === "p" ? "n" : "y";
+    fetch("/api/mvp/teachers/" + id + "/standards/" + s.id, { method: "PATCH", headers: JSON_HEADERS, body: JSON.stringify({ state: next }) })
+      .then((r) => { if (!r.ok) throw new Error("fail"); return r.json(); })
+      .then(() => loadCardStd(id))
+      .catch(() => toast("Не удалось изменить статус"));
+  };
+  const delStd = (id: string, sid: string) => {
+    if (!window.confirm("Удалить пункт стандарта?")) return;
+    fetch("/api/mvp/teachers/" + id + "/standards/" + sid, { method: "DELETE", headers: DEMO_HEADERS })
+      .then((r) => { if (!r.ok) throw new Error("fail"); return r.json(); })
+      .then(() => { loadCardStd(id); toast("Пункт удалён"); })
+      .catch(() => toast("Не удалось удалить пункт"));
+  };
+
   const [formOpen, setFormOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
-  const [form, setForm] = useState<any>({ name: "", phone: "", birth: "", hired: "", br: "", ct: "", rl: "Преподаватель", spec: "", st: "Активен", login: "", pass: "", loginTouched: false, ava: "+" });
+  const [form, setForm] = useState<any>({ name: "", phone: "", birth: "", hired: "", br: "", ct: "", rl: "Преподаватель", spec: "", st: "Активен", notes: "", login: "", pass: "", loginTouched: false, ava: "+" });
 
   const [payOpen, setPayOpen] = useState(false);
   const [payWho, setPayWho] = useState<string>("");
@@ -297,8 +481,14 @@ export function TeachersProtoView({ teachers: teachersProp = [], branches = [], 
   };
 
   /* ===== derived ===== */
+  /* какие категории реально заданы (для показа фильтра) */
+  const catValues = useMemo(() => {
+    const set = new Set<number>();
+    teachers.forEach((t) => { if (t.cat != null) set.add(Number(t.cat)); });
+    return Array.from(set).sort((a, b) => a - b);
+  }, [teachers]);
   const filtered = teachers.filter(
-    (t) => (!fBranch || t.branch === fBranch) && (!fStatus || t.status === fStatus)
+    (t) => (!fBranch || t.branch === fBranch) && (!fStatus || t.status === fStatus) && (!fCat || String(t.cat) === fCat)
   );
   const finesSumForMonth = (t: any, mn: string): number => (t.fines?.[mn] || []).reduce((s: number, f: any) => s + (f.sum || 0), 0);
   const withM = teachers.map((t) => ({ t, m: monthData(t, fMonth) })).filter((x) => x.m);
@@ -327,10 +517,11 @@ export function TeachersProtoView({ teachers: teachersProp = [], branches = [], 
       const t = teachers.find((x) => x.id === id);
       if (!t) return;
       setEditId(id);
-      setForm({ name: t.name, phone: t.phone, birth: "", hired: "", br: t.branch, ct: t.cat == null ? "" : String(t.cat), rl: t.role, spec: t.spec === "—" ? "" : t.spec, st: t.status, login: t.login || t.phone, pass: t.pass || "", loginTouched: false, ava: t.initials });
+      const pr = profiles[id] || {};
+      setForm({ name: t.name, phone: t.phone, birth: isoToInput(pr.birthDate), hired: isoToInput(pr.hiredOn), br: t.branch, ct: pr.category != null ? String(pr.category) : (t.cat == null ? "" : String(t.cat)), rl: t.role, spec: t.spec === "—" ? "" : t.spec, st: t.status, notes: pr.notes || t.notes || "", login: t.login || t.phone, pass: t.pass || "", loginTouched: false, ava: t.initials });
     } else {
       setEditId(null);
-      setForm({ name: "", phone: "", birth: "", hired: "", br: defaultBranch(), ct: "", rl: "Преподаватель", spec: "", st: "Активен", login: "", pass: "", loginTouched: false, ava: "+" });
+      setForm({ name: "", phone: "", birth: "", hired: "", br: defaultBranch(), ct: "", rl: "Преподаватель", spec: "", st: "Активен", notes: "", login: "", pass: "", loginTouched: false, ava: "+" });
     }
     setFormOpen(true);
   };
@@ -353,6 +544,20 @@ export function TeachersProtoView({ teachers: teachersProp = [], branches = [], 
         ...t, name, phone: form.phone, spec: form.spec.trim() || "—", branch: form.br, role: form.rl, status: form.st,
         initials, login: form.login.trim() || form.phone.trim(), pass: form.pass,
       } : t));
+      /* профиль (категория/даты/статус/заметки) сохраняем на сервере для реального педагога */
+      if (!String(editId).startsWith("local-")) {
+        const pbody = {
+          category: form.ct ? Number(form.ct) : null,
+          birthDate: form.birth || null,
+          hiredOn: form.hired || null,
+          status: form.st || null,
+          notes: form.notes || null,
+        };
+        fetch("/api/mvp/teachers/" + editId + "/profile", { method: "PATCH", headers: JSON_HEADERS, body: JSON.stringify(pbody) })
+          .then((r) => { if (!r.ok) throw new Error("fail"); return r.json(); })
+          .then(() => fetchProfileInto(editId))
+          .catch(() => toast("Профиль не сохранён на сервере"));
+      }
       toast("Сохранено: " + name);
     } else {
       setTeachers((list) => {
@@ -675,6 +880,19 @@ export function TeachersProtoView({ teachers: teachersProp = [], branches = [], 
             <div className="info"><div className="k">Статус</div><div className="v">{t.status}</div></div>
             <div className="info"><div className="k">Специализация</div><div className="v">{t.spec}</div></div>
           </div>
+          {t.notes ? (<div className="info" style={{ marginTop: 10 }}><div className="k">Заметки</div><div className="v" style={{ fontWeight: 400 }}>{t.notes}</div></div>) : null}
+          <h4>Профиль и категория</h4>
+          {!cardProfile ? <Empty>Профиль ещё не заполнен — задайте категорию, даты и статус ниже.</Empty> : null}
+          <div className="form-grid" style={{ marginTop: 10 }}>
+            <div className="field"><label>Категория</label><select value={profEdit.ct} onChange={(e) => setProfEdit((p: any) => ({ ...p, ct: e.target.value }))}><option value="">Не задана</option><option value="1">1 категория</option><option value="2">2 категория</option><option value="3">3 категория</option></select></div>
+            <div className="field"><label>Статус</label><select value={profEdit.st} onChange={(e) => setProfEdit((p: any) => ({ ...p, st: e.target.value }))}><option value="">— не задан —</option><option>Активен</option><option>Стажер</option></select></div>
+            <div className="field"><label>Дата рождения</label><input type="date" value={profEdit.birth} onChange={(e) => setProfEdit((p: any) => ({ ...p, birth: e.target.value }))} /></div>
+            <div className="field"><label>Дата приёма</label><input type="date" value={profEdit.hired} onChange={(e) => setProfEdit((p: any) => ({ ...p, hired: e.target.value }))} /></div>
+            <div className="field full"><label>Заметки</label><textarea rows={2} value={profEdit.notes} placeholder="Внутренние заметки о педагоге" onChange={(e) => setProfEdit((p: any) => ({ ...p, notes: e.target.value }))} /></div>
+          </div>
+          <div className="modal-foot" style={{ justifyContent: "flex-start" }}>
+            <button className="btn-sm" onClick={() => saveProfile(t.id)}>Сохранить профиль</button>
+          </div>
           <h4>Доступ в личный кабинет</h4>
           <div className="grid3">
             <div className="info"><div className="k">Логин</div><div className="v">{t.login || t.phone}</div></div>
@@ -688,20 +906,56 @@ export function TeachersProtoView({ teachers: teachersProp = [], branches = [], 
         </>
       )),
       /* KPI */
-      pane("kpi", (
-        !comp ? <p className="note">За {fMonth} данных нет — педагог в этом месяце не работал.</p> : (
+      pane("kpi", (() => {
+        const cur = cardKpi.find((e) => e.periodMonth === kpiMonth);
+        const cComp = cur ? kpiComponents({ ret: Number(cur.retention) || 0, funnel: Number(cur.funnel) || 0, rev: Number(cur.reviewAvg) || 0, std: Number(cur.standards) || 0 }) : null;
+        const cK = cComp ? kpiTotal(cComp) : null;
+        const cRows = cComp ? [["Удержание из мес. в мес.", cComp.ret, KPI_WEIGHTS.ret], ["Воронка ПУ (приход → покупка)", cComp.funnel, KPI_WEIGHTS.funnel], ["Отзывы родителей", cComp.reviews, KPI_WEIGHTS.reviews], ["Выполнение стандартов", cComp.standards, KPI_WEIGHTS.standards]] : [];
+        return (
           <>
-            <div className="kpi final" style={{ marginBottom: 18 }}><div className="v">{k}</div><div className="k">Итоговый KPI за {fMonth} · из 100</div></div>
-            {kpiRows.map((r: any, i: number) => (
-              <div className="kbar" key={i}>
-                <div className="hd"><span className="nm">{r[0]}</span><span><span className="wt">вес {r[2]}% · </span><span className="sc">{r[1]}</span></span></div>
-                <div className="track"><div className="fill" style={{ width: r[1] + "%", background: fillColor(r[1]) }} /></div>
-              </div>
-            ))}
+            <div className="form-grid" style={{ marginBottom: 12 }}>
+              <div className="field"><label>Месяц KPI</label><select value={kpiMonth} onChange={(e) => setKpiMonth(e.target.value)}>{MONTHS.map((mn) => { const p = labelToPeriod(mn); return (<option key={p} value={p}>{mn}</option>); })}</select></div>
+            </div>
+            {cComp ? (
+              <>
+                <div className="kpi final" style={{ marginBottom: 18 }}><div className="v">{cK}</div><div className="k">Итоговый KPI за {periodToLabel(kpiMonth)} · из 100</div></div>
+                {cRows.map((r: any, i: number) => (
+                  <div className="kbar" key={i}>
+                    <div className="hd"><span className="nm">{r[0]}</span><span><span className="wt">вес {r[2]}% · </span><span className="sc">{r[1]}</span></span></div>
+                    <div className="track"><div className="fill" style={{ width: r[1] + "%", background: fillColor(r[1]) }} /></div>
+                  </div>
+                ))}
+              </>
+            ) : <Empty>За {periodToLabel(kpiMonth)} KPI ещё не введён — заполните форму ниже.</Empty>}
+            <h4>Ввод / редактирование KPI · {periodToLabel(kpiMonth)}</h4>
+            <div className="form-grid">
+              <div className="field"><label>Удержание, %</label><input type="number" min={0} max={100} value={kpiForm.retention} placeholder="0..100" onChange={(e) => setKpiForm((f: any) => ({ ...f, retention: e.target.value }))} /></div>
+              <div className="field"><label>Воронка ПУ, %</label><input type="number" min={0} max={100} value={kpiForm.funnel} placeholder="0..100" onChange={(e) => setKpiForm((f: any) => ({ ...f, funnel: e.target.value }))} /></div>
+              <div className="field"><label>Стандарты, %</label><input type="number" min={0} max={100} value={kpiForm.standards} placeholder="0..100" onChange={(e) => setKpiForm((f: any) => ({ ...f, standards: e.target.value }))} /></div>
+              <div className="field"><label>Средняя оценка, 0..5</label><input type="number" min={0} max={5} step={0.1} value={kpiForm.reviewAvg} placeholder="0..5" onChange={(e) => setKpiForm((f: any) => ({ ...f, reviewAvg: e.target.value }))} /></div>
+              <div className="field full"><label>Комментарий</label><textarea rows={2} value={kpiForm.comment} placeholder="Заметка к KPI за месяц" onChange={(e) => setKpiForm((f: any) => ({ ...f, comment: e.target.value }))} /></div>
+            </div>
+            <div className="modal-foot" style={{ justifyContent: "flex-start" }}>
+              <button className="btn-sm" onClick={() => saveKpi(t.id)}>Сохранить KPI за месяц</button>
+            </div>
+            {cardKpi.length ? (
+              <>
+                <h4>Введённые KPI по месяцам</h4>
+                {cardKpi.slice().sort((a, b) => (a.periodMonth < b.periodMonth ? 1 : -1)).map((e) => {
+                  const ec = kpiComponents({ ret: Number(e.retention) || 0, funnel: Number(e.funnel) || 0, rev: Number(e.reviewAvg) || 0, std: Number(e.standards) || 0 });
+                  return (
+                    <div className="row-item" key={e.id || e.periodMonth} onClick={() => setKpiMonth(e.periodMonth)} style={{ cursor: "pointer" }}>
+                      <div><div className="ttl">{periodToLabel(e.periodMonth)} · KPI {kpiTotal(ec)}/100</div><div className="det">удержание {e.retention}% · воронка {e.funnel}% · стандарты {e.standards}% · оценка {Number(e.reviewAvg).toFixed(1)}★{e.comment ? " · " + e.comment : ""}</div></div>
+                      <div style={{ textAlign: "right" }}><b>{kpiTotal(ec)}</b></div>
+                    </div>
+                  );
+                })}
+              </>
+            ) : <Empty>Данных пока нет — KPI ещё не вводились.</Empty>}
             <p className="note">Итог = удержание×{KPI_WEIGHTS.ret}% + воронка×{KPI_WEIGHTS.funnel}% + отзывы×{KPI_WEIGHTS.reviews}% + стандарты×{KPI_WEIGHTS.standards}%. Влияет на категорию, звание «Педагог месяца» и бонусы.</p>
           </>
-        )
-      )),
+        );
+      })()),
       /* GROUPS */
       pane("groups", (
         <>
@@ -717,11 +971,23 @@ export function TeachersProtoView({ teachers: teachersProp = [], branches = [], 
       /* STANDARDS */
       pane("std", (
         <>
-          <h4>Базовые стандарты · {fMonth}</h4>
-          {t.standards.length ? t.standards.map((x: any, i: number) => (
-            <div className="std" key={i}><div className={"ck " + x.s}>{sLabel[x.s]}</div><div className="body"><div className="nm">{x.nm}</div><div className="det">{x.det}</div></div><div className="act">{stdBtn(x)}</div></div>
-          )) : <Empty>Данных о выполнении стандартов пока нет.</Empty>}
-          <p className="note"><b>Как это фиксируется:</b> приход — фото с серверным штампом времени и геометкой филиала, сравнивается с расписанием (вовремя = за 20 мин). План — файл/текст с привязкой к неделе. Оценки — через личный кабинет родителя и авто-запрос после открытого урока/концерта. Выполнение стандартов даёт % (вес {KPI_WEIGHTS.standards}% в KPI) и влияет на бонусы и звание.</p>
+          <h4>Чек-лист стандартов</h4>
+          {cardStd.length ? cardStd.slice().sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0)).map((x: any) => (
+            <div className="std" key={x.id}>
+              <div className={"ck " + x.state} onClick={() => cycleStd(t.id, x)} title="Переключить: выполнено / частично / нет" style={{ cursor: "pointer" }}>{sLabel[x.state] || "?"}</div>
+              <div className="body"><div className="nm">{x.title}</div><div className="det">{x.detail || ""}</div></div>
+              <div className="act"><button className="btn-sm" onClick={() => cycleStd(t.id, x)}>Статус →</button><button className="btn-sm" onClick={() => delStd(t.id, x.id)} style={{ borderColor: "var(--red)", color: "var(--red)" }}>Удалить</button></div>
+            </div>
+          )) : <Empty>Данных пока нет — добавьте пункты чек-листа стандартов.</Empty>}
+          <h4>Добавить пункт</h4>
+          <div className="form-grid">
+            <div className="field full"><label>Название *</label><input value={stdForm.title} placeholder="Напр.: Фото прихода вовремя" onChange={(e) => setStdForm((f: any) => ({ ...f, title: e.target.value }))} /></div>
+            <div className="field full"><label>Пояснение</label><input value={stdForm.detail} placeholder="Как проверяется" onChange={(e) => setStdForm((f: any) => ({ ...f, detail: e.target.value }))} /></div>
+          </div>
+          <div className="modal-foot" style={{ justifyContent: "flex-start" }}>
+            <button className="btn-sm" onClick={() => addStd(t.id)}>+ Добавить пункт</button>
+          </div>
+          <p className="note">Клик по значку слева переключает состояние: ✓ выполнено → ~ частично → ✕ нет. Выполнение стандартов даёт % (вес {KPI_WEIGHTS.standards}% в KPI) и влияет на бонусы и звание.</p>
         </>
       )),
       /* TRAIN */
@@ -739,13 +1005,24 @@ export function TeachersProtoView({ teachers: teachersProp = [], branches = [], 
       pane("att", (
         <>
           <h4>История аттестаций</h4>
-          {t.attest.length ? t.attest.map((a: any, i: number) => (
-            <div className="row-item" key={i}>
-              <div><div className="ttl">{a.dir} {a.mark !== "—" ? "· " + a.mark : ""}</div><div className="det">{a.note}</div></div>
-              <div style={{ textAlign: "right" }}><span className={"badge " + (a.res === "Аттестован" ? "b-green" : "b-gray")}>{a.res}</span><div className="det">{a.date}</div></div>
+          {cardAtt.length ? cardAtt.slice().sort((a, b) => (String(b.date) < String(a.date) ? -1 : 1)).map((a: any) => (
+            <div className="row-item" key={a.id}>
+              <div><div className="ttl">{a.direction} {a.mark && a.mark !== "—" ? "· " + a.mark : ""}</div><div className="det">{a.note || ""}</div></div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ textAlign: "right" }}><span className={"badge " + (a.result === "Аттестован" ? "b-green" : a.result === "В процессе" ? "b-role" : "b-gray")}>{a.result}</span><div className="det">{a.date ? isoToDate(a.date) : "—"}</div></div>
+                <button className="btn-sm" onClick={() => delAtt(t.id, a.id)} style={{ borderColor: "var(--red)", color: "var(--red)" }}>Удалить</button>
+              </div>
             </div>
-          )) : <Empty>Аттестаций пока не было.</Empty>}
-          <div className="modal-foot" style={{ justifyContent: "flex-start" }}><button className="btn-sm" onClick={() => toast("Назначить аттестацию (только владелец)")}>Назначить аттестацию</button></div>
+          )) : <Empty>Данных пока нет — аттестаций ещё не было.</Empty>}
+          <h4>Добавить аттестацию</h4>
+          <div className="form-grid">
+            <div className="field"><label>Дата</label><input type="date" value={attForm.date} onChange={(e) => setAttForm((f: any) => ({ ...f, date: e.target.value }))} /></div>
+            <div className="field"><label>Направление *</label><input value={attForm.direction} placeholder="Напр.: Лезгинка" onChange={(e) => setAttForm((f: any) => ({ ...f, direction: e.target.value }))} /></div>
+            <div className="field"><label>Результат</label><select value={attForm.result} onChange={(e) => setAttForm((f: any) => ({ ...f, result: e.target.value }))}><option>Аттестован</option><option>В процессе</option><option>Не аттестован</option></select></div>
+            <div className="field"><label>Оценка</label><input value={attForm.mark} placeholder="Напр.: 5 / отлично" onChange={(e) => setAttForm((f: any) => ({ ...f, mark: e.target.value }))} /></div>
+            <div className="field full"><label>Заметка</label><textarea rows={2} value={attForm.note} placeholder="Комментарий комиссии" onChange={(e) => setAttForm((f: any) => ({ ...f, note: e.target.value }))} /></div>
+          </div>
+          <div className="modal-foot" style={{ justifyContent: "flex-start" }}><button className="btn-sm" onClick={() => addAtt(t.id)}>+ Добавить аттестацию</button></div>
           <p className="note">История сохраняется бессрочно.</p>
         </>
       )),
@@ -753,11 +1030,24 @@ export function TeachersProtoView({ teachers: teachersProp = [], branches = [], 
       pane("rev", (
         <>
           <h4>Отзывы и оценки</h4>
-          {t.reviews.length ? t.reviews.map((r: any, i: number) => (
-            <div className="review" key={i}><div className="hd"><div><span className="stars">{r.stars ? starsStr(r.stars) : ""}</span> <span className="src">{r.who} · {r.src}</span></div></div><p>{r.text}</p></div>
-          )) : <Empty>Отзывов о педагоге пока нет.</Empty>}
+          {cardReviews.length ? cardReviews.map((r: any) => (
+            <div className="review" key={r.id}>
+              <div className="hd">
+                <div><span className="stars">{r.stars ? starsStr(Number(r.stars)) : ""}</span> <span className="src">{r.author}{r.source ? " · " + r.source : ""}{r.createdAt ? " · " + isoToDate(r.createdAt) : ""}</span></div>
+                <button className="btn-sm" onClick={() => delReview(t.id, r.id)} style={{ borderColor: "var(--red)", color: "var(--red)" }}>Удалить</button>
+              </div>
+              <p>{r.text}</p>
+            </div>
+          )) : <Empty>Данных пока нет — отзывов о педагоге ещё нет.</Empty>}
+          <h4>Добавить отзыв</h4>
+          <div className="form-grid">
+            <div className="field"><label>Автор *</label><input value={revForm.author} placeholder="Имя родителя" onChange={(e) => setRevForm((f: any) => ({ ...f, author: e.target.value }))} /></div>
+            <div className="field"><label>Источник</label><input value={revForm.source} placeholder="Родитель / WhatsApp / 2ГИС" onChange={(e) => setRevForm((f: any) => ({ ...f, source: e.target.value }))} /></div>
+            <div className="field"><label>Оценка</label><select value={revForm.stars} onChange={(e) => setRevForm((f: any) => ({ ...f, stars: Number(e.target.value) }))}>{[5, 4, 3, 2, 1].map((n) => (<option key={n} value={n}>{starsStr(n)} ({n})</option>))}</select></div>
+            <div className="field full"><label>Текст *</label><textarea rows={2} value={revForm.text} placeholder="Текст отзыва" onChange={(e) => setRevForm((f: any) => ({ ...f, text: e.target.value }))} /></div>
+          </div>
           <div className="modal-foot" style={{ justifyContent: "flex-start" }}>
-            <button className="btn-sm" onClick={() => toast("Загрузить отзыв (скрин/фото/видео/ссылка)")}>Прикрепить отзыв</button>
+            <button className="btn-sm" onClick={() => addReview(t.id)}>+ Добавить отзыв</button>
             <button className="btn-sm" onClick={() => toast("Ссылка на оценку отправлена родителям в WhatsApp")}>Запросить у родителей</button>
           </div>
         </>
@@ -832,7 +1122,13 @@ export function TeachersProtoView({ teachers: teachersProp = [], branches = [], 
             <option value="">Вся сеть</option>
             {branchNames.map((b) => (<option key={b} value={b}>{b}</option>))}
           </select>
-          {/* Фильтр по категории скрыт: система не хранит категории педагогов */}
+          {/* Фильтр по категории — показываем, если задано несколько разных категорий */}
+          {catValues.length > 1 ? (
+            <select value={fCat} onChange={(e) => setFCat(e.target.value)}>
+              <option value="">Любая категория</option>
+              {catValues.map((c) => (<option key={c} value={String(c)}>{c} категория</option>))}
+            </select>
+          ) : null}
           <select value={fStatus} onChange={(e) => setFStatus(e.target.value)}>
             <option value="">Любой статус</option>
             <option>Активен</option><option>Стажер</option>
@@ -984,10 +1280,11 @@ export function TeachersProtoView({ teachers: teachersProp = [], branches = [], 
                 <div className="field"><label>Дата рождения</label><input type="date" value={form.birth} onChange={(e) => setForm((f: any) => ({ ...f, birth: e.target.value }))} /></div>
                 <div className="field"><label>Дата приёма</label><input type="date" value={form.hired} onChange={(e) => setForm((f: any) => ({ ...f, hired: e.target.value }))} /></div>
                 <div className="field"><label>Филиал *</label><select value={form.br} onChange={(e) => setForm((f: any) => ({ ...f, br: e.target.value }))}>{form.br && !branchNames.includes(form.br) ? <option value={form.br}>{form.br}</option> : null}{branchNames.length ? branchNames.map((b) => (<option key={b} value={b}>{b}</option>)) : <option value="">Нет филиалов</option>}</select></div>
-                <div className="field"><label>Категория</label><select value={form.ct} onChange={(e) => setForm((f: any) => ({ ...f, ct: e.target.value }))}><option value="1">1 категория</option><option value="2">2 категория</option><option value="3">3 категория</option></select></div>
+                <div className="field"><label>Категория</label><select value={form.ct} onChange={(e) => setForm((f: any) => ({ ...f, ct: e.target.value }))}><option value="">Не задана</option><option value="1">1 категория</option><option value="2">2 категория</option><option value="3">3 категория</option></select></div>
                 <div className="field"><label>Роль</label><select value={form.rl} onChange={(e) => setForm((f: any) => ({ ...f, rl: e.target.value }))}><option>Преподаватель</option><option>Администратор</option><option>Управляющий</option></select></div>
                 <div className="field full"><label>Специализация</label><input value={form.spec} placeholder="Лезгинка, High Heels..." onChange={(e) => setForm((f: any) => ({ ...f, spec: e.target.value }))} /></div>
                 <div className="field"><label>Статус</label><select value={form.st} onChange={(e) => setForm((f: any) => ({ ...f, st: e.target.value }))}><option>Активен</option><option>Стажер</option></select></div>
+                <div className="field full"><label>Заметки</label><textarea rows={2} value={form.notes} placeholder="Внутренние заметки о педагоге" onChange={(e) => setForm((f: any) => ({ ...f, notes: e.target.value }))} /></div>
               </div>
               <div className="sec-label" style={{ marginTop: 20 }}>Доступ в личный кабинет</div>
               <div className="form-grid">
