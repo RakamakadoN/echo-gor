@@ -11,6 +11,7 @@ import { Group, Student, Competition, Announcement, Homework } from '../types';
 import StudentManagementCard from './StudentManagementCard';
 import AttendanceJournalView from './AttendanceJournalView';
 import { EchoGrantPanel } from './OwnerExecutiveWorkspace';
+import { TeacherEarningsDashboard } from './TeacherEarningsDashboard';
 import { motion, AnimatePresence } from 'motion/react';
 // @ts-ignore
 import teacherProfileCard from '../assets/images/teacher_profile_card.png';
@@ -144,6 +145,7 @@ export function TeacherWorkspace({
           {activeTab === 'today' && !selectedGroupId && !selectedStudentId && (
             <DashboardView
               teacherName={teacherName}
+              teachers={teachers}
               groups={teacherGroups}
               students={teacherStudents}
               announcements={announcements}
@@ -998,7 +1000,7 @@ function NavItem({ icon, label, active, onClick }: { icon: React.ReactNode, labe
   );
 }
 
-function DashboardView({ teacherName, groups, students, announcements, onNavigateToGroup, onNavigateToStudent, scheduleItems, scheduleLoading, onNavigate, onOpenLessonPlan }: any) {
+function DashboardView({ teacherName, teachers, groups, students, announcements, onNavigateToGroup, onNavigateToStudent, scheduleItems, scheduleLoading, onNavigate, onOpenLessonPlan }: any) {
   const attentionStudents = students
     .filter((student: Student) => {
       const recent = Object.values(student.attendance || {}).slice(-4);
@@ -1028,25 +1030,27 @@ function DashboardView({ teacherName, groups, students, announcements, onNavigat
           
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 xl:w-[560px]">
             <div className="bg-white/5 rounded-2xl p-4 border border-white/5 backdrop-blur-md">
-              <span className="text-[10px] text-slate-400 uppercase font-black tracking-wider block mb-1">Занятия</span>
-              <span className="text-2xl font-bold text-white">4</span>
+              <span className="text-[10px] text-slate-400 uppercase font-black tracking-wider block mb-1">Занятия сегодня</span>
+              <span className="text-2xl font-bold text-white">{scheduleItems?.length || groups.length}</span>
             </div>
             <div className="bg-white/5 rounded-2xl p-4 border border-white/5 backdrop-blur-md">
               <span className="text-[10px] text-slate-400 uppercase font-black tracking-wider block mb-1">Ученики</span>
               <span className="text-2xl font-bold text-white">{students.length}</span>
             </div>
             <div className="bg-white/5 rounded-2xl p-4 border border-white/5 backdrop-blur-md relative overflow-hidden">
-              <span className="text-[10px] text-slate-400 uppercase font-black tracking-wider block mb-1">Объявления</span>
-              <span className="text-2xl font-bold text-white">3</span>
-              <div className="absolute top-3 right-3 w-2 h-2 bg-rose-500 rounded-full animate-pulse" />
+              <span className="text-[10px] text-slate-400 uppercase font-black tracking-wider block mb-1">Группы</span>
+              <span className="text-2xl font-bold text-white">{groups.length}</span>
             </div>
             <div className="bg-[#C5A059]/10 rounded-2xl p-4 border border-[#C5A059]/20 backdrop-blur-md">
-              <span className="text-[10px] text-[#C5A059] uppercase font-black tracking-wider block mb-1">Спасибо</span>
-              <span className="text-2xl font-bold text-white">170</span>
+              <span className="text-[10px] text-[#C5A059] uppercase font-black tracking-wider block mb-1">Объявления</span>
+              <span className="text-2xl font-bold text-white">{announcements?.length ?? 0}</span>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Экономика педагога: прогноз ЗП, категория, KPI, нарушения, геймификация */}
+      <TeacherEarningsDashboard teacherName={teacherName} teachers={teachers} />
 
       {/* Quick Actions / Bento Grid */}
       <div>
