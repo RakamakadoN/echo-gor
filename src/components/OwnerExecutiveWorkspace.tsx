@@ -214,6 +214,8 @@ interface OwnerExecutiveWorkspaceProps {
   onCreatePlan?: (data: any) => Promise<boolean>;
   onUpdatePlan?: (id: string, data: any) => Promise<boolean>;
   onDeletePlan?: (id: string) => Promise<boolean>;
+  /** false, пока показан экран входа. Стартовые анимации ждут завершения входа. */
+  entered?: boolean;
 }
 
 type OwnerTab = "dashboard" | "branches" | "students" | "teachers" | "payroll" | "journal" | "schedule" | "finance" | "planning" | "meetings" | "reports" | "performances" | "products" | "documents" | "marketing" | "events" | "feed" | "announcements" | "analytics" | "ai" | "aihub" | "settings";
@@ -311,6 +313,7 @@ export function OwnerExecutiveWorkspace({
   onBulkAttendance,
   journal,
   onJournalTask,
+  entered = true,
 }: OwnerExecutiveWorkspaceProps) {
   // Активная вкладка синхронизирована с адресом браузера (#dashboard, #students…),
   // чтобы кнопка «назад» возвращала на предыдущую вкладку, а не выкидывала с сайта.
@@ -445,7 +448,7 @@ export function OwnerExecutiveWorkspace({
 
           {/* key=activeTab → контейнер перемонтируется при смене вкладки и
               заново проигрывает мягкую анимацию появления (см. .owner-tab-view). */}
-          <div key={activeTab} className="owner-tab-view">
+          <div key={`${activeTab}-${entered ? "in" : "wait"}`} className="owner-tab-view">
           {activeTab === "dashboard" && (
             <OwnerDashboard
               rawBranches={branches}

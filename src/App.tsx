@@ -3472,6 +3472,7 @@ export default function App() {
           ) : activeRole === "owner" ? (
             <React.Suspense fallback={<WorkspaceLoader />}>
             <OwnerExecutiveWorkspace
+              entered={!isPlayingPromo}
               branches={branches}
               groups={groups}
               students={students}
