@@ -2582,7 +2582,7 @@ export default function App() {
   };
 
   return (
-    <div className={`flex flex-col h-screen w-screen overflow-hidden bg-[#0A0A0A] text-slate-200 font-sans ${themeMode === "day" ? "day-theme-app" : themeMode === "iman" ? "iman-theme-app" : ""}`}>
+    <div className={`flex flex-col h-screen w-full overflow-hidden bg-[#0A0A0A] text-slate-200 font-sans ${themeMode === "day" ? "day-theme-app" : themeMode === "iman" ? "iman-theme-app" : ""}`}>
       <ToastHost />
 
       {/* Desktop login uses the supplied image as the visible UI, with real controls as transparent hotspots. */}

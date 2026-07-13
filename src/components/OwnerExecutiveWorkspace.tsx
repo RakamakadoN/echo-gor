@@ -387,7 +387,9 @@ export function OwnerExecutiveWorkspace({
 
   return (
     <div className="min-h-full bg-[#080808] text-slate-200">
-      <div className="mx-auto flex max-w-[1560px] gap-0 lg:gap-5">
+      {/* Раскладка на всю ширину: сайдбар прижат к левому краю и НЕ уезжает при
+          зуме браузера (раньше mx-auto max-w-[1560px] центрировал и сдвигал его). */}
+      <div className="flex w-full gap-0 lg:gap-5">
         <aside className={`sticky top-0 hidden h-[calc(100vh-64px)] w-64 shrink-0 flex-col border-r border-white/5 bg-[#0F0F0F] ${navCollapsed ? "lg:hidden" : "lg:flex"}`}>
           {/* Лого-бокс (референс .eg-logo-box): фирменный логотип ЭХОГОР.
               Тёмный вариант (тёмные буквы) для светлой темы, светлый — для тёмной.
@@ -1519,7 +1521,9 @@ function BigKpi({ label, value, rows, tone = "gold", onClick }: { label: string;
   return (
     <section onClick={onClick} className="cursor-pointer rounded-[1.75rem] border border-white/10 bg-[#141414] p-4 transition hover:border-[#C5A059]/40">
       <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{label}</p>
-      <p className={`mt-1.5 text-2xl font-black ${valColor}`}>{value}</p>
+      <p className={`mt-1.5 text-2xl font-black ${valColor}`}>
+        {(typeof value === "string" || typeof value === "number") ? <CountUpText text={String(value)} /> : value}
+      </p>
       <div className="mt-3 space-y-1.5 border-t border-white/5 pt-3">
         {rows.map((r, i) => (
           <div key={i} className="flex items-center justify-between gap-2">
@@ -1556,6 +1560,36 @@ function CountUp({ to, format, durationMs = 1500 }: { to: number; format?: (n: n
     return () => { if (raf.current) cancelAnimationFrame(raf.current); window.clearTimeout(guard); };
   }, [to, durationMs]);
   return <>{format ? format(val) : String(Math.round(val))}</>;
+}
+
+// «Умный» count-up для уже отформатированного значения: находит целое число
+// (с пробелами-разделителями) внутри строки, сохраняет префикс/суффикс
+// («₸», «%», «/80» и т.п.) и анимирует только число. Дроби и «—» — как есть.
+function CountUpText({ text, durationMs = 1500 }: { text: string; durationMs?: number }) {
+  const s = String(text);
+  const m = s.match(/^(\D*?)(\d[\d\s]*\d|\d)(\s*\D*)$/);
+  const hasDecimal = /[.,]\d/.test(s);
+  const target = m && !hasDecimal ? parseInt(m[2].replace(/\s/g, ""), 10) : NaN;
+  const animate = Boolean(m) && !hasDecimal && Number.isFinite(target);
+  const [v, setV] = useState(0);
+  const raf = useRef<number | null>(null);
+  useEffect(() => {
+    if (!animate) return;
+    const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) { setV(target); return; }
+    let start = 0;
+    const tick = (now: number) => {
+      if (!start) start = now;
+      const t = Math.min(1, (now - start) / durationMs);
+      setV(target * (1 - Math.pow(1 - t, 3)));
+      if (t < 1) raf.current = requestAnimationFrame(tick); else setV(target);
+    };
+    raf.current = requestAnimationFrame(tick);
+    const guard = window.setTimeout(() => setV(target), durationMs + 80);
+    return () => { if (raf.current) cancelAnimationFrame(raf.current); window.clearTimeout(guard); };
+  }, [target, animate, durationMs]);
+  if (!animate || !m) return <>{s}</>;
+  return <>{m[1]}{new Intl.NumberFormat("ru-RU").format(Math.round(v))}{m[3]}</>;
 }
 
 // Мини-график (спарклайн) из вертикальных баров — как на макете дашборда.
@@ -1623,7 +1657,9 @@ function StreamCard({ label, value, momPct, yoyPct, series, color, onClick, foot
   return (
     <section onClick={onClick} className={`rounded-[1.75rem] border border-white/10 bg-[#141414] p-4 transition hover:border-[#C5A059]/40 ${onClick ? "cursor-pointer" : ""}`}>
       <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{label}</p>
-      <p className="mt-1.5 text-2xl font-black" style={{ color }}>{value}</p>
+      <p className="mt-1.5 text-2xl font-black" style={{ color }}>
+        {(typeof value === "string" || typeof value === "number") ? <CountUpText text={String(value)} /> : value}
+      </p>
       {(momPct !== null || yoyPct !== null) && (
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
           {momPct !== null && <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">к пред. периоду <DeltaBadge pct={momPct} /></span>}
