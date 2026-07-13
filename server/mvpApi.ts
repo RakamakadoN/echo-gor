@@ -591,6 +591,8 @@ async function dbBootstrap(session: MvpSession) {
     ageTo: group.age_to ?? null,
     capacity: group.capacity ?? 0,
     level: group.level || "MVP",
+    // Набор открыт/закрыт (миграция 044) — для рекомендаций по набору.
+    enrollmentOpen: group.enrollment_open !== false,
     studentCount: studentsRaw.filter((student) => student.group_id === group.id).length
   }));
 
@@ -2770,6 +2772,11 @@ export function registerMvpApi(app: express.Express) {
       endDate: row.end_date || null,
       // 'group' — обычная группа; 'individual' — график индивидуальных занятий.
       format: row.format === "individual" ? "individual" : "group",
+      // Двойной маппинг (bootstrap + mapDbGroup): поля должны совпадать в ОБОИХ.
+      capacity: row.capacity ?? 0,
+      ageFrom: row.age_from ?? null,
+      ageTo: row.age_to ?? null,
+      enrollmentOpen: row.enrollment_open !== false,
       studentCount,
     };
   }
@@ -2848,6 +2855,7 @@ export function registerMvpApi(app: express.Express) {
     if (payload.startDate !== undefined) updates.start_date = payload.startDate || null;
     if (payload.endDate !== undefined) updates.end_date = payload.endDate || null;
     if (payload.format !== undefined) updates.format = payload.format === "individual" ? "individual" : "group";
+    if (payload.enrollmentOpen !== undefined) updates.enrollment_open = Boolean(payload.enrollmentOpen);
     if (Object.keys(updates).length === 0) return res.status(400).json({ error: "Нет полей для обновления" });
     try {
       // ТЗ §10: при смене педагога фиксируем старого/нового в журнале.

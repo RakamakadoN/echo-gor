@@ -82,6 +82,7 @@ export interface Group {
   startDate?: string | null; // период работы группы — дата начала
   endDate?: string | null;   // период работы группы — дата окончания
   format?: "group" | "individual"; // обычная группа или график индивидуальных занятий
+  enrollmentOpen?: boolean; // набор открыт/закрыт (рекомендации по набору, миграция 044)
   studentCount: number;
 }
 

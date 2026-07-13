@@ -86,6 +86,7 @@ import { useOwnerSectionSettings, SectionSettingsDrawer, SectionGearButton, type
 import { SubscriptionPlansManager } from "./SubscriptionPlansManager";
 import StatusSettings from "./StatusSettings";
 import { computeOwnerDashboard, type DashFilters, type PeriodKey, type LevelKey, type DashExtras, type Delta, type DailyReport } from "../ownerDashboardAnalytics";
+import { requestDataRefresh } from "../dataRefresh";
 
 // Память состояния свёрнутых блоков дашборда — отдельно для каждого пользователя (по роли).
 function useCollapsedSections(userKey: string) {
@@ -491,7 +492,7 @@ export function OwnerExecutiveWorkspace({
           {activeTab === "analytics" && <ExecutiveAnalyticsView branches={branchScorecards} groups={groups} teachers={teachers} students={students} payments={payments} metrics={metrics} />}
           {activeTab === "ai" && <OwnerAiView branches={branchScorecards} renewals={renewals} debt={debt} aiResult={aiResult} aiGenerating={aiGenerating} onTriggerAiReport={onTriggerAiReport} />}
           {activeTab === "aihub" && <AiHubView roleHeader="owner" />}
-          {activeTab === "marketing" && <MarketingView studentArchive={studentArchive} branches={branches} />}
+          {activeTab === "marketing" && <MarketingView studentArchive={studentArchive} branches={branches} groups={groups} teachers={teachers} />}
           {activeTab === "settings" && <NetworkSettingsView branches={branches} teachers={teachers} subscriptionPlans={subscriptionPlans} onCreatePlan={onCreatePlan} onUpdatePlan={onUpdatePlan} onDeletePlan={onDeletePlan} />}
         </main>
       </div>
@@ -543,13 +544,26 @@ export function OwnerExecutiveWorkspace({
 
 function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawPayments, rawWaitlist, studentArchive = [], branchScorecards, onNavigate, onOpenStudents, onTriggerAiReport, aiResult, aiGenerating }: any) {
   const go = (tab: string) => onNavigate?.(tab);
-  const [period, setPeriod] = useState<PeriodKey>("month");
-  const [level, setLevel] = useState<LevelKey>("network");
+  // Локальные «сегодня» и «текущий месяц» (не toISOString — часовой пояс!).
+  const localToday = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();
+  // Режим периода (ТЗ 13.07): конкретный месяц / конкретный день / произвольный период.
+  const [period, setPeriod] = useState<PeriodKey>("monthpick");
+  const [monthValue, setMonthValue] = useState<string>(localToday.slice(0, 7)); // YYYY-MM
+  const [dayValue, setDayValue] = useState<string>(localToday);                  // YYYY-MM-DD
+  // Независимые фильтры: филиал + группа + педагог применяются вместе.
   const [branchId, setBranchId] = useState<string>("");
   const [groupId, setGroupId] = useState<string>("");
   const [teacherId, setTeacherId] = useState<string>("");
   const [customStart, setCustomStart] = useState<string>("");
   const [customEnd, setCustomEnd] = useState<string>("");
+  // Начало/конец выбранного периода для серверных выборок (выступления/товары).
+  const monthEndOf = (ym: string) => {
+    const [y, m] = ym.split("-").map(Number);
+    const last = new Date(y, m, 0);
+    return `${y}-${String(m).padStart(2, "0")}-${String(last.getDate()).padStart(2, "0")}`;
+  };
+  const rangeFrom = period === "monthpick" ? `${monthValue}-01` : period === "day" ? dayValue : customStart;
+  const rangeTo = period === "monthpick" ? (monthValue === localToday.slice(0, 7) ? localToday : monthEndOf(monthValue)) : period === "day" ? dayValue : customEnd;
   const [extras, setExtras] = useState<DashExtras>({});
   // Выручка по новым направлениям (выступления, товары) — для блока «Выручка по направлениям».
   const [streamRev, setStreamRev] = useState<{ perf: any; prod: any }>({ perf: null, prod: null });
@@ -610,16 +624,17 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
   }, []);
 
   // Выручка от выступлений и товаров — синхронно с выбранным периодом дашборда.
+  // Новые режимы (месяц/день) сервер не знает — передаём их как custom-диапазон.
   useEffect(() => {
     let alive = true;
-    const qs = period === "custom" && customStart && customEnd
-      ? `period=custom&from=${customStart}&to=${customEnd}`
+    const qs = (period === "custom" || period === "monthpick" || period === "day") && rangeFrom && rangeTo
+      ? `period=custom&from=${rangeFrom}&to=${rangeTo}`
       : `period=${period}`;
     const get = (url: string) => fetch(url, { headers: { "x-demo-role": "owner" } }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
     Promise.all([get(`/api/mvp/performances/overview?${qs}`), get(`/api/mvp/products/overview?${qs}`)])
       .then(([perf, prod]) => { if (alive) setStreamRev({ perf, prod }); });
     return () => { alive = false; };
-  }, [period, customStart, customEnd]);
+  }, [period, rangeFrom, rangeTo]);
 
   // Список выступлений (для блока «Выступления» на дашборде) — грузим один раз.
   useEffect(() => {
@@ -672,35 +687,34 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
     return out;
   }, [streamRev, perfSummary]);
 
-  const filters: DashFilters = { period, level, branchId, groupId, teacherId, customStart, customEnd };
+  const filters: DashFilters = {
+    period, branchId, groupId, teacherId,
+    customStart: period === "monthpick" ? monthValue : period === "day" ? dayValue : customStart,
+    customEnd,
+  };
   const m = useMemo(
     () => computeOwnerDashboard(
       { students: rawStudents || [], payments: rawPayments || [], groups: rawGroups || [], branches: rawBranches || [], teachers: rawTeachers || [], archive: studentArchive || [] },
       filters, new Date(), extras
     ),
-    [rawStudents, rawPayments, rawGroups, rawBranches, rawTeachers, studentArchive, period, level, branchId, groupId, teacherId, customStart, customEnd, extras]
+    [rawStudents, rawPayments, rawGroups, rawBranches, rawTeachers, studentArchive, period, monthValue, dayValue, branchId, groupId, teacherId, customStart, customEnd, extras]
   );
 
   // Запас прочности: общее количество учеников и лист ожидания с учётом фильтра
   // (сеть / филиал / группа). Помогает понять, нужен ли набор или есть очередь.
   const capacityInfo = useMemo(() => {
-    const inScope = (s: Student) => {
-      if (level === "branch" && branchId) return s.branchId === branchId;
-      if (level === "group" && groupId) return (s.groupIds || []).includes(groupId);
-      return true;
-    };
+    const inScope = (s: Student) =>
+      (!branchId || s.branchId === branchId) && (!groupId || (s.groupIds || []).includes(groupId));
     const totalStudents = (rawStudents || []).filter(inScope).length;
     const waitInScope = (w: any) => {
       if (w.removedAt) return false;
-      if (level === "branch" && branchId) return w.branchId === branchId;
-      if (level === "group" && groupId) return w.groupId === groupId;
-      return true;
+      return (!branchId || w.branchId === branchId) && (!groupId || w.groupId === groupId);
     };
     const waitlistTotal = (rawWaitlist || []).filter(waitInScope).length;
     const capacity = m.occupancy.capacity || 0;
     const freeSpots = capacity > 0 ? Math.max(0, capacity - m.occupancy.filled) : null;
     return { totalStudents, waitlistTotal, freeSpots };
-  }, [rawStudents, rawWaitlist, level, branchId, groupId, m.occupancy.capacity, m.occupancy.filled]);
+  }, [rawStudents, rawWaitlist, branchId, groupId, m.occupancy.capacity, m.occupancy.filled]);
 
   // --- хелперы для окон детализации ---
   const studentById = useMemo(() => new Map<string, Student>((rawStudents || []).map((s: Student) => [s.id, s])), [rawStudents]);
@@ -729,7 +743,7 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
     columns: ["Ученик", "Филиал", "Группа", "Статус"],
     rows: studentRows(ids),
     empty: "Список пуст.",
-    footer: fullPreset && onOpenStudents ? { label: "Открыть в разделе «Ученики» ›", onClick: () => onOpenStudents({ branchFilter: level === "branch" && branchId ? branchId : "all", ...fullPreset }) } : undefined,
+    footer: fullPreset && onOpenStudents ? { label: "Открыть в разделе «Ученики» ›", onClick: () => onOpenStudents({ branchFilter: branchId || "all", ...fullPreset }) } : undefined,
   });
 
   // Окно «показатель → значение».
@@ -889,13 +903,17 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
   const openStatusList = (statuses: string[], title: string) =>
     openStudentsModal((rawStudents || []).filter((s: Student) => statuses.includes(s.status as string)).map((s: Student) => s.id), title);
 
-  const periods: { id: PeriodKey; label: string }[] = [
-    { id: "today", label: "Сегодня" }, { id: "yesterday", label: "Вчера" }, { id: "week", label: "Неделя" },
-    { id: "month", label: "Месяц" }, { id: "quarter", label: "Квартал" }, { id: "year", label: "Год" }, { id: "custom", label: "Период" }
+  // Режимы периода (ТЗ 13.07): конкретный месяц / день по выбору / период по выбору.
+  const periodModes: { id: PeriodKey; label: string }[] = [
+    { id: "monthpick", label: "Месяц" }, { id: "day", label: "День" }, { id: "custom", label: "Период" },
   ];
-  const levels: { id: LevelKey; label: string }[] = [
-    { id: "network", label: "Вся сеть" }, { id: "branch", label: "Филиал" }, { id: "group", label: "Группа" }, { id: "teacher", label: "Педагог" }
-  ];
+  const MONTH_NAMES = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+  const [mvYear, mvMonth] = monthValue.split("-");
+  const yearOptions = (() => { const y = Number(localToday.slice(0, 4)); return [y - 2, y - 1, y, y + 1].map(String); })();
+  // Группы в выпадашке — только выбранного филиала (если он выбран).
+  const groupOptions = (rawGroups || []).filter((g: Group) => !branchId || g.branchId === branchId);
+  const hasScopeFilter = Boolean(branchId || groupId || teacherId);
+  const dateInputCls = "rounded-xl border border-white/10 bg-black/40 px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-[#C5A059]/40";
 
   const now = new Date();
   const hour = now.getHours();
@@ -903,7 +921,7 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
 
   return (
     <div className="space-y-5">
-      {/* 1. ФИЛЬТРЫ */}
+      {/* 1. ФИЛЬТРЫ: период (месяц/день/диапазон) + филиал · группа · педагог */}
       <section className="rounded-[2rem] border border-white/10 bg-gradient-to-br from-[#171717] via-[#101318] to-black p-5 md:p-6">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
@@ -912,43 +930,55 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
             <p className="mt-1 text-sm text-slate-400">{m.scope.label} · {m.ranges.cur.label} · {m.scope.students} учеников</p>
           </div>
           <div className="flex flex-col gap-2">
+            {/* Период: режим + значение */}
             <div className="flex flex-wrap items-center gap-1.5">
-              {periods.map((p) => (
+              {periodModes.map((p) => (
                 <button key={p.id} onClick={() => setPeriod(p.id)}
                   className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${period === p.id ? "bg-[#C5A059] text-black" : "border border-white/10 bg-white/[0.04] text-slate-300 hover:border-[#C5A059]/40"}`}>
                   {p.label}
                 </button>
               ))}
+              {period === "monthpick" && (
+                <>
+                  <select value={mvMonth} onChange={(e) => setMonthValue(`${mvYear}-${e.target.value}`)}
+                    className="rounded-xl border border-[#C5A059]/30 bg-black/40 px-2.5 py-1.5 text-xs font-bold text-slate-100 outline-none">
+                    {MONTH_NAMES.map((label, i) => (
+                      <option key={i} value={String(i + 1).padStart(2, "0")}>{label}</option>
+                    ))}
+                  </select>
+                  <select value={mvYear} onChange={(e) => setMonthValue(`${e.target.value}-${mvMonth}`)}
+                    className="rounded-xl border border-[#C5A059]/30 bg-black/40 px-2.5 py-1.5 text-xs font-bold text-slate-100 outline-none">
+                    {yearOptions.map((y) => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                </>
+              )}
+              {period === "day" && (
+                <input type="date" value={dayValue} onChange={(e) => e.target.value && setDayValue(e.target.value)} className={dateInputCls} />
+              )}
+              {period === "custom" && (
+                <>
+                  <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} className={dateInputCls} />
+                  <span className="text-slate-500">—</span>
+                  <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} className={dateInputCls} />
+                </>
+              )}
             </div>
+            {/* Область: филиал + группа + педагог — независимые фильтры */}
             <div className="flex flex-wrap items-center gap-1.5">
-              {levels.map((l) => (
-                <button key={l.id} onClick={() => { setLevel(l.id); }}
-                  className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${level === l.id ? "bg-white/15 text-white ring-1 ring-[#C5A059]/40" : "border border-white/10 bg-white/[0.04] text-slate-400 hover:text-white"}`}>
-                  {l.label}
+              <FilterSelect value={branchId} onChange={(v) => { setBranchId(v); if (v && groupId && !(rawGroups || []).some((g: Group) => g.id === groupId && g.branchId === v)) setGroupId(""); }}
+                placeholder="Все филиалы"
+                options={(rawBranches || []).map((b: Branch) => ({ value: b.id, label: b.name || b.city }))} />
+              <FilterSelect value={groupId} onChange={setGroupId} placeholder="Все группы"
+                options={groupOptions.map((g: Group) => ({ value: g.id, label: g.name }))} />
+              <FilterSelect value={teacherId} onChange={setTeacherId} placeholder="Все педагоги"
+                options={(rawTeachers || []).map((t: Teacher) => ({ value: t.id, label: t.name }))} />
+              {hasScopeFilter && (
+                <button onClick={() => { setBranchId(""); setGroupId(""); setTeacherId(""); }}
+                  className="inline-flex items-center gap-1 rounded-xl border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-xs font-bold text-slate-400 transition hover:text-white">
+                  <X className="h-3 w-3" /> Сбросить
                 </button>
-              ))}
-              {level === "branch" && (
-                <FilterSelect value={branchId} onChange={setBranchId} placeholder="Выбрать филиал"
-                  options={(rawBranches || []).map((b: Branch) => ({ value: b.id, label: b.name || b.city }))} />
-              )}
-              {level === "group" && (
-                <FilterSelect value={groupId} onChange={setGroupId} placeholder="Выбрать группу"
-                  options={(rawGroups || []).map((g: Group) => ({ value: g.id, label: g.name }))} />
-              )}
-              {level === "teacher" && (
-                <FilterSelect value={teacherId} onChange={setTeacherId} placeholder="Выбрать педагога"
-                  options={(rawTeachers || []).map((t: Teacher) => ({ value: t.id, label: t.name }))} />
               )}
             </div>
-            {period === "custom" && (
-              <div className="flex items-center gap-2">
-                <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)}
-                  className="rounded-xl border border-white/10 bg-black/40 px-2.5 py-1.5 text-xs text-slate-200" />
-                <span className="text-slate-500">—</span>
-                <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)}
-                  className="rounded-xl border border-white/10 bg-black/40 px-2.5 py-1.5 text-xs text-slate-200" />
-              </div>
-            )}
           </div>
         </div>
       </section>
@@ -1199,6 +1229,12 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
       <CollapsibleSection id="ltv" icon={GraduationCap} title="Лояльность (LTV)" hint="Средний срок обучения · сколько учеников занимается 1–2, 3–4… месяцев"
         locked open={sectionOpen("ltv")} onToggle={() => toggleSection("ltv")}>
         <LtvPanel ltv={m.ltv} onOpenBucket={(ids, label) => openStudentsModal(ids, label, { ids, label })} />
+      </CollapsibleSection>
+
+      {/* РЕКОМЕНДАЦИИ ПО НАБОРУ: статус набора по группам + куда и сколько набрать */}
+      <CollapsibleSection id="recruit" icon={Megaphone} title="Рекомендации по набору" hint="Набор открыт/закрыт по группам · куда и сколько учеников набрать"
+        locked open={sectionOpen("recruit")} onToggle={() => toggleSection("recruit")}>
+        <EnrollmentPlanner groups={rawGroups || []} branches={rawBranches || []} teachers={rawTeachers || []} onGoMarketing={() => go("marketing")} />
       </CollapsibleSection>
 
       {/* РИСКИ ПО ГРУППАМ И ФИЛИАЛАМ */}
@@ -1561,9 +1597,10 @@ function DailyManagerReport({ m, bdrPct, scopeLabel, periodLabel, onOpenList, on
   };
   const stats: { label: string; value: React.ReactNode; tone: string; hint?: string; onClick: () => void }[] = [
     { label: "Выручка сегодня", value: money(report.revenueToday), tone: "gold", hint: `${report.paymentsToday} ${report.paymentsToday === 1 ? "оплата" : report.paymentsToday >= 2 && report.paymentsToday <= 4 ? "оплаты" : "оплат"} — список`, onClick: onPayments },
-    { label: "Учеников с абонементом", value: m.activeSubs.students, tone: "white", hint: "уникальные ученики", onClick: () => onOpenList({ segment: "active", label: "Ученики с активным абонементом" }) },
+    { label: "Уникальных учеников", value: m.activeSubs.students, tone: "white", hint: "с активным абонементом", onClick: () => onOpenList({ segment: "active", label: "Ученики с активным абонементом" }) },
     { label: "Активных абонементов", value: m.activeSubs.count, tone: "white", hint: "у ученика может быть два", onClick: () => onOpenList({ segment: "active", label: "Ученики с активным абонементом" }) },
     { label: "План БДР", value: bdrPct === null ? "—" : `${bdrPct}%`, tone: bdrPct === null ? "white" : bdrPct >= 100 ? "emerald" : bdrPct >= 70 ? "amber" : "rose", hint: bdrPct === null ? "план не задан" : "по филиалам", onClick: onBdr },
+    { label: "Записи на пробный", value: report.upcomingTrials.count, tone: report.upcomingTrials.count > 0 ? "gold" : "white", hint: "на будущие даты", onClick: () => onOpenList({ ids: report.upcomingTrials.ids, label: "Записаны на пробный (будущие даты)" }) },
     { label: "Не оплачен текущий месяц", value: report.unpaidCurrentMonth.count, tone: report.unpaidCurrentMonth.count > 0 ? "rose" : "emerald", onClick: () => onOpenList({ ids: report.unpaidCurrentMonth.ids, label: "Не оплатили текущий месяц" }) },
     { label: "Не оплатили прошлый месяц", value: report.unpaidPrevMonth.count, tone: report.unpaidPrevMonth.count > 0 ? "amber" : "emerald", onClick: () => onOpenList({ ids: report.unpaidPrevMonth.ids, label: "Не оплатили прошлый месяц" }) },
     { label: "Удержание (мес→мес)", value: m.retention.pct === null ? "—" : `${m.retention.pct}%`, tone: "emerald", hint: "конверсия из месяца в месяц", onClick: onRetention },
@@ -1582,7 +1619,7 @@ function DailyManagerReport({ m, bdrPct, scopeLabel, periodLabel, onOpenList, on
       </div>
 
       {/* Кликабельные показатели */}
-      <div className="mt-4 grid grid-cols-2 gap-2.5 md:grid-cols-4">
+      <div className="mt-4 grid grid-cols-2 gap-2.5 md:grid-cols-3">
         {stats.map((s) => (
           <button key={s.label} onClick={s.onClick}
             className="group rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 text-left transition hover:border-[#C5A059]/45 hover:bg-white/[0.06]">
@@ -1771,6 +1808,100 @@ function BdrProgressPanel({ bdr, onGoPlanning }: {
         ))}
       </div>
       <p className="mt-4 text-[11px] text-slate-500">План — из вкладки «Планирование (БДР)» (в т.ч. планы по филиалам). Факт — оплаченные платежи текущего месяца.</p>
+    </section>
+  );
+}
+
+// ---------- Рекомендации по набору ----------
+// Статус набора хранится на группе (enrollment_open, миграция 044): владелец
+// переключает прямо здесь, управляющие видят тот же флаг. Система считает,
+// куда и сколько учеников можно набрать (только группы с ОТКРЫТЫМ набором),
+// и ведёт в «Маркетинг» — собирать заявки рассылкой или рекламным оффером.
+function EnrollmentPlanner({ groups, branches, teachers, onGoMarketing }: {
+  groups: Group[]; branches: Branch[]; teachers: Teacher[]; onGoMarketing: () => void;
+}) {
+  // Оптимистичное переключение: локальный override до перезагрузки bootstrap.
+  const [override, setOverride] = useState<Record<string, boolean>>({});
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const isOpen = (g: Group) => override[g.id] ?? (g.enrollmentOpen !== false);
+  const toggle = async (g: Group) => {
+    const next = !isOpen(g);
+    setBusyId(g.id);
+    setOverride((o) => ({ ...o, [g.id]: next }));
+    try {
+      const res = await fetch(`/api/mvp/groups/${g.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-demo-role": "owner" },
+        body: JSON.stringify({ enrollmentOpen: next }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      requestDataRefresh();
+    } catch {
+      setOverride((o) => ({ ...o, [g.id]: !next })); // откат
+    } finally { setBusyId(null); }
+  };
+  const branchNameOf = (id?: string) => { const b = branches.find((x) => x.id === id); return b?.name || b?.city || "—"; };
+  const teacherNameOf = (id?: string) => teachers.find((t) => t.id === id)?.name || "—";
+
+  const rows = groups
+    .filter((g) => (g as any).status !== "archived")
+    .map((g) => {
+      const cap = g.capacity || 0;
+      const free = cap > 0 ? Math.max(0, cap - (g.studentCount || 0)) : null;
+      return { g, cap, free, open: isOpen(g) };
+    })
+    .sort((a, b) => (b.free ?? -1) - (a.free ?? -1));
+  const openRows = rows.filter((r) => r.open);
+  const closedCount = rows.length - openRows.length;
+  const canRecruit = openRows.reduce((s, r) => s + (r.free ?? 0), 0);
+  const noCapacityCount = rows.filter((r) => r.cap === 0).length;
+  const recruitTargets = openRows.filter((r) => (r.free ?? 0) > 0);
+
+  return (
+    <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+      {/* Сводка-рекомендация */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">Куда набирать</p>
+          <p className="mt-1.5 text-sm leading-relaxed text-slate-100">
+            {recruitTargets.length > 0
+              ? <>Набор открыт в {openRows.length} из {rows.length} групп — можно набрать ещё <span className="font-black text-[#C5A059]">{canRecruit}</span> учеников. Приоритет: {recruitTargets.slice(0, 3).map((r) => `«${r.g.name}» (${r.free} мест)`).join(", ")}.</>
+              : openRows.length === 0
+                ? "Набор закрыт во всех группах — рекомендации появятся, когда откроете набор."
+                : "Свободных мест в группах с открытым набором нет — можно открыть параллельные группы или расширить вместимость."}
+            {closedCount > 0 && ` Закрыт набор: ${closedCount} групп.`}
+          </p>
+          {noCapacityCount > 0 && (
+            <p className="mt-1 text-[11px] text-amber-400">У {noCapacityCount} групп не задана вместимость — укажите её в настройках группы, иначе свободные места не считаются.</p>
+          )}
+        </div>
+        <button onClick={onGoMarketing}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-2xl bg-[#C5A059] px-4 py-2 text-xs font-black uppercase tracking-wider text-black transition hover:brightness-110">
+          <Megaphone className="h-3.5 w-3.5" /> В Маркетинг: собрать заявки ›
+        </button>
+      </div>
+
+      {/* Группы со статусом набора */}
+      <div className="mt-4 space-y-2">
+        {rows.map(({ g, cap, free, open }) => (
+          <div key={g.id} className="flex flex-wrap items-center gap-3 rounded-2xl border border-white/10 bg-[#161616] px-3.5 py-2.5">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-bold text-white">{g.name}</p>
+              <p className="truncate text-[11px] text-slate-500">{branchNameOf(g.branchId)} · {teacherNameOf(g.teacherId)}</p>
+            </div>
+            <span className="shrink-0 text-xs font-bold text-slate-300">
+              {cap > 0 ? <>{g.studentCount || 0} / {cap}{free !== null && free > 0 && open ? <span className="text-emerald-400"> · +{free}</span> : null}</> : <span className="text-slate-500">мест не задано</span>}
+            </span>
+            <button disabled={busyId === g.id} onClick={() => toggle(g)}
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[11px] font-black uppercase tracking-wider transition disabled:opacity-50 ${open ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20" : "border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20"}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${open ? "bg-emerald-400" : "bg-rose-400"}`} />
+              {open ? "Набор открыт" : "Набор закрыт"}
+            </button>
+          </div>
+        ))}
+        {rows.length === 0 && <p className="py-6 text-center text-sm text-slate-500">Групп пока нет.</p>}
+      </div>
+      <p className="mt-3 text-[11px] text-slate-500">Клик по статусу переключает набор — это видят и управляющие. Группы с закрытым набором не попадают в рекомендации и рекламные офферы.</p>
     </section>
   );
 }
@@ -7582,7 +7713,9 @@ function OwnerAiView({ branches, renewals, debt, aiResult, aiGenerating, onTrigg
 
 // Маркетинг: возврат учеников из архива. Список архива + шаблон приглашения +
 // массовая отправка в WhatsApp (по образцу массовых действий «Учеников»).
-function MarketingView({ studentArchive = [], branches = [] }: { studentArchive?: any[]; branches?: Branch[] }) {
+function MarketingView({ studentArchive = [], branches = [], groups = [], teachers = [] }: { studentArchive?: any[]; branches?: Branch[]; groups?: Group[]; teachers?: Teacher[] }) {
+  // Две вкладки (ТЗ 13.07): рассылка архивированным ушедшим и рекламный оффер от ИИ.
+  const [mkTab, setMkTab] = useState<"broadcast" | "offer">("broadcast");
   const [archive, setArchive] = useState<any[]>(studentArchive);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [branchFilter, setBranchFilter] = useState("");
@@ -7641,7 +7774,26 @@ function MarketingView({ studentArchive = [], branches = [] }: { studentArchive?
   };
 
   return (
-    <OwnerScreen title="Маркетинг и возврат" subtitle="Реактивация ушедших учеников из архива: персональные приглашения вернуться на занятия. Шаблон с подстановкой имени и массовая отправка в WhatsApp.">
+    <OwnerScreen title="Маркетинг" subtitle="Возврат ушедших и набор новых: рассылка по архиву и рекламные офферы, которые ИИ собирает под конкретную группу, филиал и аудиторию.">
+      {/* Вкладки маркетинга */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {([
+          { id: "broadcast", label: "Рассылка ушедшим", icon: Send },
+          { id: "offer", label: "Рекламный оффер (ИИ)", icon: Sparkles },
+        ] as { id: typeof mkTab; label: string; icon: React.ElementType }[]).map((t) => {
+          const TabIcon = t.icon;
+          return (
+            <button key={t.id} onClick={() => setMkTab(t.id)}
+              className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition ${mkTab === t.id ? "bg-[#C5A059] text-black" : "border border-white/10 bg-white/[0.04] text-slate-300 hover:border-[#C5A059]/40 hover:text-white"}`}>
+              <TabIcon className="h-3.5 w-3.5" /> {t.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {mkTab === "offer" && <AdOfferStudio groups={groups} branches={branches} teachers={teachers} />}
+
+      {mkTab === "broadcast" && (<>
       <section className="rounded-[1.75rem] border border-white/10 bg-gradient-to-br from-[#141414] to-black p-5">
         <div className="grid gap-3 sm:grid-cols-3">
           <StatPill label="В архиве учеников" value={archive.length} tone="white" />
@@ -7725,7 +7877,131 @@ function MarketingView({ studentArchive = [], branches = [] }: { studentArchive?
           </table>
         </div>
       </section>
+      </>)}
     </OwnerScreen>
+  );
+}
+
+// ---------- Рекламный оффер (ИИ) ----------
+// Владелец выбирает группу с ОТКРЫТЫМ набором — ИИ собирает объявление:
+// заголовок, текст, CTA, на кого таргетировать и хэштеги. Учитываются филиал,
+// адрес, расписание, возраст и свободные места. Если ключ Gemini не настроен —
+// собираем оффер по шаблону из тех же данных.
+function AdOfferStudio({ groups, branches, teachers }: { groups: Group[]; branches: Branch[]; teachers: Teacher[] }) {
+  const openGroups = groups.filter((g) => (g as any).status !== "archived" && g.enrollmentOpen !== false);
+  const [groupId, setGroupId] = useState<string>("");
+  const [wishes, setWishes] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const [result, setResult] = useState<{ headline: string; offer: string; cta: string; audience: string; hashtags: string[]; source: "ai" | "template" } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const g = openGroups.find((x) => x.id === groupId) || null;
+  const branch = g ? branches.find((b) => b.id === g.branchId) : null;
+  const teacher = g ? teachers.find((t) => t.id === g.teacherId) : null;
+  const freeSpots = g && (g.capacity || 0) > 0 ? Math.max(0, (g.capacity || 0) - (g.studentCount || 0)) : null;
+
+  // Резервный оффер без ИИ — из тех же данных, что уходят в промпт.
+  const templateOffer = () => ({
+    headline: `Набор в группу «${g!.name}» — ${branch?.name || "Эхо Гор"}`,
+    offer: `Открыт набор в группу «${g!.name}» школы кавказского танца «Эхо Гор»${branch ? ` (филиал ${branch.name}${branch.address ? `, ${branch.address}` : ""})` : ""}. ${g!.ageGroup && g!.ageGroup !== "Все возрасты" ? `Приглашаем учеников ${g!.ageGroup}. ` : ""}Занятия: ${g!.scheduleText || "по расписанию"}.${teacher ? ` Педагог — ${teacher.name}.` : ""} Осанка, характер, культура и сцена — всё по-настоящему.${freeSpots !== null && freeSpots > 0 ? ` Свободно всего ${freeSpots} мест.` : ""}`,
+    cta: "Запишитесь на бесплатный пробный урок — просто ответьте на это объявление.",
+    audience: `Родители детей${g!.ageGroup && g!.ageGroup !== "Все возрасты" ? ` ${g!.ageGroup}` : ""} рядом с адресом филиала${branch?.address ? ` (${branch.address})` : ""}; интересы: танцы, спорт, культура Кавказа.`,
+    hashtags: ["#эхогор", "#кавказскиетанцы", "#лезгинка", branch?.city ? `#${String(branch.city).toLowerCase().replace(/\s+/g, "")}` : "#танцыдлядетей"],
+    source: "template" as const,
+  });
+
+  const generate = async () => {
+    if (!g) { setNote("Сначала выберите группу."); return; }
+    setBusy(true); setNote(null); setCopied(false);
+    try {
+      const res = await fetch("/api/gemini/ad-offer", {
+        method: "POST", headers: { "Content-Type": "application/json", "x-demo-role": "owner" },
+        body: JSON.stringify({
+          groupName: g.name,
+          branchName: branch?.name || "",
+          address: branch?.address || "",
+          schedule: g.scheduleText || "",
+          ageGroup: g.ageGroup || "",
+          teacherName: teacher?.name || "",
+          freeSpots,
+          extraWishes: wishes,
+        }),
+      });
+      if (res.status === 503) {
+        setResult(templateOffer());
+        setNote("ИИ недоступен (не настроен ключ Gemini) — собрал оффер по шаблону из данных группы.");
+        return;
+      }
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Ошибка генерации");
+      const d = await res.json();
+      setResult({ headline: d.headline || "", offer: d.offer || "", cta: d.cta || "", audience: d.audience || "", hashtags: Array.isArray(d.hashtags) ? d.hashtags : [], source: "ai" });
+    } catch (e: any) {
+      setResult(templateOffer());
+      setNote(`ИИ не ответил (${e?.message || "ошибка"}) — собрал оффер по шаблону.`);
+    } finally { setBusy(false); }
+  };
+
+  const fullText = result ? `${result.headline}\n\n${result.offer}\n\n${result.cta}\n\n${(result.hashtags || []).join(" ")}` : "";
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(fullText); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { /* no-op */ }
+  };
+
+  const field = "w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#C5A059]/50";
+  return (
+    <div className="space-y-4">
+      <section className="rounded-[1.75rem] border border-white/10 bg-gradient-to-br from-[#141414] to-black p-5">
+        <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">Оффер для рекламного креатива</p>
+        <p className="mt-1 text-xs text-slate-500">Выберите группу с открытым набором — ИИ соберёт объявление с учётом филиала, адреса, расписания и аудитории. Статус набора переключается на дашборде: Удержание → «Рекомендации по набору».</p>
+        <div className="mt-4 grid gap-2 md:grid-cols-[1fr_1fr_auto]">
+          <select value={groupId} onChange={(e) => { setGroupId(e.target.value); setResult(null); }} className={field}>
+            <option value="">Группа (набор открыт)</option>
+            {openGroups.map((x) => {
+              const b = branches.find((bb) => bb.id === x.branchId);
+              const free = (x.capacity || 0) > 0 ? Math.max(0, (x.capacity || 0) - (x.studentCount || 0)) : null;
+              return <option key={x.id} value={x.id}>{x.name} · {b?.name || "—"}{free !== null ? ` · свободно ${free}` : ""}</option>;
+            })}
+          </select>
+          <input value={wishes} onChange={(e) => setWishes(e.target.value)} placeholder="Пожелания к офферу (акция, тон, акцент) — не обязательно" className={field} />
+          <button onClick={generate} disabled={busy || !groupId}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#C5A059] px-4 py-2 text-sm font-black text-black transition hover:brightness-110 disabled:opacity-50">
+            <Sparkles className="h-4 w-4" /> {busy ? "Генерация…" : "Сформировать оффер"}
+          </button>
+        </div>
+        {openGroups.length === 0 && <p className="mt-3 text-xs text-amber-400">Нет групп с открытым набором. Откройте набор на дашборде: Удержание → «Рекомендации по набору».</p>}
+        {g && (
+          <p className="mt-3 text-[11px] text-slate-500">
+            В оффер уйдёт: {branch?.name || "—"}{branch?.address ? ` · ${branch.address}` : ""} · {g.scheduleText || "расписание не задано"} · {g.ageGroup || "все возрасты"}{teacher ? ` · педагог ${teacher.name}` : ""}{freeSpots !== null ? ` · свободно ${freeSpots} мест` : " · вместимость не задана"}
+          </p>
+        )}
+        {note && <p className="mt-2 text-xs text-amber-400">{note}</p>}
+      </section>
+
+      {result && (
+        <section className="rounded-[1.75rem] border border-[#C5A059]/25 bg-gradient-to-br from-[#19160f] to-black p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">{result.source === "ai" ? "Оффер от ИИ" : "Оффер по шаблону"}</p>
+              <h3 className="mt-2 text-lg font-black text-white">{result.headline}</h3>
+            </div>
+            <button onClick={copy} className="shrink-0 rounded-xl border border-[#C5A059]/30 bg-[#C5A059]/10 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-[#C5A059] transition hover:bg-[#C5A059] hover:text-black">
+              {copied ? "Скопировано ✓" : "Скопировать"}
+            </button>
+          </div>
+          <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-slate-100">{result.offer}</p>
+          <p className="mt-3 text-sm font-bold text-emerald-300">{result.cta}</p>
+          {result.hashtags?.length > 0 && (
+            <p className="mt-2 text-xs text-[#C5A059]">{result.hashtags.join(" ")}</p>
+          )}
+          {result.audience && (
+            <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-3.5">
+              <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Кому показывать (таргетинг)</p>
+              <p className="mt-1 text-xs leading-relaxed text-slate-300">{result.audience}</p>
+            </div>
+          )}
+        </section>
+      )}
+    </div>
   );
 }
 

@@ -7,16 +7,20 @@
 import type { Branch, Group, Student, Payment, Teacher } from "./types";
 import { getEnrollmentMonths, needsRenewal, prevMonthUnpaid } from "./studentSegments";
 
-export type PeriodKey = "today" | "yesterday" | "week" | "month" | "quarter" | "year" | "custom";
+// "monthpick" — конкретный месяц (customStart = YYYY-MM), "day" — конкретный
+// день (customStart = YYYY-MM-DD), "custom" — произвольный период (ТЗ 13.07).
+export type PeriodKey = "today" | "yesterday" | "week" | "month" | "quarter" | "year" | "custom" | "monthpick" | "day";
 export type LevelKey = "network" | "branch" | "group" | "teacher";
 
 export interface DashFilters {
   period: PeriodKey;
-  level: LevelKey;
+  // level оставлен для совместимости; область видимости теперь определяется
+  // НЕЗАВИСИМЫМИ фильтрами: филиал + группа + педагог применяются вместе.
+  level?: LevelKey;
   branchId?: string;
   groupId?: string;
   teacherId?: string;
-  customStart?: string; // YYYY-MM-DD
+  customStart?: string; // YYYY-MM-DD (для monthpick — YYYY-MM)
   customEnd?: string;    // YYYY-MM-DD
 }
 
@@ -114,6 +118,26 @@ export function resolveRanges(period: PeriodKey, now: Date, customStart?: string
       cur = mk(s, e, "Период");
       prev = mk(addDays(s, -(len + 1)), addDays(s, -1), "предыдущий период");
       yoy = yearShift(cur); break;
+    }
+    case "day": {
+      // Конкретный день по выбору (customStart = YYYY-MM-DD).
+      const d = customStart ? new Date(customStart + "T00:00:00") : today;
+      cur = mk(d, d, d.toLocaleDateString("ru-RU", { day: "numeric", month: "long" }));
+      prev = mk(addDays(d, -1), addDays(d, -1), "днём ранее");
+      yoy = yearShift(cur); break;
+    }
+    case "monthpick": {
+      // Конкретный месяц по выбору (customStart = YYYY-MM).
+      const [yStr2, mStr] = (customStart || iso(today).slice(0, 7)).split("-");
+      const y = Number(yStr2), m0 = Number(mStr) - 1;
+      const s = new Date(y, m0, 1);
+      const monthEnd = new Date(y, m0 + 1, 0);
+      // Текущий месяц — до сегодняшнего дня, прошедшие/будущие — целиком.
+      const e = (y === today.getFullYear() && m0 === today.getMonth()) ? today : monthEnd;
+      const monthName = s.toLocaleDateString("ru-RU", { month: "long", year: "numeric" });
+      cur = mk(s, e, monthName.charAt(0).toUpperCase() + monthName.slice(1));
+      prev = mk(new Date(y, m0 - 1, 1), new Date(y, m0, 0), "прошлый месяц");
+      yoy = yearShift({ start: iso(s), end: iso(monthEnd), label: "" }); break;
     }
     case "month":
     default: {
@@ -238,6 +262,8 @@ export interface DailyReport {
   // статуса и перезаписи на новую дату): был-не-купил / не пришёл.
   trialYesterdayLost: DailyReportEntry;
   trialYesterdayMissed: DailyReportEntry;
+  // Записи на пробный урок на БУДУЩИЕ даты (незакрытые отметки, ТЗ 13.07).
+  upcomingTrials: DailyReportEntry;
   overloadedGroups: { count: number; groupIds: string[]; studentIds: string[] };
   lowFillGroups: { count: number; groupIds: string[]; studentIds: string[] };
   retentionDropBranches: { count: number; branchIds: string[]; studentIds: string[] };
@@ -323,30 +349,34 @@ export function computeOwnerDashboard(
   const todayStr = iso(startOfDay(now));
   const yStr = iso(addDays(startOfDay(now), -1));
 
-  // --- область видимости (уровень анализа) ---
+  // --- область видимости: филиал + группа + педагог применяются ВМЕСТЕ
+  // (независимые фильтры, ТЗ 13.07) ---
   let students = all.students.slice();
   let groups = all.groups.slice();
   let branches = all.branches.slice();
   const teachers = all.teachers.slice();
-  let scopeLabel = "Вся сеть";
+  const scopeParts: string[] = [];
 
-  if (filters.level === "branch" && filters.branchId) {
+  if (filters.branchId) {
     branches = branches.filter((b) => b.id === filters.branchId);
     groups = groups.filter((g) => g.branchId === filters.branchId);
     students = students.filter((s) => s.branchId === filters.branchId);
-    scopeLabel = "Филиал: " + (branches[0]?.name || branches[0]?.city || "—");
-  } else if (filters.level === "group" && filters.groupId) {
+    scopeParts.push("Филиал: " + (branches[0]?.name || branches[0]?.city || "—"));
+  }
+  if (filters.groupId) {
     groups = groups.filter((g) => g.id === filters.groupId);
     const gids = new Set(groups.map((g) => g.id));
     students = students.filter((s) => (s.groupIds || []).some((id) => gids.has(id)));
     branches = branches.filter((b) => groups.some((g) => g.branchId === b.id));
-    scopeLabel = "Группа: " + (groups[0]?.name || "—");
-  } else if (filters.level === "teacher" && filters.teacherId) {
+    scopeParts.push("Группа: " + (groups[0]?.name || "—"));
+  }
+  if (filters.teacherId) {
     groups = groups.filter((g) => g.teacherId === filters.teacherId);
     students = students.filter((s) => s.teacherId === filters.teacherId);
-    branches = branches.filter((b) => groups.some((g) => g.branchId === b.id));
-    scopeLabel = "Педагог: " + (teachers.find((t) => t.id === filters.teacherId)?.name || "—");
+    if (!filters.branchId && !filters.groupId) branches = branches.filter((b) => groups.some((g) => g.branchId === b.id));
+    scopeParts.push("Педагог: " + (teachers.find((t) => t.id === filters.teacherId)?.name || "—"));
   }
+  const scopeLabel = scopeParts.length ? scopeParts.join(" · ") : "Вся сеть";
 
   const studentIds = new Set(students.map((s) => s.id));
   const payments = all.payments.filter((p) => studentIds.has(p.studentId));
@@ -467,7 +497,7 @@ export function computeOwnerDashboard(
     return { month: mm, cur: c ? Math.round(sumMonth(curY, i) / c) : null, prev: anyPrevYear && pc ? Math.round(sumMonth(curY - 1, i) / pc) : null };
   });
   // активные абонементы / удержание помесячно — только из снапшотов
-  const snaps = (extras.snapshots || []).filter((s) => s.branchId === (filters.level === "branch" ? filters.branchId : null) || filters.level === "network");
+  const snaps = (extras.snapshots || []).filter((s) => filters.branchId ? s.branchId === filters.branchId : s.branchId === null);
   const subsByMonth = months.map((mm, i) => {
     const key = `${curY}-${mm}-01`;
     const sn = snaps.find((s) => s.periodMonth === key);
@@ -488,7 +518,7 @@ export function computeOwnerDashboard(
   if (retentionByDay.every((p) => p.value === null)) retentionByDay = null;
 
   // --- удержание MoM/YoY из снапшотов ---
-  const networkSnaps = (extras.snapshots || []).filter((s) => filters.level === "network" ? s.branchId === null : s.branchId === filters.branchId);
+  const networkSnaps = (extras.snapshots || []).filter((s) => filters.branchId ? s.branchId === filters.branchId : s.branchId === null);
   const snapAt = (back: number) => {
     const d = new Date(curY, now.getMonth() - back, 1);
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
@@ -688,9 +718,18 @@ export function computeOwnerDashboard(
   const trialLostYesterday = yesterdayTrialUnprocessed("came");
   const trialMissedYesterday = yesterdayTrialUnprocessed("missed");
 
+  // --- Записи на пробный на будущие даты (ТЗ 13.07): незакрытая отметка
+  // пробного с датой сегодня/позже, либо статус «пробный» без отметок вовсе. ---
+  const upcomingTrialStudents = students.filter((s) => {
+    if (s.status === "archived" || (s as any).archivedAt) return false;
+    const entries = Object.values(s.attendance || {}).filter(isTrialMark) as any[];
+    if (entries.some((a) => String(a.date || "").slice(0, 10) >= todayStr && a.status === "unmarked")) return true;
+    return s.status === "trial" && entries.length === 0; // записан, отметки ещё нет
+  });
+
   // --- Отток: ушедшие в текущем месяце (из архива учеников в области видимости) ---
   const archiveScoped = (all.archive || []).filter((a: any) =>
-    (filters.level !== "branch" || !filters.branchId || a.branchId === filters.branchId));
+    (!filters.branchId || a.branchId === filters.branchId));
   const leftThisMonth = archiveScoped.filter((a: any) => {
     const d = String(a.leftOn || a.archivedAt || a.archived_at || "").slice(0, 7);
     return d === curMonthKey;
@@ -834,6 +873,7 @@ export function computeOwnerDashboard(
     unpaidPrevMonth: { count: unpaidPrev.length, ids: unpaidPrev.map((s) => s.id) },
     trialYesterdayLost: { count: trialLostYesterday.length, ids: trialLostYesterday.map((s) => s.id) },
     trialYesterdayMissed: { count: trialMissedYesterday.length, ids: trialMissedYesterday.map((s) => s.id) },
+    upcomingTrials: { count: upcomingTrialStudents.length, ids: upcomingTrialStudents.map((s) => s.id) },
     overloadedGroups: { count: overloaded.length, groupIds: overloadedGroupIds, studentIds: studentsOfGroups(new Set(overloadedGroupIds)) },
     lowFillGroups: { count: halfEmpty.length, groupIds: lowFillGroupIds, studentIds: studentsOfGroups(new Set(lowFillGroupIds)) },
     retentionDropBranches: { count: retentionDropBranchList.length, branchIds: retentionDropBranchIds, studentIds: studentsOfBranches(new Set(retentionDropBranchIds)) },

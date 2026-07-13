@@ -172,6 +172,33 @@ students=${JSON.stringify(list)}`;
     }
   });
 
+  // Рекламный оффер для набора в конкретную группу (вкладка «Маркетинг»):
+  // ИИ формирует заголовок, текст объявления и CTA, учитывая группу, филиал,
+  // адрес, расписание, возраст аудитории и число свободных мест.
+  app.post("/api/gemini/ad-offer", async (req, res) => {
+    if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });
+    const { groupName, branchName, address, schedule, ageGroup, freeSpots, teacherName, price, extraWishes } = req.body || {};
+    if (!String(groupName || "").trim()) return res.status(400).json({ error: "Укажите группу" });
+    const prompt = `Ты — маркетолог сети школ кавказского танца «Эхо Гор» (Казахстан). Составь рекламное объявление для набора учеников в конкретную группу. Верни СТРОГО JSON по схеме:
+{"headline": string, "offer": string, "cta": string, "audience": string, "hashtags": string[]}
+Правила: пиши по-русски, живо и конкретно, без штампов и КАПСА. headline — цепляющий заголовок до 60 знаков. offer — текст объявления 3-5 предложений: что за группа, кому подойдёт (возраст), где занятия (филиал/адрес), когда (расписание), чем ценно (характер, осанка, культура, сцена), и что мест мало, если freeSpots небольшое. cta — короткий призыв (записаться на бесплатный пробный урок). audience — 1-2 предложения, на кого таргетировать рекламу (возраст детей/взрослых, гео вокруг адреса, интересы родителей). hashtags — 4-6 хэштегов. Не выдумывай фактов, которых нет во входных данных.
+Данные:
+group=${JSON.stringify(groupName)}
+branch=${JSON.stringify(branchName ?? "")}
+address=${JSON.stringify(address ?? "")}
+schedule=${JSON.stringify(schedule ?? "")}
+ageGroup=${JSON.stringify(ageGroup ?? "")}
+teacher=${JSON.stringify(teacherName ?? "")}
+freeSpots=${JSON.stringify(freeSpots ?? null)}
+price=${JSON.stringify(price ?? null)}
+wishes=${JSON.stringify(extraWishes ?? "")}`;
+    try {
+      res.json(await generateJson(prompt));
+    } catch (e: any) {
+      res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
+
   // Генерация красивого фото товара нейросетью (для каталога и магазина родителя).
   // Возвращает data-URL (base64 PNG), который фронт кладёт в photoUrl товара.
   app.post("/api/gemini/product-image", async (req, res) => {
