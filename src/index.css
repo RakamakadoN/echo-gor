@@ -211,16 +211,16 @@
   background-color: rgba(79, 138, 99, 0.12) !important;
 }
 
-/* ---- Display type: large headings & KPI numbers use Oswald, like the
-   reference (h1 38px / h2 26px / .kpi .v 28px, all condensed & bold). Only
-   applied to display sizes so small bold UI labels stay in Inter. ---- */
+/* ---- Display type: Inter ВЕЗДЕ, включая крупные заголовки и цифры KPI
+   (по просьбе заказчика — единый шрифт, как в макете «Ученики»). Плотное
+   межбуквенное расстояние держит крупные цифры компактными. ---- */
 :root.day-theme .day-theme-app [class*="text-2xl"],
 :root.day-theme .day-theme-app [class*="text-3xl"],
 :root.day-theme .day-theme-app [class*="text-4xl"],
 :root.day-theme .day-theme-app [class*="text-5xl"],
 :root.day-theme .day-theme-app [class*="text-6xl"] {
-  font-family: 'Oswald', 'Inter', system-ui, sans-serif;
-  letter-spacing: -0.01em;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  letter-spacing: -0.02em;
 }
 
 /* ---- Buttons — primary gold CTA & neutral controls (reference .btn) ---- */
