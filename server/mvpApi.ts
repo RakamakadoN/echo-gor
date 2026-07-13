@@ -6977,4 +6977,52 @@ export function registerMvpApi(app: express.Express) {
     if (penaltyStore[session.organizationId]) penaltyStore[session.organizationId] = penaltyStore[session.organizationId].filter((r) => r.id !== id);
     res.json({ ok: true });
   }));
+
+  // ===================== Приход педагога (стандарт работы: фото + вовремя) =====================
+  const arrivalStore: Record<string, { time: string; late: boolean; photo?: string | null; date: string }> = {};
+  const arrivalKey = (session: MvpSession, date: string) => `${session.organizationId}:${date}:${session.userId}`;
+
+  // Статус прихода на сегодня.
+  app.get("/api/mvp/teachers/arrival/today", ah(async (req, res) => {
+    const session = getSession(req);
+    const date = KZ_DATE.format(new Date());
+    const local = arrivalStore[arrivalKey(session, date)];
+    if (local) return res.json({ arrival: { time: local.time, late: local.late } });
+    if (supabaseEnabled) {
+      try {
+        const rows = await supabaseFetch<any[]>("teacher_arrivals", `organization_id=eq.${session.organizationId}&teacher_id=eq.${session.userId}&arrival_date=eq.${date}&select=arrival_time,is_late`, {});
+        const r = rows?.[0];
+        if (r) return res.json({ arrival: { time: r.arrival_time, late: r.is_late } });
+      } catch { /* mock */ }
+    }
+    res.json({ arrival: null });
+  }));
+
+  // Отметить приход (фото + время). Один приход в день — перезаписываем.
+  app.post("/api/mvp/teachers/arrival", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "teacher" && session.role !== "owner" && session.role !== "branch_manager" && session.role !== "admin")
+      return res.status(403).json({ error: "Недоступно" });
+    const b = req.body || {};
+    const date = KZ_DATE.format(new Date());
+    const time = String(b.time || "").match(/^\d{1,2}:\d{2}$/) ? String(b.time) : KZ_DATE.format(new Date());
+    const late = Boolean(b.late);
+    const photo = typeof b.photo === "string" ? b.photo : null;
+    arrivalStore[arrivalKey(session, date)] = { time, late, photo, date };
+    if (supabaseEnabled) {
+      try {
+        // teacher_id оставляем null: demo-сессия не всегда = реальному teachers.id (FK).
+        await supabaseFetch("teacher_arrivals", "", {
+          method: "POST",
+          headers: { Prefer: "resolution=merge-duplicates" },
+          body: JSON.stringify({
+            organization_id: session.organizationId, teacher_id: null,
+            branch_id: session.dbBranchId || null,
+            arrival_date: date, arrival_time: time, is_late: late, photo,
+          }),
+        });
+      } catch { /* mock */ }
+    }
+    res.status(201).json({ arrival: { time, late } });
+  }));
 }

@@ -1,7 +1,7 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ClipboardCheck, CalendarClock, Cake, Coins, CalendarDays, Camera, Presentation,
-  ChevronRight, X, Sparkles, Loader2, Send, Copy, Check, Gift,
+  ChevronRight, X, Sparkles, Loader2, Send, Copy, Check, Gift, Clock, CheckCircle2, RefreshCw,
 } from "lucide-react";
 import type { Student, Group } from "../types";
 
@@ -42,6 +42,27 @@ export function TeacherStandardsToday({
   onNavigate, onOpenLessonPlan, onConfirmArrival,
 }: Props) {
   const [bdayOpen, setBdayOpen] = useState(false);
+  const [arrivalOpen, setArrivalOpen] = useState(false);
+  const [arrival, setArrival] = useState<{ time: string; late: boolean } | null>(null);
+
+  // Подтянуть статус прихода на сегодня (если уже отмечен).
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/mvp/teachers/arrival/today", { headers: { "x-demo-role": "teacher" } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (alive && d?.arrival) setArrival({ time: d.arrival.time, late: d.arrival.late }); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  // Ожидаемое время прихода = начало первого занятия сегодня (или 09:00).
+  const expectedStart = useMemo(() => {
+    const times = (scheduleItems || [])
+      .map((i: any) => String(i?.time || i?.startsAt || i?.start || "").match(/(\d{1,2}):(\d{2})/))
+      .filter(Boolean)
+      .map((mm: any) => Number(mm[1]) * 60 + Number(mm[2]));
+    return times.length ? Math.min(...times) : 9 * 60;
+  }, [scheduleItems]);
 
   const { todayBirthdays, upcoming } = useMemo(() => {
     const today = almatyToday();
@@ -80,10 +101,10 @@ export function TeacherStandardsToday({
 
   const standards = [
     {
-      key: "arrival", icon: Camera, tone: "amber",
-      title: "Подтвердить приход", sub: "фото на рабочем месте · вовремя",
-      status: "Не отмечен", action: "Отметить",
-      onClick: () => onConfirmArrival?.(),
+      key: "arrival", icon: arrival ? CheckCircle2 : Camera, tone: arrival ? (arrival.late ? "rose" : "emerald") : "amber",
+      title: "Подтвердить приход", sub: arrival ? `отмечено в ${arrival.time}${arrival.late ? " · опоздание" : " · вовремя"}` : "фото на рабочем месте · вовремя",
+      status: arrival ? (arrival.late ? "Поздно" : "Готово") : "Не отмечен", action: arrival ? "Изменить" : "Отметить",
+      onClick: () => setArrivalOpen(true), highlight: false,
     },
     {
       key: "journal", icon: ClipboardCheck, tone: "emerald",
@@ -177,6 +198,126 @@ export function TeacherStandardsToday({
           onClose={() => setBdayOpen(false)}
         />
       )}
+
+      {arrivalOpen && (
+        <ArrivalCheckModal
+          expectedStart={expectedStart}
+          onClose={() => setArrivalOpen(false)}
+          onDone={(r) => { setArrival(r); onConfirmArrival?.(); setArrivalOpen(false); }}
+        />
+      )}
+    </div>
+  );
+}
+
+const minsToHHMM = (mins: number) => `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
+
+async function compressImage(file: File, max = 900): Promise<string> {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.7);
+}
+
+function ArrivalCheckModal({ expectedStart, onClose, onDone }: {
+  expectedStart: number; onClose: () => void; onDone: (r: { time: string; late: boolean }) => void;
+}) {
+  const [photo, setPhoto] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const now = almatyToday();
+  const nowMins = (() => {
+    const t = new Intl.DateTimeFormat("ru-RU", { timeZone: "Asia/Almaty", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
+    const [h, m] = t.split(":").map(Number);
+    return h * 60 + m;
+  })();
+  const nowStr = minsToHHMM(nowMins);
+  const late = nowMins > expectedStart + 5;
+
+  async function pick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBusy(true);
+    try { setPhoto(await compressImage(file)); } catch { /* ignore */ } finally { setBusy(false); }
+  }
+
+  async function submit() {
+    setBusy(true);
+    try {
+      await fetch("/api/mvp/teachers/arrival", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-demo-role": "teacher" },
+        body: JSON.stringify({ time: nowStr, late, photo }),
+      }).catch(() => {});
+    } finally {
+      setBusy(false);
+      onDone({ time: nowStr, late });
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:p-4" onClick={onClose}>
+      <div className="w-full max-w-md overflow-hidden rounded-t-3xl border border-white/10 bg-[#141414] shadow-2xl sm:rounded-3xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+          <div className="flex items-center gap-2">
+            <Camera className="h-5 w-5 text-amber-400" />
+            <h3 className="text-base font-black text-white">Подтверждение прихода</h3>
+          </div>
+          <button onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/5 text-slate-400 hover:text-white">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="p-5" style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))" }}>
+          {/* время + статус */}
+          <div className={`mb-4 flex items-center justify-between rounded-2xl border px-4 py-3 ${late ? "border-rose-500/30 bg-rose-500/10" : "border-emerald-500/30 bg-emerald-500/10"}`}>
+            <div className="flex items-center gap-2">
+              <Clock className={`h-5 w-5 ${late ? "text-rose-300" : "text-emerald-300"}`} />
+              <div>
+                <div className="text-lg font-black text-white">{nowStr}</div>
+                <div className="text-[10px] text-slate-400">начало занятия · {minsToHHMM(expectedStart)}</div>
+              </div>
+            </div>
+            <span className={`rounded-full px-3 py-1 text-xs font-black ${late ? "bg-rose-500/20 text-rose-200" : "bg-emerald-500/20 text-emerald-200"}`}>
+              {late ? "Опоздание" : "Вовремя"}
+            </span>
+          </div>
+
+          {/* фото */}
+          {photo ? (
+            <div className="relative overflow-hidden rounded-2xl border border-white/10">
+              <img src={photo} alt="Фото прихода" className="max-h-64 w-full object-cover" />
+              <button onClick={() => inputRef.current?.click()} className="absolute bottom-2 right-2 flex items-center gap-1.5 rounded-xl bg-black/70 px-3 py-1.5 text-xs font-bold text-white backdrop-blur">
+                <RefreshCw className="h-3.5 w-3.5" /> Переснять
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => inputRef.current?.click()}
+              className="flex h-40 w-full flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-white/20 bg-white/[0.03] text-slate-400 transition hover:border-[#C5A059]/40 hover:text-[#C5A059]"
+            >
+              {busy ? <Loader2 className="h-7 w-7 animate-spin" /> : <Camera className="h-7 w-7" />}
+              <span className="text-sm font-bold">Сделать фото на рабочем месте</span>
+              <span className="text-[10px] text-slate-500">камера или галерея</span>
+            </button>
+          )}
+          <input ref={inputRef} type="file" accept="image/*" capture="environment" onChange={pick} className="hidden" />
+
+          <button
+            onClick={submit}
+            disabled={!photo || busy}
+            className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#C5A059] px-4 py-3 text-sm font-black text-black transition hover:brightness-105 disabled:opacity-40"
+          >
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+            Подтвердить приход в {nowStr}
+          </button>
+          <p className="mt-2 text-center text-[10px] text-slate-500">Фото увидит руководство. Приход вовремя = без штрафа.</p>
+        </div>
+      </div>
     </div>
   );
 }
