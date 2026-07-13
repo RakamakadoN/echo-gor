@@ -86,7 +86,6 @@ import TeachersProtoView from "./proto/TeachersProtoView";
 import AccountingProtoView from "./proto/AccountingProtoView";
 import PlanningProtoView from "./proto/PlanningProtoView";
 import ReportsProtoView from "./proto/ReportsProtoView";
-import StudentsProtoView from "./proto/StudentsProtoView";
 import { useOwnerSectionSettings, SectionSettingsDrawer, SectionGearButton, type ResolvedTab } from "./OwnerSectionSettings";
 import { SubscriptionPlansManager } from "./SubscriptionPlansManager";
 import StatusSettings from "./StatusSettings";
@@ -446,7 +445,7 @@ export function OwnerExecutiveWorkspace({
             />
           )}
           {activeTab === "branches" && <BranchesGroupsView branches={branchScorecards} rawBranches={branches} students={students} groups={groups} teachers={teachers} halls={halls} payments={payments} onCreateBranch={onCreateBranch} onUpdateBranch={onUpdateBranch} onDeleteBranch={onDeleteBranch} onCreateGroup={onCreateGroup} onUpdateGroup={onUpdateGroup} onDeleteGroup={onDeleteGroup} onCreateHall={onCreateHall} onUpdateHall={onUpdateHall} onDeleteHall={onDeleteHall} onOpenStudents={openStudentsWithPreset} />}
-          {activeTab === "students" && <StudentsProtoView />}
+          {activeTab === "students" && <StudentsNetworkView students={students} branches={branches} groups={groups} teachers={teachers} onCreateStudent={onCreateStudent} onUpdateStudent={onUpdateStudent} onDeleteStudent={onDeleteStudent} onOpenPayment={onOpenPayment} onSellSubscription={onSellSubscription} subscriptionPlans={subscriptionPlans} studentTrash={studentTrash} onRestoreStudent={onRestoreStudent} onConfirmDeleteStudent={onConfirmDeleteStudent} studentArchive={studentArchive} onArchiveStudent={onArchiveStudent} onUnarchiveStudent={onUnarchiveStudent} onEditArchive={onEditArchive} onBookTrial={onBookTrial} leadSources={leadSources} waitlist={waitlist} onAddToWaitlist={onAddToWaitlist} onRemoveFromWaitlist={onRemoveFromWaitlist} onCreateLeadSource={onCreateLeadSource} onUpdateLeadSource={onUpdateLeadSource} onDeleteLeadSource={onDeleteLeadSource} preset={studentsPreset} />}
           {activeTab === "teachers" && <TeachersProtoView />}
           {activeTab === "finance" && <AccountingProtoView />}
           {activeTab === "planning" && <PlanningProtoView />}
