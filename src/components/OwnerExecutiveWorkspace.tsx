@@ -1513,6 +1513,29 @@ function BigKpi({ label, value, rows, tone = "gold", onClick }: { label: string;
   );
 }
 
+// «Набегающее» число: плавно считает от 0 до target при появлении (easeOutCubic).
+// format форматирует ТЕКУЩЕЕ значение (деньги/проценты/штуки). Уважает reduce-motion.
+function CountUp({ to, format, durationMs = 900 }: { to: number; format?: (n: number) => string; durationMs?: number }) {
+  const [val, setVal] = useState(0);
+  const raf = useRef<number | null>(null);
+  useEffect(() => {
+    const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) { setVal(to); return; }
+    let startTs = 0;
+    const tick = (now: number) => {
+      if (!startTs) startTs = now;
+      const t = Math.min(1, (now - startTs) / durationMs);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setVal(to * eased);
+      if (t < 1) raf.current = requestAnimationFrame(tick);
+      else setVal(to);
+    };
+    raf.current = requestAnimationFrame(tick);
+    return () => { if (raf.current) cancelAnimationFrame(raf.current); };
+  }, [to, durationMs]);
+  return <>{format ? format(val) : String(Math.round(val))}</>;
+}
+
 // Мини-график (спарклайн) из вертикальных баров — как на макете дашборда.
 function Sparkbars({ series, color }: { series: number[]; color: string }) {
   const data = series && series.length ? series : [0];
@@ -1583,15 +1606,18 @@ function DailyManagerReport({ m, bdrPct, scopeLabel, periodLabel, onOpenList, on
   const toneCls: Record<string, string> = {
     gold: "text-[#C5A059]", white: "text-white", rose: "text-rose-400", emerald: "text-emerald-400", amber: "text-amber-400",
   };
-  const stats: { label: string; value: React.ReactNode; tone: string; hint?: string; onClick: () => void }[] = [
-    { label: "Выручка сегодня", value: money(report.revenueToday), tone: "gold", hint: `${report.paymentsToday} ${report.paymentsToday === 1 ? "оплата" : report.paymentsToday >= 2 && report.paymentsToday <= 4 ? "оплаты" : "оплат"} — список`, onClick: onPayments },
-    { label: "Учеников с абонементом", value: m.activeSubs.students, tone: "white", hint: "уникальные ученики", onClick: () => onOpenList({ segment: "active", label: "Ученики с активным абонементом" }) },
-    { label: "Активных абонементов", value: m.activeSubs.count, tone: "white", hint: "у ученика может быть два", onClick: () => onOpenList({ segment: "active", label: "Ученики с активным абонементом" }) },
-    { label: "План БДР", value: bdrPct === null ? "—" : `${bdrPct}%`, tone: bdrPct === null ? "white" : bdrPct >= 100 ? "emerald" : bdrPct >= 70 ? "amber" : "rose", hint: bdrPct === null ? "план не задан" : "по филиалам", onClick: onBdr },
-    { label: "Не оплачен текущий месяц", value: report.unpaidCurrentMonth.count, tone: report.unpaidCurrentMonth.count > 0 ? "rose" : "emerald", onClick: () => onOpenList({ ids: report.unpaidCurrentMonth.ids, label: "Не оплатили текущий месяц" }) },
-    { label: "Не оплатили прошлый месяц", value: report.unpaidPrevMonth.count, tone: report.unpaidPrevMonth.count > 0 ? "amber" : "emerald", onClick: () => onOpenList({ ids: report.unpaidPrevMonth.ids, label: "Не оплатили прошлый месяц" }) },
-    { label: "Удержание (мес→мес)", value: m.retention.pct === null ? "—" : `${m.retention.pct}%`, tone: "emerald", hint: "конверсия из месяца в месяц", onClick: onRetention },
-    { label: "Средний чек", value: m.avgCheck.all === null ? "—" : money(m.avgCheck.all), tone: "gold", onClick: onAvgCheck },
+  const pctFmt = (n: number) => `${Math.round(n)}%`;
+  const intFmt = (n: number) => String(Math.round(n));
+  // num/format → значение «набегает» от 0; где данных нет (—), num не задаём.
+  const stats: { label: string; value: React.ReactNode; tone: string; hint?: string; onClick: () => void; num?: number; format?: (n: number) => string }[] = [
+    { label: "Выручка сегодня", value: money(report.revenueToday), num: report.revenueToday, format: money, tone: "gold", hint: `${report.paymentsToday} ${report.paymentsToday === 1 ? "оплата" : report.paymentsToday >= 2 && report.paymentsToday <= 4 ? "оплаты" : "оплат"} — список`, onClick: onPayments },
+    { label: "Учеников с абонементом", value: m.activeSubs.students, num: m.activeSubs.students, format: intFmt, tone: "white", hint: "уникальные ученики", onClick: () => onOpenList({ segment: "active", label: "Ученики с активным абонементом" }) },
+    { label: "Активных абонементов", value: m.activeSubs.count, num: m.activeSubs.count, format: intFmt, tone: "white", hint: "у ученика может быть два", onClick: () => onOpenList({ segment: "active", label: "Ученики с активным абонементом" }) },
+    { label: "План БДР", value: bdrPct === null ? "—" : `${bdrPct}%`, num: bdrPct === null ? undefined : bdrPct, format: pctFmt, tone: bdrPct === null ? "white" : bdrPct >= 100 ? "emerald" : bdrPct >= 70 ? "amber" : "rose", hint: bdrPct === null ? "план не задан" : "по филиалам", onClick: onBdr },
+    { label: "Не оплачен текущий месяц", value: report.unpaidCurrentMonth.count, num: report.unpaidCurrentMonth.count, format: intFmt, tone: report.unpaidCurrentMonth.count > 0 ? "rose" : "emerald", onClick: () => onOpenList({ ids: report.unpaidCurrentMonth.ids, label: "Не оплатили текущий месяц" }) },
+    { label: "Не оплатили прошлый месяц", value: report.unpaidPrevMonth.count, num: report.unpaidPrevMonth.count, format: intFmt, tone: report.unpaidPrevMonth.count > 0 ? "amber" : "emerald", onClick: () => onOpenList({ ids: report.unpaidPrevMonth.ids, label: "Не оплатили прошлый месяц" }) },
+    { label: "Удержание (мес→мес)", value: m.retention.pct === null ? "—" : `${m.retention.pct}%`, num: m.retention.pct === null ? undefined : m.retention.pct, format: pctFmt, tone: "emerald", hint: "конверсия из месяца в месяц", onClick: onRetention },
+    { label: "Средний чек", value: m.avgCheck.all === null ? "—" : money(m.avgCheck.all), num: m.avgCheck.all === null ? undefined : m.avgCheck.all, format: money, tone: "gold", onClick: onAvgCheck },
   ];
 
   return (
@@ -1611,7 +1637,9 @@ function DailyManagerReport({ m, bdrPct, scopeLabel, periodLabel, onOpenList, on
           <button key={s.label} onClick={s.onClick}
             className="group rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 text-left transition hover:border-[#C5A059]/45 hover:bg-white/[0.06]">
             <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">{s.label}</p>
-            <p className={`mt-1.5 text-xl font-black ${toneCls[s.tone] || "text-white"}`}>{s.value}</p>
+            <p className={`mt-1.5 text-xl font-black ${toneCls[s.tone] || "text-white"}`}>
+              {s.num !== undefined ? <CountUp to={s.num} format={s.format} /> : s.value}
+            </p>
             <p className="mt-1 flex items-center gap-1 text-[10px] font-bold text-slate-500 group-hover:text-[#C5A059]">
               {s.hint || "Открыть список"} <ArrowRight className="h-3 w-3" />
             </p>

@@ -333,6 +333,8 @@ export default function App() {
   const [loginVideoTarget, setLoginVideoTarget] = useState<"desktop" | "mobile" | null>(null);
   const [isLoginVideoPlaying, setIsLoginVideoPlaying] = useState<boolean>(false);
   const [loginVideoNeedsTap, setLoginVideoNeedsTap] = useState<boolean>(false);
+  // Короткая анимация «ухода» экрана входа при клике «Войти» (плавный переход в кабинет).
+  const [loginExiting, setLoginExiting] = useState<boolean>(false);
 
   // New item modal states / fields
   const [showAddStudentModal, setShowAddStudentModal] = useState<boolean>(false);
@@ -2519,7 +2521,9 @@ export default function App() {
     setLoginVideoTarget(null);
 
     if (target === "desktop") {
-      setIsPlayingPromo(false);
+      // Плавный «уход»: экран входа отдаляется и растворяется, открывая кабинет.
+      setLoginExiting(true);
+      window.setTimeout(() => { setIsPlayingPromo(false); setLoginExiting(false); }, 460);
     } else if (target === "mobile") {
       setMobileAuthStep("main");
     }
@@ -2590,7 +2594,7 @@ export default function App() {
           затемнение вместо жёсткой колонки 42%, логотип и тэглайн вынесены
           в разметку (раньше были вшиты в картинку). */}
       {isPlayingPromo && (
-        <div className="login-auth-screen fixed inset-0 z-[9999] bg-[#0A0D14] overflow-hidden select-none animate-fade-in font-sans text-slate-200">
+        <div className={`login-auth-screen fixed inset-0 z-[9999] bg-[#0A0D14] overflow-hidden select-none animate-fade-in font-sans text-slate-200 ${loginExiting ? "login-exit" : ""}`}>
           {/* Базовый тёмный фон — всегда виден, даже если фото не подгрузилось. */}
           <div className="absolute inset-0" style={{ background: "radial-gradient(120% 120% at 15% 10%, #1a2536 0%, #0B1018 45%, #05070C 100%)" }} />
 
