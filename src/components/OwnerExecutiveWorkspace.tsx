@@ -390,7 +390,7 @@ export function OwnerExecutiveWorkspace({
       {/* Раскладка на всю ширину: сайдбар прижат к левому краю и НЕ уезжает при
           зуме браузера (раньше mx-auto max-w-[1560px] центрировал и сдвигал его). */}
       <div className="flex w-full gap-0 lg:gap-5">
-        <aside className={`sticky top-0 hidden h-[calc(100vh-64px)] w-64 shrink-0 flex-col border-r border-white/5 bg-[#0F0F0F] ${navCollapsed ? "lg:hidden" : "lg:flex"}`}>
+        <aside className={`sticky top-3 my-3 ml-3 hidden h-[calc(100vh-88px)] w-64 shrink-0 flex-col overflow-hidden rounded-3xl border border-white/5 bg-[#0F0F0F] shadow-sm ${navCollapsed ? "lg:hidden" : "lg:flex"}`}>
           {/* Лого-бокс (референс .eg-logo-box): фирменный логотип ЭХОГОР.
               Тёмный вариант (тёмные буквы) для светлой темы, светлый — для тёмной.
               Переключение через CSS-классы day-logo/night-logo в index.css. */}

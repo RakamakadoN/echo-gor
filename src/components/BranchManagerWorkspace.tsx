@@ -207,7 +207,7 @@ export function BranchManagerWorkspace({
   return (
     <div className="min-h-full bg-[#0A0A0A] text-slate-200">
       <div className="mx-auto flex max-w-[1500px] gap-0 lg:gap-5">
-        <aside className={`sticky top-0 hidden h-[calc(100vh-64px)] w-64 shrink-0 flex-col border-r border-white/5 bg-[#0F0F0F] ${navCollapsed ? "lg:hidden" : "lg:flex"}`}>
+        <aside className={`sticky top-3 my-3 ml-3 hidden h-[calc(100vh-88px)] w-64 shrink-0 flex-col overflow-hidden rounded-3xl border border-white/5 bg-[#0F0F0F] shadow-sm ${navCollapsed ? "lg:hidden" : "lg:flex"}`}>
           <div className="border-b border-white/5 px-5 py-5">
             <BranchIdentity branch={branch} />
           </div>
