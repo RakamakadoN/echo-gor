@@ -1322,6 +1322,25 @@ async function supabaseFetch(table, query = "select=*", init = {}) {
   if (!text) return void 0;
   return JSON.parse(text);
 }
+var incomeCatCache = {};
+async function ensureIncomeCategoryId(orgId3) {
+  if (!supabaseEnabled) return null;
+  if (incomeCatCache[orgId3]) return incomeCatCache[orgId3];
+  try {
+    const found = await supabaseFetch("finance_categories", `select=id&organization_id=eq.${orgId3}&kind=eq.income&name=eq.${encodeURIComponent("\u0410\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442\u044B")}&limit=1`);
+    if (found[0]?.id) {
+      incomeCatCache[orgId3] = found[0].id;
+      return found[0].id;
+    }
+    const created = await supabaseFetch("finance_categories", "", { method: "POST", body: JSON.stringify({ organization_id: orgId3, name: "\u0410\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442\u044B", kind: "income", sort: 1 }) });
+    if (created[0]?.id) {
+      incomeCatCache[orgId3] = created[0].id;
+      return created[0].id;
+    }
+  } catch {
+  }
+  return null;
+}
 var KZ_DATE = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Almaty" });
 var toDate = (value) => {
   if (!value) return KZ_DATE.format(/* @__PURE__ */ new Date());
@@ -2603,6 +2622,7 @@ function registerMvpApi(app2) {
         amount: payload.amount,
         type: "income",
         category: "tuition",
+        category_id: await ensureIncomeCategoryId(session.organizationId),
         description: payload.description || "\u041E\u043F\u043B\u0430\u0442\u0430 \u0430\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442\u0430"
       })
     });
@@ -2772,6 +2792,7 @@ function registerMvpApi(app2) {
             amount: amountPaid,
             type: "income",
             category: "tuition",
+            category_id: await ensureIncomeCategoryId(session.organizationId),
             description: payload.description || `\u0410\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442: ${plan.name}`
           })
         });
@@ -4409,8 +4430,8 @@ function registerMvpApi(app2) {
     const orgFilter = `organization_id=eq.${session.organizationId}`;
     try {
       const [accounts, categories, txns] = await Promise.all([
-        supabaseFetch("finance_accounts", `select=*&${orgFilter}&order=sort.asc`),
-        supabaseFetch("finance_categories", `select=*&${orgFilter}&order=kind.asc,sort.asc`),
+        supabaseFetch("finance_accounts", `select=*&${orgFilter}&is_active=eq.true&order=sort.asc`),
+        supabaseFetch("finance_categories", `select=*&${orgFilter}&is_active=eq.true&order=kind.asc,sort.asc`),
         supabaseFetch("finance_transactions", `select=*&${orgFilter}&type=in.(income,expense)&order=operation_date.asc`)
       ]);
       const actual = txns.filter((t) => (t.status || "actual") === "actual");
@@ -4597,6 +4618,302 @@ function registerMvpApi(app2) {
       res.status(201).json({ account: inserted[0] });
     } catch (error) {
       res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0437\u0434\u0430\u0442\u044C \u0441\u0447\u0451\u0442" });
+    }
+  });
+  app2.patch("/api/mvp/accounting/accounts/:id", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const p = req.body || {};
+    const patch = {};
+    if (p.name !== void 0) patch.name = String(p.name).trim();
+    if (p.kind !== void 0) patch.kind = ["cash", "bank", "card"].includes(p.kind) ? p.kind : "cash";
+    if (p.currency !== void 0) patch.currency = p.currency || "KZT";
+    if (p.openingBalance !== void 0) patch.opening_balance = Number(p.openingBalance) || 0;
+    if (p.sort !== void 0) patch.sort = Number(p.sort) || 0;
+    if (p.isActive !== void 0) patch.is_active = Boolean(p.isActive);
+    if (Object.keys(patch).length === 0) return res.status(400).json({ error: "\u041D\u0435\u0442 \u043F\u043E\u043B\u0435\u0439 \u0434\u043B\u044F \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F" });
+    try {
+      const rows = await supabaseFetch("finance_accounts", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", body: JSON.stringify(patch) });
+      if (!rows[0]) return res.status(404).json({ error: "\u0421\u0447\u0451\u0442 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+      res.json({ account: rows[0] });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0441\u0447\u0451\u0442" });
+    }
+  });
+  app2.delete("/api/mvp/accounting/accounts/:id", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      const rows = await supabaseFetch("finance_accounts", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", body: JSON.stringify({ is_active: false }) });
+      if (!rows[0]) return res.status(404).json({ error: "\u0421\u0447\u0451\u0442 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+      res.json({ account: { id: rows[0].id }, archived: true });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0430\u0440\u0445\u0438\u0432\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0441\u0447\u0451\u0442" });
+    }
+  });
+  app2.get("/api/mvp/accounting/categories", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      const rows = await supabaseFetch("finance_categories", `select=*&organization_id=eq.${session.organizationId}&order=kind.asc,sort.asc`);
+      res.json({ categories: rows.map((c) => ({ id: c.id, name: c.name, kind: c.kind, parentId: c.parent_id, sort: c.sort, isActive: c.is_active !== false })) });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0441\u0442\u0430\u0442\u044C\u0438" });
+    }
+  });
+  app2.post("/api/mvp/accounting/categories", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const p = req.body || {};
+    if (!String(p.name || "").trim()) return res.status(400).json({ error: "\u0423\u043A\u0430\u0436\u0438\u0442\u0435 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u0441\u0442\u0430\u0442\u044C\u0438" });
+    const kind = p.kind === "income" ? "income" : "expense";
+    try {
+      const inserted = await supabaseFetch("finance_categories", "", {
+        method: "POST",
+        body: JSON.stringify({ organization_id: session.organizationId, name: String(p.name).trim(), kind, parent_id: p.parentId || null, sort: Number(p.sort) || 99 })
+      });
+      const c = inserted[0];
+      res.status(201).json({ category: { id: c.id, name: c.name, kind: c.kind, parentId: c.parent_id, sort: c.sort, isActive: true } });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0437\u0434\u0430\u0442\u044C \u0441\u0442\u0430\u0442\u044C\u044E" });
+    }
+  });
+  app2.patch("/api/mvp/accounting/categories/:id", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const p = req.body || {};
+    const patch = {};
+    if (p.name !== void 0) patch.name = String(p.name).trim();
+    if (p.kind !== void 0) patch.kind = p.kind === "income" ? "income" : "expense";
+    if (p.sort !== void 0) patch.sort = Number(p.sort) || 0;
+    if (p.isActive !== void 0) patch.is_active = Boolean(p.isActive);
+    if (Object.keys(patch).length === 0) return res.status(400).json({ error: "\u041D\u0435\u0442 \u043F\u043E\u043B\u0435\u0439 \u0434\u043B\u044F \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F" });
+    try {
+      const rows = await supabaseFetch("finance_categories", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", body: JSON.stringify(patch) });
+      if (!rows[0]) return res.status(404).json({ error: "\u0421\u0442\u0430\u0442\u044C\u044F \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430" });
+      const c = rows[0];
+      res.json({ category: { id: c.id, name: c.name, kind: c.kind, parentId: c.parent_id, sort: c.sort, isActive: c.is_active !== false } });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0441\u0442\u0430\u0442\u044C\u044E" });
+    }
+  });
+  app2.delete("/api/mvp/accounting/categories/:id", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      const rows = await supabaseFetch("finance_categories", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", body: JSON.stringify({ is_active: false }) });
+      if (!rows[0]) return res.status(404).json({ error: "\u0421\u0442\u0430\u0442\u044C\u044F \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430" });
+      res.json({ category: { id: rows[0].id }, archived: true });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u0441\u0442\u0430\u0442\u044C\u044E" });
+    }
+  });
+  const mapTax = (t) => ({
+    id: t.id,
+    name: t.name,
+    baseType: t.base_type,
+    rate: Number(t.rate) || 0,
+    fixedAmount: Number(t.fixed_amount) || 0,
+    period: t.period,
+    branchId: t.branch_id,
+    categoryId: t.category_id,
+    accountId: t.account_id,
+    isActive: t.is_active !== false,
+    comment: t.comment
+  });
+  app2.get("/api/mvp/accounting/taxes", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      const rows = await supabaseFetch("finance_taxes", `select=*&organization_id=eq.${session.organizationId}&order=created_at.desc`);
+      res.json({ taxes: rows.map(mapTax) });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u043D\u0430\u043B\u043E\u0433\u0438" });
+    }
+  });
+  app2.post("/api/mvp/accounting/taxes", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const p = req.body || {};
+    if (!String(p.name || "").trim()) return res.status(400).json({ error: "\u0423\u043A\u0430\u0436\u0438\u0442\u0435 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u043D\u0430\u043B\u043E\u0433\u0430" });
+    const baseType = ["revenue", "profit", "payroll", "fixed"].includes(p.baseType) ? p.baseType : "revenue";
+    const period = ["month", "quarter", "year"].includes(p.period) ? p.period : "month";
+    try {
+      const inserted = await supabaseFetch("finance_taxes", "", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: session.organizationId,
+          branch_id: p.branchId || null,
+          name: String(p.name).trim(),
+          base_type: baseType,
+          rate: Number(p.rate) || 0,
+          fixed_amount: Number(p.fixedAmount) || 0,
+          period,
+          category_id: p.categoryId || null,
+          account_id: p.accountId || null,
+          comment: p.comment || null
+        })
+      });
+      res.status(201).json({ tax: mapTax(inserted[0]) });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0437\u0434\u0430\u0442\u044C \u043D\u0430\u043B\u043E\u0433" });
+    }
+  });
+  app2.patch("/api/mvp/accounting/taxes/:id", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const p = req.body || {};
+    const patch = {};
+    if (p.name !== void 0) patch.name = String(p.name).trim();
+    if (p.baseType !== void 0) patch.base_type = ["revenue", "profit", "payroll", "fixed"].includes(p.baseType) ? p.baseType : "revenue";
+    if (p.rate !== void 0) patch.rate = Number(p.rate) || 0;
+    if (p.fixedAmount !== void 0) patch.fixed_amount = Number(p.fixedAmount) || 0;
+    if (p.period !== void 0) patch.period = ["month", "quarter", "year"].includes(p.period) ? p.period : "month";
+    if (p.categoryId !== void 0) patch.category_id = p.categoryId || null;
+    if (p.accountId !== void 0) patch.account_id = p.accountId || null;
+    if (p.isActive !== void 0) patch.is_active = Boolean(p.isActive);
+    if (p.comment !== void 0) patch.comment = p.comment || null;
+    if (Object.keys(patch).length === 0) return res.status(400).json({ error: "\u041D\u0435\u0442 \u043F\u043E\u043B\u0435\u0439 \u0434\u043B\u044F \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F" });
+    try {
+      const rows = await supabaseFetch("finance_taxes", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", body: JSON.stringify(patch) });
+      if (!rows[0]) return res.status(404).json({ error: "\u041D\u0430\u043B\u043E\u0433 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+      res.json({ tax: mapTax(rows[0]) });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u043D\u0430\u043B\u043E\u0433" });
+    }
+  });
+  app2.delete("/api/mvp/accounting/taxes/:id", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      await supabaseFetch("finance_taxes", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      res.json({ ok: true });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u043D\u0430\u043B\u043E\u0433" });
+    }
+  });
+  app2.post("/api/mvp/accounting/taxes/:id/pay", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const p = req.body || {};
+    try {
+      const found = await supabaseFetch("finance_taxes", `select=*&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`);
+      const tax = found[0];
+      if (!tax) return res.status(404).json({ error: "\u041D\u0430\u043B\u043E\u0433 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+      const amount = Number(p.amount) > 0 ? Number(p.amount) : Number(tax.fixed_amount) || 0;
+      if (!amount) return res.status(400).json({ error: "\u0423\u043A\u0430\u0436\u0438\u0442\u0435 \u0441\u0443\u043C\u043C\u0443 \u043D\u0430\u043B\u043E\u0433\u0430 \u043A \u043E\u043F\u043B\u0430\u0442\u0435" });
+      const op = await supabaseFetch("finance_transactions", "", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: session.organizationId,
+          branch_id: tax.branch_id,
+          account_id: p.accountId || tax.account_id || null,
+          category_id: tax.category_id || null,
+          amount,
+          type: "expense",
+          status: "actual",
+          operation_date: p.date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10),
+          description: `\u041D\u0430\u043B\u043E\u0433: ${tax.name}`
+        })
+      });
+      res.status(201).json({ operation: op[0] });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u0440\u043E\u0432\u0435\u0441\u0442\u0438 \u043D\u0430\u043B\u043E\u0433" });
+    }
+  });
+  const mapSpend = (s) => ({
+    id: s.id,
+    branchId: s.branch_id,
+    sourceId: s.source_id,
+    channel: s.channel,
+    periodMonth: s.period_month,
+    amount: Number(s.amount) || 0,
+    leads: Number(s.leads) || 0,
+    comment: s.comment
+  });
+  app2.get("/api/mvp/marketing/spend", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const q = req.query;
+    const filters = [`select=*`, `organization_id=eq.${session.organizationId}`, "order=period_month.desc"];
+    if (q.period) filters.push(`period_month=eq.${q.period}`);
+    try {
+      const rows = await supabaseFetch("marketing_spend", filters.join("&"));
+      res.json({ spend: rows.map(mapSpend) });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0440\u0435\u043A\u043B\u0430\u043C\u043D\u044B\u0435 \u0440\u0430\u0441\u0445\u043E\u0434\u044B" });
+    }
+  });
+  app2.post("/api/mvp/marketing/spend", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const p = req.body || {};
+    const amount = Number(p.amount);
+    if (!amount || amount <= 0) return res.status(400).json({ error: "\u0423\u043A\u0430\u0436\u0438\u0442\u0435 \u0441\u0443\u043C\u043C\u0443 \u0440\u0430\u0441\u0445\u043E\u0434\u0430" });
+    const period = String(p.periodMonth || (/* @__PURE__ */ new Date()).toISOString().slice(0, 7));
+    try {
+      const inserted = await supabaseFetch("marketing_spend", "", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: session.organizationId,
+          branch_id: p.branchId || null,
+          source_id: p.sourceId || null,
+          channel: p.channel || null,
+          period_month: period,
+          amount,
+          leads: Number(p.leads) || 0,
+          comment: p.comment || null
+        })
+      });
+      res.status(201).json({ spend: mapSpend(inserted[0]) });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C \u0440\u0430\u0441\u0445\u043E\u0434" });
+    }
+  });
+  app2.patch("/api/mvp/marketing/spend/:id", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const p = req.body || {};
+    const patch = {};
+    if (p.amount !== void 0) patch.amount = Number(p.amount) || 0;
+    if (p.leads !== void 0) patch.leads = Number(p.leads) || 0;
+    if (p.sourceId !== void 0) patch.source_id = p.sourceId || null;
+    if (p.channel !== void 0) patch.channel = p.channel || null;
+    if (p.periodMonth !== void 0) patch.period_month = String(p.periodMonth);
+    if (p.branchId !== void 0) patch.branch_id = p.branchId || null;
+    if (p.comment !== void 0) patch.comment = p.comment || null;
+    if (Object.keys(patch).length === 0) return res.status(400).json({ error: "\u041D\u0435\u0442 \u043F\u043E\u043B\u0435\u0439 \u0434\u043B\u044F \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F" });
+    try {
+      const rows = await supabaseFetch("marketing_spend", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "PATCH", body: JSON.stringify(patch) });
+      if (!rows[0]) return res.status(404).json({ error: "\u0417\u0430\u043F\u0438\u0441\u044C \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430" });
+      res.json({ spend: mapSpend(rows[0]) });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0440\u0430\u0441\u0445\u043E\u0434" });
+    }
+  });
+  app2.delete("/api/mvp/marketing/spend/:id", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    try {
+      await supabaseFetch("marketing_spend", `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      res.json({ ok: true });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u0440\u0430\u0441\u0445\u043E\u0434" });
     }
   });
   const mapExpenseReq = (r) => ({
@@ -6368,6 +6685,163 @@ function registerMvpApi(app2) {
       rows = await supabaseFetch("teacher_compensation", "", { method: "POST", body: JSON.stringify({ organization_id: session.organizationId, teacher_id: tid, ...payload }) });
     }
     res.json({ compensation: rows[0] ? compOut(rows[0]) : defaultComp() });
+  }));
+  app2.get("/api/mvp/teachers/:id/profile", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.json({ profile: null });
+    const rows = await supabaseFetch("teacher_profiles", `select=*&organization_id=eq.${session.organizationId}&teacher_id=eq.${req.params.id}&limit=1`);
+    const p = rows[0];
+    res.json({ profile: p ? { teacherId: p.teacher_id, category: p.category, birthDate: p.birth_date, hiredOn: p.hired_on, status: p.status, notes: p.notes } : null });
+  }));
+  app2.patch("/api/mvp/teachers/:id/profile", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const tid = req.params.id;
+    const p = req.body || {};
+    const payload = { updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+    if (p.category !== void 0) payload.category = p.category === null || p.category === "" ? null : Number(p.category);
+    if (p.birthDate !== void 0) payload.birth_date = p.birthDate || null;
+    if (p.hiredOn !== void 0) payload.hired_on = p.hiredOn || null;
+    if (p.status !== void 0) payload.status = p.status || "active";
+    if (p.notes !== void 0) payload.notes = p.notes || null;
+    const existing = await supabaseFetch("teacher_profiles", `select=teacher_id&organization_id=eq.${session.organizationId}&teacher_id=eq.${tid}&limit=1`);
+    let rows;
+    if (existing[0]) {
+      rows = await supabaseFetch("teacher_profiles", `teacher_id=eq.${tid}&organization_id=eq.${session.organizationId}`, { method: "PATCH", body: JSON.stringify(payload) });
+    } else {
+      rows = await supabaseFetch("teacher_profiles", "", { method: "POST", body: JSON.stringify({ teacher_id: tid, organization_id: session.organizationId, ...payload }) });
+    }
+    const r = rows[0] || {};
+    res.json({ profile: { teacherId: tid, category: r.category, birthDate: r.birth_date, hiredOn: r.hired_on, status: r.status, notes: r.notes } });
+  }));
+  app2.get("/api/mvp/teachers/:id/kpi", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.json({ kpi: [] });
+    const rows = await supabaseFetch("teacher_kpi", `select=*&organization_id=eq.${session.organizationId}&teacher_id=eq.${req.params.id}&order=period_month.desc`);
+    res.json({ kpi: rows.map((k) => ({ id: k.id, periodMonth: k.period_month, retention: Number(k.retention) || 0, funnel: Number(k.funnel) || 0, standards: Number(k.standards) || 0, reviewAvg: Number(k.review_avg) || 0, comment: k.comment })) });
+  }));
+  app2.post("/api/mvp/teachers/:id/kpi", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const tid = req.params.id;
+    const p = req.body || {};
+    const period = String(p.periodMonth || (/* @__PURE__ */ new Date()).toISOString().slice(0, 7));
+    const body = {
+      organization_id: session.organizationId,
+      teacher_id: tid,
+      period_month: period,
+      retention: Number(p.retention) || 0,
+      funnel: Number(p.funnel) || 0,
+      standards: Number(p.standards) || 0,
+      review_avg: Number(p.reviewAvg) || 0,
+      comment: p.comment || null
+    };
+    try {
+      const rows = await supabaseFetch("teacher_kpi", "", { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=representation" }, body: JSON.stringify(body) });
+      const k = rows[0] || body;
+      res.status(201).json({ kpi: { id: k.id, periodMonth: period, retention: Number(k.retention) || 0, funnel: Number(k.funnel) || 0, standards: Number(k.standards) || 0, reviewAvg: Number(k.review_avg) || 0, comment: k.comment } });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C KPI" });
+    }
+  }));
+  app2.get("/api/mvp/teachers/:id/reviews", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.json({ reviews: [] });
+    const rows = await supabaseFetch("teacher_reviews", `select=*&organization_id=eq.${session.organizationId}&teacher_id=eq.${req.params.id}&order=created_at.desc`);
+    res.json({ reviews: rows.map((r) => ({ id: r.id, author: r.author, source: r.source, stars: r.stars, text: r.text, createdAt: r.created_at })) });
+  }));
+  app2.post("/api/mvp/teachers/:id/reviews", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const p = req.body || {};
+    const stars = Math.max(1, Math.min(5, Number(p.stars) || 5));
+    const inserted = await supabaseFetch("teacher_reviews", "", {
+      method: "POST",
+      body: JSON.stringify({ organization_id: session.organizationId, teacher_id: req.params.id, author: p.author || "\u0410\u043D\u043E\u043D\u0438\u043C", source: p.source || "\u041B\u0438\u0447\u043D\u044B\u0439 \u043A\u0430\u0431\u0438\u043D\u0435\u0442", stars, text: p.text || null })
+    });
+    const r = inserted[0];
+    res.status(201).json({ review: { id: r.id, author: r.author, source: r.source, stars: r.stars, text: r.text, createdAt: r.created_at } });
+  }));
+  app2.delete("/api/mvp/teachers/:id/reviews/:rid", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    await supabaseFetch("teacher_reviews", `id=eq.${req.params.rid}&organization_id=eq.${session.organizationId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+    res.json({ ok: true });
+  }));
+  app2.get("/api/mvp/teachers/:id/attestations", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.json({ attestations: [] });
+    const rows = await supabaseFetch("teacher_attestations", `select=*&organization_id=eq.${session.organizationId}&teacher_id=eq.${req.params.id}&order=att_date.desc`);
+    res.json({ attestations: rows.map((a) => ({ id: a.id, date: a.att_date, direction: a.direction, result: a.result, mark: a.mark, note: a.note })) });
+  }));
+  app2.post("/api/mvp/teachers/:id/attestations", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const p = req.body || {};
+    const inserted = await supabaseFetch("teacher_attestations", "", {
+      method: "POST",
+      body: JSON.stringify({ organization_id: session.organizationId, teacher_id: req.params.id, att_date: p.date || null, direction: p.direction || null, result: p.result || null, mark: p.mark || null, note: p.note || null })
+    });
+    const a = inserted[0];
+    res.status(201).json({ attestation: { id: a.id, date: a.att_date, direction: a.direction, result: a.result, mark: a.mark, note: a.note } });
+  }));
+  app2.delete("/api/mvp/teachers/:id/attestations/:aid", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    await supabaseFetch("teacher_attestations", `id=eq.${req.params.aid}&organization_id=eq.${session.organizationId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+    res.json({ ok: true });
+  }));
+  app2.get("/api/mvp/teachers/:id/standards", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.json({ standards: [] });
+    const rows = await supabaseFetch("teacher_standards", `select=*&organization_id=eq.${session.organizationId}&teacher_id=eq.${req.params.id}&order=sort.asc`);
+    res.json({ standards: rows.map((s) => ({ id: s.id, title: s.title, detail: s.detail, state: s.state, sort: s.sort })) });
+  }));
+  app2.post("/api/mvp/teachers/:id/standards", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const p = req.body || {};
+    if (!String(p.title || "").trim()) return res.status(400).json({ error: "\u0423\u043A\u0430\u0436\u0438\u0442\u0435 \u0441\u0442\u0430\u043D\u0434\u0430\u0440\u0442" });
+    const inserted = await supabaseFetch("teacher_standards", "", {
+      method: "POST",
+      body: JSON.stringify({ organization_id: session.organizationId, teacher_id: req.params.id, title: String(p.title).trim(), detail: p.detail || null, state: ["y", "p", "n"].includes(p.state) ? p.state : "n", sort: Number(p.sort) || 0 })
+    });
+    const s = inserted[0];
+    res.status(201).json({ standard: { id: s.id, title: s.title, detail: s.detail, state: s.state, sort: s.sort } });
+  }));
+  app2.patch("/api/mvp/teachers/:id/standards/:sid", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const p = req.body || {};
+    const patch = { updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+    if (p.title !== void 0) patch.title = String(p.title).trim();
+    if (p.detail !== void 0) patch.detail = p.detail || null;
+    if (p.state !== void 0) patch.state = ["y", "p", "n"].includes(p.state) ? p.state : "n";
+    if (p.sort !== void 0) patch.sort = Number(p.sort) || 0;
+    const rows = await supabaseFetch("teacher_standards", `id=eq.${req.params.sid}&organization_id=eq.${session.organizationId}`, { method: "PATCH", body: JSON.stringify(patch) });
+    if (!rows[0]) return res.status(404).json({ error: "\u0421\u0442\u0430\u043D\u0434\u0430\u0440\u0442 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+    const s = rows[0];
+    res.json({ standard: { id: s.id, title: s.title, detail: s.detail, state: s.state, sort: s.sort } });
+  }));
+  app2.delete("/api/mvp/teachers/:id/standards/:sid", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    await supabaseFetch("teacher_standards", `id=eq.${req.params.sid}&organization_id=eq.${session.organizationId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+    res.json({ ok: true });
   }));
   app2.post("/api/mvp/teachers/:id/payouts", ah(async (req, res) => {
     const session = getSession(req);
