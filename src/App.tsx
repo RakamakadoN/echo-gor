@@ -3103,26 +3103,8 @@ export default function App() {
 
       {/* Top Header */}
       <header className="h-16 flex items-center justify-between px-4 md:px-6 border-b border-white/5 bg-[#121212] flex-shrink-0">
-        <div className="flex items-center space-x-3">
-          {/* Logo badge */}
-          <img
-            src={logoImg}
-            alt="Эхо Гор Лого"
-            className="w-11 h-11 object-contain rounded-lg flex-shrink-0 border border-white/5"
-            referrerPolicy="no-referrer"
-          />
-          <div>
-            <h1 className="text-sm md:text-base font-bold tracking-wider uppercase text-white leading-tight flex items-center gap-2">
-              Эхо <span className="text-[#C5A059]">Гор</span>
-            </h1>
-            <p className="hidden md:block text-[10px] text-slate-500 uppercase tracking-widest leading-none">
-              Студия кавказского танца
-            </p>
-          </div>
-        </div>
-
-        {/* Middle quick simulator bar */}
-        <div className="mx-2 flex min-w-0 items-center space-x-2 overflow-x-auto bg-white/5 p-1 rounded-xl border border-white/10 max-h-11">
+        {/* Верхняя полоса: только «Эмуляция роли» (остальное убрано по ТЗ). */}
+        <div className="mx-auto flex min-w-0 items-center space-x-2 overflow-x-auto bg-white/5 p-1 rounded-xl border border-white/10 max-h-11">
           <span className="hidden lg:inline text-[10px] text-slate-400 font-semibold px-2 uppercase tracking-wide whitespace-nowrap">
             Эмуляция роли:
           </span>
@@ -3152,51 +3134,8 @@ export default function App() {
           </div>
         </div>
 
-        {/* Right Status */}
-        <div className="hidden xl:flex items-center space-x-4">
-          <button
-            onClick={() => {
-              setIsMobileSimulatorOpen(!isMobileSimulatorOpen);
-              if (!isMobileSimulatorOpen) {
-                setMobileAuthStep("welcome");
-              }
-              addAuditLog("Симулятор Мобилки", isMobileSimulatorOpen ? "Симулятор закрыт" : "Симулятор запущен");
-            }}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all outline-none ${
-              isMobileSimulatorOpen 
-                ? "bg-[#C5A059] text-black shadow-lg shadow-[#C5A059]/20" 
-                : "bg-white/5 border border-white/10 hover:bg-[#C5A059]/20 hover:text-[#C5A059] text-slate-300"
-            }`}
-            title="Переключить в симулятор мобильного кабинета"
-          >
-            <Smartphone className="w-3.5 h-3.5" />
-            <span>{isMobileSimulatorOpen ? "Закрыть симулятор" : "Мобильная версия"}</span>
-          </button>
-
-          {/* Active user dummy */}
-          <div className="flex items-center space-x-2">
-            <div className="text-right">
-              <p className="text-xs font-bold text-white line-clamp-1">дияс.рф</p>
-              <p className="text-[10px] text-[#C5A059] uppercase tracking-tighter">
-                {roles.find((r) => r.id === activeRole)?.badge || "Сотрудник"}
-              </p>
-            </div>
-            <div className="w-8 h-8 rounded-full border border-[#C5A059] bg-[#161616] flex items-center justify-center text-xs font-bold text-[#C5A059]">
-              Д
-            </div>
-          </div>
-        </div>
-
-        {/* Mobile menu trigger */}
+        {/* Мобильное меню (только на узких экранах) */}
         <div className="flex items-center gap-2 xl:hidden">
-          <button
-            type="button"
-            onClick={() => setThemeMode((current) => current === "dark" ? "day" : current === "day" ? "iman" : "dark")}
-            className="p-2 text-slate-400 hover:text-white rounded-xl bg-white/5 border border-white/10"
-            title={`Тема: ${themeMode === "day" ? "Дневная" : themeMode === "iman" ? "Iman Ver 1.0" : "Ночная"} — нажмите, чтобы сменить`}
-          >
-            {themeMode === "day" ? <Sun className="w-5 h-5" /> : themeMode === "iman" ? <Sparkles className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-          </button>
           <button
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             className="lg:hidden p-2 text-slate-400 hover:text-white"
