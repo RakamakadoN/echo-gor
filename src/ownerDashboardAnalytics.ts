@@ -433,9 +433,20 @@ export function computeOwnerDashboard(
   const renewals = { d3: exp3.length, d7: exp7.length, d14: exp14.length };
 
   // --- новые ученики ---
+  // «Новый ученик» = появился в периоде И совершил целевое действие в этом же
+  // периоде: продан абонемент ИЛИ записан пробный урок (ТЗ заказчика). Просто
+  // новый лид (создан, но без абонемента и без пробного) новым НЕ считается.
+  const soldInRange = (s: Student) => (s.subscriptions || []).some((sub) => {
+    if (sub.status === "deleted") return false;
+    const sold = (sub.soldOn || sub.startsOn || "").slice(0, 10);
+    return Boolean(sold) && inRange(sold, ranges.cur);
+  });
+  const trialMarkInRange = (s: Student) => Object.values(s.attendance || {}).some((a: any) =>
+    Boolean(a) && (Boolean(a.isTrial) || a.status === "trial") && inRange(String(a.date || "").slice(0, 10), ranges.cur));
+  const isNewInRange = (s: Student) => soldInRange(s) || trialMarkInRange(s);
   const hasCreated = students.some((s) => s.createdAt);
-  const newPeriodStudents = students.filter((s) => s.createdAt && inRange(s.createdAt.slice(0, 10), ranges.cur));
-  const newTodayStudents = students.filter((s) => s.createdAt && s.createdAt.slice(0, 10) === todayStr);
+  const newPeriodStudents = students.filter((s) => s.createdAt && inRange(s.createdAt.slice(0, 10), ranges.cur) && isNewInRange(s));
+  const newTodayStudents = students.filter((s) => s.createdAt && s.createdAt.slice(0, 10) === todayStr && isNewInRange(s));
   const newPeriod = newPeriodStudents.length;
   const newToday = newTodayStudents.length;
 
