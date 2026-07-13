@@ -2624,11 +2624,11 @@ export default function App() {
           <img
             src={echoLogo}
             alt="ЭХОГОР — студия кавказского танца"
-            className="pointer-events-none absolute z-[5] left-1/2 top-[clamp(20px,4vw,44px)] w-[clamp(190px,52vw,300px)] -translate-x-1/2 drop-shadow-[0_6px_24px_rgba(0,0,0,0.5)] md:left-[clamp(28px,4vw,56px)] md:translate-x-0"
+            className="login-fade-a pointer-events-none absolute z-[5] left-1/2 top-[clamp(20px,4vw,44px)] w-[clamp(190px,52vw,300px)] -translate-x-1/2 drop-shadow-[0_6px_24px_rgba(0,0,0,0.5)] md:left-[clamp(28px,4vw,56px)] md:translate-x-0"
           />
 
           {/* Тэглайн «Сила | Честь | Традиции» — живой вёрсткой: снизу по центру / слева на десктопе. */}
-          <div className="pointer-events-none absolute z-[5] bottom-[clamp(20px,4vw,44px)] left-1/2 flex -translate-x-1/2 items-center gap-[0.55rem] whitespace-nowrap text-[clamp(14px,3.3vw,18px)] font-extrabold uppercase tracking-[0.14em] drop-shadow-[0_2px_10px_rgba(0,0,0,0.6)] md:left-[clamp(28px,4vw,56px)] md:translate-x-0">
+          <div className="login-fade-b pointer-events-none absolute z-[5] bottom-[clamp(20px,4vw,44px)] left-1/2 flex -translate-x-1/2 items-center gap-[0.55rem] whitespace-nowrap text-[clamp(14px,3.3vw,18px)] font-extrabold uppercase tracking-[0.14em] drop-shadow-[0_2px_10px_rgba(0,0,0,0.6)] md:left-[clamp(28px,4vw,56px)] md:translate-x-0">
             <span className="text-[#8FB4C9]">Сила</span>
             <span className="font-medium text-white/35">|</span>
             <span className="text-[#C5A059]">Честь</span>
@@ -2642,7 +2642,7 @@ export default function App() {
             <form
               onSubmit={handleDesktopLogin}
               noValidate
-              className="my-auto w-full max-w-[400px] rounded-[24px] border border-white/10 bg-[#0E1420]/90 p-6 shadow-[0_30px_80px_-20px_rgba(0,0,0,0.85)] backdrop-blur-xl sm:rounded-[28px] sm:p-8"
+              className="login-form-in my-auto w-full max-w-[400px] rounded-[24px] border border-white/10 bg-[#0E1420]/90 p-6 shadow-[0_30px_80px_-20px_rgba(0,0,0,0.85)] backdrop-blur-xl sm:rounded-[28px] sm:p-8"
             >
               <div className="mb-6 text-center">
                 <h2 className="text-[26px] font-black tracking-tight text-white sm:text-[28px]">Добро пожаловать!</h2>

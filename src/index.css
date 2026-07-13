@@ -29,9 +29,38 @@
   box-shadow: 0 10px 26px rgba(17, 23, 29, 0.10) !important;
 }
 
+/* Ступенчатое появление карточек в сетках дашборда (первые 8 — с нарастающей
+   задержкой, дальше все одновременно, чтобы длинные списки не «ползли» долго). */
+.owner-tab-view [class*="grid-cols"] > * {
+  animation: owner-tab-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.owner-tab-view [class*="grid-cols"] > *:nth-child(1) { animation-delay: 0.02s; }
+.owner-tab-view [class*="grid-cols"] > *:nth-child(2) { animation-delay: 0.06s; }
+.owner-tab-view [class*="grid-cols"] > *:nth-child(3) { animation-delay: 0.10s; }
+.owner-tab-view [class*="grid-cols"] > *:nth-child(4) { animation-delay: 0.14s; }
+.owner-tab-view [class*="grid-cols"] > *:nth-child(5) { animation-delay: 0.18s; }
+.owner-tab-view [class*="grid-cols"] > *:nth-child(6) { animation-delay: 0.22s; }
+.owner-tab-view [class*="grid-cols"] > *:nth-child(7) { animation-delay: 0.26s; }
+.owner-tab-view [class*="grid-cols"] > *:nth-child(8) { animation-delay: 0.30s; }
+
+/* Микро-отклик нажатия: кнопка слегка «вдавливается». */
+:root.day-theme .day-theme-app button:active {
+  transform: translateY(1px) scale(0.985);
+}
+
+/* ── Анимация входа: логотип и тэглайн мягко проявляются, форма приподнимается ── */
+@keyframes login-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes login-rise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
+.login-fade-a { animation: login-fade 0.9s ease 0.10s both; }
+.login-fade-b { animation: login-fade 0.9s ease 0.35s both; }
+.login-form-in { animation: login-rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.20s both; }
+
 @media (prefers-reduced-motion: reduce) {
-  .owner-tab-view { animation: none; }
+  .owner-tab-view,
+  .owner-tab-view [class*="grid-cols"] > *,
+  .login-fade-a, .login-fade-b, .login-form-in { animation: none; }
   :root.day-theme .day-theme-app * { transition: none !important; }
+  :root.day-theme .day-theme-app button:active { transform: none; }
   :root.day-theme .day-theme-app [class*="cursor-pointer"]:hover { transform: none; }
 }
 
