@@ -59,6 +59,20 @@
 @keyframes login-out { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(1.04); } }
 .login-exit { animation: login-out 0.46s cubic-bezier(0.4, 0, 1, 1) both; }
 
+/* Спарклайны: бары «вырастают» снизу при появлении (со ступенчатой задержкой). */
+@keyframes spark-grow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+.spark-bar { transform-origin: bottom; animation: spark-grow 0.55s cubic-bezier(0.22, 1, 0.36, 1) both; }
+@media (prefers-reduced-motion: reduce) { .spark-bar { animation: none; } }
+
+/* Акцентная карточка (дневная тема): тёплый градиент + мягкое золотое свечение,
+   чтобы ключевой блок выделялся среди белых карточек. Своя специфичность —
+   не перебивается общим правилом «тёмная карточка → белая». */
+:root.day-theme .day-theme-app .accent-card {
+  background: linear-gradient(135deg, #FFFFFF 0%, #FBF7EF 55%, #F6EEDD 100%) !important;
+  border-color: rgba(148, 124, 81, 0.30) !important;
+  box-shadow: 0 12px 34px rgba(148, 124, 81, 0.14) !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .owner-tab-view,
   .owner-tab-view [class*="grid-cols"] > *,

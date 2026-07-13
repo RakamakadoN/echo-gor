@@ -1010,6 +1010,22 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
           onOpenList={openList} onPayments={openPaymentsToday} onRetention={openRetention} onAvgCheck={openAvgCheck} onBdr={openBdr} />
       </CollapsibleSection>
 
+      {/* КЛЮЧЕВЫЕ ПРОЦЕНТЫ — кольца прогресса (акцентная карточка с тёплым градиентом) */}
+      <div className="accent-card rounded-[2rem] border border-[#C5A059]/25 p-5 md:p-6">
+        <div className="flex items-center gap-3">
+          <div className="rounded-2xl bg-[#C5A059] p-2.5 text-black"><LineChart className="h-5 w-5" /></div>
+          <div className="min-w-0">
+            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">Ключевые проценты</p>
+            <p className="mt-1 text-sm text-slate-400">Заполненность · удержание · выполнение плана БДР</p>
+          </div>
+        </div>
+        <div className="mt-5 grid grid-cols-3 gap-4">
+          <ProgressRing pct={m.occupancy.pct} label="Заполненность" color="#5E8194" />
+          <ProgressRing pct={m.retention.pct} label="Удержание" color="#4F8A63" />
+          <ProgressRing pct={bdr?.network?.pct ?? null} label="План БДР" color="#947C51" />
+        </div>
+      </div>
+
       {/* ТРЕБУЮТ РЕШЕНИЯ: заявки на расходы/возвраты + необработанные пробные */}
       <CollapsibleSection id="decisions" icon={CheckCircle} title="Требуют решения" hint="Заявки филиалов и вчерашние пробные"
         locked open={sectionOpen("decisions")} onToggle={() => toggleSection("decisions")}>
@@ -1515,7 +1531,7 @@ function BigKpi({ label, value, rows, tone = "gold", onClick }: { label: string;
 
 // «Набегающее» число: плавно считает от 0 до target при появлении (easeOutCubic).
 // format форматирует ТЕКУЩЕЕ значение (деньги/проценты/штуки). Уважает reduce-motion.
-function CountUp({ to, format, durationMs = 900 }: { to: number; format?: (n: number) => string; durationMs?: number }) {
+function CountUp({ to, format, durationMs = 1500 }: { to: number; format?: (n: number) => string; durationMs?: number }) {
   const [val, setVal] = useState(0);
   const raf = useRef<number | null>(null);
   useEffect(() => {
@@ -1546,9 +1562,51 @@ function Sparkbars({ series, color }: { series: number[]; color: string }) {
   return (
     <div className="mt-3 flex h-9 items-end gap-[3px]">
       {data.map((v, i) => (
-        <div key={i} className="flex-1 rounded-t-[3px]"
-          style={{ height: `${Math.max(6, Math.round((v / max) * 100))}%`, backgroundColor: color, opacity: 0.35 + 0.65 * (v / max) }} />
+        <div key={i} className="spark-bar flex-1 rounded-t-[3px]"
+          style={{ height: `${Math.max(6, Math.round((v / max) * 100))}%`, backgroundColor: color, opacity: 0.35 + 0.65 * (v / max), animationDelay: `${i * 45}ms` }} />
       ))}
+    </div>
+  );
+}
+
+// Кольцо прогресса: анимированное SVG-кольцо + число в центре (count-up).
+// pct = null → показываем «—». color задаёт цвет дуги.
+function ProgressRing({ pct, label, color, size = 92 }: { pct: number | null; label: string; color: string; size?: number }) {
+  const stroke = 8;
+  const r = (size - stroke) / 2;
+  const circ = 2 * Math.PI * r;
+  const real = pct === null ? 0 : Math.max(0, pct);           // реальное число (может быть >100)
+  const arcTarget = Math.min(100, real);                       // дуга упирается в 100%
+  const [frac, setFrac] = useState(0);                         // прогресс анимации 0→1
+  useEffect(() => {
+    const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) { setFrac(1); return; }
+    let start = 0; let raf = 0;
+    const tick = (now: number) => {
+      if (!start) start = now;
+      const t = Math.min(1, (now - start) / 1500);
+      setFrac(1 - Math.pow(1 - t, 3));
+      if (t < 1) raf = requestAnimationFrame(tick); else setFrac(1);
+    };
+    raf = requestAnimationFrame(tick);
+    const guard = window.setTimeout(() => setFrac(1), 1600);
+    return () => { cancelAnimationFrame(raf); window.clearTimeout(guard); };
+  }, [real]);
+  const arc = arcTarget * frac;      // заполнение дуги (0..100)
+  const centerNum = real * frac;     // число в центре (реальное, до 106% и т.п.)
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div className="relative" style={{ width: size, height: size }}>
+        <svg width={size} height={size} className="-rotate-90">
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="currentColor" strokeWidth={stroke} className="text-black/10" />
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeLinecap="round"
+            strokeDasharray={circ} strokeDashoffset={circ - (arc / 100) * circ} />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center text-lg font-black" style={{ color }}>
+          {pct === null ? "—" : `${Math.round(centerNum)}%`}
+        </div>
+      </div>
+      <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</span>
     </div>
   );
 }
