@@ -3436,10 +3436,6 @@ export default function App() {
               Сбросить демо-данные
             </button>
           </div>
-          <div className="border-t border-white/5 px-5 py-4">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#C5A059]" style={{ fontFamily: "'Oswald', sans-serif" }}>Культура · Сила · Характер</div>
-            <div className="mt-1.5 text-xs leading-relaxed text-slate-400">Казахстан · обучаем от 5 лет</div>
-          </div>
         </aside>
         )}
 

@@ -312,7 +312,35 @@ export function OwnerExecutiveWorkspace({
   journal,
   onJournalTask,
 }: OwnerExecutiveWorkspaceProps) {
-  const [activeTab, setActiveTab] = useState<OwnerTab>("dashboard");
+  // Активная вкладка синхронизирована с адресом браузера (#dashboard, #students…),
+  // чтобы кнопка «назад» возвращала на предыдущую вкладку, а не выкидывала с сайта.
+  const [activeTab, setActiveTab] = useState<OwnerTab>(() => {
+    if (typeof window === "undefined") return "dashboard";
+    const h = window.location.hash.replace(/^#/, "");
+    return ownerTabs.some((t) => t.id === h) ? (h as OwnerTab) : "dashboard";
+  });
+  // true → смена вкладки пришла от «назад/вперёд» браузера; тогда новую запись
+  // в историю не добавляем (иначе история зациклится).
+  const fromPopState = useRef(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (fromPopState.current) { fromPopState.current = false; return; }
+    const target = `#${activeTab}`;
+    if (window.location.hash !== target) {
+      window.history.pushState({ ownerTab: activeTab }, "", target);
+    }
+  }, [activeTab]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onPop = () => {
+      const h = window.location.hash.replace(/^#/, "");
+      const tab = ownerTabs.some((t) => t.id === h) ? (h as OwnerTab) : "dashboard";
+      fromPopState.current = true;
+      setActiveTab(tab);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
   // Настройки разделов от Владельца (переименование/видимость/порядок/акцент/роли/описание).
   const sectionSettings = useOwnerSectionSettings(ownerTabs);
   const [settingsForTab, setSettingsForTab] = useState<OwnerTab | null>(null);
@@ -376,11 +404,6 @@ export function OwnerExecutiveWorkspace({
               />
             ))}
           </nav>
-          {/* Ценности (референс .eg-values) */}
-          <div className="border-t border-white/5 px-5 py-4">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#C5A059]" style={{ fontFamily: "'Oswald', sans-serif" }}>Культура · Сила · Характер</div>
-            <div className="mt-1.5 text-xs leading-relaxed text-slate-400">Казахстан · обучаем от 5 лет</div>
-          </div>
         </aside>
 
         <main className="min-w-0 flex-1 px-4 pb-24 pt-4 md:px-6 md:pt-6 lg:pb-8">
@@ -420,6 +443,9 @@ export function OwnerExecutiveWorkspace({
             </div>
           </div>
 
+          {/* key=activeTab → контейнер перемонтируется при смене вкладки и
+              заново проигрывает мягкую анимацию появления (см. .owner-tab-view). */}
+          <div key={activeTab} className="owner-tab-view">
           {activeTab === "dashboard" && (
             <OwnerDashboard
               rawBranches={branches}
@@ -490,6 +516,7 @@ export function OwnerExecutiveWorkspace({
           {activeTab === "aihub" && <AiHubView roleHeader="owner" />}
           {activeTab === "marketing" && <MarketingView studentArchive={studentArchive} branches={branches} />}
           {activeTab === "settings" && <NetworkSettingsView branches={branches} teachers={teachers} subscriptionPlans={subscriptionPlans} onCreatePlan={onCreatePlan} onUpdatePlan={onUpdatePlan} onDeletePlan={onDeletePlan} />}
+          </div>
         </main>
       </div>
 
