@@ -100,6 +100,39 @@ context=${JSON.stringify(context ?? {})}`;
     }
   });
 
+  // Сводка дня для педагога: краткий план на сегодня + рекомендации.
+  app.post("/api/gemini/teacher-daily-briefing", async (req, res) => {
+    if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });
+    const { teacherName, weekday, groupsCount, schedule, newStudents, totalLessonsYear } = req.body || {};
+    const prompt = `Ты — заботливый наставник-куратор школы кавказского танца «Эхо Гор». Составь короткую тёплую сводку дня для преподавателя. Верни СТРОГО JSON по схеме:
+{"summary": string, "recommendations": string[]}
+Пиши по-русски, на «вы», живо и по делу. summary — 1-2 предложения обзора дня (сколько групп, график, новенькие по именам, если есть). recommendations — 2-4 коротких практичных совета на день (подготовка, внимание к новичкам, дисциплина, настрой). Не повторяй цифры дословно из данных — говори человечно.
+data=${JSON.stringify({ teacherName, weekday, groupsCount, schedule, newStudents, totalLessonsYear })}`;
+    try {
+      res.json(await generateJson(prompt));
+    } catch (e: any) {
+      res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
+
+  // Персональное поздравление ученика с днём рождения (кабинет педагога).
+  // Педагог выбирает ученика → получает тёплый текст → отправляет в WhatsApp.
+  app.post("/api/gemini/birthday-greeting", async (req, res) => {
+    if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });
+    const { studentName, age, groupName, teacherName, achievements, tone } = req.body || {};
+    const prompt = `Ты — преподаватель школы кавказского танца «Эхо Гор». Напиши тёплое личное поздравление ученику с днём рождения от лица педагога. Верни СТРОГО JSON по схеме:
+{"message": string}
+Пиши по-русски, от первого лица (я, педагог), обращайся к ученику по имени на «ты» если ребёнок. 2-4 предложения, искренне, с уважением к ценностям школы (характер, дисциплина, культура). Без хэштегов и эмодзи-спама (максимум 1-2 уместных эмодзи). Упомяни танец/успехи, если уместно.
+student=${JSON.stringify({ studentName, age, groupName, achievements })}
+teacher=${JSON.stringify({ teacherName })}
+tone=${JSON.stringify(tone ?? "тёплый, личный")}`;
+    try {
+      res.json(await generateJson(prompt));
+    } catch (e: any) {
+      res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
+
   // Competition readiness consultation for a group.
   app.post("/api/gemini/competition-consult", async (req, res) => {
     if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });
