@@ -65,6 +65,8 @@ import {
   Bot,
   X
 } from "lucide-react";
+import ownerLogoDay from "../assets/images/logo_sidebar_day.png";
+import ownerLogoNight from "../assets/images/logo_sidebar_night.png";
 import { Announcement, AnnouncementAudience, Branch, Competition, ExecutiveSummary, Group, Payment, Student, SubscriptionPlan, Teacher, LeadSource, WaitlistEntry } from "../types";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell,
@@ -356,17 +358,13 @@ export function OwnerExecutiveWorkspace({
     <div className="min-h-full bg-[#080808] text-slate-200">
       <div className="mx-auto flex max-w-[1560px] gap-0 lg:gap-5">
         <aside className={`sticky top-0 hidden h-[calc(100vh-64px)] w-64 shrink-0 flex-col border-r border-white/5 bg-[#0F0F0F] ${navCollapsed ? "lg:hidden" : "lg:flex"}`}>
-          {/* Лого-бокс (референс .eg-logo-box) */}
-          <div className="border-b border-white/5 px-5 py-5">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#C5A059] text-black">
-                <Crown className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">Владелец сети</p>
-                <h2 className="text-lg font-black leading-tight text-white" style={{ fontFamily: "'Oswald', sans-serif" }}>ЭХО ГОР</h2>
-              </div>
-            </div>
+          {/* Лого-бокс (референс .eg-logo-box): фирменный логотип ЭХОГОР.
+              Тёмный вариант (тёмные буквы) для светлой темы, светлый — для тёмной.
+              Переключение через CSS-классы day-logo/night-logo в index.css. */}
+          <div className="border-b border-white/5 px-6 py-5">
+            <img src={ownerLogoDay} alt="Эхо Гор" className="day-logo w-full max-w-[168px]" />
+            <img src={ownerLogoNight} alt="Эхо Гор" className="night-logo w-full max-w-[168px]" />
+            <p className="mt-2 text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">Владелец сети</p>
           </div>
           {/* Навигация (референс .nav) — прокручиваемая */}
           <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
