@@ -143,6 +143,21 @@
   color: #7E6840 !important;
 }
 
+/* ---- Active sidebar item — reference .sidebar-item.active: neutral grey
+   fill + INK text (no gold), bold. Overrides the gold remap above and the
+   component's inline gold colour on the label/icon (stylesheet !important
+   beats a non-important inline style). Scoped to the aside nav so the rest
+   of the app's gold accents are untouched. Dark theme keeps its gold. ---- */
+:root.day-theme .day-theme-app aside nav [class*="bg-[#C5A059]/"] {
+  background-color: #ECF0F4 !important;
+  border-color: transparent !important;
+  color: #11171D !important;
+}
+:root.day-theme .day-theme-app aside nav [class*="bg-[#C5A059]/"] span,
+:root.day-theme .day-theme-app aside nav [class*="bg-[#C5A059]/"] svg {
+  color: #11171D !important;
+}
+
 /* ---- Tables — reference table look (inset thead, hairline rows) ---- */
 :root.day-theme .day-theme-app table thead th {
   background-color: #F1F4F7 !important;
