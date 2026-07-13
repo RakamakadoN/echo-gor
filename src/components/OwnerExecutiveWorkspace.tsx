@@ -1531,7 +1531,10 @@ function CountUp({ to, format, durationMs = 900 }: { to: number; format?: (n: nu
       else setVal(to);
     };
     raf.current = requestAnimationFrame(tick);
-    return () => { if (raf.current) cancelAnimationFrame(raf.current); };
+    // Страховка: если rAF затормозит (фоновая вкладка/headless), точное значение
+    // всё равно выставится по таймеру — цифра никогда не «застрянет» неверной.
+    const guard = window.setTimeout(() => setVal(to), durationMs + 80);
+    return () => { if (raf.current) cancelAnimationFrame(raf.current); window.clearTimeout(guard); };
   }, [to, durationMs]);
   return <>{format ? format(val) : String(Math.round(val))}</>;
 }
