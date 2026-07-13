@@ -469,17 +469,17 @@ export function computeOwnerDashboard(
     // Записан на пробный, но отметки в журнале ещё нет — считаем по дате создания.
     if (s.status === "trial" && s.createdAt && inRange(s.createdAt.slice(0, 10), ranges.cur)) signedSet.add(s.id);
   });
-  const firstPurchaseInRange = (s: Student) => {
-    const dates = (s.subscriptions || [])
-      .filter((sub) => sub.status !== "deleted")
-      .map((sub) => (sub.soldOn || sub.startsOn || "").slice(0, 10))
-      .filter(Boolean)
-      .sort();
-    return dates.length > 0 && inRange(dates[0], ranges.cur);
-  };
+  const boughtInRange = (s: Student) => (s.subscriptions || []).some((sub) => {
+    if (sub.status === "deleted") return false;
+    const sold = (sub.soldOn || sub.startsOn || "").slice(0, 10);
+    return Boolean(sold) && inRange(sold, ranges.cur);
+  });
   const signed = signedSet.size;
   const came = cameSet.size;
-  const bought = students.filter(firstPurchaseInRange).length;
+  // «Купили» в воронке = пришедшие на пробный и купившие абонемент в этом же
+  // периоде (путь пробного). Купившие БЕЗ пробного сюда не входят — иначе
+  // конверсия пришёл→купил превышала бы 100%; они видны в «Продажах».
+  const bought = students.filter((s) => cameSet.has(s.id) && boughtInRange(s)).length;
   const month = {
     signed, came, bought,
     convCame: signed ? Math.round((came / signed) * 100) : null,
@@ -762,13 +762,15 @@ export function computeOwnerDashboard(
   const ltvBase = students.filter((s) =>
     s.status !== "left" && s.status !== "archived" && !(s as any).archivedAt &&
     s.status !== "lead" && s.status !== "trial");
+  // Границы по фактическому числу месяцев обучения (getEnrollmentMonths): срок
+  // 8 мес → бакет «7–8», 6 мес → «5–6» (раньше границы были сдвинуты на месяц).
   const LTV_BUCKETS: { key: string; label: string; match: (mo: number) => boolean }[] = [
-    { key: "1-2", label: "1–2 мес", match: (mo) => mo <= 1 },      // 0–1 полный месяц = занимается 1–2-й месяц
-    { key: "3-4", label: "3–4 мес", match: (mo) => mo >= 2 && mo <= 3 },
-    { key: "5-6", label: "5–6 мес", match: (mo) => mo >= 4 && mo <= 5 },
-    { key: "7-8", label: "7–8 мес", match: (mo) => mo >= 6 && mo <= 7 },
-    { key: "9-12", label: "9–12 мес", match: (mo) => mo >= 8 && mo <= 11 },
-    { key: "12+", label: "Больше года", match: (mo) => mo >= 12 },
+    { key: "1-2", label: "1–2 мес", match: (mo) => mo <= 2 },
+    { key: "3-4", label: "3–4 мес", match: (mo) => mo >= 3 && mo <= 4 },
+    { key: "5-6", label: "5–6 мес", match: (mo) => mo >= 5 && mo <= 6 },
+    { key: "7-8", label: "7–8 мес", match: (mo) => mo >= 7 && mo <= 8 },
+    { key: "9-12", label: "9–12 мес", match: (mo) => mo >= 9 && mo <= 12 },
+    { key: "12+", label: "Больше года", match: (mo) => mo > 12 },
   ];
   const ltvBuckets = LTV_BUCKETS.map((b) => ({ key: b.key, label: b.label, count: 0, ids: [] as string[] }));
   let ltvMonthsSum = 0;
