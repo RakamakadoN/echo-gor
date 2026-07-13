@@ -13,6 +13,7 @@ import AttendanceJournalView from './AttendanceJournalView';
 import { EchoGrantPanel } from './OwnerExecutiveWorkspace';
 import { TeacherEarningsDashboard } from './TeacherEarningsDashboard';
 import { TeacherStandardsToday } from './TeacherStandardsToday';
+import { TeacherDayBriefing } from './TeacherDayBriefing';
 import { motion, AnimatePresence } from 'motion/react';
 // @ts-ignore
 import teacherProfileCard from '../assets/images/teacher_profile_card.png';
@@ -1012,43 +1013,14 @@ function DashboardView({ teacherName, teachers, groups, students, announcements,
   return (
     <div className="space-y-8 animate-fade-in">
       
-      {/* Hello Card - Bento style */}
-      <div className="bg-gradient-to-br from-[#1A1A1A] to-[#0A0A0A] rounded-[2rem] p-6 border border-white/10 relative overflow-hidden shadow-2xl">
-        <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
-          <Trophy className="w-48 h-48 text-[#C5A059] origin-top-right rotate-12" />
-        </div>
-        <div className="relative z-10 flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex items-center gap-4">
-            <div className="h-20 w-20 shrink-0 overflow-hidden rounded-full border border-[#C5A059]/45 bg-black shadow-xl">
-              <img src={teacherPhotoUrl} alt={teacherName} className="h-full w-full object-cover object-center" />
-            </div>
-            <div>
-              <h2 className="text-2xl font-black text-white tracking-tight mb-1">Доброе утро, {teacherName}.</h2>
-              <p className="text-xs text-[#C5A059] uppercase tracking-widest font-bold">Лезгинка • ансамбль • сценическая дисциплина</p>
-              <p className="mt-2 text-xs text-slate-400">Филиал Алматы. Сегодня вы ведете группы, родителей и учеников через понятный ритм школы.</p>
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 xl:w-[560px]">
-            <div className="bg-white/5 rounded-2xl p-4 border border-white/5 backdrop-blur-md">
-              <span className="text-[10px] text-slate-400 uppercase font-black tracking-wider block mb-1">Занятия сегодня</span>
-              <span className="text-2xl font-bold text-white">{scheduleItems?.length || groups.length}</span>
-            </div>
-            <div className="bg-white/5 rounded-2xl p-4 border border-white/5 backdrop-blur-md">
-              <span className="text-[10px] text-slate-400 uppercase font-black tracking-wider block mb-1">Ученики</span>
-              <span className="text-2xl font-bold text-white">{students.length}</span>
-            </div>
-            <div className="bg-white/5 rounded-2xl p-4 border border-white/5 backdrop-blur-md relative overflow-hidden">
-              <span className="text-[10px] text-slate-400 uppercase font-black tracking-wider block mb-1">Группы</span>
-              <span className="text-2xl font-bold text-white">{groups.length}</span>
-            </div>
-            <div className="bg-[#C5A059]/10 rounded-2xl p-4 border border-[#C5A059]/20 backdrop-blur-md">
-              <span className="text-[10px] text-[#C5A059] uppercase font-black tracking-wider block mb-1">Объявления</span>
-              <span className="text-2xl font-bold text-white">{announcements?.length ?? 0}</span>
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* ИИ-сводка дня: план на сегодня, новенькие, рекомендации, итог по занятиям */}
+      <TeacherDayBriefing
+        teacherName={teacherName}
+        photoUrl={teacherPhotoUrl}
+        groups={groups}
+        students={students}
+        scheduleItems={scheduleItems}
+      />
 
       {/* Экономика педагога: прогноз ЗП, категория, KPI, нарушения, геймификация */}
       <TeacherEarningsDashboard teacherName={teacherName} teachers={teachers} />
@@ -1063,159 +1035,6 @@ function DashboardView({ teacherName, teachers, groups, students, announcements,
         onOpenLessonPlan={onOpenLessonPlan}
       />
 
-      {/* Quick Actions / Bento Grid */}
-      <div>
-        <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-4">Быстрые действия</h3>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          <QuickAction icon={<ClipboardList />} label="Отметить посещаемость" color="emerald" onClick={() => onNavigate?.('journal')} />
-          <QuickAction icon={<Calendar />} label="Открыть расписание" color="blue" onClick={() => onNavigate?.('today')} />
-          <QuickAction icon={<FileText />} label="Добавить заметку" color="amber" onClick={() => onNavigate?.('students')} />
-          <QuickAction icon={<Bell />} label="Создать объявление" color="purple" onClick={() => onNavigate?.('more')} />
-          <QuickAction icon={<CheckSquare />} label="Проверить задания" color="indigo" onClick={() => onNavigate?.('students')} />
-          <QuickAction icon={<Trophy />} label="Подготовка к конкурсу" color="rose" onClick={() => onOpenLessonPlan?.("Составь план подготовки ансамбля к ближайшему конкурсу: репетиции, состав, сценография", { groupName: groups[0]?.name, groupLevel: groups[0]?.level, studentCount: students.length })} />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        <section className="xl:col-span-2 bg-white/[0.04] border border-white/10 rounded-[2rem] p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider">Расписание сегодня</h3>
-              <p className="text-xs text-slate-500 mt-1">Открывайте занятие прямо перед началом: посещаемость, заметки, план репетиции.</p>
-            </div>
-          </div>
-          <div className="space-y-3">
-            {scheduleLoading && <p className="text-xs text-slate-500 py-3 text-center">Загрузка расписания…</p>}
-            {!scheduleLoading && scheduleItems && scheduleItems.length > 0
-              ? scheduleItems.filter((l: any) => l.status !== "cancelled").slice(0, 5).map((lesson: any) => (
-                  <button
-                    key={lesson.id}
-                    onClick={() => lesson.groupId && onNavigateToGroup(lesson.groupId)}
-                    className="w-full rounded-2xl border border-white/5 bg-black/30 p-4 text-left hover:border-[#C5A059]/35 transition-colors"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-black text-white">
-                          {new Date(lesson.startsAt).toLocaleString("ru-RU", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })} • {lesson.groupName || "Группа"}
-                        </p>
-                        <p className="text-xs text-slate-500">{lesson.hallName || ""}{lesson.topic ? ` • ${lesson.topic}` : ""}</p>
-                      </div>
-                      <span className="rounded-full bg-[#C5A059]/15 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-[#C5A059]">открыть</span>
-                    </div>
-                  </button>
-                ))
-              : !scheduleLoading && groups.slice(0, 4).map((group: Group, index: number) => (
-                  <button
-                    key={group.id}
-                    onClick={() => onNavigateToGroup(group.id)}
-                    className="w-full rounded-2xl border border-white/5 bg-black/30 p-4 text-left hover:border-[#C5A059]/35 transition-colors"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-black text-white">{group.time || `${16 + index}:00`} • {group.name}</p>
-                        <p className="text-xs text-slate-500">{group.ageGroup} • {group.level}</p>
-                      </div>
-                      <span className="rounded-full bg-[#C5A059]/15 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-[#C5A059]">открыть</span>
-                    </div>
-                  </button>
-                ))}
-          </div>
-        </section>
-
-        <section className="bg-white/[0.04] border border-white/10 rounded-[2rem] p-5">
-          <h3 className="text-sm font-bold text-white uppercase tracking-wider">Ученики требуют внимания</h3>
-          <div className="mt-4 space-y-3">
-            {attentionStudents.map((student: Student) => (
-              <button
-                key={student.id}
-                onClick={() => onNavigateToStudent(student.id)}
-                className="w-full rounded-2xl border border-white/5 bg-black/30 p-3 text-left hover:border-amber-500/30 transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <img src={student.photoUrl} alt={student.name} className="h-10 w-10 rounded-xl object-cover" />
-                  <div>
-                    <p className="text-xs font-black text-white">{student.name}</p>
-                    <p className="text-[10px] text-amber-400">{student.balance < 0 ? "Нужно мягко напомнить родителям" : "Есть пропуск в последних занятиях"}</p>
-                  </div>
-                </div>
-              </button>
-            ))}
-          </div>
-        </section>
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <section className="bg-indigo-500/10 border border-indigo-500/20 rounded-[2rem] p-5">
-          <div className="flex items-center gap-3">
-            <BrainCircuit className="w-6 h-6 text-indigo-400" />
-            <div>
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider">AI Notebook</h3>
-              <p className="text-xs text-slate-400 mt-1">Спросите: “составь план репетиции” или “какие проблемы были у группы”.</p>
-            </div>
-          </div>
-          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {["План репетиции", "История ученика", "Сообщение родителям", "Проблемы месяца"].map((prompt) => (
-              <div key={prompt} className="rounded-xl border border-indigo-500/15 bg-black/25 px-3 py-2 text-xs font-bold text-indigo-200">
-                {prompt}
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="bg-white/[0.04] border border-white/10 rounded-[2rem] p-5">
-          <h3 className="text-sm font-bold text-white uppercase tracking-wider">Важные объявления от владельца</h3>
-          <div className="mt-4 space-y-3">
-            {(announcements || []).slice(0, 2).map((item: Announcement) => (
-              <div key={item.id} className="rounded-2xl border border-white/5 bg-black/30 p-4">
-                <p className="text-sm font-bold text-white">{item.title}</p>
-                <p className="mt-1 text-xs text-slate-400 line-clamp-2">{item.content}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5">
-          <h3 className="text-sm font-bold text-white uppercase tracking-wider">Ближайшие выступления</h3>
-          <div className="mt-4 space-y-3">
-            {["Весенний концерт ансамбля", "Городской фестиваль традиций", "Открытый урок для родителей"].map((eventName, index) => (
-              <div key={eventName} className="rounded-2xl border border-white/5 bg-black/30 p-4">
-                <p className="text-sm font-black text-white">{eventName}</p>
-                <p className="mt-1 text-xs text-slate-500">{["18 июня", "24 июня", "30 июня"][index]} • подготовка состава и формы</p>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5">
-          <h3 className="text-sm font-bold text-white uppercase tracking-wider">Уведомления от родителей</h3>
-          <div className="mt-4 space-y-3">
-            {[
-              "Амина сегодня может опоздать на 10 минут.",
-              "У Тимура вопрос по костюму для концерта.",
-              "Родитель Сослана подтвердил участие в фестивале."
-            ].map((message) => (
-              <div key={message} className="rounded-2xl border border-white/5 bg-black/30 p-4">
-                <p className="text-xs leading-relaxed text-slate-300">{message}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="rounded-[2rem] border border-emerald-500/20 bg-emerald-500/10 p-5">
-          <h3 className="text-sm font-bold text-white uppercase tracking-wider">Тон дня</h3>
-          <p className="mt-4 text-sm leading-relaxed text-slate-200">
-            Сегодня стоит поддержать младшую группу: у них хороший прогресс, но нужна уверенность перед открытым уроком.
-          </p>
-          <button
-            onClick={() => onOpenLessonPlan?.("Составь план занятия для младшей группы перед открытым уроком: акцент на уверенность и синхронность", { groupName: groups[0]?.name, groupLevel: groups[0]?.level, studentCount: students.length })}
-            className="mt-5 rounded-2xl bg-emerald-500 px-4 py-3 text-xs font-black uppercase tracking-wider text-black transition hover:bg-emerald-400 active:scale-95"
-          >
-            Подготовить план занятия
-          </button>
-        </section>
-      </div>
     </div>
   );
 }

@@ -100,6 +100,21 @@ context=${JSON.stringify(context ?? {})}`;
     }
   });
 
+  // Сводка дня для педагога: краткий план на сегодня + рекомендации.
+  app.post("/api/gemini/teacher-daily-briefing", async (req, res) => {
+    if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });
+    const { teacherName, weekday, groupsCount, schedule, newStudents, totalLessonsYear } = req.body || {};
+    const prompt = `Ты — заботливый наставник-куратор школы кавказского танца «Эхо Гор». Составь короткую тёплую сводку дня для преподавателя. Верни СТРОГО JSON по схеме:
+{"summary": string, "recommendations": string[]}
+Пиши по-русски, на «вы», живо и по делу. summary — 1-2 предложения обзора дня (сколько групп, график, новенькие по именам, если есть). recommendations — 2-4 коротких практичных совета на день (подготовка, внимание к новичкам, дисциплина, настрой). Не повторяй цифры дословно из данных — говори человечно.
+data=${JSON.stringify({ teacherName, weekday, groupsCount, schedule, newStudents, totalLessonsYear })}`;
+    try {
+      res.json(await generateJson(prompt));
+    } catch (e: any) {
+      res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
+
   // Персональное поздравление ученика с днём рождения (кабинет педагога).
   // Педагог выбирает ученика → получает тёплый текст → отправляет в WhatsApp.
   app.post("/api/gemini/birthday-greeting", async (req, res) => {
