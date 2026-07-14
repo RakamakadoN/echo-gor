@@ -1698,6 +1698,8 @@ async function dbBootstrap(session) {
     ageTo: group.age_to ?? null,
     capacity: group.capacity ?? 0,
     level: group.level || "MVP",
+    // Набор открыт/закрыт (миграция 044) — для рекомендаций по набору.
+    enrollmentOpen: group.enrollment_open !== false,
     studentCount: studentsRaw.filter((student) => student.group_id === group.id).length
   }));
   const isOwner = session.role === "owner";
@@ -1961,6 +1963,7 @@ function registerMvpApi(app2) {
         branchId: s.branch_id,
         revenue: Number(s.revenue || 0),
         activeSubscriptions: s.active_subscriptions || 0,
+        activeStudents: s.active_students || 0,
         avgCheck: Number(s.avg_check || 0),
         retentionRate: Number(s.retention_rate || 0),
         attendanceRate: Number(s.attendance_rate || 0),
@@ -2067,29 +2070,73 @@ function registerMvpApi(app2) {
     if (!supabaseEnabled) return res.json({ period, network: null, byBranch: [] });
     try {
       const orgFilter = `organization_id=eq.${session.organizationId}`;
-      const [budgets, payments, branches] = await Promise.all([
+      const [budgets, payments, branches, expenses] = await Promise.all([
         supabaseFetch("planning_budgets", `select=branch_id,planned_revenue,planned_expense&${orgFilter}&period_month=eq.${period}&status=eq.active`),
         supabaseFetch("payments", `select=amount,branch_id,paid_at,status&${orgFilter}`),
-        supabaseFetch("branches", `select=id,name,city&${orgFilter}&status=neq.archived`)
+        supabaseFetch("branches", `select=id,name,city&${orgFilter}&status=neq.archived`),
+        // Фактические расходы месяца из Бухгалтерии (для «факт. прибыли»).
+        supabaseFetch("finance_transactions", `select=amount,branch_id,operation_date,type,status&${orgFilter}&type=eq.expense&status=eq.actual`).catch(() => [])
       ]);
       const paid = payments.filter((p) => p.status === "paid" && String(p.paid_at || "").slice(0, 7) === period);
+      const exp = (expenses || []).filter((e) => String(e.operation_date || "").slice(0, 7) === period);
       const factOf = (branchId) => (branchId ? paid.filter((p) => p.branch_id === branchId) : paid).reduce((s, p) => s + Number(p.amount || 0), 0);
+      const factExpOf = (branchId) => (branchId ? exp.filter((e) => e.branch_id === branchId) : exp).reduce((s, e) => s + Number(e.amount || 0), 0);
+      const budgetRow = (branchId) => budgets.find((b) => (b.branch_id || null) === branchId);
       const planOf = (branchId) => {
-        const row = budgets.find((b) => (b.branch_id || null) === branchId);
+        const row = budgetRow(branchId);
         return row ? Number(row.planned_revenue || 0) : null;
+      };
+      const planExpOf = (branchId) => {
+        const row = budgetRow(branchId);
+        return row ? Number(row.planned_expense || 0) : null;
       };
       const branchPlans = branches.map((b) => planOf(b.id));
       const networkPlan = planOf(null) ?? (branchPlans.some((p) => p !== null) ? branchPlans.reduce((s, p) => s + (p || 0), 0) : null);
+      const branchPlanExps = branches.map((b) => planExpOf(b.id));
+      const networkPlanExp = planExpOf(null) ?? (branchPlanExps.some((p) => p !== null) ? branchPlanExps.reduce((s, p) => s + (p || 0), 0) : null);
       const pct = (fact, plan) => plan && plan > 0 ? Math.round(fact / plan * 100) : null;
-      const networkFact = factOf(null);
+      const almaty = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Almaty" }).format(/* @__PURE__ */ new Date());
+      const isCur = period === almaty.slice(0, 7);
+      const dayN = isCur ? Number(almaty.slice(8, 10)) : 0;
+      const [py, pm] = period.split("-").map(Number);
+      const daysInMonth = new Date(py, pm, 0).getDate();
+      const forecastOf = (fact) => isCur && dayN > 0 ? Math.round(fact / dayN * daysInMonth) : fact;
+      const profitBlock = (branchId) => {
+        const planRev = planOf(branchId), planExp = planExpOf(branchId);
+        const factRev = factOf(branchId), factExp = factExpOf(branchId);
+        const forecastRev = forecastOf(factRev);
+        return {
+          plannedRevenue: planRev,
+          plannedExpense: planExp,
+          factRevenue: factRev,
+          factExpense: factExp,
+          forecastRevenue: forecastRev,
+          plannedProfit: planRev !== null && planExp !== null ? planRev - planExp : null,
+          expectedProfit: planExp !== null ? forecastRev - planExp : null,
+          factProfit: factRev - factExp
+        };
+      };
+      const netFactExp = factExpOf(null);
+      const netFactRev = factOf(null);
+      const netForecast = forecastOf(netFactRev);
+      const networkProfit = {
+        plannedRevenue: networkPlan,
+        plannedExpense: networkPlanExp,
+        factRevenue: netFactRev,
+        factExpense: netFactExp,
+        forecastRevenue: netForecast,
+        plannedProfit: networkPlan !== null && networkPlanExp !== null ? networkPlan - networkPlanExp : null,
+        expectedProfit: networkPlanExp !== null ? netForecast - networkPlanExp : null,
+        factProfit: netFactRev - netFactExp
+      };
       const byBranch = branches.map((b) => {
         const plan = planOf(b.id);
         const fact = factOf(b.id);
-        return { branchId: b.id, name: b.name || b.city, plan, fact, pct: pct(fact, plan) };
+        return { branchId: b.id, name: b.name || b.city, plan, fact, pct: pct(fact, plan), ...profitBlock(b.id) };
       });
       res.json({
         period,
-        network: { plan: networkPlan, fact: networkFact, pct: pct(networkFact, networkPlan) },
+        network: { plan: networkPlan, fact: netFactRev, pct: pct(netFactRev, networkPlan), ...networkProfit },
         byBranch
       });
     } catch (error) {
@@ -3620,6 +3667,11 @@ function registerMvpApi(app2) {
       endDate: row.end_date || null,
       // 'group' — обычная группа; 'individual' — график индивидуальных занятий.
       format: row.format === "individual" ? "individual" : "group",
+      // Двойной маппинг (bootstrap + mapDbGroup): поля должны совпадать в ОБОИХ.
+      capacity: row.capacity ?? 0,
+      ageFrom: row.age_from ?? null,
+      ageTo: row.age_to ?? null,
+      enrollmentOpen: row.enrollment_open !== false,
       studentCount
     };
   }
@@ -3700,6 +3752,7 @@ function registerMvpApi(app2) {
     if (payload.startDate !== void 0) updates.start_date = payload.startDate || null;
     if (payload.endDate !== void 0) updates.end_date = payload.endDate || null;
     if (payload.format !== void 0) updates.format = payload.format === "individual" ? "individual" : "group";
+    if (payload.enrollmentOpen !== void 0) updates.enrollment_open = Boolean(payload.enrollmentOpen);
     if (Object.keys(updates).length === 0) return res.status(400).json({ error: "\u041D\u0435\u0442 \u043F\u043E\u043B\u0435\u0439 \u0434\u043B\u044F \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F" });
     try {
       let prevTeacherId = null;
@@ -8061,6 +8114,53 @@ function registerMvpApi(app2) {
     if (penaltyStore[session.organizationId]) penaltyStore[session.organizationId] = penaltyStore[session.organizationId].filter((r) => r.id !== id);
     res.json({ ok: true });
   }));
+  const arrivalStore = {};
+  const arrivalKey = (session, date) => `${session.organizationId}:${date}:${session.userId}`;
+  app2.get("/api/mvp/teachers/arrival/today", ah(async (req, res) => {
+    const session = getSession(req);
+    const date = KZ_DATE.format(/* @__PURE__ */ new Date());
+    const local = arrivalStore[arrivalKey(session, date)];
+    if (local) return res.json({ arrival: { time: local.time, late: local.late } });
+    if (supabaseEnabled) {
+      try {
+        const rows = await supabaseFetch("teacher_arrivals", `organization_id=eq.${session.organizationId}&teacher_id=eq.${session.userId}&arrival_date=eq.${date}&select=arrival_time,is_late`, {});
+        const r = rows?.[0];
+        if (r) return res.json({ arrival: { time: r.arrival_time, late: r.is_late } });
+      } catch {
+      }
+    }
+    res.json({ arrival: null });
+  }));
+  app2.post("/api/mvp/teachers/arrival", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "teacher" && session.role !== "owner" && session.role !== "branch_manager" && session.role !== "admin")
+      return res.status(403).json({ error: "\u041D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u043E" });
+    const b = req.body || {};
+    const date = KZ_DATE.format(/* @__PURE__ */ new Date());
+    const time = String(b.time || "").match(/^\d{1,2}:\d{2}$/) ? String(b.time) : KZ_DATE.format(/* @__PURE__ */ new Date());
+    const late = Boolean(b.late);
+    const photo = typeof b.photo === "string" ? b.photo : null;
+    arrivalStore[arrivalKey(session, date)] = { time, late, photo, date };
+    if (supabaseEnabled) {
+      try {
+        await supabaseFetch("teacher_arrivals", "", {
+          method: "POST",
+          headers: { Prefer: "resolution=merge-duplicates" },
+          body: JSON.stringify({
+            organization_id: session.organizationId,
+            teacher_id: null,
+            branch_id: session.dbBranchId || null,
+            arrival_date: date,
+            arrival_time: time,
+            is_late: late,
+            photo
+          })
+        });
+      } catch {
+      }
+    }
+    res.status(201).json({ arrival: { time, late } });
+  }));
 }
 
 // server/geminiApi.ts
@@ -8139,6 +8239,34 @@ context=${JSON.stringify(context ?? {})}`;
       res.status(502).json({ error: e?.message || "AI request failed" });
     }
   });
+  app2.post("/api/gemini/teacher-daily-briefing", async (req, res) => {
+    if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });
+    const { teacherName, weekday, groupsCount, schedule, newStudents, totalLessonsYear } = req.body || {};
+    const prompt = `\u0422\u044B \u2014 \u0437\u0430\u0431\u043E\u0442\u043B\u0438\u0432\u044B\u0439 \u043D\u0430\u0441\u0442\u0430\u0432\u043D\u0438\u043A-\u043A\u0443\u0440\u0430\u0442\u043E\u0440 \u0448\u043A\u043E\u043B\u044B \u043A\u0430\u0432\u043A\u0430\u0437\u0441\u043A\u043E\u0433\u043E \u0442\u0430\u043D\u0446\u0430 \xAB\u042D\u0445\u043E \u0413\u043E\u0440\xBB. \u0421\u043E\u0441\u0442\u0430\u0432\u044C \u043A\u043E\u0440\u043E\u0442\u043A\u0443\u044E \u0442\u0451\u043F\u043B\u0443\u044E \u0441\u0432\u043E\u0434\u043A\u0443 \u0434\u043D\u044F \u0434\u043B\u044F \u043F\u0440\u0435\u043F\u043E\u0434\u0430\u0432\u0430\u0442\u0435\u043B\u044F. \u0412\u0435\u0440\u043D\u0438 \u0421\u0422\u0420\u041E\u0413\u041E JSON \u043F\u043E \u0441\u0445\u0435\u043C\u0435:
+{"summary": string, "recommendations": string[]}
+\u041F\u0438\u0448\u0438 \u043F\u043E-\u0440\u0443\u0441\u0441\u043A\u0438, \u043D\u0430 \xAB\u0432\u044B\xBB, \u0436\u0438\u0432\u043E \u0438 \u043F\u043E \u0434\u0435\u043B\u0443. summary \u2014 1-2 \u043F\u0440\u0435\u0434\u043B\u043E\u0436\u0435\u043D\u0438\u044F \u043E\u0431\u0437\u043E\u0440\u0430 \u0434\u043D\u044F (\u0441\u043A\u043E\u043B\u044C\u043A\u043E \u0433\u0440\u0443\u043F\u043F, \u0433\u0440\u0430\u0444\u0438\u043A, \u043D\u043E\u0432\u0435\u043D\u044C\u043A\u0438\u0435 \u043F\u043E \u0438\u043C\u0435\u043D\u0430\u043C, \u0435\u0441\u043B\u0438 \u0435\u0441\u0442\u044C). recommendations \u2014 2-4 \u043A\u043E\u0440\u043E\u0442\u043A\u0438\u0445 \u043F\u0440\u0430\u043A\u0442\u0438\u0447\u043D\u044B\u0445 \u0441\u043E\u0432\u0435\u0442\u0430 \u043D\u0430 \u0434\u0435\u043D\u044C (\u043F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u043A\u0430, \u0432\u043D\u0438\u043C\u0430\u043D\u0438\u0435 \u043A \u043D\u043E\u0432\u0438\u0447\u043A\u0430\u043C, \u0434\u0438\u0441\u0446\u0438\u043F\u043B\u0438\u043D\u0430, \u043D\u0430\u0441\u0442\u0440\u043E\u0439). \u041D\u0435 \u043F\u043E\u0432\u0442\u043E\u0440\u044F\u0439 \u0446\u0438\u0444\u0440\u044B \u0434\u043E\u0441\u043B\u043E\u0432\u043D\u043E \u0438\u0437 \u0434\u0430\u043D\u043D\u044B\u0445 \u2014 \u0433\u043E\u0432\u043E\u0440\u0438 \u0447\u0435\u043B\u043E\u0432\u0435\u0447\u043D\u043E.
+data=${JSON.stringify({ teacherName, weekday, groupsCount, schedule, newStudents, totalLessonsYear })}`;
+    try {
+      res.json(await generateJson(prompt));
+    } catch (e) {
+      res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
+  app2.post("/api/gemini/birthday-greeting", async (req, res) => {
+    if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });
+    const { studentName, age, groupName, teacherName, achievements, tone } = req.body || {};
+    const prompt = `\u0422\u044B \u2014 \u043F\u0440\u0435\u043F\u043E\u0434\u0430\u0432\u0430\u0442\u0435\u043B\u044C \u0448\u043A\u043E\u043B\u044B \u043A\u0430\u0432\u043A\u0430\u0437\u0441\u043A\u043E\u0433\u043E \u0442\u0430\u043D\u0446\u0430 \xAB\u042D\u0445\u043E \u0413\u043E\u0440\xBB. \u041D\u0430\u043F\u0438\u0448\u0438 \u0442\u0451\u043F\u043B\u043E\u0435 \u043B\u0438\u0447\u043D\u043E\u0435 \u043F\u043E\u0437\u0434\u0440\u0430\u0432\u043B\u0435\u043D\u0438\u0435 \u0443\u0447\u0435\u043D\u0438\u043A\u0443 \u0441 \u0434\u043D\u0451\u043C \u0440\u043E\u0436\u0434\u0435\u043D\u0438\u044F \u043E\u0442 \u043B\u0438\u0446\u0430 \u043F\u0435\u0434\u0430\u0433\u043E\u0433\u0430. \u0412\u0435\u0440\u043D\u0438 \u0421\u0422\u0420\u041E\u0413\u041E JSON \u043F\u043E \u0441\u0445\u0435\u043C\u0435:
+{"message": string}
+\u041F\u0438\u0448\u0438 \u043F\u043E-\u0440\u0443\u0441\u0441\u043A\u0438, \u043E\u0442 \u043F\u0435\u0440\u0432\u043E\u0433\u043E \u043B\u0438\u0446\u0430 (\u044F, \u043F\u0435\u0434\u0430\u0433\u043E\u0433), \u043E\u0431\u0440\u0430\u0449\u0430\u0439\u0441\u044F \u043A \u0443\u0447\u0435\u043D\u0438\u043A\u0443 \u043F\u043E \u0438\u043C\u0435\u043D\u0438 \u043D\u0430 \xAB\u0442\u044B\xBB \u0435\u0441\u043B\u0438 \u0440\u0435\u0431\u0451\u043D\u043E\u043A. 2-4 \u043F\u0440\u0435\u0434\u043B\u043E\u0436\u0435\u043D\u0438\u044F, \u0438\u0441\u043A\u0440\u0435\u043D\u043D\u0435, \u0441 \u0443\u0432\u0430\u0436\u0435\u043D\u0438\u0435\u043C \u043A \u0446\u0435\u043D\u043D\u043E\u0441\u0442\u044F\u043C \u0448\u043A\u043E\u043B\u044B (\u0445\u0430\u0440\u0430\u043A\u0442\u0435\u0440, \u0434\u0438\u0441\u0446\u0438\u043F\u043B\u0438\u043D\u0430, \u043A\u0443\u043B\u044C\u0442\u0443\u0440\u0430). \u0411\u0435\u0437 \u0445\u044D\u0448\u0442\u0435\u0433\u043E\u0432 \u0438 \u044D\u043C\u043E\u0434\u0437\u0438-\u0441\u043F\u0430\u043C\u0430 (\u043C\u0430\u043A\u0441\u0438\u043C\u0443\u043C 1-2 \u0443\u043C\u0435\u0441\u0442\u043D\u044B\u0445 \u044D\u043C\u043E\u0434\u0437\u0438). \u0423\u043F\u043E\u043C\u044F\u043D\u0438 \u0442\u0430\u043D\u0435\u0446/\u0443\u0441\u043F\u0435\u0445\u0438, \u0435\u0441\u043B\u0438 \u0443\u043C\u0435\u0441\u0442\u043D\u043E.
+student=${JSON.stringify({ studentName, age, groupName, achievements })}
+teacher=${JSON.stringify({ teacherName })}
+tone=${JSON.stringify(tone ?? "\u0442\u0451\u043F\u043B\u044B\u0439, \u043B\u0438\u0447\u043D\u044B\u0439")}`;
+    try {
+      res.json(await generateJson(prompt));
+    } catch (e) {
+      res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
   app2.post("/api/gemini/competition-consult", async (req, res) => {
     if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });
     const { competition, groupName, groupLevel, studentCount } = req.body || {};
@@ -8193,6 +8321,29 @@ transcript=${JSON.stringify(String(transcript).slice(0, 24e3))}`;
 {"candidates": [{"id": string, "recommend": boolean, "offerType": string, "message": string, "reasoning": string}]}
 \u041F\u0440\u0430\u0432\u0438\u043B\u0430: \u043F\u0438\u0448\u0438 \u043F\u043E-\u0440\u0443\u0441\u0441\u043A\u0438, \u0442\u0435\u043F\u043B\u043E \u0438 \u043F\u043E-\u0447\u0435\u043B\u043E\u0432\u0435\u0447\u0435\u0441\u043A\u0438, \u0431\u0435\u0437 \u043D\u0430\u0432\u044F\u0437\u0447\u0438\u0432\u043E\u0441\u0442\u0438. offerType \u2014 \u043A\u043E\u0440\u043E\u0442\u043A\u043E\u0435 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u043E\u0444\u0444\u0435\u0440\u0430 (\u043D\u0430\u043F\u0440\u0438\u043C\u0435\u0440: \xAB\u0411\u0435\u0441\u043F\u043B\u0430\u0442\u043D\u043E\u0435 \u043F\u0440\u043E\u0431\u043D\u043E\u0435 \u0432\u043E\u0437\u0432\u0440\u0430\u0449\u0435\u043D\u0438\u0435\xBB, \xAB\u0421\u043A\u0438\u0434\u043A\u0430 30% \u043D\u0430 \u043F\u0435\u0440\u0432\u044B\u0439 \u043C\u0435\u0441\u044F\u0446\xBB, \xAB\u0418\u043D\u0434\u0438\u0432\u0438\u0434\u0443\u0430\u043B\u044C\u043D\u044B\u0439 \u0433\u0440\u0430\u0444\u0438\u043A\xBB). message \u2014 \u0433\u043E\u0442\u043E\u0432\u044B\u0439 \u0442\u0435\u043A\u0441\u0442 \u0434\u043B\u044F \u0440\u043E\u0434\u0438\u0442\u0435\u043B\u044F (2-4 \u043F\u0440\u0435\u0434\u043B\u043E\u0436\u0435\u043D\u0438\u044F), \u0443\u0447\u0438\u0442\u044B\u0432\u0430\u0439 \u043F\u0440\u0438\u0447\u0438\u043D\u0443 \u0443\u0445\u043E\u0434\u0430. reasoning \u2014 1 \u043F\u0440\u0435\u0434\u043B\u043E\u0436\u0435\u043D\u0438\u0435, \u043F\u043E\u0447\u0435\u043C\u0443 \u0442\u0430\u043A\u043E\u0439 \u043E\u0444\u0444\u0435\u0440. recommend=false, \u0435\u0441\u043B\u0438 \u0432\u043E\u0437\u0432\u0440\u0430\u0449\u0430\u0442\u044C \u0441\u0435\u0439\u0447\u0430\u0441 \u043D\u0435 \u0441\u0442\u043E\u0438\u0442 (\u043D\u0430\u043F\u0440\u0438\u043C\u0435\u0440, \u0443\u0448\u043B\u0438 \u0438\u0437-\u0437\u0430 \u043F\u0435\u0440\u0435\u0435\u0437\u0434\u0430). id \u2014 \u0432\u0435\u0440\u043D\u0438 \u0440\u043E\u0432\u043D\u043E \u043A\u0430\u043A \u0432\u043E \u0432\u0445\u043E\u0434\u043D\u044B\u0445 \u0434\u0430\u043D\u043D\u044B\u0445.
 students=${JSON.stringify(list)}`;
+    try {
+      res.json(await generateJson(prompt));
+    } catch (e) {
+      res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
+  app2.post("/api/gemini/ad-offer", async (req, res) => {
+    if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });
+    const { groupName, branchName, address, schedule, ageGroup, freeSpots, teacherName, price, extraWishes } = req.body || {};
+    if (!String(groupName || "").trim()) return res.status(400).json({ error: "\u0423\u043A\u0430\u0436\u0438\u0442\u0435 \u0433\u0440\u0443\u043F\u043F\u0443" });
+    const prompt = `\u0422\u044B \u2014 \u043C\u0430\u0440\u043A\u0435\u0442\u043E\u043B\u043E\u0433 \u0441\u0435\u0442\u0438 \u0448\u043A\u043E\u043B \u043A\u0430\u0432\u043A\u0430\u0437\u0441\u043A\u043E\u0433\u043E \u0442\u0430\u043D\u0446\u0430 \xAB\u042D\u0445\u043E \u0413\u043E\u0440\xBB (\u041A\u0430\u0437\u0430\u0445\u0441\u0442\u0430\u043D). \u0421\u043E\u0441\u0442\u0430\u0432\u044C \u0440\u0435\u043A\u043B\u0430\u043C\u043D\u043E\u0435 \u043E\u0431\u044A\u044F\u0432\u043B\u0435\u043D\u0438\u0435 \u0434\u043B\u044F \u043D\u0430\u0431\u043E\u0440\u0430 \u0443\u0447\u0435\u043D\u0438\u043A\u043E\u0432 \u0432 \u043A\u043E\u043D\u043A\u0440\u0435\u0442\u043D\u0443\u044E \u0433\u0440\u0443\u043F\u043F\u0443. \u0412\u0435\u0440\u043D\u0438 \u0421\u0422\u0420\u041E\u0413\u041E JSON \u043F\u043E \u0441\u0445\u0435\u043C\u0435:
+{"headline": string, "offer": string, "cta": string, "audience": string, "hashtags": string[]}
+\u041F\u0440\u0430\u0432\u0438\u043B\u0430: \u043F\u0438\u0448\u0438 \u043F\u043E-\u0440\u0443\u0441\u0441\u043A\u0438, \u0436\u0438\u0432\u043E \u0438 \u043A\u043E\u043D\u043A\u0440\u0435\u0442\u043D\u043E, \u0431\u0435\u0437 \u0448\u0442\u0430\u043C\u043F\u043E\u0432 \u0438 \u041A\u0410\u041F\u0421\u0410. headline \u2014 \u0446\u0435\u043F\u043B\u044F\u044E\u0449\u0438\u0439 \u0437\u0430\u0433\u043E\u043B\u043E\u0432\u043E\u043A \u0434\u043E 60 \u0437\u043D\u0430\u043A\u043E\u0432. offer \u2014 \u0442\u0435\u043A\u0441\u0442 \u043E\u0431\u044A\u044F\u0432\u043B\u0435\u043D\u0438\u044F 3-5 \u043F\u0440\u0435\u0434\u043B\u043E\u0436\u0435\u043D\u0438\u0439: \u0447\u0442\u043E \u0437\u0430 \u0433\u0440\u0443\u043F\u043F\u0430, \u043A\u043E\u043C\u0443 \u043F\u043E\u0434\u043E\u0439\u0434\u0451\u0442 (\u0432\u043E\u0437\u0440\u0430\u0441\u0442), \u0433\u0434\u0435 \u0437\u0430\u043D\u044F\u0442\u0438\u044F (\u0444\u0438\u043B\u0438\u0430\u043B/\u0430\u0434\u0440\u0435\u0441), \u043A\u043E\u0433\u0434\u0430 (\u0440\u0430\u0441\u043F\u0438\u0441\u0430\u043D\u0438\u0435), \u0447\u0435\u043C \u0446\u0435\u043D\u043D\u043E (\u0445\u0430\u0440\u0430\u043A\u0442\u0435\u0440, \u043E\u0441\u0430\u043D\u043A\u0430, \u043A\u0443\u043B\u044C\u0442\u0443\u0440\u0430, \u0441\u0446\u0435\u043D\u0430), \u0438 \u0447\u0442\u043E \u043C\u0435\u0441\u0442 \u043C\u0430\u043B\u043E, \u0435\u0441\u043B\u0438 freeSpots \u043D\u0435\u0431\u043E\u043B\u044C\u0448\u043E\u0435. cta \u2014 \u043A\u043E\u0440\u043E\u0442\u043A\u0438\u0439 \u043F\u0440\u0438\u0437\u044B\u0432 (\u0437\u0430\u043F\u0438\u0441\u0430\u0442\u044C\u0441\u044F \u043D\u0430 \u0431\u0435\u0441\u043F\u043B\u0430\u0442\u043D\u044B\u0439 \u043F\u0440\u043E\u0431\u043D\u044B\u0439 \u0443\u0440\u043E\u043A). audience \u2014 1-2 \u043F\u0440\u0435\u0434\u043B\u043E\u0436\u0435\u043D\u0438\u044F, \u043D\u0430 \u043A\u043E\u0433\u043E \u0442\u0430\u0440\u0433\u0435\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0440\u0435\u043A\u043B\u0430\u043C\u0443 (\u0432\u043E\u0437\u0440\u0430\u0441\u0442 \u0434\u0435\u0442\u0435\u0439/\u0432\u0437\u0440\u043E\u0441\u043B\u044B\u0445, \u0433\u0435\u043E \u0432\u043E\u043A\u0440\u0443\u0433 \u0430\u0434\u0440\u0435\u0441\u0430, \u0438\u043D\u0442\u0435\u0440\u0435\u0441\u044B \u0440\u043E\u0434\u0438\u0442\u0435\u043B\u0435\u0439). hashtags \u2014 4-6 \u0445\u044D\u0448\u0442\u0435\u0433\u043E\u0432. \u041D\u0435 \u0432\u044B\u0434\u0443\u043C\u044B\u0432\u0430\u0439 \u0444\u0430\u043A\u0442\u043E\u0432, \u043A\u043E\u0442\u043E\u0440\u044B\u0445 \u043D\u0435\u0442 \u0432\u043E \u0432\u0445\u043E\u0434\u043D\u044B\u0445 \u0434\u0430\u043D\u043D\u044B\u0445.
+\u0414\u0430\u043D\u043D\u044B\u0435:
+group=${JSON.stringify(groupName)}
+branch=${JSON.stringify(branchName ?? "")}
+address=${JSON.stringify(address ?? "")}
+schedule=${JSON.stringify(schedule ?? "")}
+ageGroup=${JSON.stringify(ageGroup ?? "")}
+teacher=${JSON.stringify(teacherName ?? "")}
+freeSpots=${JSON.stringify(freeSpots ?? null)}
+price=${JSON.stringify(price ?? null)}
+wishes=${JSON.stringify(extraWishes ?? "")}`;
     try {
       res.json(await generateJson(prompt));
     } catch (e) {
