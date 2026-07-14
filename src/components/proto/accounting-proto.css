@@ -172,3 +172,25 @@
   .proto-accounting .tiles{grid-template-columns:repeat(2,1fr)}
   .proto-accounting .form-grid{grid-template-columns:1fr}
 }
+
+/* ============================================================
+   ДНЕВНАЯ ТЕМА ЭХО ГОР — перекраска прототипа под основной светлый стиль.
+   ============================================================ */
+:root.day-theme .proto-accounting{
+  --bg:#F4F6F9; --panel:#FFFFFF; --inset:#F5F7FA; --control:#FFFFFF; --hover:#F0F3F7;
+  --nav-active:#ECF0F4; --border-c:#DCE2E8; --border2:#E5EAEF; --row-border:#EDF0F4;
+  --chip:#EEF1F5; --scrollbar:#D5DCE3;
+  --text:#3A424B; --heading:#11171D; --text2:#6B7580; --text-muted:#8A939C;
+  --muted-c:#8A939C; --muted2:#9AA3AC; --faint:#AEB6BE;
+  --gold-c:#947C51; --gold-deep:#7A663F; --blue-c:#5E8194; --blue-deep:#4A6B7D;
+  --green-c:#4F8A63; --red-c:#C45A5A; --on-gold:#FFFFFF;
+  --ok-bg:rgba(79,138,99,.12); --gold-bg:rgba(148,124,81,.12);
+  --red-bg2:rgba(196,90,90,.12); --blue-bg2:rgba(94,129,148,.12);
+  --shadow:0 10px 30px rgba(17,23,29,.07);
+  font-family:'Manrope','Inter',system-ui,-apple-system,sans-serif;
+}
+:root.day-theme .proto-accounting h1,:root.day-theme .proto-accounting h2,
+:root.day-theme .proto-accounting h3,:root.day-theme .proto-accounting h4,
+:root.day-theme .proto-accounting .page-title{font-family:'Manrope','Inter',system-ui,sans-serif;letter-spacing:0}
+:root.day-theme .proto-accounting .btn,:root.day-theme .proto-accounting select,
+:root.day-theme .proto-accounting input,:root.day-theme .proto-accounting textarea{font-family:'Manrope','Inter',system-ui,sans-serif}
