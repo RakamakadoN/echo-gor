@@ -28,7 +28,6 @@ import {
 } from "lucide-react";
 import { Announcement, AnnouncementAudience, Attendance, Branch, Competition, Group, Hall, Payment, Student, SubscriptionPlan, Teacher, LeadSource, WaitlistEntry } from "../types";
 import { StaffStandardsView } from "./StaffStandardsView";
-import { StaffStandardsSummary } from "./StaffStandardsSummary";
 import StudentManagementCard, { SellSubscriptionInput } from "./StudentManagementCard";
 import StudentsRegistry from "./StudentsRegistry";
 import GroupScheduleGrid from "./GroupScheduleGrid";
@@ -336,12 +335,28 @@ export function BranchManagerWorkspace({
 }
 
 function DashboardView({ branch, metrics, attendanceWeek, attendanceMonth, groups, teachers, competitions, announcements, riskStudents, renewals, monthRevenue, debt }: any) {
-  const [showStandards, setShowStandards] = useState(false);
+  const [dashSection, setDashSection] = useState<"overview" | "standards">("overview");
+  const dashTabBar = (
+    <div className="flex w-fit gap-1 rounded-xl border border-white/10 bg-white/5 p-1">
+      {([["overview", "Обзор"], ["standards", "Стандарты работы"]] as const).map(([id, label]) => (
+        <button key={id} onClick={() => setDashSection(id)}
+          className={`rounded-lg px-3.5 py-2 text-xs font-bold transition ${dashSection === id ? "bg-[#C5A059] text-black" : "text-slate-300 hover:text-white"}`}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+  if (dashSection === "standards") {
+    return (
+      <div className="space-y-5">
+        {dashTabBar}
+        <StaffStandardsView role="branch_manager" teachers={teachers} groups={groups} />
+      </div>
+    );
+  }
   return (
     <div className="space-y-5">
-      {/* Стандарты работы — сводка на сегодня; разворачивается в полный отчёт */}
-      <StaffStandardsSummary role="branch_manager" teachers={teachers} groups={groups} expanded={showStandards} onOpen={() => setShowStandards((v) => !v)} />
-      {showStandards && <StaffStandardsView role="branch_manager" teachers={teachers} groups={groups} />}
+      {dashTabBar}
       <section className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-gradient-to-br from-[#171717] via-[#101318] to-black p-5 md:p-7">
         <div className="absolute right-[-90px] top-[-90px] h-72 w-72 rounded-full bg-[#C5A059]/10 blur-3xl" />
         <div className="relative flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">

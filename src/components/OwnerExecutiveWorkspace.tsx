@@ -74,7 +74,6 @@ import {
 } from "../teacherEconomics";
 import type { TnGroupBreak, TnMonth, TnFine, TnSeed, TnRow } from "../teacherEconomics";
 import { StaffStandardsView } from "./StaffStandardsView";
-import { StaffStandardsSummary } from "./StaffStandardsSummary";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell,
   LineChart as RLineChart, Line, Legend, AreaChart, Area
@@ -593,7 +592,7 @@ type BdrData = { period: string; network: ({ plan: number | null; fact: number; 
 
 function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawPayments, rawWaitlist, studentArchive = [], branchScorecards, onNavigate, onOpenStudents, onTriggerAiReport, aiResult, aiGenerating }: any) {
   const go = (tab: string) => onNavigate?.(tab);
-  const [showStandards, setShowStandards] = useState(false);
+  const [dashSection, setDashSection] = useState<"overview" | "standards">("overview");
   // Локальные «сегодня» и «текущий месяц» (не toISOString — часовой пояс!).
   const localToday = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();
   // Режим периода (ТЗ 13.07): конкретный месяц / конкретный день / произвольный период.
@@ -969,11 +968,29 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
   const hour = now.getHours();
   const greeting = hour < 6 ? "Доброй ночи" : hour < 12 ? "Доброе утро" : hour < 18 ? "Добрый день" : "Добрый вечер";
 
+  const dashTabBar = (
+    <div className="flex w-fit gap-1 rounded-xl border border-white/10 bg-white/5 p-1">
+      {([["overview", "Обзор"], ["standards", "Стандарты работы"]] as const).map(([id, label]) => (
+        <button key={id} onClick={() => setDashSection(id)}
+          className={`rounded-lg px-3.5 py-2 text-xs font-bold transition ${dashSection === id ? "bg-[#C5A059] text-black" : "text-slate-300 hover:text-white"}`}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (dashSection === "standards") {
+    return (
+      <div className="space-y-5">
+        {dashTabBar}
+        <StaffStandardsView role="owner" teachers={rawTeachers} groups={rawGroups} />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-5">
-      {/* Стандарты работы сотрудников — сводка на сегодня; разворачивается в полный отчёт */}
-      <StaffStandardsSummary role="owner" teachers={rawTeachers} groups={rawGroups} expanded={showStandards} onOpen={() => setShowStandards((v: boolean) => !v)} />
-      {showStandards && <StaffStandardsView role="owner" teachers={rawTeachers} groups={rawGroups} />}
+      {dashTabBar}
 
       {/* 1. ФИЛЬТРЫ: период (месяц/день/диапазон) + филиал · группа · педагог */}
       <section className="rounded-[2rem] border border-white/10 bg-gradient-to-br from-[#171717] via-[#101318] to-black p-5 md:p-6">
