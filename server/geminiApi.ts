@@ -23,10 +23,26 @@ async function generateJson(prompt: string): Promise<unknown> {
   const response = await genai.models.generateContent({
     model,
     contents: prompt,
-    config: { responseMimeType: "application/json", temperature: 0.7 },
+    // maxOutputTokens повыше, чтобы длинные отчёты не обрезались (обрыв = битый JSON).
+    config: { responseMimeType: "application/json", temperature: 0.6, maxOutputTokens: 8192 },
   });
-  const text = (response as { text?: string }).text ?? "";
-  return JSON.parse(text);
+  const raw = (response as { text?: string }).text ?? "";
+  return parseLooseJson(raw);
+}
+
+// Устойчивый разбор JSON от модели: снимает markdown-обёртку ```json,
+// вырезает внешний объект {...} и пробует ещё раз. Модель иногда добавляет
+// пояснения/ограждения вокруг JSON — из-за этого JSON.parse падал у клиента.
+function parseLooseJson(raw: string): unknown {
+  let text = String(raw || "").trim();
+  text = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+  try { return JSON.parse(text); } catch { /* пробуем вырезать объект */ }
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    try { return JSON.parse(text.slice(start, end + 1)); } catch { /* ниже — понятная ошибка */ }
+  }
+  throw new Error("ИИ вернул ответ в неверном формате — попробуйте ещё раз.");
 }
 
 export function registerGeminiApi(app: express.Express) {
