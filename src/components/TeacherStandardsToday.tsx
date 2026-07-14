@@ -72,14 +72,23 @@ export function TeacherStandardsToday({
     return () => { alive = false; };
   }, []);
 
-  // Ожидаемое время прихода = начало первого занятия сегодня (или 09:00).
+  // Ожидаемое время прихода = начало первого занятия СЕГОДНЯ.
+  // Берём из расписания; если его нет — из групп по дню недели. Нет занятий → null.
   const expectedStart = useMemo(() => {
-    const times = (scheduleItems || [])
+    const fromSchedule = (scheduleItems || [])
       .map((i: any) => String(i?.time || i?.startsAt || i?.start || "").match(/(\d{1,2}):(\d{2})/))
       .filter(Boolean)
       .map((mm: any) => Number(mm[1]) * 60 + Number(mm[2]));
-    return times.length ? Math.min(...times) : 9 * 60;
-  }, [scheduleItems]);
+    if (fromSchedule.length) return Math.min(...fromSchedule);
+    const wd = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"][almatyToday().getDay()];
+    const fromGroups = groups
+      .filter((g: any) => Array.isArray(g?.days) && g.days.includes(wd))
+      .map((g: any) => String(g?.time || "").match(/(\d{1,2}):(\d{2})/))
+      .filter(Boolean)
+      .map((mm: any) => Number(mm![1]) * 60 + Number(mm![2]));
+    return fromGroups.length ? Math.min(...fromGroups) : null;
+  }, [scheduleItems, groups]);
+  const hasLessonToday = expectedStart != null;
 
   const { todayBirthdays, upcoming } = useMemo(() => {
     const today = almatyToday();
@@ -112,10 +121,16 @@ export function TeacherStandardsToday({
 
   const standards = [
     {
-      key: "arrival", icon: arrival ? CheckCircle2 : Camera, tone: arrival ? (arrival.late ? "rose" : "emerald") : "amber",
-      title: "Подтвердить приход", sub: arrival ? `отмечено в ${arrival.time}${arrival.late ? " · опоздание" : " · вовремя"}` : "фото на рабочем месте · вовремя",
-      status: arrival ? (arrival.late ? "Поздно" : "Готово") : "Не отмечен", action: arrival ? "Изменить" : "Отметить",
-      onClick: () => setArrivalOpen(true), highlight: false,
+      key: "arrival",
+      icon: arrival ? CheckCircle2 : hasLessonToday ? Camera : Clock,
+      tone: arrival ? (arrival.late ? "rose" : "emerald") : hasLessonToday ? "amber" : "sky",
+      title: "Подтвердить приход",
+      sub: arrival
+        ? `отмечено в ${arrival.time}${arrival.late ? " · опоздание" : " · вовремя"}`
+        : hasLessonToday ? "фото на рабочем месте · вовремя" : "сегодня занятий нет",
+      status: arrival ? (arrival.late ? "Поздно" : "Готово") : hasLessonToday ? "Не отмечен" : "Нет занятий",
+      action: arrival ? "Изменить" : hasLessonToday ? "Отметить" : "—",
+      onClick: () => { if (hasLessonToday || arrival) setArrivalOpen(true); }, highlight: false,
     },
     {
       key: "journal", icon: ClipboardCheck, tone: "emerald",
@@ -193,7 +208,7 @@ export function TeacherStandardsToday({
                 <span className={`flex h-9 w-9 items-center justify-center rounded-xl ${toneCls[s.tone]}`}>
                   <Icon className="h-4.5 w-4.5" style={{ width: 18, height: 18 }} />
                 </span>
-                {s.status && !["Готово", "К отметке", "План", "ИИ", "Не отмечен", "Голос", "Поздно"].includes(s.status) && (
+                {s.status && !["Готово", "К отметке", "План", "ИИ", "Не отмечен", "Голос", "Поздно", "Нет занятий", "—"].includes(s.status) && (
                   <span className="rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-black text-white">{s.status}</span>
                 )}
               </div>
@@ -218,7 +233,7 @@ export function TeacherStandardsToday({
 
       {arrivalOpen && (
         <ArrivalCheckModal
-          expectedStart={expectedStart}
+          expectedStart={expectedStart ?? 9 * 60}
           onClose={() => setArrivalOpen(false)}
           onDone={(r) => { setArrival(r); onConfirmArrival?.(); setArrivalOpen(false); }}
         />
@@ -349,14 +364,18 @@ function ArrivalCheckModal({ expectedStart, onClose, onDone }: {
   async function submit() {
     setBusy(true);
     try {
-      await fetch("/api/mvp/teachers/arrival", {
+      // Время и «опоздание» считает СЕРВЕР — отправляем только начало занятия и фото.
+      const res = await fetch("/api/mvp/teachers/arrival", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-demo-role": "teacher" },
-        body: JSON.stringify({ time: nowStr, late, photo }),
-      }).catch(() => {});
+        body: JSON.stringify({ expectedStart, photo }),
+      });
+      const data = res.ok ? await res.json().catch(() => null) : null;
+      onDone(data?.arrival ? { time: data.arrival.time, late: data.arrival.late } : { time: nowStr, late });
+    } catch {
+      onDone({ time: nowStr, late });
     } finally {
       setBusy(false);
-      onDone({ time: nowStr, late });
     }
   }
 

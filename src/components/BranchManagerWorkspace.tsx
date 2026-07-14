@@ -27,6 +27,8 @@ import {
   WalletCards,
 } from "lucide-react";
 import { Announcement, AnnouncementAudience, Attendance, Branch, Competition, Group, Hall, Payment, Student, SubscriptionPlan, Teacher, LeadSource, WaitlistEntry } from "../types";
+import { StaffStandardsView } from "./StaffStandardsView";
+import { StandardsHealthAlert } from "./StandardsHealthAlert";
 import StudentManagementCard, { SellSubscriptionInput } from "./StudentManagementCard";
 import StudentsRegistry from "./StudentsRegistry";
 import GroupScheduleGrid from "./GroupScheduleGrid";
@@ -334,8 +336,16 @@ export function BranchManagerWorkspace({
 }
 
 function DashboardView({ branch, metrics, attendanceWeek, attendanceMonth, groups, teachers, competitions, announcements, riskStudents, renewals, monthRevenue, debt }: any) {
+  const [showStandards, setShowStandards] = useState(false);
   return (
     <div className="space-y-5">
+      {/* Отклонения от стандартов сегодня (при наличии) */}
+      <StandardsHealthAlert role="branch_manager" teachers={teachers} groups={groups} onOpen={() => setShowStandards(true)} />
+      <button onClick={() => setShowStandards((v) => !v)}
+        className="flex w-fit items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-bold text-slate-200 transition hover:bg-white/10">
+        <ShieldCheck className="h-4 w-4 text-[#C5A059]" /> {showStandards ? "Скрыть стандарты работы" : "Стандарты работы"}
+      </button>
+      {showStandards && <StaffStandardsView role="branch_manager" teachers={teachers} groups={groups} />}
       <section className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-gradient-to-br from-[#171717] via-[#101318] to-black p-5 md:p-7">
         <div className="absolute right-[-90px] top-[-90px] h-72 w-72 rounded-full bg-[#C5A059]/10 blur-3xl" />
         <div className="relative flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">

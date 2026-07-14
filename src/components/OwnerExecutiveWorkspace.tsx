@@ -73,6 +73,8 @@ import {
   tnInitials, tnCatName, tnKpiComponents, tnKpiTotal, tnSalary, tnEnrich,
 } from "../teacherEconomics";
 import type { TnGroupBreak, TnMonth, TnFine, TnSeed, TnRow } from "../teacherEconomics";
+import { StaffStandardsView } from "./StaffStandardsView";
+import { StandardsHealthAlert } from "./StandardsHealthAlert";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell,
   LineChart as RLineChart, Line, Legend, AreaChart, Area
@@ -620,7 +622,7 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
   // Состояние сворачивания блоков — запоминается по роли пользователя.
   const { isOpen: sectionOpen, toggle: toggleSection } = useCollapsedSections("owner");
   // Вкладки дашборда: информация упорядочена по темам, без дублей (ТЗ заказчика).
-  const [dashTab, setDashTab] = useState<"today" | "finance" | "sales" | "retention" | "ratings">("today");
+  const [dashTab, setDashTab] = useState<"today" | "finance" | "sales" | "retention" | "ratings" | "standards">("today");
   // Заявки на расходы и возвраты, ожидающие решения владельца.
   const [expenseReqs, setExpenseReqs] = useState<any[]>([]);
   const [refundReqs, setRefundReqs] = useState<any[]>([]);
@@ -1037,6 +1039,7 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
           { id: "sales", label: "Продажи", icon: Filter, badge: 0 },
           { id: "retention", label: "Удержание", icon: TrendingUp, badge: 0 },
           { id: "ratings", label: "Рейтинги и AI", icon: Trophy, badge: 0 },
+          { id: "standards", label: "Стандарты работы", icon: Shield, badge: 0 },
         ] as { id: typeof dashTab; label: string; icon: React.ElementType; badge: number }[]).map((t) => {
           const TabIcon = t.icon;
           return (
@@ -1062,6 +1065,7 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
       {/* ЗДОРОВЬЕ СТУДИИ ЗА 30 СЕКУНД */}
       <CollapsibleSection id="daily" icon={ClipboardList} title="Здоровье студии за 30 секунд" hint="Ключевые показатели дня — всё кликабельно"
         locked open={sectionOpen("daily")} onToggle={() => toggleSection("daily")}>
+        <StandardsHealthAlert role="owner" teachers={rawTeachers} groups={rawGroups} onOpen={() => setDashTab("standards")} />
         <DailyManagerReport m={m} bdr={bdr} scopeLabel={m.scope.label} periodLabel={m.ranges.cur.label}
           onOpenList={openList} onPayments={openPaymentsToday} onRetention={openRetention} onAvgCheck={openAvgCheck}
           onRevenue={openRevenue} onBdr={openBdr} onOccupancy={openOccupancy} />
@@ -1097,6 +1101,8 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
         </div>
       </CollapsibleSection>
       </>)}
+
+      {dashTab === "standards" && <StaffStandardsView role="owner" teachers={rawTeachers} groups={rawGroups} />}
 
       {dashTab === "finance" && (<>
       {/* ВЫРУЧКА ПО НАПРАВЛЕНИЯМ */}
