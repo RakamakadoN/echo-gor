@@ -53,11 +53,11 @@ export function StandardsHealthAlert({ role, teachers = [], groups = [], onOpen 
   if (dev.noPhoto.length) parts.push(`без фото — ${dev.noPhoto.join(", ")}`);
 
   return (
-    <button onClick={onOpen} className="group flex w-full items-center gap-3 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-left transition hover:bg-rose-500/15">
+    <button onClick={onOpen} className="group flex w-full items-center gap-3 rounded-2xl border border-rose-500/50 bg-[#3a1116] px-4 py-3 text-left transition hover:bg-[#461419]">
       <AlertTriangle className="h-5 w-5 shrink-0 text-rose-300" />
       <div className="min-w-0 flex-1">
-        <div className="text-xs font-black uppercase tracking-wider text-rose-200">Отклонения от стандартов · {dev.total}</div>
-        <div className="mt-0.5 text-[11px] leading-relaxed text-rose-100/80">{parts.join(" · ")}</div>
+        <div className="text-xs font-black uppercase tracking-wider text-white">Отклонения от стандартов · {dev.total}</div>
+        <div className="mt-0.5 text-[11px] font-medium leading-relaxed text-rose-100">{parts.join(" · ")}</div>
       </div>
       <ChevronRight className="h-4 w-4 shrink-0 text-rose-300 transition group-hover:translate-x-0.5" />
     </button>
