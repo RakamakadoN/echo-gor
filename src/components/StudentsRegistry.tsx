@@ -1079,6 +1079,7 @@ export default function StudentsRegistry({
                       <div className="flex items-center gap-1.5">
                         <span className="truncate text-[14px] font-bold" style={{ color: CLR.text }}>{s.name}</span>
                         {waitlistStudentIds.has(s.id) && <Clock className="h-3.5 w-3.5 shrink-0 text-violet-500" />}
+                        {!s.parentChatAdded && <span className="shrink-0 rounded-full border border-amber-400/40 bg-amber-400/10 px-1.5 py-0.5 text-[9px] font-bold text-amber-600" title="Родитель не добавлен в WhatsApp-чат филиала">не в чате</span>}
                       </div>
                       <div className="mt-0.5 truncate text-[12px]" style={{ color: CLR.muted }}>{branchName(s.branchId)} · {studentGroupNames(s)}</div>
                     </button>
@@ -1147,6 +1148,9 @@ export default function StudentsRegistry({
                             {waitlistStudentIds.has(s.id) && (
                               <span title="В листе ожидания" className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold text-violet-600"><Clock className="h-3 w-3" /></span>
                             )}
+                            {s.parentChatAdded
+                              ? <span title="Родитель в WhatsApp-чате филиала" className="inline-flex items-center rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">в чате</span>
+                              : <span title="Родитель НЕ добавлен в WhatsApp-чат филиала" className="inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">не в чате</span>}
                           </div>
                         </td>
                         {colOn("phone") && <td className="px-3.5 py-3 text-[13px]" style={{ color: CLR.second }}>{phone}</td>}

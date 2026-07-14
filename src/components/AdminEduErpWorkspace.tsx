@@ -1170,7 +1170,7 @@ function CalendarView({ groups, teachers, branches, halls, scheduleItems, schedu
   const weekAhead = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
 
   const [lessonForm, setLessonForm] = useState({ groupId: "", teacherId: "", hallId: "", date: "", startTime: "", endTime: "", reason: "", topic: "" });
-  // Список времени (08:00–22:00, шаг 30 мин) — как у владельца и руководителя.
+  // Список времени (08:00–22:00, шаг 30 мин) — как у владельца и управляющего.
   const LESSON_TIMES = useMemo(() => { const o: string[] = []; for (let h = 8; h <= 22; h++) for (const m of [0, 30]) o.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`); return o; }, []);
   const [groupForm, setGroupForm] = useState({ name: "", branchId: "", teacherId: "", hallId: "", ageFrom: "", ageTo: "", level: "Начинающие", scheduleDays: "", scheduleTime: "" });
   const [saving, setSaving] = useState(false);

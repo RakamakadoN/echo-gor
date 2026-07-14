@@ -7,6 +7,9 @@ if (process.env.NODE_ENV !== "production") {
 // api/__entry.ts
 import express from "express";
 
+// server/mvpApi.ts
+import { createHmac, timingSafeEqual, scryptSync, randomBytes } from "node:crypto";
+
 // src/dataMock.ts
 var initialOrganizations = [
   { id: "org-echo-gor", name: "\u042D\u0445\u043E \u0413\u043E\u0440 (\u041A\u0430\u0432\u043A\u0430\u0437\u0441\u043A\u0438\u0435 \u0442\u0430\u043D\u0446\u044B)", slug: "echo-gor", status: "active" }
@@ -150,6 +153,7 @@ var initialStudents = [
     teacherId: "teach-aslan",
     parentName: "\u0410\u043B\u0438\u043D\u0430 \u0411\u043E\u043B\u043E\u0442\u0430\u0435\u0432\u0430",
     parentPhone: "+7 (701) 400-30-30",
+    parentChatAdded: true,
     guardians: [initialGuardians[0]],
     balance: 15e3,
     artistLevel: "\u0421\u043E\u043B\u0438\u0441\u0442" /* SOLOIST */,
@@ -173,6 +177,7 @@ var initialStudents = [
     teacherId: "teach-aslan",
     parentName: "\u0425\u0435\u0442\u0430\u0433 \u0414\u0437\u0430\u0433\u043E\u0435\u0432",
     parentPhone: "+7 (701) 333-55-77",
+    parentChatAdded: false,
     guardians: [initialGuardians[1]],
     balance: -45e3,
     artistLevel: "\u041F\u0440\u0435\u0434\u0441\u0442\u0430\u0432\u0438\u0442\u0435\u043B\u044C \u0448\u043A\u043E\u043B\u044B" /* SCHOOL_REPRESENTATIVE */,
@@ -185,6 +190,51 @@ var initialStudents = [
       { id: "sub-2", studentId: "stud-alan", name: "\u0410\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442 \u0410\u043D\u0441\u0430\u043C\u0431\u043B\u044C (12 \u0437\u0430\u043D\u044F\u0442\u0438\u0439)", price: 4500, lessonsTotal: 12, lessonsLeft: 0, validUntil: "2026-05-30", isAutoRenew: false, status: "expired" }
     ],
     paymentStatus: "\u0412 \u043E\u0436\u0438\u0434\u0430\u043D\u0438\u0438 \u043E\u043F\u043B\u0430\u0442\u044B"
+  },
+  {
+    id: "stud-madina",
+    organizationId: orgId,
+    name: "\u041C\u0430\u0434\u0438\u043D\u0430 \u041A\u0430\u0433\u0435\u0440\u043C\u0430\u0437\u043E\u0432\u0430",
+    age: 14,
+    photoUrl: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=200&fit=crop&q=80",
+    branchId: "branch-almaty",
+    groupIds: ["group-almaty-ensemble"],
+    teacherId: "teach-aslan",
+    status: "left",
+    parentName: "\u0417\u0430\u0440\u0435\u043C\u0430 \u041A\u0430\u0433\u0435\u0440\u043C\u0430\u0437\u043E\u0432\u0430",
+    parentPhone: "+7 (701) 222-11-44",
+    parentChatAdded: true,
+    balance: 0,
+    artistLevel: "\u041F\u0435\u0440\u0432\u044B\u0439 \u0448\u0430\u0433" /* FIRST_STEP */,
+    artistLevelPoints: 120,
+    achievements: [],
+    performances: [],
+    notes: [],
+    attendance: {},
+    subscriptions: []
+  },
+  {
+    id: "stud-timur",
+    organizationId: orgId,
+    name: "\u0422\u0438\u043C\u0443\u0440 \u0411\u0435\u043A\u0431\u043E\u0435\u0432",
+    age: 13,
+    photoUrl: "https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?w=200&fit=crop&q=80",
+    branchId: "branch-almaty",
+    groupIds: ["group-almaty-ensemble"],
+    teacherId: "teach-aslan",
+    parentName: "\u0410\u0439\u0433\u0443\u043B\u044C \u0411\u0435\u043A\u0431\u043E\u0435\u0432\u0430",
+    parentPhone: "+7 (701) 555-88-22",
+    parentChatAdded: false,
+    balance: 0,
+    artistLevel: "\u041F\u0435\u0440\u0432\u044B\u0439 \u0448\u0430\u0433" /* FIRST_STEP */,
+    artistLevelPoints: 60,
+    achievements: [],
+    performances: [],
+    notes: [],
+    attendance: {},
+    subscriptions: [
+      { id: "sub-3", studentId: "stud-timur", name: "\u0410\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442 \u0410\u043D\u0441\u0430\u043C\u0431\u043B\u044C (12 \u0437\u0430\u043D\u044F\u0442\u0438\u0439)", price: 4500, lessonsTotal: 12, lessonsLeft: 10, validUntil: "2026-07-20", isAutoRenew: true, status: "active" }
+    ]
   }
 ];
 var initialAnnouncements = [
@@ -1216,7 +1266,69 @@ var JUNIOR_MAX_AGE = 10;
 var JUNIOR_TABS = ["\u0413\u043B\u0430\u0432\u043D\u0430\u044F", "\u041D\u0430\u043A\u043B\u0435\u0439\u043A\u0438", "\u0414\u043E\u0441\u0442\u0438\u0436\u0435\u043D\u0438\u044F"];
 var SENIOR_TABS = ["\u0413\u043B\u0430\u0432\u043D\u0430\u044F", "\u041D\u0430\u043A\u043B\u0435\u0439\u043A\u0438", "\u0414\u043E\u0441\u0442\u0438\u0436\u0435\u043D\u0438\u044F", "\u041C\u043E\u0439 \u043F\u0443\u0442\u044C", "\u041F\u0430\u0441\u043F\u043E\u0440\u0442", "\u0421\u043E\u043E\u0431\u0449\u0435\u0441\u0442\u0432\u043E", "\u041C\u0430\u0433\u0430\u0437\u0438\u043D", "\u0412\u044B\u0441\u0442\u0443\u043F\u043B\u0435\u043D\u0438\u044F", "\u0412\u0438\u0434\u0435\u043E"];
 var accessGrantStaff = ["owner", "branch_manager", "admin"];
-var STUDENT_STANDARD_PASSWORD = "12345";
+var AUTH_SECRET = process.env.AUTH_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || "echo-gor-dev-secret-change-me";
+function hashPassword(plain) {
+  const salt = randomBytes(16).toString("hex");
+  const derived = scryptSync(String(plain), salt, 32).toString("hex");
+  return `scrypt$${salt}$${derived}`;
+}
+function verifyPassword(plain, stored) {
+  if (!stored) return false;
+  const parts = String(stored).split("$");
+  if (parts.length !== 3 || parts[0] !== "scrypt") return false;
+  const [, salt, hashHex] = parts;
+  let derived;
+  try {
+    derived = scryptSync(String(plain), salt, 32);
+  } catch {
+    return false;
+  }
+  const expected = Buffer.from(hashHex, "hex");
+  if (expected.length !== derived.length) return false;
+  return timingSafeEqual(expected, derived);
+}
+function signAuthToken(payload) {
+  const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const sig = createHmac("sha256", AUTH_SECRET).update(body).digest("base64url");
+  return `${body}.${sig}`;
+}
+function verifyAuthToken(token) {
+  const [body, sig] = String(token || "").split(".");
+  if (!body || !sig) return null;
+  const expected = createHmac("sha256", AUTH_SECRET).update(body).digest("base64url");
+  const a = Buffer.from(sig);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+  try {
+    return JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+function sessionFromAuthToken(p) {
+  if (p.role === "student") {
+    return {
+      userId: p.sub,
+      organizationId: p.org,
+      role: "student",
+      branchId: p.branchId,
+      dbBranchId: p.branchId,
+      fullName: p.name || "\u0423\u0447\u0435\u043D\u0438\u043A",
+      studentId: p.studentId,
+      accessLevel: p.level
+    };
+  }
+  const branchIds = p.branchIds && p.branchIds.length ? p.branchIds : p.branchId ? [p.branchId] : [];
+  return {
+    userId: p.sub,
+    organizationId: p.org,
+    role: p.role,
+    branchId: p.branchId,
+    dbBranchId: p.branchId,
+    fullName: p.name || "\u0421\u043E\u0442\u0440\u0443\u0434\u043D\u0438\u043A",
+    branchIds
+  };
+}
 function effectiveAccessLevel(manual, age) {
   if (manual === "junior" || manual === "senior") return manual;
   if (age === null || age === void 0) return "junior";
@@ -1273,6 +1385,11 @@ var isPlaceholder = (value) => {
 };
 var supabaseEnabled = Boolean(supabaseUrl && supabaseKey && !isPlaceholder(supabaseKey));
 function getSession(req) {
+  const authToken = String(req.headers["x-auth-token"] || "");
+  if (authToken) {
+    const payload = verifyAuthToken(authToken);
+    if (payload) return sessionFromAuthToken(payload);
+  }
   const studentToken = String(req.headers["x-student-token"] || "");
   if (studentToken) {
     const rec = studentAccessTokens.get(studentToken);
@@ -1297,7 +1414,8 @@ function getSession(req) {
 }
 function canSeeBranch(session, branchId) {
   if (session.role === "owner" || !branchId) return true;
-  return branchId === session.branchId || branchId === session.dbBranchId;
+  if (branchId === session.branchId || branchId === session.dbBranchId) return true;
+  return Boolean(session.branchIds && session.branchIds.includes(branchId));
 }
 async function supabaseFetch(table, query = "select=*", init = {}) {
   if (!supabaseEnabled) {
@@ -1466,6 +1584,7 @@ function mapDbWaitlist(row) {
   };
 }
 function mapDbUserToTeacher(user) {
+  const branchIds = Array.isArray(user.branch_ids) && user.branch_ids.length ? user.branch_ids.filter(Boolean) : user.branch_id ? [user.branch_id] : [];
   return {
     id: user.id,
     organizationId: user.organization_id,
@@ -1476,7 +1595,14 @@ function mapDbUserToTeacher(user) {
     bio: "\u041F\u0440\u0435\u043F\u043E\u0434\u0430\u0432\u0430\u0442\u0435\u043B\u044C \u0448\u043A\u043E\u043B\u044B \u042D\u0445\u043E \u0413\u043E\u0440.",
     experienceYears: 5,
     branchId: user.branch_id || null,
-    role: user.role || "teacher"
+    branchIds,
+    // все филиалы ответственности (046)
+    role: user.role || "teacher",
+    login: user.login || user.phone || "",
+    // логин для входа (046)
+    status: user.status || "active",
+    // активен/неактивен
+    hasPassword: Boolean(user.password_hash && user.password_hash !== "demo-only")
   };
 }
 function deriveStudentStatus(row, subs) {
@@ -1553,6 +1679,7 @@ function mapDbStudent(row, attendanceByStudent, subsByStudent) {
     waitlistAddedAt: row.__waitlist_added_at || null,
     parentName: row.parent_name || "\u0420\u043E\u0434\u0438\u0442\u0435\u043B\u044C",
     parentPhone: row.parent_phone || "",
+    parentChatAdded: Boolean(row.parent_chat_added),
     balance: computeStudentBalance(subsByStudent.get(row.id) || [], row.status),
     artistLevel: "\u041F\u0435\u0440\u0432\u044B\u0439 \u0448\u0430\u0433" /* FIRST_STEP */,
     artistLevelPoints: 0,
@@ -1703,14 +1830,15 @@ async function dbBootstrap(session) {
     studentCount: studentsRaw.filter((student) => student.group_id === group.id).length
   }));
   const isOwner = session.role === "owner";
-  const branchAllowed = (branchId) => isOwner || branchId === session.dbBranchId;
+  const sessionBranchSet = new Set([session.dbBranchId, ...session.branchIds || []].filter(Boolean));
+  const branchAllowed = (branchId) => isOwner || branchId != null && sessionBranchSet.has(branchId);
   const students = studentsRaw.filter((student) => {
     if (isOwner) return true;
     if (session.role === "teacher") {
       const group = groupById.get(student.group_id);
       return group?.teacher_id === session.userId;
     }
-    return student.branch_id === session.dbBranchId;
+    return branchAllowed(student.branch_id);
   }).map((student) => {
     const group = groupById.get(student.group_id);
     return mapDbStudent({ ...student, teacher_id: student.teacher_id || group?.teacher_id, __waitlist_added_at: waitlistAddedByStudent.get(student.id) || null }, attendanceByStudent, subsByStudent);
@@ -1758,7 +1886,7 @@ async function dbBootstrap(session) {
   const groupsVisible = groupsMapped.filter((group) => {
     if (isOwner) return true;
     if (session.role === "teacher") return group.teacherId === session.userId;
-    return group.branchId === session.dbBranchId;
+    return branchAllowed(group.branchId);
   });
   const studentNameById = new Map(
     studentsRaw.map((s) => [s.id, [s.first_name, s.last_name].filter(Boolean).join(" ") || s.full_name || "\u0423\u0447\u0435\u043D\u0438\u043A"])
@@ -1858,14 +1986,19 @@ function registerMvpApi(app2) {
   const PUBLIC_MVP_PATHS = /* @__PURE__ */ new Set([
     "/session/demo-users",
     "/session/demo-login",
-    "/student-auth"
+    "/student-auth",
+    "/student-auth/set-password",
+    // первый вход ученика: создание своего пароля
+    "/auth/login"
+    // настоящий вход сотрудника (логин + пароль)
   ]);
   app2.use("/api/mvp", (req, res, next) => {
     if (PUBLIC_MVP_PATHS.has(req.path)) return next();
+    const hasAuthToken = Boolean(req.headers["x-auth-token"]);
     const hasRole = Boolean(req.headers["x-demo-role"]);
     const hasStudentToken = Boolean(req.headers["x-student-token"]);
-    if (!hasRole && !hasStudentToken) {
-      return res.status(401).json({ error: "\u041D\u0435 \u0430\u0432\u0442\u043E\u0440\u0438\u0437\u043E\u0432\u0430\u043D\u043E: \u0443\u043A\u0430\u0436\u0438\u0442\u0435 \u0440\u043E\u043B\u044C \u0438\u043B\u0438 \u0432\u043E\u0439\u0434\u0438\u0442\u0435 \u043A\u0430\u043A \u0443\u0447\u0435\u043D\u0438\u043A" });
+    if (!hasAuthToken && !hasRole && !hasStudentToken) {
+      return res.status(401).json({ error: "\u041D\u0435 \u0430\u0432\u0442\u043E\u0440\u0438\u0437\u043E\u0432\u0430\u043D\u043E: \u0432\u043E\u0439\u0434\u0438\u0442\u0435 \u0432 \u0441\u0438\u0441\u0442\u0435\u043C\u0443" });
     }
     return next();
   });
@@ -1921,6 +2054,51 @@ function registerMvpApi(app2) {
     const session = demoUsers.find((user) => user.userId === requested || user.role === requested) || demoUsers[0];
     res.json({ session });
   });
+  app2.post("/api/mvp/auth/login", ah(async (req, res) => {
+    const login = String(req.body?.login || "").trim();
+    const password = String(req.body?.password || "");
+    if (!login || !password) return res.status(400).json({ error: "\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u043B\u043E\u0433\u0438\u043D \u0438 \u043F\u0430\u0440\u043E\u043B\u044C" });
+    if (!supabaseEnabled) {
+      return res.status(503).json({ error: "\u0411\u0430\u0437\u0430 \u043D\u0435 \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0430 \u2014 \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439\u0442\u0435 \u0434\u0435\u043C\u043E-\u0432\u0445\u043E\u0434 \u043F\u043E \u0440\u043E\u043B\u0438" });
+    }
+    const digits = login.replace(/\D/g, "");
+    const ors = [`login.eq.${login}`, `email.eq.${login}`];
+    if (digits.length >= 5) ors.push(`phone.like.*${digits.slice(-7)}*`);
+    const rows = await supabaseFetch(
+      "users",
+      `select=id,role,full_name,branch_id,branch_ids,status,phone,email,login,password_hash&organization_id=eq.${orgId2}&or=(${ors.join(",")})&limit=20`
+    ).catch(() => []);
+    const norm2 = (v) => String(v || "").trim().toLowerCase();
+    const loginLc = norm2(login);
+    const candidate = rows.find(
+      (u) => norm2(u.login) === loginLc || norm2(u.email) === loginLc || digits.length >= 5 && String(u.phone || "").replace(/\D/g, "").slice(-10) === digits.slice(-10)
+    );
+    if (!candidate) return res.status(401).json({ error: "\u041D\u0435\u0432\u0435\u0440\u043D\u044B\u0439 \u043B\u043E\u0433\u0438\u043D \u0438\u043B\u0438 \u043F\u0430\u0440\u043E\u043B\u044C" });
+    if (candidate.status && candidate.status !== "active") {
+      return res.status(403).json({ error: "\u0423\u0447\u0451\u0442\u043D\u0430\u044F \u0437\u0430\u043F\u0438\u0441\u044C \u043D\u0435\u0430\u043A\u0442\u0438\u0432\u043D\u0430. \u041E\u0431\u0440\u0430\u0442\u0438\u0442\u0435\u0441\u044C \u043A \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443." });
+    }
+    if (!verifyPassword(password, candidate.password_hash)) {
+      return res.status(401).json({ error: "\u041D\u0435\u0432\u0435\u0440\u043D\u044B\u0439 \u043B\u043E\u0433\u0438\u043D \u0438\u043B\u0438 \u043F\u0430\u0440\u043E\u043B\u044C" });
+    }
+    const branchIds = Array.isArray(candidate.branch_ids) && candidate.branch_ids.length ? candidate.branch_ids.filter(Boolean) : candidate.branch_id ? [candidate.branch_id] : [];
+    const token = signAuthToken({
+      sub: candidate.id,
+      role: candidate.role,
+      org: orgId2,
+      branchId: branchIds[0] || candidate.branch_id || null,
+      branchIds,
+      name: candidate.full_name || "\u0421\u043E\u0442\u0440\u0443\u0434\u043D\u0438\u043A"
+    });
+    supabaseFetch("users", `id=eq.${candidate.id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ last_login_at: (/* @__PURE__ */ new Date()).toISOString() }) }).catch(() => {
+    });
+    res.json({
+      token,
+      role: candidate.role,
+      userId: candidate.id,
+      fullName: candidate.full_name || "\u0421\u043E\u0442\u0440\u0443\u0434\u043D\u0438\u043A",
+      branchIds
+    });
+  }));
   app2.get("/api/mvp/bootstrap", async (req, res) => {
     const session = getSession(req);
     try {
@@ -2232,7 +2410,10 @@ function registerMvpApi(app2) {
         status: payload.status || "lead",
         manual_status: payload.manualStatus || null,
         skill_level: payload.skillLevel || null,
-        comment: payload.comment || null
+        comment: payload.comment || null,
+        // Личный кабинет заводится сразу при добавлении ученика (миграция 046):
+        // вход по телефону, пароль ученик создаёт сам при первом входе.
+        access_enabled: true
       })
     });
     await logStatusEvent(session, inserted[0]?.id, inserted[0]?.status, null, payload.branchId);
@@ -3490,6 +3671,18 @@ function registerMvpApi(app2) {
     const role = String(value || "teacher");
     return allowedRoles.includes(role) ? role : "teacher";
   };
+  const normalizeStatus = (value) => String(value) === "inactive" ? "inactive" : "active";
+  const normalizeBranchIds = (payload) => {
+    const arr = Array.isArray(payload.branchIds) ? payload.branchIds : [];
+    const single = payload.branchId ? [payload.branchId] : [];
+    return Array.from(new Set([...arr, ...single].filter(Boolean))).slice(0, 2);
+  };
+  const friendlyUserError = (raw) => {
+    const s = String(raw || "");
+    if (/duplicate key|unique/i.test(s) && /login/i.test(s)) return "\u0422\u0430\u043A\u043E\u0439 \u043B\u043E\u0433\u0438\u043D \u0443\u0436\u0435 \u0437\u0430\u043D\u044F\u0442";
+    if (/duplicate key|unique/i.test(s) && /email/i.test(s)) return "\u0422\u0430\u043A\u043E\u0439 email \u0443\u0436\u0435 \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0435\u0442\u0441\u044F";
+    return s || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C \u0441\u043E\u0442\u0440\u0443\u0434\u043D\u0438\u043A\u0430";
+  };
   app2.post("/api/mvp/teachers", async (req, res) => {
     const session = getSession(req);
     if (!ownerOnly(session, res)) return;
@@ -3497,24 +3690,33 @@ function registerMvpApi(app2) {
     if (!payload.name || !String(payload.name).trim()) {
       return res.status(400).json({ error: "\u0418\u043C\u044F \u043E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u043E" });
     }
+    const branchIds = normalizeBranchIds(payload);
+    const login = String(payload.login || payload.phone || "").trim() || null;
+    const role = normalizeRole(payload.role);
+    const password = String(payload.password || "");
+    if (role !== "teacher" && !password) {
+      return res.status(400).json({ error: "\u0414\u043B\u044F \u0430\u0434\u043C\u0438\u043D\u0430/\u0443\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0435\u0433\u043E \u0437\u0430\u0434\u0430\u0439\u0442\u0435 \u043F\u0430\u0440\u043E\u043B\u044C" });
+    }
     try {
       const inserted = await supabaseFetch("users", "", {
         method: "POST",
         body: JSON.stringify({
           organization_id: session.organizationId,
-          branch_id: payload.branchId || null,
-          role: normalizeRole(payload.role),
+          branch_id: branchIds[0] || payload.branchId || null,
+          branch_ids: branchIds,
+          role,
           full_name: String(payload.name).trim(),
           phone: payload.phone || null,
+          login,
           email: payload.email || `staff-${Date.now()}@echogor.demo`,
-          password_hash: "demo-only",
+          password_hash: password ? hashPassword(password) : "demo-only",
           specialization: payload.specialization || null,
-          status: "active"
+          status: normalizeStatus(payload.status)
         })
       });
       res.status(201).json({ teacher: mapDbUserToTeacher(inserted[0]) });
     } catch (error) {
-      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0437\u0434\u0430\u0442\u044C \u043F\u0440\u0435\u043F\u043E\u0434\u0430\u0432\u0430\u0442\u0435\u043B\u044F" });
+      res.status(400).json({ error: friendlyUserError(error.message) });
     }
   });
   app2.patch("/api/mvp/teachers/:id", async (req, res) => {
@@ -3525,8 +3727,17 @@ function registerMvpApi(app2) {
     if (payload.name !== void 0) updates.full_name = String(payload.name).trim();
     if (payload.phone !== void 0) updates.phone = payload.phone || null;
     if (payload.specialization !== void 0) updates.specialization = payload.specialization || null;
-    if (payload.branchId !== void 0) updates.branch_id = payload.branchId || null;
+    if (payload.login !== void 0) updates.login = String(payload.login || "").trim() || null;
+    if (payload.status !== void 0) updates.status = normalizeStatus(payload.status);
     if (payload.role !== void 0) updates.role = normalizeRole(payload.role);
+    if (payload.branchId !== void 0 || payload.branchIds !== void 0) {
+      const branchIds = normalizeBranchIds(payload);
+      updates.branch_ids = branchIds;
+      updates.branch_id = branchIds[0] || null;
+    }
+    if (payload.password !== void 0 && String(payload.password)) {
+      updates.password_hash = hashPassword(String(payload.password));
+    }
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({ error: "\u041D\u0435\u0442 \u043F\u043E\u043B\u0435\u0439 \u0434\u043B\u044F \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F" });
     }
@@ -3539,7 +3750,7 @@ function registerMvpApi(app2) {
       if (!rows[0]) return res.status(404).json({ error: "\u0421\u043E\u0442\u0440\u0443\u0434\u043D\u0438\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
       res.json({ teacher: mapDbUserToTeacher(rows[0]) });
     } catch (error) {
-      res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u043F\u0440\u0435\u043F\u043E\u0434\u0430\u0432\u0430\u0442\u0435\u043B\u044F" });
+      res.status(400).json({ error: friendlyUserError(error.message) });
     }
   });
   app2.delete("/api/mvp/teachers/:id", async (req, res) => {
@@ -3557,6 +3768,20 @@ function registerMvpApi(app2) {
       res.status(400).json({ error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u043F\u0440\u0435\u043F\u043E\u0434\u0430\u0432\u0430\u0442\u0435\u043B\u044F" });
     }
   });
+  app2.get("/api/mvp/staff", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!ownerOnly(session, res)) return;
+    const rolesParam = String(req.query.roles || "").trim();
+    const wantAll = rolesParam === "all";
+    if (!supabaseEnabled) {
+      const list = initialTeachers.map((t) => ({ ...t, login: t.phone || "", status: "active", branchIds: t.branchId ? [t.branchId] : [], hasPassword: false }));
+      return res.json({ staff: wantAll ? list : [] });
+    }
+    const rows = await supabaseFetch("users", `select=*&organization_id=eq.${orgId2}&status=neq.archived`).catch(() => []);
+    const mapped = rows.map(mapDbUserToTeacher);
+    const staff = wantAll ? mapped : mapped.filter((u) => u.role === "admin" || u.role === "branch_manager");
+    res.json({ staff });
+  }));
   app2.get("/api/mvp/dance-events", async (req, res) => {
     if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
     const parts = ["select=*", "order=start_date.asc.nullslast"];
@@ -5926,6 +6151,20 @@ function registerMvpApi(app2) {
     res.json({ ok: true, status, fulfilled });
   }));
   const mockStudentAccess = {};
+  const mockStudentPasswords = {};
+  const issueStudentSession = (opts) => {
+    const authToken = signAuthToken({
+      sub: `student-${opts.studentId}`,
+      role: "student",
+      org: orgId2,
+      branchId: opts.branchId,
+      studentId: opts.studentId,
+      level: opts.level,
+      name: opts.name
+    });
+    studentAccessTokens.set(authToken, { studentId: opts.studentId, level: opts.level, branchId: opts.branchId });
+    return { studentId: opts.studentId, name: opts.name, level: opts.level, token: authToken, tabs: tabsForLevel(opts.level) };
+  };
   const ageFromBirthday = (b) => {
     if (!b) return null;
     const d = new Date(b);
@@ -6051,21 +6290,27 @@ function registerMvpApi(app2) {
     const badCred = () => res.status(401).json({ error: "\u041A\u043E\u0434 \u043D\u0435\u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0442\u0435\u043B\u0435\u043D \u0438\u043B\u0438 \u0434\u043E\u0441\u0442\u0443\u043F \u043E\u0442\u043E\u0437\u0432\u0430\u043D" });
     if (phoneDigits) {
       if (phoneDigits.length < 10) return res.status(400).json({ error: "\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u043D\u043E\u043C\u0435\u0440 \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u0430 \u043F\u043E\u043B\u043D\u043E\u0441\u0442\u044C\u044E" });
-      if (password !== STUDENT_STANDARD_PASSWORD) return res.status(401).json({ error: "\u041D\u0435\u0432\u0435\u0440\u043D\u044B\u0439 \u043F\u0430\u0440\u043E\u043B\u044C" });
       const last10 = (v) => String(v || "").replace(/\D/g, "").slice(-10);
       if (!supabaseEnabled) {
         const s = initialStudents.find((x) => last10(x.phone) === phoneDigits || last10(x.parentPhone) === phoneDigits);
         if (!s) return res.status(404).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u0441 \u0442\u0430\u043A\u0438\u043C \u043D\u043E\u043C\u0435\u0440\u043E\u043C \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
         const level3 = effectiveAccessLevel(mockStudentAccess[s.id]?.level ?? null, s.age ?? ageFromBirthday(s.birthday));
-        return res.json({ studentId: s.id, name: s.name, level: level3, token: null, tabs: tabsForLevel(level3) });
+        const stored = mockStudentPasswords[s.id];
+        if (!stored) return res.json({ needsPassword: true, studentId: s.id, name: s.name, phone: phoneDigits });
+        if (!verifyPassword(password, stored)) return res.status(401).json({ error: "\u041D\u0435\u0432\u0435\u0440\u043D\u044B\u0439 \u043F\u0430\u0440\u043E\u043B\u044C" });
+        return res.json(issueStudentSession({ studentId: s.id, name: s.name, level: level3, branchId: s.branchId ?? null }));
       }
       const tail7 = phoneDigits.slice(-7);
-      const rows2 = await supabaseFetch("students", `select=id,first_name,last_name,birthday,branch_id,access_level,phone,parent_phone&or=(phone.like.*${tail7}*,parent_phone.like.*${tail7}*)&limit=20`).catch(() => []);
+      const rows2 = await supabaseFetch("students", `select=id,first_name,last_name,birthday,branch_id,access_level,phone,parent_phone,password_hash,password_set&or=(phone.like.*${tail7}*,parent_phone.like.*${tail7}*)&limit=20`).catch(() => []);
       const r2 = rows2.find((x) => last10(x.phone) === phoneDigits || last10(x.parent_phone) === phoneDigits);
       if (!r2) return res.status(404).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u0441 \u0442\u0430\u043A\u0438\u043C \u043D\u043E\u043C\u0435\u0440\u043E\u043C \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
       const name2 = [r2.first_name, r2.last_name].filter(Boolean).join(" ") || "\u0423\u0447\u0435\u043D\u0438\u043A";
       const level2 = effectiveAccessLevel(r2.access_level, ageFromBirthday(r2.birthday));
-      return res.json({ studentId: r2.id, name: name2, level: level2, token: null, tabs: tabsForLevel(level2) });
+      if (!r2.password_set || !r2.password_hash) {
+        return res.json({ needsPassword: true, studentId: r2.id, name: name2, phone: phoneDigits });
+      }
+      if (!verifyPassword(password, r2.password_hash)) return res.status(401).json({ error: "\u041D\u0435\u0432\u0435\u0440\u043D\u044B\u0439 \u043F\u0430\u0440\u043E\u043B\u044C" });
+      return res.json(issueStudentSession({ studentId: r2.id, name: name2, level: level2, branchId: r2.branch_id ?? null }));
     }
     if (!token && !code) return res.status(400).json({ error: "\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u043D\u043E\u043C\u0435\u0440 \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u0430 \u0438 \u043F\u0430\u0440\u043E\u043B\u044C" });
     if (!supabaseEnabled) {
@@ -6077,9 +6322,7 @@ function registerMvpApi(app2) {
       if (!s) return res.status(404).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
       const rec = mockStudentAccess[studentId];
       const level2 = effectiveAccessLevel(rec?.level ?? null, s.age ?? ageFromBirthday(s.birthday));
-      const outToken2 = rec?.token || token || "";
-      if (outToken2) studentAccessTokens.set(outToken2, { studentId, level: level2, branchId: s.branchId ?? null });
-      return res.json({ studentId, name: s.name, level: level2, token: outToken2 || null, tabs: tabsForLevel(level2) });
+      return res.json(issueStudentSession({ studentId, name: s.name, level: level2, branchId: s.branchId ?? null }));
     }
     const filter = token ? `access_token=eq.${token}` : `access_code=eq.${code}`;
     const rows = await supabaseFetch("students", `select=id,first_name,last_name,birthday,branch_id,access_level,access_token,access_enabled&${filter}&access_enabled=is.true&limit=1`);
@@ -6087,9 +6330,35 @@ function registerMvpApi(app2) {
     if (!r) return badCred();
     const name = [r.first_name, r.last_name].filter(Boolean).join(" ") || r.full_name || "\u0423\u0447\u0435\u043D\u0438\u043A";
     const level = effectiveAccessLevel(r.access_level, ageFromBirthday(r.birthday));
-    const outToken = r.access_token || token || "";
-    if (outToken) studentAccessTokens.set(outToken, { studentId: r.id, level, branchId: r.branch_id ?? null });
-    res.json({ studentId: r.id, name, level, token: outToken || null, tabs: tabsForLevel(level) });
+    res.json(issueStudentSession({ studentId: r.id, name, level, branchId: r.branch_id ?? null }));
+  }));
+  app2.post("/api/mvp/student-auth/set-password", ah(async (req, res) => {
+    const body = req.body || {};
+    const phoneDigits = String(body.phone || "").replace(/\D/g, "").slice(-10);
+    const password = String(body.password || "");
+    if (phoneDigits.length < 10) return res.status(400).json({ error: "\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u043D\u043E\u043C\u0435\u0440 \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u0430 \u043F\u043E\u043B\u043D\u043E\u0441\u0442\u044C\u044E" });
+    if (password.length < 4) return res.status(400).json({ error: "\u041F\u0430\u0440\u043E\u043B\u044C \u0434\u043E\u043B\u0436\u0435\u043D \u0431\u044B\u0442\u044C \u043D\u0435 \u043A\u043E\u0440\u043E\u0447\u0435 4 \u0441\u0438\u043C\u0432\u043E\u043B\u043E\u0432" });
+    const last10 = (v) => String(v || "").replace(/\D/g, "").slice(-10);
+    if (!supabaseEnabled) {
+      const s = initialStudents.find((x) => last10(x.phone) === phoneDigits || last10(x.parentPhone) === phoneDigits);
+      if (!s) return res.status(404).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u0441 \u0442\u0430\u043A\u0438\u043C \u043D\u043E\u043C\u0435\u0440\u043E\u043C \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+      mockStudentPasswords[s.id] = hashPassword(password);
+      const level2 = effectiveAccessLevel(mockStudentAccess[s.id]?.level ?? null, s.age ?? ageFromBirthday(s.birthday));
+      return res.json(issueStudentSession({ studentId: s.id, name: s.name, level: level2, branchId: s.branchId ?? null }));
+    }
+    const tail7 = phoneDigits.slice(-7);
+    const rows = await supabaseFetch("students", `select=id,first_name,last_name,birthday,branch_id,access_level,phone,parent_phone,password_set&or=(phone.like.*${tail7}*,parent_phone.like.*${tail7}*)&limit=20`).catch(() => []);
+    const r = rows.find((x) => last10(x.phone) === phoneDigits || last10(x.parent_phone) === phoneDigits);
+    if (!r) return res.status(404).json({ error: "\u0423\u0447\u0435\u043D\u0438\u043A \u0441 \u0442\u0430\u043A\u0438\u043C \u043D\u043E\u043C\u0435\u0440\u043E\u043C \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" });
+    if (r.password_set) return res.status(409).json({ error: "\u041F\u0430\u0440\u043E\u043B\u044C \u0443\u0436\u0435 \u0441\u043E\u0437\u0434\u0430\u043D \u2014 \u0432\u043E\u0439\u0434\u0438\u0442\u0435 \u0441 \u043D\u0438\u043C" });
+    await supabaseFetch("students", `id=eq.${r.id}`, {
+      method: "PATCH",
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({ password_hash: hashPassword(password), password_set: true, access_enabled: true })
+    });
+    const name = [r.first_name, r.last_name].filter(Boolean).join(" ") || "\u0423\u0447\u0435\u043D\u0438\u043A";
+    const level = effectiveAccessLevel(r.access_level, ageFromBirthday(r.birthday));
+    res.json(issueStudentSession({ studentId: r.id, name, level, branchId: r.branch_id ?? null }));
   }));
   const echoStaff = ["owner", "branch_manager", "admin", "teacher"];
   const mockEchoBalances = {};
@@ -8115,11 +8384,17 @@ function registerMvpApi(app2) {
     res.json({ ok: true });
   }));
   const arrivalStore = {};
-  const arrivalKey = (session, date) => `${session.organizationId}:${date}:${session.userId}`;
+  const arrivalKey = (org, date, userId) => `${org}:${date}:${userId}`;
+  const almatyNowMinutes = () => {
+    const t = new Intl.DateTimeFormat("ru-RU", { timeZone: "Asia/Almaty", hour: "2-digit", minute: "2-digit", hour12: false }).format(/* @__PURE__ */ new Date());
+    const [h, m] = t.split(":").map(Number);
+    return h * 60 + m;
+  };
+  const minsToHHMM = (mins) => `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
   app2.get("/api/mvp/teachers/arrival/today", ah(async (req, res) => {
     const session = getSession(req);
     const date = KZ_DATE.format(/* @__PURE__ */ new Date());
-    const local = arrivalStore[arrivalKey(session, date)];
+    const local = arrivalStore[arrivalKey(session.organizationId, date, session.userId)];
     if (local) return res.json({ arrival: { time: local.time, late: local.late } });
     if (supabaseEnabled) {
       try {
@@ -8137,10 +8412,13 @@ function registerMvpApi(app2) {
       return res.status(403).json({ error: "\u041D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u043E" });
     const b = req.body || {};
     const date = KZ_DATE.format(/* @__PURE__ */ new Date());
-    const time = String(b.time || "").match(/^\d{1,2}:\d{2}$/) ? String(b.time) : KZ_DATE.format(/* @__PURE__ */ new Date());
-    const late = Boolean(b.late);
+    const nowMin = almatyNowMinutes();
+    const time = minsToHHMM(nowMin);
+    const expected = Number(b.expectedStart);
+    const late = Number.isFinite(expected) ? nowMin > expected + 5 : Boolean(b.late);
     const photo = typeof b.photo === "string" ? b.photo : null;
-    arrivalStore[arrivalKey(session, date)] = { time, late, photo, date };
+    const teacherName = session.fullName || "\u041F\u0435\u0434\u0430\u0433\u043E\u0433";
+    arrivalStore[arrivalKey(session.organizationId, date, session.userId)] = { time, late, photo, date, teacherId: session.userId, teacherName };
     if (supabaseEnabled) {
       try {
         await supabaseFetch("teacher_arrivals", "", {
@@ -8148,7 +8426,8 @@ function registerMvpApi(app2) {
           headers: { Prefer: "resolution=merge-duplicates" },
           body: JSON.stringify({
             organization_id: session.organizationId,
-            teacher_id: null,
+            teacher_id: session.userId,
+            teacher_name: teacherName,
             branch_id: session.dbBranchId || null,
             arrival_date: date,
             arrival_time: time,
@@ -8160,6 +8439,175 @@ function registerMvpApi(app2) {
       }
     }
     res.status(201).json({ arrival: { time, late } });
+  }));
+  const TINY_PHOTO = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+  const seedDemoArrivals = (org) => {
+    const d = KZ_DATE.format(/* @__PURE__ */ new Date());
+    const yD = /* @__PURE__ */ new Date();
+    yD.setDate(yD.getDate() - 1);
+    const yesterday = KZ_DATE.format(yD);
+    const mk = (date, teacherId, teacherName, time, late, photo) => {
+      const key = arrivalKey(org, date, teacherId);
+      if (!arrivalStore[key]) arrivalStore[key] = { teacherId, teacherName, time, late, photo, date };
+    };
+    mk(d, "teach-aslan", "\u0410\u0441\u043B\u0430\u043D \u041F\u043B\u0438\u0435\u0432", "16:52", false, TINY_PHOTO);
+    mk(d, "teach-fatima", "\u0424\u0430\u0442\u0438\u043C\u0430 \u0426\u0430\u0440\u0438\u043A\u0430\u0435\u0432\u0430", "17:14", true, null);
+    mk(yesterday, "teach-aslan", "\u0410\u0441\u043B\u0430\u043D \u041F\u043B\u0438\u0435\u0432", "16:58", false, TINY_PHOTO);
+    mk(yesterday, "teach-shamil", "\u0428\u0430\u043C\u0438\u043B\u044C \u0413\u0430\u043C\u0437\u0430\u0442\u043E\u0432", "18:20", true, TINY_PHOTO);
+  };
+  app2.get("/api/mvp/staff/standards", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager")
+      return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443 \u0438 \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0435\u043C\u0443" });
+    if (!supabaseEnabled) seedDemoArrivals(session.organizationId);
+    const from = String(req.query.from || KZ_DATE.format(/* @__PURE__ */ new Date()));
+    const to = String(req.query.to || from);
+    const local = Object.values(arrivalStore).filter((a) => a.date >= from && a.date <= to && arrivalStore[arrivalKey(session.organizationId, a.date, a.teacherId)]);
+    let arrivals = local.map((a) => ({ teacherId: a.teacherId, teacherName: a.teacherName, date: a.date, time: a.time, late: a.late, hasPhoto: !!a.photo }));
+    if (supabaseEnabled) {
+      try {
+        let q = `organization_id=eq.${session.organizationId}&arrival_date=gte.${from}&arrival_date=lte.${to}&select=teacher_id,teacher_name,arrival_date,arrival_time,is_late,photo`;
+        if (session.role === "branch_manager" && session.dbBranchId) q += `&branch_id=eq.${session.dbBranchId}`;
+        const rows = await supabaseFetch("teacher_arrivals", q).catch(() => []);
+        if (rows.length) arrivals = rows.map((r) => ({ teacherId: r.teacher_id, teacherName: r.teacher_name, date: r.arrival_date, time: r.arrival_time, late: r.is_late, hasPhoto: !!r.photo }));
+      } catch {
+      }
+    }
+    res.json({ from, to, arrivals });
+  }));
+  app2.get("/api/mvp/teachers/trials-today", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) return res.json({ trials: [] });
+    const today = KZ_DATE.format(/* @__PURE__ */ new Date());
+    const start = (/* @__PURE__ */ new Date(`${today}T00:00:00+05:00`)).toISOString();
+    const endD = /* @__PURE__ */ new Date(`${today}T00:00:00+05:00`);
+    endD.setDate(endD.getDate() + 1);
+    const end = endD.toISOString();
+    const timeFmt = new Intl.DateTimeFormat("ru-RU", { timeZone: "Asia/Almaty", hour: "2-digit", minute: "2-digit", hour12: false });
+    try {
+      const lessons = await supabaseFetch(
+        "schedule_lessons",
+        `select=id,group_id,starts_at&organization_id=eq.${session.organizationId}&starts_at=gte.${encodeURIComponent(start)}&starts_at=lt.${encodeURIComponent(end)}`
+      ).catch(() => []);
+      if (!lessons.length) return res.json({ trials: [] });
+      const lessonIds = lessons.map((l) => l.id).filter(Boolean);
+      const marks = await supabaseFetch(
+        "attendance",
+        `select=student_id,lesson_id,trial_outcome,status&is_trial=eq.true&lesson_id=in.(${lessonIds.join(",")})`
+      ).catch(() => []);
+      if (!marks.length) return res.json({ trials: [] });
+      const studentIds = [...new Set(marks.map((m) => m.student_id).filter(Boolean))];
+      const groupIds = [...new Set(lessons.map((l) => l.group_id).filter(Boolean))];
+      const students = studentIds.length ? await supabaseFetch("students", `select=id,name,phone,parent_phone&id=in.(${studentIds.join(",")})`).catch(() => []) : [];
+      const groups = groupIds.length ? await supabaseFetch("groups", `select=id,name,teacher_id&id=in.(${groupIds.join(",")})`).catch(() => []) : [];
+      const gById = Object.fromEntries(groups.map((g2) => [g2.id, g2]));
+      const lById = Object.fromEntries(lessons.map((l) => [l.id, l]));
+      const sById = Object.fromEntries(students.map((s) => [s.id, s]));
+      let trials = marks.map((m) => {
+        const l = lById[m.lesson_id];
+        const g2 = l ? gById[l.group_id] : null;
+        const s = sById[m.student_id];
+        const outcome = m.trial_outcome || (m.status === "unknown" || !m.status ? "pending" : m.status);
+        return {
+          studentId: m.student_id,
+          studentName: s?.name || "\u0423\u0447\u0435\u043D\u0438\u043A",
+          phone: s?.phone || s?.parent_phone || "",
+          groupId: l?.group_id || null,
+          groupName: g2?.name || "",
+          teacherId: g2?.teacher_id || null,
+          time: l?.starts_at ? timeFmt.format(new Date(l.starts_at)) : "",
+          outcome
+          // pending | converted | lost
+        };
+      });
+      if (session.role === "teacher") trials = trials.filter((t) => !t.teacherId || t.teacherId === session.userId);
+      trials.sort((a, b) => String(a.time).localeCompare(String(b.time)));
+      res.json({ trials });
+    } catch {
+      res.json({ trials: [] });
+    }
+  }));
+  app2.get("/api/mvp/manager/reconciliations", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager")
+      return res.status(403).json({ error: "\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0435\u043C\u0443 \u0438 \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.json({ shifts: [] });
+    const from = typeof req.query.from === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.query.from) ? req.query.from : "";
+    const parts = [
+      `organization_id=eq.${session.organizationId}`,
+      "select=id,branch_id,shift_date,opened_at,closed_at,expected_cash,counted_cash,cash_diff,cash_reason,cash_status,cash_closed_by,cash_confirmed_by,cash_confirmed_at",
+      "order=shift_date.desc",
+      "limit=300"
+    ];
+    if (from) parts.push(`shift_date=gte.${from}`);
+    const shifts = await supabaseFetch("admin_shifts", parts.join("&")).catch(() => []);
+    res.json({ shifts });
+  }));
+  app2.post("/api/mvp/manager/reconciliations/:id/confirm", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager")
+      return res.status(403).json({ error: "\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0435\u043C\u0443 \u0438 \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    const id = String(req.params.id || "");
+    if (!/^[0-9a-fA-F-]{36}$/.test(id)) return res.status(400).json({ error: "\u041D\u0435\u043A\u043E\u0440\u0440\u0435\u043A\u0442\u043D\u044B\u0439 id" });
+    if (!supabaseEnabled) return res.json({ ok: true });
+    await supabaseFetch("admin_shifts", `id=eq.${id}&organization_id=eq.${session.organizationId}`, {
+      method: "PATCH",
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({
+        cash_status: "confirmed",
+        cash_confirmed_by: session.fullName || "\u0423\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0438\u0439",
+        cash_confirmed_at: (/* @__PURE__ */ new Date()).toISOString(),
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      })
+    }).catch(() => {
+    });
+    res.json({ ok: true });
+  }));
+  app2.post("/api/mvp/students/:id/chat-added", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role === "teacher" || session.role === "student")
+      return res.status(403).json({ error: "\u041D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u043E" });
+    const id = String(req.params.id || "");
+    if (!/^[0-9a-fA-F-]{36}$/.test(id)) return res.status(400).json({ error: "\u041D\u0435\u043A\u043E\u0440\u0440\u0435\u043A\u0442\u043D\u044B\u0439 id" });
+    const added = req.body && typeof req.body.added === "boolean" ? req.body.added : true;
+    if (!supabaseEnabled) return res.json({ ok: true, added });
+    await supabaseFetch("students", `id=eq.${id}&organization_id=eq.${session.organizationId}`, {
+      method: "PATCH",
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({ parent_chat_added: added })
+    }).catch(() => {
+    });
+    res.json({ ok: true, added });
+  }));
+  const managerCompStore = {};
+  const managerCompDefaults = () => ({ baseSalary: 25e4, tiers: [{ threshold: 80, bonus: 8e4 }, { threshold: 100, bonus: 18e4 }, { threshold: 110, bonus: 32e4 }] });
+  app2.get("/api/mvp/manager/compensation", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager") return res.status(403).json({ error: "\u041D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u043E" });
+    let cfg = managerCompStore[session.organizationId];
+    if (!cfg && supabaseEnabled) {
+      const rows = await supabaseFetch("manager_compensation", `organization_id=eq.${session.organizationId}&select=base_salary,tiers`).catch(() => []);
+      if (rows[0]) cfg = { baseSalary: Number(rows[0].base_salary) || 0, tiers: Array.isArray(rows[0].tiers) ? rows[0].tiers : [] };
+    }
+    res.json(cfg || managerCompDefaults());
+  }));
+  app2.put("/api/mvp/manager/compensation", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u041D\u0430\u0441\u0442\u0440\u0430\u0438\u0432\u0430\u0442\u044C \u043C\u043E\u0436\u0435\u0442 \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u0435\u0446" });
+    const b = req.body || {};
+    const baseSalary = Math.max(0, Number(b.baseSalary) || 0);
+    const tiers = Array.isArray(b.tiers) ? b.tiers.map((t) => ({ threshold: Math.max(0, Number(t.threshold) || 0), bonus: Math.max(0, Number(t.bonus) || 0) })).sort((x, y) => x.threshold - y.threshold) : [];
+    const cfg = { baseSalary, tiers };
+    managerCompStore[session.organizationId] = cfg;
+    if (supabaseEnabled) {
+      await supabaseFetch("manager_compensation", "", {
+        method: "POST",
+        headers: { Prefer: "resolution=merge-duplicates" },
+        body: JSON.stringify({ organization_id: session.organizationId, base_salary: baseSalary, tiers, updated_at: (/* @__PURE__ */ new Date()).toISOString() })
+      }).catch(() => {
+      });
+    }
+    res.json(cfg);
   }));
 }
 
@@ -8174,12 +8622,48 @@ async function generateJson(prompt) {
   const response = await genai.models.generateContent({
     model,
     contents: prompt,
-    config: { responseMimeType: "application/json", temperature: 0.7 }
+    // maxOutputTokens повыше, чтобы длинные отчёты не обрезались (обрыв = битый JSON).
+    config: { responseMimeType: "application/json", temperature: 0.6, maxOutputTokens: 8192 }
   });
-  const text = response.text ?? "";
-  return JSON.parse(text);
+  const raw = response.text ?? "";
+  return parseLooseJson(raw);
+}
+function parseLooseJson(raw) {
+  let text = String(raw || "").trim();
+  text = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+  try {
+    return JSON.parse(text);
+  } catch {
+  }
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    try {
+      return JSON.parse(text.slice(start, end + 1));
+    } catch {
+    }
+  }
+  throw new Error("\u0418\u0418 \u0432\u0435\u0440\u043D\u0443\u043B \u043E\u0442\u0432\u0435\u0442 \u0432 \u043D\u0435\u0432\u0435\u0440\u043D\u043E\u043C \u0444\u043E\u0440\u043C\u0430\u0442\u0435 \u2014 \u043F\u043E\u043F\u0440\u043E\u0431\u0443\u0439\u0442\u0435 \u0435\u0449\u0451 \u0440\u0430\u0437.");
 }
 function registerGeminiApi(app2) {
+  app2.post("/api/gemini/period-report", async (req, res) => {
+    if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });
+    const { kind, metrics, scopeLabel } = req.body || {};
+    const isMonth = kind === "month";
+    const scope = String(scopeLabel || metrics && metrics.\u043E\u0431\u043B\u0430\u0441\u0442\u044C || "\u0412\u0441\u044F \u0441\u0435\u0442\u044C");
+    const isNetwork = scope === "\u0412\u0441\u044F \u0441\u0435\u0442\u044C";
+    const audience = isMonth ? "\u043C\u0435\u0441\u044F\u0447\u043D\u0430\u044F \u043F\u043B\u0430\u043D\u0451\u0440\u043A\u0430 \u0441 \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0438\u043C\u0438 \u0444\u0438\u043B\u0438\u0430\u043B\u043E\u0432: \u0440\u0430\u0437\u0431\u043E\u0440 \u0411\u0414\u0420 \u043F\u043B\u0430\u043D/\u0444\u0430\u043A\u0442, \u0447\u0438\u0441\u0442\u0430\u044F \u043F\u0440\u0438\u0431\u044B\u043B\u044C, \u0443\u0434\u0435\u0440\u0436\u0430\u043D\u0438\u0435/\u043E\u0442\u0442\u043E\u043A, \u0432\u043E\u0440\u043E\u043D\u043A\u0430, \u0438 \u043F\u043B\u0430\u043D \u043D\u0430 \u0442\u0435\u043A\u0443\u0449\u0438\u0439 \u043C\u0435\u0441\u044F\u0446" : "\u043D\u0435\u0434\u0435\u043B\u044C\u043D\u0430\u044F \u043F\u043B\u0430\u043D\u0451\u0440\u043A\u0430 \u0441 \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0438\u043C\u0438: \u0438\u0442\u043E\u0433\u0438 \u043F\u0440\u043E\u0448\u0435\u0434\u0448\u0435\u0439 \u043D\u0435\u0434\u0435\u043B\u0438 \u0438 \u0444\u043E\u043A\u0443\u0441-\u0437\u0430\u0434\u0430\u0447\u0438 \u043D\u0430 \u0442\u0435\u043A\u0443\u0449\u0443\u044E \u043D\u0435\u0434\u0435\u043B\u044E";
+    const scopeRule = isNetwork ? "\u041E\u0431\u043B\u0430\u0441\u0442\u044C \u043E\u0442\u0447\u0451\u0442\u0430 \u2014 \u0432\u0441\u044F \u0441\u0435\u0442\u044C: \u0433\u0434\u0435 \u0443\u043C\u0435\u0441\u0442\u043D\u043E, \u0434\u0430\u0439 \u0440\u0430\u0437\u0431\u0438\u0432\u043A\u0443 \u043F\u043E \u0444\u0438\u043B\u0438\u0430\u043B\u0430\u043C." : `\u041E\u0431\u043B\u0430\u0441\u0442\u044C \u043E\u0442\u0447\u0451\u0442\u0430 \u2014 ${scope}. \u041D\u0415 \u0434\u0430\u0432\u0430\u0439 \u0440\u0430\u0437\u0431\u0438\u0432\u043A\u0443 \u043F\u043E \u0444\u0438\u043B\u0438\u0430\u043B\u0430\u043C \u0438 \u043F\u043E \u0441\u0435\u0442\u0438 \u2014 \u0441\u0444\u043E\u043A\u0443\u0441\u0438\u0440\u0443\u0439\u0441\u044F \u0422\u041E\u041B\u042C\u041A\u041E \u043D\u0430 \u044D\u0442\u043E\u0439 \u043E\u0431\u043B\u0430\u0441\u0442\u0438. \u0417\u0430\u0434\u0430\u0447\u0438 \u0430\u0434\u0440\u0435\u0441\u0443\u0439 \u043E\u0442\u0432\u0435\u0442\u0441\u0442\u0432\u0435\u043D\u043D\u043E\u043C\u0443 \u0437\u0430 \u044D\u0442\u0443 \u043E\u0431\u043B\u0430\u0441\u0442\u044C.`;
+    const prompt = `\u0422\u044B \u2014 \u043E\u043F\u0435\u0440\u0430\u0446\u0438\u043E\u043D\u043D\u044B\u0439 \u0434\u0438\u0440\u0435\u043A\u0442\u043E\u0440 \u0441\u0435\u0442\u0438 \u0448\u043A\u043E\u043B \u043A\u0430\u0432\u043A\u0430\u0437\u0441\u043A\u043E\u0433\u043E \u0442\u0430\u043D\u0446\u0430 \xAB\u042D\u0445\u043E \u0413\u043E\u0440\xBB (\u041A\u0430\u0437\u0430\u0445\u0441\u0442\u0430\u043D). \u0421\u043E\u0441\u0442\u0430\u0432\u044C \u0434\u0435\u043B\u043E\u0432\u043E\u0439 \u043E\u0442\u0447\u0451\u0442 \u0434\u043B\u044F \u043F\u043B\u0430\u043D\u0451\u0440\u043A\u0438 \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0430 \u0441 \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0438\u043C\u0438. \u0422\u0438\u043F: ${audience}. ${scopeRule} \u0412\u0435\u0440\u043D\u0438 \u0421\u0422\u0420\u041E\u0413\u041E JSON \u043F\u043E \u0441\u0445\u0435\u043C\u0435:
+{"title": string, "tldr": string, "sections": [{"title": string, "points": string[]}], "focus": string[]}
+\u041F\u0440\u0430\u0432\u0438\u043B\u0430: \u043F\u0438\u0448\u0438 \u043F\u043E-\u0440\u0443\u0441\u0441\u043A\u0438, \u043A\u0440\u0430\u0442\u043A\u043E \u0438 \u043F\u043E \u0434\u0435\u043B\u0443, \u043A\u0430\u043A \u0434\u043B\u044F \u0441\u043E\u0432\u0435\u0449\u0430\u043D\u0438\u044F. \u041E\u043F\u0438\u0440\u0430\u0439\u0441\u044F \u0422\u041E\u041B\u042C\u041A\u041E \u043D\u0430 \u043F\u0435\u0440\u0435\u0434\u0430\u043D\u043D\u044B\u0435 \u0446\u0438\u0444\u0440\u044B, \u043D\u0435 \u0432\u044B\u0434\u0443\u043C\u044B\u0432\u0430\u0439. \u0412 title \u043E\u0442\u0440\u0430\u0437\u0438 \u043E\u0431\u043B\u0430\u0441\u0442\u044C \u043E\u0442\u0447\u0451\u0442\u0430 (\xAB${scope}\xBB). tldr \u2014 2-3 \u043F\u0440\u0435\u0434\u043B\u043E\u0436\u0435\u043D\u0438\u044F \u0433\u043B\u0430\u0432\u043D\u043E\u0433\u043E (\u0432\u044B\u043F\u043E\u043B\u043D\u0435\u043D\u0438\u0435 \u043F\u043B\u0430\u043D\u0430, \u043F\u0440\u0438\u0431\u044B\u043B\u044C, \u0442\u0440\u0435\u043D\u0434). sections \u2014 3-5 \u0431\u043B\u043E\u043A\u043E\u0432 \u043F\u043E \u0442\u0435\u043C\u0430\u043C (\u0424\u0438\u043D\u0430\u043D\u0441\u044B \u0438 \u0411\u0414\u0420, \u041F\u0440\u043E\u0434\u0430\u0436\u0438 \u0438 \u0432\u043E\u0440\u043E\u043D\u043A\u0430, \u0423\u0434\u0435\u0440\u0436\u0430\u043D\u0438\u0435 \u0438 \u043E\u0442\u0442\u043E\u043A, \u0417\u0430\u043F\u043E\u043B\u043D\u044F\u0435\u043C\u043E\u0441\u0442\u044C \u0438 \u043D\u0430\u0431\u043E\u0440${isNetwork ? ", \u0424\u0438\u043B\u0438\u0430\u043B\u044B" : ""}). \u0412 points \u2014 \u043A\u043E\u043D\u043A\u0440\u0435\u0442\u0438\u043A\u0430 \u0441 \u0447\u0438\u0441\u043B\u0430\u043C\u0438 \u0438 \u0441\u0440\u0430\u0432\u043D\u0435\u043D\u0438\u0435\u043C (\u043C\u0435\u0441/\u043F\u0435\u0440\u0438\u043E\u0434 \u043D\u0430\u0437\u0430\u0434), \u043E\u0442\u043C\u0435\u0447\u0430\u0439 \u0447\u0442\u043E \u043F\u0440\u043E\u0441\u0435\u043B\u043E/\u0432\u044B\u0440\u043E\u0441\u043B\u043E. focus \u2014 3-5 \u043A\u043E\u043D\u043A\u0440\u0435\u0442\u043D\u044B\u0445 \u0437\u0430\u0434\u0430\u0447-\u043F\u0440\u0438\u043E\u0440\u0438\u0442\u0435\u0442\u043E\u0432 \u043D\u0430 ${isMonth ? "\u0442\u0435\u043A\u0443\u0449\u0438\u0439 \u043C\u0435\u0441\u044F\u0446" : "\u0442\u0435\u043A\u0443\u0449\u0443\u044E \u043D\u0435\u0434\u0435\u043B\u044E"}. \u0415\u0441\u043B\u0438 \u043F\u043E \u043A\u0430\u043A\u043E\u043C\u0443-\u0442\u043E \u043F\u043E\u043A\u0430\u0437\u0430\u0442\u0435\u043B\u044E \u0434\u0430\u043D\u043D\u044B\u0445 \u043D\u0435\u0442 \u2014 \u043D\u0435 \u0443\u043F\u043E\u043C\u0438\u043D\u0430\u0439 \u0435\u0433\u043E.
+\u0414\u0430\u043D\u043D\u044B\u0435 \u043F\u0435\u0440\u0438\u043E\u0434\u0430: ${JSON.stringify(metrics ?? {})}`;
+    try {
+      res.json(await generateJson(prompt));
+    } catch (e) {
+      res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
   app2.post("/api/gemini/insights", async (req, res) => {
     if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });
     const { metrics, currentContext } = req.body || {};
@@ -8233,6 +8717,39 @@ notes=${JSON.stringify(notes ?? [])}`;
 request=${JSON.stringify(userPrompt ?? "\u0421\u043E\u0441\u0442\u0430\u0432\u044C \u043F\u043B\u0430\u043D \u0437\u0430\u043D\u044F\u0442\u0438\u044F")}
 group=${JSON.stringify({ groupName, groupLevel, studentCount })}
 context=${JSON.stringify(context ?? {})}`;
+    try {
+      res.json(await generateJson(prompt));
+    } catch (e) {
+      res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
+  app2.post("/api/gemini/lesson-summary", async (req, res) => {
+    if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });
+    const { transcript, groupName, groupLevel, studentCount } = req.body || {};
+    const prompt = `\u0422\u044B \u2014 \u043C\u0435\u0442\u043E\u0434\u0438\u0441\u0442 \u0448\u043A\u043E\u043B\u044B \u043A\u0430\u0432\u043A\u0430\u0437\u0441\u043A\u043E\u0433\u043E \u0442\u0430\u043D\u0446\u0430 \xAB\u042D\u0445\u043E \u0413\u043E\u0440\xBB. \u041F\u0435\u0434\u0430\u0433\u043E\u0433 \u043D\u0430\u0433\u043E\u0432\u043E\u0440\u0438\u043B \u0438\u0442\u043E\u0433\u0438 \u043F\u0440\u043E\u0432\u0435\u0434\u0451\u043D\u043D\u043E\u0433\u043E \u0437\u0430\u043D\u044F\u0442\u0438\u044F (\u043C\u043E\u0436\u0435\u0442 \u0431\u044B\u0442\u044C \u0441\u0443\u043C\u0431\u0443\u0440\u043D\u043E, \u0441 \u0440\u0435\u0447\u0438). \u041F\u0440\u0438\u0432\u0435\u0434\u0438 \u0432 \u043F\u043E\u0440\u044F\u0434\u043E\u043A \u0438 \u0432\u0435\u0440\u043D\u0438 \u0421\u0422\u0420\u041E\u0413\u041E JSON \u043F\u043E \u0441\u0445\u0435\u043C\u0435:
+{"summary": string, "done": string[], "progress": string[], "attention": string[], "advice": string[]}
+\u041F\u0438\u0448\u0438 \u043F\u043E-\u0440\u0443\u0441\u0441\u043A\u0438, \u043A\u0440\u0430\u0442\u043A\u043E \u0438 \u043F\u043E \u0434\u0435\u043B\u0443. summary \u2014 1-2 \u043F\u0440\u0435\u0434\u043B\u043E\u0436\u0435\u043D\u0438\u044F. done \u2014 \u0447\u0442\u043E \u0443\u0441\u043F\u0435\u043B\u0438 \u043D\u0430 \u0437\u0430\u043D\u044F\u0442\u0438\u0438. progress \u2014 \u0443 \u043A\u043E\u0433\u043E/\u0432 \u0447\u0451\u043C \u043F\u0440\u043E\u0433\u0440\u0435\u0441\u0441. attention \u2014 \u043D\u0430 \u0447\u0442\u043E \u043E\u0431\u0440\u0430\u0442\u0438\u0442\u044C \u0432\u043D\u0438\u043C\u0430\u043D\u0438\u0435 \u0432 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u0439 \u0440\u0430\u0437. advice \u2014 2-3 \u043F\u0440\u0430\u043A\u0442\u0438\u0447\u043D\u044B\u0445 \u0441\u043E\u0432\u0435\u0442\u0430 \u043F\u0435\u0434\u0430\u0433\u043E\u0433\u0443. \u041E\u043F\u0438\u0440\u0430\u0439\u0441\u044F \u0442\u043E\u043B\u044C\u043A\u043E \u043D\u0430 \u0441\u043A\u0430\u0437\u0430\u043D\u043D\u043E\u0435, \u043D\u0435 \u0432\u044B\u0434\u0443\u043C\u044B\u0432\u0430\u0439 \u0444\u0430\u043A\u0442\u043E\u0432.
+transcript=${JSON.stringify(transcript ?? "")}
+group=${JSON.stringify({ groupName, groupLevel, studentCount })}`;
+    try {
+      res.json(await generateJson(prompt));
+    } catch (e) {
+      res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
+  app2.post("/api/gemini/lesson-plan-organize", async (req, res) => {
+    if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });
+    const { mode, kind, draft, groupName, groupLevel, studentCount } = req.body || {};
+    const METHODOLOGY = `\u041C\u0435\u0442\u043E\u0434\u0438\u043A\u0430 \u0448\u043A\u043E\u043B\u044B \xAB\u042D\u0445\u043E \u0413\u043E\u0440\xBB: \u0443\u0432\u0430\u0436\u0435\u043D\u0438\u0435 \u043A \u0442\u0440\u0430\u0434\u0438\u0446\u0438\u0438 \u043A\u0430\u0432\u043A\u0430\u0437\u0441\u043A\u043E\u0433\u043E \u0442\u0430\u043D\u0446\u0430, \u0434\u0438\u0441\u0446\u0438\u043F\u043B\u0438\u043D\u0430, \u0445\u0430\u0440\u0430\u043A\u0442\u0435\u0440, \u0447\u0438\u0441\u0442\u043E\u0442\u0430 \u0442\u0435\u0445\u043D\u0438\u043A\u0438. (\u043F\u0440\u0430\u0432\u0438\u043B\u0430 \u0431\u0443\u0434\u0443\u0442 \u0434\u043E\u043F\u043E\u043B\u043D\u0435\u043D\u044B)`;
+    const kindLabel = kind === "open" ? "\u043E\u0442\u043A\u0440\u044B\u0442\u044B\u0439 \u0443\u0440\u043E\u043A \u0434\u043B\u044F \u0440\u043E\u0434\u0438\u0442\u0435\u043B\u0435\u0439" : "\u0437\u0430\u043D\u044F\u0442\u0438\u0435";
+    const task = mode === "assist" ? `\u041F\u0435\u0434\u0430\u0433\u043E\u0433 \u043F\u0440\u043E\u0441\u0438\u0442 \u041F\u041E\u041C\u041E\u0427\u042C \u0441\u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u0447\u0435\u0440\u043D\u043E\u0432\u0438\u043A \u043F\u043B\u0430\u043D\u0430 (${kindLabel}). \u041F\u0440\u0435\u0434\u043B\u043E\u0436\u0438 \u043F\u0440\u0430\u043A\u0442\u0438\u0447\u043D\u044B\u0439 \u043F\u043B\u0430\u043D, \u043A\u043E\u0442\u043E\u0440\u044B\u0439 \u043F\u0435\u0434\u0430\u0433\u043E\u0433 \u0437\u0430\u0442\u0435\u043C \u0434\u043E\u0440\u0430\u0431\u043E\u0442\u0430\u0435\u0442 \u0441\u0430\u043C.` : `\u041F\u0435\u0434\u0430\u0433\u043E\u0433 \u043D\u0430\u043F\u0438\u0441\u0430\u043B \u0421\u0412\u041E\u0419 \u043F\u043B\u0430\u043D (${kindLabel}) \u043D\u0438\u0436\u0435. \u041F\u0440\u0438\u0432\u0435\u0434\u0438 \u0435\u0433\u043E \u0432 \u043F\u043E\u0440\u044F\u0434\u043E\u043A: \u0441\u0442\u0440\u0443\u043A\u0442\u0443\u0440\u0438\u0440\u0443\u0439, \u0434\u043E\u043F\u043E\u043B\u043D\u0438 \u043D\u0435\u0434\u043E\u0441\u0442\u0430\u044E\u0449\u0435\u0435, \u0441\u043E\u0445\u0440\u0430\u043D\u0438 \u0441\u043C\u044B\u0441\u043B \u0438 \u0430\u0432\u0442\u043E\u0440\u0441\u043A\u0438\u0435 \u0438\u0434\u0435\u0438 \u043F\u0435\u0434\u0430\u0433\u043E\u0433\u0430. \u041D\u0415 \u0432\u044B\u0434\u0443\u043C\u044B\u0432\u0430\u0439 \u043B\u0438\u0448\u043D\u0435\u0433\u043E.`;
+    const prompt = `\u0422\u044B \u2014 \u043C\u0435\u0442\u043E\u0434\u0438\u0441\u0442 \u0448\u043A\u043E\u043B\u044B \u043A\u0430\u0432\u043A\u0430\u0437\u0441\u043A\u043E\u0433\u043E \u0442\u0430\u043D\u0446\u0430 \xAB\u042D\u0445\u043E \u0413\u043E\u0440\xBB. ${task}
+${METHODOLOGY}
+\u0412\u0435\u0440\u043D\u0438 \u0421\u0422\u0420\u041E\u0413\u041E JSON \u043F\u043E \u0441\u0445\u0435\u043C\u0435:
+{"title": string, "summary": string, "sections": [{"heading": string, "items": string[]}]}
+\u041F\u0438\u0448\u0438 \u043F\u043E-\u0440\u0443\u0441\u0441\u043A\u0438, \u043A\u043E\u043D\u043A\u0440\u0435\u0442\u043D\u043E \u0438 \u043F\u0440\u0438\u043C\u0435\u043D\u0438\u043C\u043E. \u0414\u043B\u044F \u0443\u0440\u043E\u043A\u0430 \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 \u044D\u0442\u0430\u043F\u044B: \u0440\u0430\u0437\u043C\u0438\u043D\u043A\u0430, \u043E\u0441\u043D\u043E\u0432\u043D\u0430\u044F \u0447\u0430\u0441\u0442\u044C, \u043E\u0442\u0440\u0430\u0431\u043E\u0442\u043A\u0430, \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043D\u0438\u0435 (\u0434\u043B\u044F \u043E\u0442\u043A\u0440\u044B\u0442\u043E\u0433\u043E \u0443\u0440\u043E\u043A\u0430 \u2014 \u0432\u043E\u0432\u043B\u0435\u0447\u0435\u043D\u0438\u0435 \u0440\u043E\u0434\u0438\u0442\u0435\u043B\u0435\u0439 \u0438 \u043F\u043E\u043A\u0430\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u044B\u0435 \u043D\u043E\u043C\u0435\u0440\u0430).
+draft=${JSON.stringify(draft ?? "")}
+group=${JSON.stringify({ groupName, groupLevel, studentCount })}`;
     try {
       res.json(await generateJson(prompt));
     } catch (e) {

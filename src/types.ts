@@ -278,6 +278,7 @@ export interface Student {
   guardians?: Guardian[]; // Updated for separate guardian entity
   parentName: string; // Keep for legacy/simple compatibility
   parentPhone: string; // Keep for legacy/simple compatibility
+  parentChatAdded?: boolean; // родитель добавлен в WhatsApp-чат филиала
   balance: number; // Positive is credit, negative is outstanding debt
   artistLevel: ArtistLevel;
   artistLevelPoints: number; // e.g., 450 out of 1000 for next rank

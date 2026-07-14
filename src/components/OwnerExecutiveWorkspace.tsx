@@ -73,6 +73,8 @@ import {
   tnInitials, tnCatName, tnKpiComponents, tnKpiTotal, tnSalary, tnEnrich,
 } from "../teacherEconomics";
 import type { TnGroupBreak, TnMonth, TnFine, TnSeed, TnRow } from "../teacherEconomics";
+import { StaffStandardsView } from "./StaffStandardsView";
+import { StandardsHealthAlert } from "./StandardsHealthAlert";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell,
   LineChart as RLineChart, Line, Legend, AreaChart, Area
@@ -245,16 +247,15 @@ const ownerTabs: { id: OwnerTab; label: string; short: string; icon: React.Eleme
   { id: "reports", label: "Отчётность", short: "Отчёты", icon: FileSpreadsheet },
   { id: "performances", label: "Выступления", short: "Сцена", icon: Mic2 },
   { id: "products", label: "Товары и склад", short: "Товары", icon: ShoppingBag },
-  { id: "documents", label: "Документолог", short: "Договоры", icon: FileText },
   { id: "marketing", label: "Маркетинг", short: "Маркетинг", icon: Send },
-  { id: "events", label: "Концерты", short: "Концерты", icon: Trophy },
   { id: "feed", label: "Афиша СНГ", short: "Афиша", icon: CalendarDays },
   { id: "announcements", label: "Объявления", short: "Связь", icon: Megaphone },
-  { id: "analytics", label: "Аналитика", short: "BI", icon: BarChart3 },
-  { id: "ai", label: "AI Assistant", short: "AI", icon: Sparkles },
   { id: "aihub", label: "AI HUB", short: "AI HUB", icon: Bot },
   { id: "settings", label: "Настройки сети", short: "Еще", icon: Settings }
 ];
+// Удалённые вкладки (документолог, аналитика, концерты, AI Assistant) — всё это
+// уже есть в дашборде/других разделах. Их render-блоки ниже остаются как dead code,
+// но в меню и hash-роутинг больше не попадают (ownerTabs — единственный источник).
 
 export function OwnerExecutiveWorkspace({
   branches,
@@ -388,7 +389,7 @@ export function OwnerExecutiveWorkspace({
       return {
         ...branchMetric,
         city: branch?.city || "Филиал",
-        managerName: branch?.managerName || "Руководитель филиала",
+        managerName: branch?.managerName || "Управляющий",
         teachersCount,
         newLeads: 0,
         retention: Math.max(0, Math.round(100 - metrics.churnRate)),
@@ -624,7 +625,7 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
   // Состояние сворачивания блоков — запоминается по роли пользователя.
   const { isOpen: sectionOpen, toggle: toggleSection } = useCollapsedSections("owner");
   // Вкладки дашборда: информация упорядочена по темам, без дублей (ТЗ заказчика).
-  const [dashTab, setDashTab] = useState<"today" | "finance" | "sales" | "retention" | "ratings">("today");
+  const [dashTab, setDashTab] = useState<"today" | "finance" | "sales" | "retention" | "ratings" | "standards">("today");
   // Заявки на расходы и возвраты, ожидающие решения владельца.
   const [expenseReqs, setExpenseReqs] = useState<any[]>([]);
   const [refundReqs, setRefundReqs] = useState<any[]>([]);
@@ -1041,6 +1042,7 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
           { id: "sales", label: "Продажи", icon: Filter, badge: 0 },
           { id: "retention", label: "Удержание", icon: TrendingUp, badge: 0 },
           { id: "ratings", label: "Рейтинги и AI", icon: Trophy, badge: 0 },
+          { id: "standards", label: "Стандарты работы", icon: Shield, badge: 0 },
         ] as { id: typeof dashTab; label: string; icon: React.ElementType; badge: number }[]).map((t) => {
           const TabIcon = t.icon;
           return (
@@ -1066,6 +1068,7 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
       {/* ЗДОРОВЬЕ СТУДИИ ЗА 30 СЕКУНД */}
       <CollapsibleSection id="daily" icon={ClipboardList} title="Здоровье студии за 30 секунд" hint="Ключевые показатели дня — всё кликабельно"
         locked open={sectionOpen("daily")} onToggle={() => toggleSection("daily")}>
+        <StandardsHealthAlert role="owner" teachers={rawTeachers} groups={rawGroups} onOpen={() => setDashTab("standards")} />
         <DailyManagerReport m={m} bdr={bdr} scopeLabel={m.scope.label} periodLabel={m.ranges.cur.label}
           onOpenList={openList} onPayments={openPaymentsToday} onRetention={openRetention} onAvgCheck={openAvgCheck}
           onRevenue={openRevenue} onBdr={openBdr} onOccupancy={openOccupancy} />
@@ -1101,6 +1104,8 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
         </div>
       </CollapsibleSection>
       </>)}
+
+      {dashTab === "standards" && <StaffStandardsView role="owner" teachers={rawTeachers} groups={rawGroups} />}
 
       {dashTab === "finance" && (<>
       {/* ВЫРУЧКА ПО НАПРАВЛЕНИЯМ */}
@@ -2650,7 +2655,7 @@ function BranchesView({ branches, rawBranches, students, groups, teachers, halls
   };
 
   return (
-    <OwnerScreen title="Филиалы сети" subtitle="Все филиалы, руководители, финансы, посещаемость. Владелец может добавлять, редактировать и архивировать филиалы и группы.">
+    <OwnerScreen title="Филиалы сети" subtitle="Все филиалы, управляющие, финансы, посещаемость. Владелец может добавлять, редактировать и архивировать филиалы и группы.">
       <div className="mb-5 inline-flex rounded-2xl border border-white/10 bg-[#121212] p-1">
         <button
           onClick={() => setSection("branches")}
@@ -3087,7 +3092,7 @@ function OwnerEduErpView({ branches, groups, students, teachers, payments, month
     { icon: Send, title: "Рассылка", text: "SMS, email, push, шаблоны, будущая отправка, история доставки.", accent: "100%" },
     { icon: CheckCircle, title: "Задачи", text: "Просроченные, на сегодня, мои, шаблоны задач и реестр.", accent: "2062" },
     { icon: BarChart3, title: "Отчеты", text: "Выручка, потери, взаиморасчеты, источники, посещаемость.", accent: "12", area: "reports" as const },
-    { icon: UserRound, title: "Сотрудники", text: "Преподаватели, администраторы, руководители, роли, нагрузка.", accent: `${teachers.length}`, area: "employees" as const },
+    { icon: UserRound, title: "Сотрудники", text: "Преподаватели, администраторы, управляющие, роли, нагрузка.", accent: `${teachers.length}`, area: "employees" as const },
     { icon: Settings, title: "Справочники", text: "Филиалы, группы, статусы, источники, стоимость, интеграции.", accent: "18", area: "directories" as const }
   ];
 
@@ -3095,7 +3100,7 @@ function OwnerEduErpView({ branches, groups, students, teachers, payments, month
     {
       title: "Финансовые отчеты",
       text: "Контроль денег сети, долгов, повторных продаж и потерь по филиалам.",
-      items: ["Руководители по месяцам", "Отчет о выручке и потерях", "Взаиморасчеты", "Реестр операций", "Проданные абонементы", "Средний чек"]
+      items: ["Управляющие по месяцам", "Отчет о выручке и потерях", "Взаиморасчеты", "Реестр операций", "Проданные абонементы", "Средний чек"]
     },
     {
       title: "Ученики и группы",
@@ -3118,7 +3123,7 @@ function OwnerEduErpView({ branches, groups, students, teachers, payments, month
     {
       title: "Сотрудники филиалов",
       text: "Единый список людей по всей сети с фильтром по филиалу и роли.",
-      items: ["Руководители филиалов", "Администраторы", "Преподаватели", "Стажеры", "Уволенные / архив", "Без назначенного филиала"]
+      items: ["Управляющие", "Администраторы", "Преподаватели", "Стажеры", "Уволенные / архив", "Без назначенного филиала"]
     },
     {
       title: "Роли и доступы",
@@ -3132,7 +3137,7 @@ function OwnerEduErpView({ branches, groups, students, teachers, payments, month
     },
     {
       title: "Кадровые действия",
-      text: "Операции, которые нужны владельцу и руководителям филиалов.",
+      text: "Операции, которые нужны владельцу и управляющим.",
       items: ["Добавить сотрудника", "Назначить филиал", "Назначить группы", "Изменить роль", "Заблокировать доступ", "Открыть audit log"]
     }
   ];
@@ -3433,7 +3438,7 @@ function StudentsNetworkView({ students, branches, groups, teachers, onCreateStu
             <div className="rounded-2xl bg-rose-500/15 p-2.5 text-rose-400"><Trash2 className="h-5 w-5" /></div>
             <div>
               <h3 className="font-black text-white">Корзина учеников</h3>
-              <p className="text-xs text-slate-500">Заявки на удаление от руководителей филиалов. Владелец возвращает ученика или переводит в архив (данные сохраняются).</p>
+              <p className="text-xs text-slate-500">Заявки на удаление от управляющих. Владелец возвращает ученика или переводит в архив (данные сохраняются).</p>
             </div>
           </div>
           <span className={`rounded-full px-3 py-1 text-xs font-black ${studentTrash.length ? "bg-rose-500/15 text-rose-400" : "bg-white/5 text-slate-500"}`}>{studentTrash.length}</span>
@@ -4335,9 +4340,19 @@ export function PayrollView({ teachers, students, groups, payments, role = "owne
         <div className="flex flex-wrap gap-2">
           <button disabled={busy} onClick={autoclose} className="inline-flex items-center gap-2 rounded-xl border border-white/10 px-4 py-2 text-xs font-bold text-slate-200 hover:border-[#C5A059]/40 disabled:opacity-50"><CheckCircle className="h-4 w-4" /> Закрыть прошедшие уроки</button>
           <button onClick={exportCsv} className="inline-flex items-center gap-2 rounded-xl border border-white/10 px-4 py-2 text-xs font-bold text-slate-200 hover:border-[#C5A059]/40"><FileSpreadsheet className="h-4 w-4" /> Экспорт CSV</button>
-          <button disabled={busy} onClick={accrueAll} className="inline-flex items-center gap-2 rounded-xl bg-[#C5A059] px-4 py-2 text-xs font-black text-black hover:brightness-110 disabled:opacity-50"><Wallet className="h-4 w-4" /> Начислить всем за период</button>
+          {role === "branch_manager" ? (
+            <button disabled={busy} onClick={() => setMsg("Ведомость рассчитана. Начисление проводит владелец — передайте расчёт (Экспорт CSV) или запросите начисление у владельца.")} className="inline-flex items-center gap-2 rounded-xl border border-[#C5A059]/40 bg-[#C5A059]/10 px-4 py-2 text-xs font-black text-[#C5A059] hover:bg-[#C5A059]/20 disabled:opacity-50"><Wallet className="h-4 w-4" /> Запросить начисление у владельца</button>
+          ) : (
+            <button disabled={busy} onClick={accrueAll} className="inline-flex items-center gap-2 rounded-xl bg-[#C5A059] px-4 py-2 text-xs font-black text-black hover:brightness-110 disabled:opacity-50"><Wallet className="h-4 w-4" /> Начислить всем за период</button>
+          )}
         </div>
       </div>
+
+      {role === "branch_manager" && (
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-xs text-slate-400">
+          Управляющий <b className="text-slate-200">ведёт расчёт</b> зарплат и отправляет заявку — само начисление проводит владелец.
+        </div>
+      )}
 
       {msg && <div className="rounded-2xl border border-[#C5A059]/30 bg-[#C5A059]/10 px-4 py-3 text-sm text-[#C5A059]">{msg}</div>}
 
@@ -6005,7 +6020,7 @@ function useSettingsList(kind: string, role: string = "owner") {
   return items;
 }
 
-function PerformancesView() {
+export function PerformancesView() {
   const [list, setList] = useState<any[]>([]);
   const [overview, setOverview] = useState<any>(null);
   const [period, setPeriod] = useState("month");
@@ -8436,49 +8451,362 @@ function AdOfferStudio({ groups, branches, teachers }: { groups: Group[]; branch
   );
 }
 
+type SettingsSub = "staff" | "plans" | "statuses" | "dicts";
+const SETTINGS_SUBS: { id: SettingsSub; label: string; icon: React.ElementType }[] = [
+  { id: "staff", label: "Сотрудники", icon: Users },
+  { id: "plans", label: "Тарифы", icon: Coins },
+  { id: "statuses", label: "Статусы учеников", icon: ClipboardList },
+  { id: "dicts", label: "Справочники", icon: Settings },
+];
+
+// Редактор оплаты управляющих (только владелец): оклад + бонусы за уровни плана БДР.
+// Значения читает вкладка «Мой KPI / P&L» у управляющего.
+function ManagerCompensationEditor() {
+  const [baseSalary, setBaseSalary] = useState(0);
+  const [tiers, setTiers] = useState<{ threshold: number; bonus: number }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/mvp/manager/compensation", { headers: { "x-demo-role": "owner" } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d) { setBaseSalary(Number(d.baseSalary) || 0); setTiers(Array.isArray(d.tiers) ? d.tiers : []); } })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const setTier = (i: number, key: "threshold" | "bonus", v: number) =>
+    setTiers((prev) => prev.map((t, idx) => (idx === i ? { ...t, [key]: v } : t)));
+  const addTier = () => setTiers((prev) => [...prev, { threshold: 0, bonus: 0 }]);
+  const removeTier = (i: number) => setTiers((prev) => prev.filter((_, idx) => idx !== i));
+
+  const save = async () => {
+    setSaving(true); setMsg(null);
+    try {
+      const res = await fetch("/api/mvp/manager/compensation", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "x-demo-role": "owner" },
+        body: JSON.stringify({ baseSalary, tiers }),
+      });
+      setMsg(res.ok ? "Сохранено ✓" : "Ошибка сохранения");
+    } catch {
+      setMsg("Ошибка сети");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="rounded-[1.75rem] border border-white/10 bg-gradient-to-br from-[#141414] to-black p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-black uppercase tracking-wider text-white">Оплата управляющих</h3>
+          <p className="mt-1 text-xs text-slate-500">Оклад + бонусы за уровни выполнения плана БДР. Управляющий видит это в своём кабинете («Мой KPI / P&L»): текущая и потенциальная зарплата.</p>
+        </div>
+        <button onClick={save} disabled={saving || loading} className="rounded-2xl bg-[#C5A059] px-4 py-2 text-sm font-bold text-black transition hover:bg-[#d4b06a] disabled:opacity-50">
+          {saving ? "Сохранение…" : "Сохранить"}
+        </button>
+      </div>
+
+      {loading ? (
+        <p className="mt-4 text-sm text-slate-500">Загрузка…</p>
+      ) : (
+        <div className="mt-4 space-y-4">
+          <div className="max-w-xs">
+            <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Оклад (₸ / месяц)</label>
+            <input type="number" min={0} value={baseSalary} onChange={(e) => setBaseSalary(Math.max(0, Number(e.target.value) || 0))}
+              className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm font-semibold text-white outline-none focus:border-[#C5A059]/50" />
+          </div>
+
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Бонусы за уровни плана</p>
+            <div className="mt-2 space-y-2">
+              {tiers.map((t, i) => (
+                <div key={i} className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-slate-500">при</span>
+                  <input type="number" min={0} value={t.threshold} onChange={(e) => setTier(i, "threshold", Math.max(0, Number(e.target.value) || 0))}
+                    className="w-20 rounded-xl border border-white/10 bg-black/40 px-2 py-1.5 text-sm font-semibold text-white outline-none focus:border-[#C5A059]/50" />
+                  <span className="text-xs text-slate-500">% плана → бонус</span>
+                  <input type="number" min={0} value={t.bonus} onChange={(e) => setTier(i, "bonus", Math.max(0, Number(e.target.value) || 0))}
+                    className="w-32 rounded-xl border border-white/10 bg-black/40 px-2 py-1.5 text-sm font-semibold text-[#C5A059] outline-none focus:border-[#C5A059]/50" />
+                  <span className="text-xs text-slate-500">₸</span>
+                  <button onClick={() => removeTier(i)} className="rounded-lg border border-white/10 px-2 py-1 text-xs text-slate-400 hover:border-rose-500/40 hover:text-rose-400">Удалить</button>
+                </div>
+              ))}
+            </div>
+            <button onClick={addTier} className="mt-2 rounded-xl border border-white/10 px-3 py-1.5 text-xs font-bold text-slate-200 hover:border-[#C5A059]/40">+ Добавить уровень</button>
+          </div>
+
+          {msg && <p className={`text-sm ${msg.includes("✓") ? "text-emerald-400" : "text-rose-400"}`}>{msg}</p>}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function NetworkSettingsView({ branches, teachers, subscriptionPlans = [], onCreatePlan, onUpdatePlan, onDeletePlan }: { branches: Branch[]; teachers: Teacher[]; subscriptionPlans?: SubscriptionPlan[]; onCreatePlan?: (data: any) => Promise<boolean>; onUpdatePlan?: (id: string, data: any) => Promise<boolean>; onDeletePlan?: (id: string) => Promise<boolean> }) {
   const [showStatusSettings, setShowStatusSettings] = useState(false);
+  const [sub, setSub] = useState<SettingsSub>("staff");
   return (
-    <OwnerScreen title="Настройки сети" subtitle="Тарифы, статусы учеников, справочники (рекламные источники и др.), роли и audit log.">
-      {/* Тарифы абонементов: владелец задаёт названия, кол-во занятий, срок и цену. */}
-      <SubscriptionPlansManager plans={subscriptionPlans} branches={branches} onCreatePlan={onCreatePlan} onUpdatePlan={onUpdatePlan} onDeletePlan={onDeletePlan} />
+    <OwnerScreen title="Настройки сети" subtitle="Всё управление в одном месте: сотрудники и доступы, тарифы, статусы учеников, справочники.">
+      {/* Подвкладки — вся конфигурация сети собрана и разложена по разделам. */}
+      <div className="flex flex-wrap gap-2">
+        {SETTINGS_SUBS.map((s) => {
+          const Icon = s.icon;
+          const active = sub === s.id;
+          return (
+            <button key={s.id} onClick={() => setSub(s.id)}
+              className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-bold transition ${active ? "bg-[#C5A059] text-black" : "border border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.07]"}`}>
+              <Icon className="h-4 w-4" /> {s.label}
+            </button>
+          );
+        })}
+      </div>
 
-      {/* Каталог костюмов для проката: владелец/управляющий заводят, админ выдаёт/принимает. */}
-      <CostumeCatalogSettings role="owner" />
-
-      {/* Статусы учеников: те же настройки, что открываются из вкладки «Ученики». */}
-      <section className="rounded-[1.75rem] border border-white/10 bg-gradient-to-br from-[#141414] to-black p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h3 className="text-sm font-black uppercase tracking-wider text-white">Статусы учеников</h3>
-            <p className="mt-1 text-xs text-slate-500">Цвета автостатусов и список ручных статусов (Каникулы, Заморозка и т.д.). Автостатусы система ставит сама — их переименовать нельзя.</p>
-          </div>
-          <button onClick={() => setShowStatusSettings(true)} className="rounded-2xl bg-[#C5A059] px-4 py-2 text-sm font-bold text-black transition hover:bg-[#d4b06a]">
-            Настроить статусы
-          </button>
+      {sub === "staff" && (
+        <div className="space-y-5">
+          <EmployeesManager branches={branches} />
+          {/* Оплата управляющих: оклад + бонусы за уровни выполнения плана БДР. */}
+          <ManagerCompensationEditor />
         </div>
-      </section>
+      )}
+
+      {sub === "plans" && (
+        <div className="space-y-5">
+          <SubscriptionPlansManager plans={subscriptionPlans} branches={branches} onCreatePlan={onCreatePlan} onUpdatePlan={onUpdatePlan} onDeletePlan={onDeletePlan} />
+          {/* Каталог костюмов для проката: владелец/управляющий заводят, админ выдаёт/принимает. */}
+          <CostumeCatalogSettings role="owner" />
+        </div>
+      )}
+
+      {sub === "statuses" && (
+        <section className="rounded-[1.75rem] border border-white/10 bg-gradient-to-br from-[#141414] to-black p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-black uppercase tracking-wider text-white">Статусы учеников</h3>
+              <p className="mt-1 text-xs text-slate-500">Цвета автостатусов и список ручных статусов (Каникулы, Заморозка и т.д.). Автостатусы система ставит сама — их переименовать нельзя.</p>
+            </div>
+            <button onClick={() => setShowStatusSettings(true)} className="rounded-2xl bg-[#C5A059] px-4 py-2 text-sm font-bold text-black transition hover:bg-[#d4b06a]">
+              Настроить статусы
+            </button>
+          </div>
+        </section>
+      )}
       {showStatusSettings && <StatusSettings roleHeader="owner" onClose={() => setShowStatusSettings(false)} />}
 
-      {/* Настраиваемые справочники: владелец добавляет значения, остальные выбирают из готового. */}
-      <section className="rounded-[1.75rem] border border-white/10 bg-gradient-to-br from-[#141414] to-black p-5">
-        <h3 className="text-sm font-black uppercase tracking-wider text-white">Справочники</h3>
-        <p className="mt-1 text-xs text-slate-500">Эти списки используются в выпадающих полях. Управленцы и администраторы выбирают из готовых значений.</p>
-        <div className="mt-4 grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
-          <LeadSourcesEditor />
-          <SettingsListEditor kind="performance_type" title="Типы выступлений" />
-          <SettingsListEditor kind="product_category" title="Категории товаров" />
-          <SettingsListEditor kind="group_level" title="Уровни групп" />
-        </div>
-      </section>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <ExecutivePanel icon={<Shield />} title="RBAC владельца" text="Полный доступ к сети, филиалам, финансам, ролям, настройкам, лицензии и audit log." />
-        <ExecutivePanel icon={<Settings />} title="Глобальные настройки" text={`Филиалов: ${branches.length}. Преподавателей: ${teachers.length}. Управление тарифами и шаблонами уведомлений.`} />
-        <ExecutivePanel icon={<CheckCircle />} title="Защищенные действия" text="Удаление филиалов, экспорт данных и доступ к чувствительным данным проходят через подтверждение и журналирование." />
-        <ExecutivePanel icon={<Activity />} title="Audit log сети" text="Все действия владельца, руководителей филиалов, администраторов и преподавателей фиксируются." />
-      </div>
+      {sub === "dicts" && (
+        <section className="rounded-[1.75rem] border border-white/10 bg-gradient-to-br from-[#141414] to-black p-5">
+          <h3 className="text-sm font-black uppercase tracking-wider text-white">Справочники</h3>
+          <p className="mt-1 text-xs text-slate-500">Эти списки используются в выпадающих полях. Управленцы и администраторы выбирают из готовых значений.</p>
+          <div className="mt-4 grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
+            <LeadSourcesEditor />
+            <SettingsListEditor kind="performance_type" title="Типы выступлений" />
+            <SettingsListEditor kind="product_category" title="Категории товаров" />
+            <SettingsListEditor kind="group_level" title="Уровни групп" />
+          </div>
+          <div className="mt-4 rounded-2xl border border-white/5 bg-black/30 p-4 text-xs text-slate-500">
+            <p className="font-bold text-slate-300">Настройки, живущие в своих разделах (по контексту):</p>
+            <ul className="mt-2 space-y-1 list-disc pl-4">
+              <li><span className="text-slate-300">Залы</span> — вкладка «Филиалы» (у каждого филиала свои залы).</li>
+              <li><span className="text-slate-300">Статьи доходов/расходов, счета</span> — вкладка «Бухгалтерия» → «Настройки».</li>
+              <li><span className="text-slate-300">Мотивация (бонусы за план)</span> — вкладка «Планирование (БДР)».</li>
+            </ul>
+          </div>
+        </section>
+      )}
     </OwnerScreen>
+  );
+}
+
+// ── Раздел «Сотрудники» (Настройки сети): администраторы и управляющие. ────────
+// Заводим учётные записи с логином/паролем/ролью/статусом/филиалами (до 2) —
+// эти данные работают при входе (миграция 046). Педагоги добавляются во вкладке
+// «Преподаватели»; здесь — только admin и branch_manager.
+type StaffRow = { id: string; name: string; login: string; role: string; status: string; branchIds?: string[]; branchId?: string | null; hasPassword?: boolean };
+const STAFF_ROLE_LABEL: Record<string, string> = { admin: "Администратор", branch_manager: "Управляющий", teacher: "Преподаватель", owner: "Владелец" };
+
+function EmployeesManager({ branches }: { branches: Branch[] }) {
+  const [rows, setRows] = useState<StaffRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+  const [editing, setEditing] = useState<StaffRow | null>(null);
+  const [showForm, setShowForm] = useState(false);
+
+  const load = async () => {
+    setLoading(true); setErr(null);
+    try {
+      const r = await fetch("/api/mvp/staff", { headers: { "x-demo-role": "owner" } });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { setErr(d?.error || `Ошибка ${r.status}`); return; }
+      setRows(d.staff || []);
+    } catch { setErr("Нет связи с сервером"); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, []);
+
+  const remove = async (row: StaffRow) => {
+    if (!window.confirm(`Удалить сотрудника «${row.name}»? Вход в систему станет недоступен.`)) return;
+    try {
+      const r = await fetch(`/api/mvp/teachers/${row.id}`, { method: "DELETE", headers: { "x-demo-role": "owner" } });
+      if (!r.ok) { const d = await r.json().catch(() => ({})); setErr(d?.error || "Не удалось удалить"); return; }
+      await load(); requestDataRefresh();
+    } catch { setErr("Нет связи с сервером"); }
+  };
+
+  const openNew = () => { setEditing(null); setShowForm(true); };
+  const openEdit = (row: StaffRow) => { setEditing(row); setShowForm(true); };
+
+  const branchLabel = (ids?: string[], single?: string | null) => {
+    const list = (ids && ids.length ? ids : (single ? [single] : []));
+    if (!list.length) return "—";
+    return list.map((id) => branches.find((b) => b.id === id)?.name || "?").join(", ");
+  };
+
+  return (
+    <section className="rounded-[1.75rem] border border-white/10 bg-gradient-to-br from-[#141414] to-black p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-black uppercase tracking-wider text-white">Сотрудники · администраторы и управляющие</h3>
+          <p className="mt-1 text-xs text-slate-500">Логин, пароль, роль, статус и филиалы (до 2). Эти данные работают при входе в личный кабинет. Педагогов добавляйте во вкладке «Преподаватели».</p>
+        </div>
+        <button onClick={openNew} className="inline-flex items-center gap-2 rounded-2xl bg-[#C5A059] px-4 py-2 text-sm font-black text-black transition hover:bg-[#d4b06a]">
+          <Plus className="h-4 w-4" /> Добавить сотрудника
+        </button>
+      </div>
+
+      {err && <p className="mt-3 rounded-lg bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-300">{err}</p>}
+
+      <div className="mt-4 space-y-2">
+        {loading && <p className="text-xs text-slate-500">Загрузка…</p>}
+        {!loading && rows.length === 0 && <p className="text-xs text-slate-600">Пока нет администраторов и управляющих. Нажмите «Добавить сотрудника».</p>}
+        {rows.map((row) => (
+          <div key={row.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/5 bg-black/30 px-4 py-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-bold text-white">{row.name}</span>
+                <span className="rounded-full bg-[#C5A059]/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-[#C5A059]">{STAFF_ROLE_LABEL[row.role] || row.role}</span>
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase ${row.status === "active" ? "bg-emerald-500/15 text-emerald-300" : "bg-slate-500/15 text-slate-400"}`}>{row.status === "active" ? "Активен" : "Неактивен"}</span>
+                {!row.hasPassword && <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-black uppercase text-amber-300">нет пароля</span>}
+              </div>
+              <div className="mt-1 text-[11px] text-slate-500">Логин: <span className="text-slate-300">{row.login || "—"}</span> · Филиалы: {branchLabel(row.branchIds, row.branchId)}</div>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button onClick={() => openEdit(row)} className="rounded-lg border border-white/10 p-2 text-slate-300 hover:bg-white/10" title="Редактировать"><Pencil className="h-3.5 w-3.5" /></button>
+              <button onClick={() => remove(row)} className="rounded-lg border border-white/10 p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10" title="Удалить"><Trash2 className="h-3.5 w-3.5" /></button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {showForm && (
+        <EmployeeForm
+          branches={branches}
+          initial={editing}
+          onClose={() => setShowForm(false)}
+          onSaved={async () => { setShowForm(false); await load(); requestDataRefresh(); }}
+        />
+      )}
+    </section>
+  );
+}
+
+function EmployeeForm({ branches, initial, onClose, onSaved }: { branches: Branch[]; initial: StaffRow | null; onClose: () => void; onSaved: () => void }) {
+  const isEdit = Boolean(initial);
+  const [name, setName] = useState(initial?.name || "");
+  const [login, setLogin] = useState(initial?.login || "");
+  const [password, setPassword] = useState("");
+  const [role, setRole] = useState(initial?.role === "branch_manager" ? "branch_manager" : "admin");
+  const [status, setStatus] = useState(initial?.status === "inactive" ? "inactive" : "active");
+  const [branchIds, setBranchIds] = useState<string[]>(initial?.branchIds && initial.branchIds.length ? initial.branchIds : (initial?.branchId ? [initial.branchId] : []));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const hdr = { "Content-Type": "application/json", "x-demo-role": "owner" };
+
+  const toggleBranch = (id: string) => {
+    setBranchIds((cur) => {
+      if (cur.includes(id)) return cur.filter((x) => x !== id);
+      if (cur.length >= 2) return cur; // максимум 2 филиала
+      return [...cur, id];
+    });
+  };
+
+  const save = async () => {
+    if (!name.trim()) { setErr("Введите имя"); return; }
+    if (!login.trim()) { setErr("Введите логин"); return; }
+    if (!isEdit && !password) { setErr("Задайте пароль для входа"); return; }
+    setBusy(true); setErr(null);
+    const body: any = { name: name.trim(), login: login.trim(), role, status, branchIds };
+    if (password) body.password = password;
+    try {
+      const url = isEdit ? `/api/mvp/teachers/${initial!.id}` : "/api/mvp/teachers";
+      const method = isEdit ? "PATCH" : "POST";
+      const r = await fetch(url, { method, headers: hdr, body: JSON.stringify(body) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { setErr(d?.error || `Ошибка ${r.status}`); return; }
+      onSaved();
+    } catch { setErr("Нет связи с сервером"); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[10040] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-lg rounded-3xl border border-white/10 bg-gradient-to-br from-[#161616] to-[#0A0A0A] p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-black text-white">{isEdit ? "Редактировать сотрудника" : "Новый сотрудник"}</h3>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <label className="sm:col-span-2 block">
+            <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">Имя *</span>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Фамилия Имя" className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#C5A059]/60" />
+          </label>
+          <label className="block">
+            <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">Логин *</span>
+            <input value={login} onChange={(e) => setLogin(e.target.value)} placeholder="Телефон или логин" className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#C5A059]/60" />
+          </label>
+          <label className="block">
+            <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">{isEdit ? "Новый пароль" : "Пароль *"}</span>
+            <input type="text" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={isEdit ? "Оставьте пустым — без изменений" : "Пароль для входа"} className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#C5A059]/60" />
+          </label>
+          <label className="block">
+            <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">Роль</span>
+            <select value={role} onChange={(e) => setRole(e.target.value)} className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#C5A059]/60">
+              <option value="admin">Администратор</option>
+              <option value="branch_manager">Управляющий</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">Статус</span>
+            <select value={status} onChange={(e) => setStatus(e.target.value)} className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#C5A059]/60">
+              <option value="active">Активен</option>
+              <option value="inactive">Неактивен</option>
+            </select>
+          </label>
+          <div className="sm:col-span-2">
+            <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">Филиалы (до 2)</span>
+            <div className="mt-1.5 flex flex-wrap gap-2">
+              {branches.length === 0 && <span className="text-xs text-slate-600">Сначала создайте филиалы во вкладке «Филиалы».</span>}
+              {branches.map((b) => {
+                const on = branchIds.includes(b.id);
+                const disabled = !on && branchIds.length >= 2;
+                return (
+                  <button key={b.id} type="button" onClick={() => toggleBranch(b.id)} disabled={disabled}
+                    className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${on ? "bg-[#C5A059] text-black" : disabled ? "border border-white/5 text-slate-600" : "border border-white/10 text-slate-300 hover:bg-white/10"}`}>
+                    {b.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+        {err && <p className="mt-3 rounded-lg bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-300">{err}</p>}
+        <div className="mt-5 flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-xl border border-white/10 px-4 py-2 text-sm font-bold text-slate-300 hover:bg-white/5">Отмена</button>
+          <button onClick={save} disabled={busy} className="rounded-xl bg-[#C5A059] px-5 py-2 text-sm font-black text-black transition hover:bg-[#d4b06a] disabled:opacity-50">{busy ? "Сохранение…" : "Сохранить"}</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -10518,7 +10846,7 @@ function OwnerEduAreaPreview({ activeArea, branches, teachers, groups, payments,
           <MiniMetric label="Сотрудники" value={teachers.length} />
           <MiniMetric label="Преподаватели" value={teachers.length} />
           <MiniMetric label="Админы" value="7" />
-          <MiniMetric label="Руководители" value={branches.length} />
+          <MiniMetric label="Управляющие" value={branches.length} />
         </div>
         <OwnerMiniTable title="Сотрудники сети" headers={["ФИО", "Филиал", "Групп", "Статус"]} rows={rows} />
         <div className="mt-3 grid grid-cols-2 gap-2">
