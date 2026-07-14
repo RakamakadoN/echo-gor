@@ -1871,6 +1871,21 @@ function PlanningReports({ rawStudents, rawPayments, rawGroups, rawBranches, raw
   const [busy, setBusy] = useState<null | "week" | "month">(null);
   const [report, setReport] = useState<{ kind: "week" | "month"; data: any } | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // Область отчёта (ТЗ 14.07): управляющий / филиал / группа / педагог.
+  // «Управляющий» под капотом = его филиал (значение селектора — branchId).
+  const [scopeBranch, setScopeBranch] = useState("");   // выбран через «Филиал» или «Управляющий»
+  const [scopeGroup, setScopeGroup] = useState("");
+  const [scopeTeacher, setScopeTeacher] = useState("");
+  const branchesList: Branch[] = rawBranches || [];
+  const managers = branchesList.filter((b) => (b.managerName || "").trim()).map((b) => ({ value: b.id, label: `${b.managerName} · ${b.name || b.city}` }));
+  const groupOpts = (rawGroups || []).filter((g: Group) => !scopeBranch || g.branchId === scopeBranch).map((g: Group) => ({ value: g.id, label: g.name }));
+  const scopeLabelOf = () => {
+    if (scopeTeacher) return "Педагог: " + ((rawTeachers || []).find((t: Teacher) => t.id === scopeTeacher)?.name || "—");
+    if (scopeGroup) return "Группа: " + ((rawGroups || []).find((g: Group) => g.id === scopeGroup)?.name || "—");
+    if (scopeBranch) { const b = branchesList.find((x) => x.id === scopeBranch); return "Филиал: " + (b?.name || b?.city || "—") + (b?.managerName ? ` (управляющий ${b.managerName})` : ""); }
+    return "Вся сеть";
+  };
+  const hasScope = Boolean(scopeBranch || scopeGroup || scopeTeacher);
 
   const now = new Date();
   const isMonday = now.getDay() === 1;
@@ -1904,14 +1919,25 @@ function PlanningReports({ rawStudents, rawPayments, rawGroups, rawBranches, raw
   const gen = async (kind: "week" | "month") => {
     setBusy(kind); setErr(null); setReport(null);
     try {
-      const filters: any = kind === "week" ? { period: "week" } : { period: "monthpick", customStart: localMonth };
+      const base: any = kind === "week" ? { period: "week" } : { period: "monthpick", customStart: localMonth };
+      const filters: any = { ...base, branchId: scopeBranch || undefined, groupId: scopeGroup || undefined, teacherId: scopeTeacher || undefined };
       const mm = computeOwnerDashboard(
         { students: rawStudents || [], payments: rawPayments || [], groups: rawGroups || [], branches: rawBranches || [], teachers: rawTeachers || [], archive: studentArchive || [] },
         filters, new Date(), extras
       );
+      const metrics: any = collect(mm);
+      metrics.область = scopeLabelOf();
+      // БДР под выбранную область: филиал — его план; группа/педагог — БДР не применим.
+      if (scopeBranch) {
+        const br = (bdr?.byBranch || []).find((b: any) => b.branchId === scopeBranch);
+        metrics.БДР = br ? { план: br.plan, факт: br.fact, процент: br.pct, ожидаемая_прибыль: br.expectedProfit, план_прибыли: br.plannedProfit } : null;
+        metrics.БДР_по_филиалам = br ? [{ филиал: br.name, план: br.plan, факт: br.fact, процент: br.pct }] : [];
+      } else if (scopeGroup || scopeTeacher) {
+        metrics.БДР = null; metrics.БДР_по_филиалам = [];
+      }
       const res = await fetch("/api/gemini/period-report", {
         method: "POST", headers: { "Content-Type": "application/json", "x-demo-role": "owner" },
-        body: JSON.stringify({ kind, metrics: collect(mm) }),
+        body: JSON.stringify({ kind, metrics, scopeLabel: scopeLabelOf() }),
       });
       if (res.status === 503) { setErr("ИИ недоступен: на сервере не настроен ключ Gemini."); return; }
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Ошибка генерации");
@@ -1940,7 +1966,7 @@ function PlanningReports({ rawStudents, rawPayments, rawGroups, rawBranches, raw
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">Отчёты для планёрок</p>
-            <p className="mt-1 text-xs text-slate-500">ИИ соберёт готовый отчёт под совещание из данных сети — можно скопировать в планёрку.</p>
+            <p className="mt-1 text-xs text-slate-500">ИИ соберёт готовый отчёт под совещание — по всей сети или по выбранной области. Можно скопировать в планёрку.</p>
           </div>
           <div className="flex gap-2">
             <button onClick={() => gen("week")} disabled={busy !== null}
@@ -1952,6 +1978,22 @@ function PlanningReports({ rawStudents, rawPayments, rawGroups, rawBranches, raw
               <FileText className="h-3.5 w-3.5" /> {busy === "month" ? "Готовлю…" : "Итоги месяца"}
             </button>
           </div>
+        </div>
+        {/* Фильтры области: управляющий / филиал / группа / педагог */}
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <FilterSelect value={managers.some((mn) => mn.value === scopeBranch) ? scopeBranch : ""} onChange={(v) => { setScopeBranch(v); setScopeGroup(""); }}
+            placeholder="Управляющий" options={managers} />
+          <FilterSelect value={scopeBranch} onChange={(v) => { setScopeBranch(v); if (v && scopeGroup && !(rawGroups || []).some((g: Group) => g.id === scopeGroup && g.branchId === v)) setScopeGroup(""); }}
+            placeholder="Все филиалы" options={branchesList.map((b) => ({ value: b.id, label: b.name || b.city }))} />
+          <FilterSelect value={scopeGroup} onChange={setScopeGroup} placeholder="Все группы" options={groupOpts} />
+          <FilterSelect value={scopeTeacher} onChange={setScopeTeacher} placeholder="Все педагоги" options={(rawTeachers || []).map((t: Teacher) => ({ value: t.id, label: t.name }))} />
+          {hasScope && (
+            <button onClick={() => { setScopeBranch(""); setScopeGroup(""); setScopeTeacher(""); }}
+              className="inline-flex items-center gap-1 rounded-xl border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-xs font-bold text-slate-400 transition hover:text-white">
+              <X className="h-3 w-3" /> Сбросить
+            </button>
+          )}
+          <span className="text-[11px] text-slate-500">Отчёт: <span className="font-bold text-slate-300">{scopeLabelOf()}</span></span>
         </div>
         {err && <p className="mt-3 text-xs text-rose-300">{err}</p>}
       </section>
