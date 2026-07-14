@@ -204,7 +204,11 @@ export const initialAnnouncements: Announcement[] = [
 ];
 
 export const initialPayments: Payment[] = [
-  { id: "p-pay-1", organizationId: orgId, branchId: "branch-almaty", studentId: "stud-soslan", amount: 45000, date: "2026-05-24", type: "subscription", description: "Оплата абонемента Ансамбль №1", method: "card", status: "paid" }
+  { id: "p-pay-1", organizationId: orgId, branchId: "branch-almaty", studentId: "stud-soslan", amount: 45000, date: "2026-05-24", type: "subscription", description: "Оплата абонемента Ансамбль №1", method: "card", status: "paid", soldByName: "Анель (управляющий)" },
+  // Демо-продажи «за сегодня» для вкладки «Сверка продаж» (разные способы оплаты и продавцы).
+  { id: "p-pay-t1", organizationId: orgId, branchId: "branch-almaty", studentId: "stud-soslan", amount: 40000, date: "2026-07-14T09:20:00+05:00", type: "subscription", description: "Абонемент Ансамбль №1", method: "kaspi", status: "paid", soldByName: "Анель (управляющий)" },
+  { id: "p-pay-t2", organizationId: orgId, branchId: "branch-almaty", studentId: "stud-soslan", amount: 35000, date: "2026-07-14T11:05:00+05:00", type: "subscription", description: "Абонемент Хип-хоп", method: "cash", status: "paid", soldByName: "Администратор" },
+  { id: "p-pay-t3", organizationId: orgId, branchId: "branch-almaty", studentId: "stud-soslan", amount: 15000, date: "2026-07-14T14:30:00+05:00", type: "single", description: "Доплата долга", method: "card", status: "paid", soldByName: "Куляш (управляющий)" }
 ];
 
 export const initialFinanceTransactions: FinanceTransaction[] = [

@@ -200,6 +200,7 @@ export interface Payment {
   description: string;
   method: 'card' | 'cash' | 'transfer' | 'kaspi';
   status: 'paid' | 'pending';
+  soldByName?: string | null;
 }
 
 export interface Subscription {

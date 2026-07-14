@@ -94,6 +94,8 @@ import AccountingProtoView from "./proto/AccountingProtoView";
 import PlanningProtoView from "./proto/PlanningProtoView";
 import ReportsProtoView from "./proto/ReportsProtoView";
 import { useOwnerSectionSettings, SectionSettingsDrawer, SectionGearButton, type ResolvedTab } from "./OwnerSectionSettings";
+import { CostumeOverdueBanner } from "./CostumeOverdueBanner";
+import { CostumeCatalogSettings } from "./CostumeCatalogSettings";
 import { SubscriptionPlansManager } from "./SubscriptionPlansManager";
 import StatusSettings from "./StatusSettings";
 import { computeOwnerDashboard, type DashFilters, type PeriodKey, type LevelKey, type DashExtras, type Delta, type DailyReport } from "../ownerDashboardAnalytics";
@@ -461,6 +463,7 @@ export function OwnerExecutiveWorkspace({
           {/* key=activeTab → контейнер перемонтируется при смене вкладки и
               заново проигрывает мягкую анимацию появления (см. .owner-tab-view). */}
           <div key={`${activeTab}-${entered ? "in" : "wait"}`} className="owner-tab-view">
+          {activeTab === "dashboard" && <div className="mb-4"><CostumeOverdueBanner role="owner" /></div>}
           {activeTab === "dashboard" && (
             <OwnerDashboard
               rawBranches={branches}
@@ -6323,14 +6326,14 @@ function ModalInput({ label, value, onChange, type = "text", placeholder, full }
 }
 
 // ===================== ТОВАРЫ И СКЛАД (ТЗ §3) =====================
-export function ProductsView({ role = "owner" }: { role?: string } = {}) {
+export function ProductsView({ role = "owner", initialTab }: { role?: string; initialTab?: string } = {}) {
   // Роль определяет режим: владелец/управляющий — полный склад; администратор — «касса дня».
   // Заголовок x-demo-role передаётся на бэк, который сам скоупит данные (продажи админа = только сегодня).
   const isCashier = role === "admin";
   const hdr = { headers: { "x-demo-role": role } };
   const jhdr = { headers: { "Content-Type": "application/json", "x-demo-role": role } };
 
-  const [tab, setTab] = useState<"products" | "sales" | "stock" | "receipts" | "writeoffs" | "orders" | "echo" | "echoOrders">(isCashier ? "sales" : "products");
+  const [tab, setTab] = useState<"products" | "sales" | "stock" | "receipts" | "writeoffs" | "orders" | "echo" | "echoOrders">((initialTab as any) || (isCashier ? "sales" : "products"));
   const [products, setProducts] = useState<any[]>([]);
   const [echoOrders, setEchoOrders] = useState<any[]>([]);
   const [sales, setSales] = useState<any[]>([]);
@@ -8439,6 +8442,9 @@ function NetworkSettingsView({ branches, teachers, subscriptionPlans = [], onCre
     <OwnerScreen title="Настройки сети" subtitle="Тарифы, статусы учеников, справочники (рекламные источники и др.), роли и audit log.">
       {/* Тарифы абонементов: владелец задаёт названия, кол-во занятий, срок и цену. */}
       <SubscriptionPlansManager plans={subscriptionPlans} branches={branches} onCreatePlan={onCreatePlan} onUpdatePlan={onUpdatePlan} onDeletePlan={onDeletePlan} />
+
+      {/* Каталог костюмов для проката: владелец/управляющий заводят, админ выдаёт/принимает. */}
+      <CostumeCatalogSettings role="owner" />
 
       {/* Статусы учеников: те же настройки, что открываются из вкладки «Ученики». */}
       <section className="rounded-[1.75rem] border border-white/10 bg-gradient-to-br from-[#141414] to-black p-5">

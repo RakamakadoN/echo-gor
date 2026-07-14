@@ -497,7 +497,8 @@ function mapDbPayment(row: any): Payment {
     type: "subscription",
     description: row.comment || "Оплата",
     method: row.method || "cash",
-    status: row.status === "paid" ? "paid" : "pending"
+    status: row.status === "paid" ? "paid" : "pending",
+    soldByName: row.sold_by_name || null
   };
 }
 
@@ -1713,7 +1714,8 @@ export function registerMvpApi(app: express.Express) {
         method: payload.method || "cash",
         status: "paid",
         comment: payload.description || "Оплата",
-        created_by: session.userId.startsWith("demo-") ? null : session.userId
+        created_by: session.userId.startsWith("demo-") ? null : session.userId,
+        sold_by_name: session.fullName || session.role
       })
     });
 
@@ -1912,7 +1914,8 @@ export function registerMvpApi(app: express.Express) {
           amount_paid: paid ? amountPaid : null,
           sold_on: soldOn,
           discount_amount: discountAmount + recalc,
-          status: paid ? "active" : "inactive"
+          status: paid ? "active" : "inactive",
+          sold_by_name: session.fullName || session.role
         })
       });
 
@@ -1932,7 +1935,8 @@ export function registerMvpApi(app: express.Express) {
             method: payload.method || "kaspi",
             status: "paid",
             comment: debtLeft > 0 ? `${payComment} (частично, долг ${Math.round(debtLeft)} тг)` : payComment,
-            created_by: session.userId.startsWith("demo-") ? null : session.userId
+            created_by: session.userId.startsWith("demo-") ? null : session.userId,
+            sold_by_name: session.fullName || session.role
           })
         });
         payment = mapDbPayment(insertedPayment[0]);
@@ -4555,6 +4559,8 @@ export function registerMvpApi(app: express.Express) {
     { id: uid(), productId: mockProducts[1].id, qty: 8, amount: 224000, method: "kaspi", soldBy: "Фатима Царикаева", saleDate: "2026-06-08", branchId: demoBranchAlmaty },
     { id: uid(), productId: mockProducts[2].id, qty: 4, amount: 80000, method: "cash", soldBy: "Фатима Царикаева", saleDate: "2026-06-12", branchId: demoBranchAlmaty },
     { id: uid(), productId: mockProducts[3].id, qty: 6, amount: 42000, method: "cash", soldBy: "Фатима Царикаева", saleDate: "2026-06-15", branchId: demoBranchAlmaty },
+    // Демо: продажа мерча «сегодня» продавцом-администратором (для вкладки «Сверка продаж»).
+    { id: uid(), productId: mockProducts[0].id, qty: 1, amount: 8000, method: "cash", soldBy: "Администратор", saleDate: todayStr(), branchId: demoBranchAlmaty },
   ];
 
   // ---------- ВЫСТУПЛЕНИЯ ----------
@@ -7557,6 +7563,334 @@ export function registerMvpApi(app: express.Express) {
       } catch { /* mock */ }
     }
     res.status(201).json({ arrival: { time, late } });
+  }));
+
+  // ===================== Смена администратора (приход/залы по фото + сверка кассы) =====================
+  // Контроль для руководителя: фото на приходе, фото чистых залов; на закрытии — сверка
+  // денег (абонементы + мерч + прокат). Если не сошлось — расхождение видят владелец/управляющий.
+  // Источник — память процесса (как teacher_arrivals в demo); плюс best-effort запись в Supabase.
+  type AdminShiftRec = {
+    date: string;
+    openedAt?: string; openPhoto?: string | null;
+    closedAt?: string; closePhoto?: string | null;
+    hallPhotos: { time: string; hall: string | null; photo: string }[];
+    expectedCash?: number; countedCash?: number | null; cashDiff?: number | null;
+    cashStatus?: string | null; cashReason?: string | null; cashClosedBy?: string | null;
+  };
+  const adminShiftStore: Record<string, AdminShiftRec> = {};
+  const adminShiftKey = (session: MvpSession, date: string) =>
+    `${session.organizationId}:${session.dbBranchId || session.userId}:${date}`;
+  const adminShiftOut = (s?: AdminShiftRec) =>
+    !s ? null : {
+      openedAt: s.openedAt || null, closedAt: s.closedAt || null,
+      openPhoto: s.openPhoto || null, closePhoto: s.closePhoto || null,
+      hallPhotos: (s.hallPhotos || []).map((h) => ({ time: h.time, hall: h.hall, photo: h.photo })),
+      expectedCash: s.expectedCash ?? null, countedCash: s.countedCash ?? null,
+      cashDiff: s.cashDiff ?? null, cashStatus: s.cashStatus ?? null,
+      cashReason: s.cashReason ?? null, cashClosedBy: s.cashClosedBy ?? null,
+    };
+
+  // Деньги смены за сегодня: абонементы + мерч + прокат, с разбивкой по способам оплаты.
+  const shiftMoneyToday = async (session: MvpSession, date: string) => {
+    const byMethod: Record<string, number> = { cash: 0, kaspi: 0, card: 0, transfer: 0 };
+    const add = (m: string, amt: number) => { const k = ["cash", "kaspi", "card", "transfer"].includes(m) ? m : "cash"; byMethod[k] += amt; };
+    let subs = { count: 0, sum: 0 }, merch = { count: 0, sum: 0 }, costumes = { count: 0, sum: 0 };
+    if (supabaseEnabled) {
+      const dayStart = `${date}T00:00:00+05:00`;
+      const nd = new Date(`${date}T00:00:00+05:00`); nd.setDate(nd.getDate() + 1);
+      const dayEnd = nd.toISOString();
+      const pays = await supabaseFetch<any[]>("payments", `select=amount,method,created_at&organization_id=eq.${session.organizationId}&status=eq.paid&created_at=gte.${encodeURIComponent(dayStart)}&created_at=lt.${encodeURIComponent(dayEnd)}`).catch(() => [] as any[]);
+      for (const p of pays.filter((x) => canSeeBranch(session, x.branch_id))) { subs.count++; subs.sum += Number(p.amount) || 0; add(p.method || "cash", Number(p.amount) || 0); }
+      const sales = await supabaseFetch<any[]>("product_sales", `select=amount,method,branch_id,sale_date&sale_date=eq.${date}`).catch(() => [] as any[]);
+      for (const s of sales.filter((x) => canSeeBranch(session, x.branch_id))) { merch.count++; merch.sum += Number(s.amount) || 0; add(s.method || "cash", Number(s.amount) || 0); }
+      const rents = await supabaseFetch<any[]>("costume_rentals", `select=fee,method,branch_id,issued_at&organization_id=eq.${session.organizationId}&issued_at=gte.${encodeURIComponent(dayStart)}&issued_at=lt.${encodeURIComponent(dayEnd)}`).catch(() => [] as any[]);
+      for (const r of rents.filter((x) => canSeeBranch(session, x.branch_id))) { const f = Number(r.fee) || 0; if (f > 0) { costumes.count++; costumes.sum += f; add(r.method || "cash", f); } }
+    } else {
+      for (const p of initialPayments.filter((p) => (p.date || "").slice(0, 10) === date && p.status === "paid")) { subs.count++; subs.sum += Number(p.amount) || 0; add((p as any).method || "cash", Number(p.amount) || 0); }
+      for (const s of mockSales.filter((s) => (s.saleDate || "").slice(0, 10) === date)) { merch.count++; merch.sum += Number(s.amount) || 0; add(s.method || "cash", Number(s.amount) || 0); }
+      for (const r of costumeRentals.filter((r) => (r.issuedAt || "").slice(0, 10) === date)) { const f = Number(r.fee) || 0; if (f > 0) { costumes.count++; costumes.sum += f; add(r.method || "cash", f); } }
+    }
+    const total = subs.sum + merch.sum + costumes.sum;
+    return { subscriptions: subs, merch, costumes, byMethod, total };
+  };
+
+  // Статус смены на сегодня.
+  app.get("/api/mvp/admin/shift/today", ah(async (req, res) => {
+    const session = getSession(req);
+    const date = KZ_DATE.format(new Date());
+    res.json({ shift: adminShiftOut(adminShiftStore[adminShiftKey(session, date)]) });
+  }));
+
+  // Сводка денег смены (для окна закрытия/сверки): абонементы + мерч + прокат.
+  app.get("/api/mvp/admin/shift/summary", ah(async (req, res) => {
+    const session = getSession(req);
+    const date = KZ_DATE.format(new Date());
+    res.json(await shiftMoneyToday(session, date));
+  }));
+
+  // Сверка продаж администратора: ТОЛЬКО собственные продажи за сегодня
+  // (абонементы + мерч + прокат), отфильтрованные по имени продавца = текущий сотрудник.
+  app.get("/api/mvp/admin/my-sales", ah(async (req, res) => {
+    const session = getSession(req);
+    const date = KZ_DATE.format(new Date());
+    if (!supabaseEnabled) seedCostumes(session); // демо-данные проката для сверки
+    const me = session.fullName || session.role;
+    const hhmm = (iso?: string) => { const m = String(iso || "").match(/T(\d{2}:\d{2})/); return m ? m[1] : ""; };
+    const items: any[] = [];
+    const byMethod: Record<string, number> = { cash: 0, kaspi: 0, card: 0, transfer: 0 };
+    const byCategory = { subscriptions: { count: 0, sum: 0 }, merch: { count: 0, sum: 0 }, costumes: { count: 0, sum: 0 } };
+    const add = (m: string, a: number) => { const k = ["cash", "kaspi", "card", "transfer"].includes(m) ? m : "cash"; byMethod[k] += a; };
+    if (supabaseEnabled) {
+      const dayStart = `${date}T00:00:00+05:00`;
+      const nd = new Date(`${date}T00:00:00+05:00`); nd.setDate(nd.getDate() + 1);
+      const dayEnd = nd.toISOString();
+      const pays = await supabaseFetch<any[]>("payments", `select=amount,method,comment,created_at,branch_id,sold_by_name&organization_id=eq.${session.organizationId}&status=eq.paid&sold_by_name=eq.${encodeURIComponent(me)}&created_at=gte.${encodeURIComponent(dayStart)}&created_at=lt.${encodeURIComponent(dayEnd)}`).catch(() => [] as any[]);
+      for (const p of pays.filter((x) => canSeeBranch(session, x.branch_id))) { const a = Number(p.amount) || 0; byCategory.subscriptions.count++; byCategory.subscriptions.sum += a; add(p.method || "cash", a); items.push({ time: hhmm(p.created_at), category: "subscription", title: p.comment || "Абонемент", amount: a, method: p.method || "cash" }); }
+      const sales = await supabaseFetch<any[]>("product_sales", `select=amount,method,sale_date,branch_id,sold_by,product_id&sale_date=eq.${date}&sold_by=eq.${encodeURIComponent(me)}`).catch(() => [] as any[]);
+      for (const s of sales.filter((x) => canSeeBranch(session, x.branch_id))) { const a = Number(s.amount) || 0; byCategory.merch.count++; byCategory.merch.sum += a; add(s.method || "cash", a); items.push({ time: "", category: "merch", title: "Товар/мерч", amount: a, method: s.method || "cash" }); }
+      const rents = await supabaseFetch<any[]>("costume_rentals", `select=fee,method,issued_at,branch_id,issued_by,costume_name,renter_name&organization_id=eq.${session.organizationId}&issued_by=eq.${encodeURIComponent(me)}&issued_at=gte.${encodeURIComponent(dayStart)}&issued_at=lt.${encodeURIComponent(dayEnd)}`).catch(() => [] as any[]);
+      for (const r of rents.filter((x) => canSeeBranch(session, x.branch_id))) { const a = Number(r.fee) || 0; if (a <= 0) continue; byCategory.costumes.count++; byCategory.costumes.sum += a; add(r.method || "cash", a); items.push({ time: hhmm(r.issued_at), category: "costume", title: `${r.costume_name || "Костюм"} · ${r.renter_name || ""}`, amount: a, method: r.method || "cash" }); }
+    } else {
+      for (const p of initialPayments.filter((p) => (p.date || "").slice(0, 10) === date && p.status === "paid" && (p as any).soldByName === me)) { const a = Number(p.amount) || 0; byCategory.subscriptions.count++; byCategory.subscriptions.sum += a; add((p as any).method || "cash", a); items.push({ time: hhmm(p.date), category: "subscription", title: p.description || "Абонемент", amount: a, method: (p as any).method || "cash" }); }
+      for (const s of mockSales.filter((s) => (s.saleDate || "").slice(0, 10) === date && s.soldBy === me)) { const a = Number(s.amount) || 0; byCategory.merch.count++; byCategory.merch.sum += a; add(s.method || "cash", a); items.push({ time: "", category: "merch", title: "Товар/мерч", amount: a, method: s.method || "cash" }); }
+      for (const r of costumeRentals.filter((r) => (r.issuedAt || "").slice(0, 10) === date && r.issuedBy === me)) { const a = Number(r.fee) || 0; if (a <= 0) continue; byCategory.costumes.count++; byCategory.costumes.sum += a; add(r.method || "cash", a); items.push({ time: hhmm(r.issuedAt), category: "costume", title: `${r.costumeName || "Костюм"} · ${r.renterName || ""}`, amount: a, method: r.method || "cash" }); }
+    }
+    const total = byCategory.subscriptions.sum + byCategory.merch.sum + byCategory.costumes.sum;
+    items.sort((a, b) => String(b.time).localeCompare(String(a.time)));
+    res.json({ seller: me, items, byCategory, byMethod, total });
+  }));
+
+  // Действия смены: open | hall (с фото) | close (сверка кассы).
+  app.post("/api/mvp/admin/shift", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "admin" && session.role !== "owner" && session.role !== "branch_manager")
+      return res.status(403).json({ error: "Доступно администратору смены" });
+    const b = req.body || {};
+    const action = String(b.action || "");
+    const date = KZ_DATE.format(new Date());
+    const key = adminShiftKey(session, date);
+    const now = new Intl.DateTimeFormat("ru-RU", { timeZone: "Asia/Almaty", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
+    const time = /^\d{1,2}:\d{2}$/.test(String(b.time)) ? String(b.time) : now;
+    const photo = typeof b.photo === "string" && b.photo.trim() ? b.photo : null;
+    // Приход и чистоту залов подтверждаем ТОЛЬКО при наличии фото (жёсткое правило, не только UI).
+    if ((action === "open" || action === "hall") && !photo)
+      return res.status(400).json({ error: "Требуется фото для подтверждения" });
+    const cur: AdminShiftRec = adminShiftStore[key] || { date, hallPhotos: [] };
+    if (action === "open") { cur.openedAt = time; cur.openPhoto = photo; cur.closedAt = undefined; cur.closePhoto = undefined; }
+    else if (action === "hall") { cur.hallPhotos.push({ time, hall: typeof b.hall === "string" ? b.hall : null, photo: photo! }); }
+    else if (action === "close") {
+      // Сверка кассы: ожидаемая сумма считается на сервере (не доверяем клиенту).
+      const money = await shiftMoneyToday(session, date);
+      const matched = b.matched !== false; // по умолчанию «сошлось»
+      const counted = b.countedCash != null && b.countedCash !== "" ? Number(b.countedCash) : (matched ? money.total : null);
+      cur.closedAt = time;
+      cur.expectedCash = money.total;
+      cur.countedCash = counted;
+      cur.cashDiff = counted != null ? Math.round((counted - money.total) * 100) / 100 : null;
+      cur.cashStatus = matched && (counted == null || Math.abs(cur.cashDiff || 0) < 0.5) ? "ok" : "mismatch";
+      cur.cashReason = typeof b.cashReason === "string" ? b.cashReason : null;
+      cur.cashClosedBy = session.fullName || session.role;
+    }
+    else return res.status(400).json({ error: "Неизвестное действие" });
+    adminShiftStore[key] = cur;
+    if (supabaseEnabled) {
+      try {
+        // Таблица admin_shifts может отсутствовать — тогда молча остаёмся в памяти (как teacher_arrivals).
+        await supabaseFetch("admin_shifts", "", {
+          method: "POST",
+          headers: { Prefer: "resolution=merge-duplicates" },
+          body: JSON.stringify({
+            organization_id: session.organizationId, branch_id: session.dbBranchId || null,
+            shift_date: date,
+            opened_at: cur.openedAt || null, open_photo: cur.openPhoto || null,
+            closed_at: cur.closedAt || null, close_photo: cur.closePhoto || null,
+            hall_photos: cur.hallPhotos,
+            expected_cash: cur.expectedCash ?? null, counted_cash: cur.countedCash ?? null,
+            cash_diff: cur.cashDiff ?? null, cash_status: cur.cashStatus ?? null,
+            cash_reason: cur.cashReason ?? null, cash_closed_by: cur.cashClosedBy ?? null,
+          }),
+        });
+      } catch { /* mock */ }
+    }
+    res.status(201).json({ shift: adminShiftOut(cur) });
+  }));
+
+  // ===================== Прокат костюмов (каталог + выдача → возврат с фото) =====================
+  // Весь путь: каталог → выдача (кому, срок, залог, плата, фото при выдаче) → возврат
+  // (ОБЯЗАТЕЛЬНО фото, что костюм принят в надлежащем виде) → залог вернуть/удержать.
+  type CostumeRec = { id: string; organizationId: string; branchId: string | null; name: string; size: string | null; deposit: number; fee: number; refPhoto: string | null; status: string; createdAt: string };
+  type RentalRec = {
+    id: string; organizationId: string; branchId: string | null; costumeId: string | null; costumeName: string | null;
+    renterName: string; studentId: string | null; issuedAt: string; issuedBy: string | null; dueDate: string | null;
+    fee: number; deposit: number; method: string | null; issuePhoto: string | null; issueCondition: string | null;
+    idPhoto: string | null; idNote: string | null;
+    returnedAt: string | null; returnedBy: string | null; returnPhoto: string | null; returnCondition: string | null;
+    depositRefunded: boolean | null; notes: string | null; status: string;
+  };
+  const costumes: CostumeRec[] = [];
+  const costumeRentals: RentalRec[] = [];
+  const costumeScoped = (session: MvpSession) => ({
+    costumes: costumes.filter((c) => c.organizationId === session.organizationId && canSeeBranch(session, c.branchId)),
+    rentals: costumeRentals.filter((r) => r.organizationId === session.organizationId && canSeeBranch(session, r.branchId)),
+  });
+
+  // Демо-данные проката (только mock-режим): наполняем при первом обращении, если пусто.
+  let costumesSeeded = false;
+  const seedCostumes = (session: MvpSession) => {
+    if (costumesSeeded) return;
+    costumesSeeded = true;
+    const org = session.organizationId, br = session.dbBranchId || null;
+    const dPlus = (n: number) => { const d = new Date(); d.setDate(d.getDate() + n); return KZ_DATE.format(d); };
+    const mk = (name: string, size: string, fee: number, status = "available"): CostumeRec =>
+      ({ id: uid(), organizationId: org, branchId: br, name, size, deposit: 0, fee, refPhoto: null, status, createdAt: new Date().toISOString() });
+    const c1 = mk("Нац. костюм (девочка)", "128", 2000, "rented");
+    const c2 = mk("Нац. костюм (мальчик)", "134", 2000);
+    const c3 = mk("Костюм «Снежинка»", "116", 1500);
+    const c4 = mk("Бальное платье", "S", 3000, "rented");
+    const c5 = mk("Жилет народный", "M", 1500);
+    costumes.push(c1, c2, c3, c4, c5);
+    const rk = (c: CostumeRec, renter: string, due: string, idNote: string, overdue = false): RentalRec => ({
+      id: uid(), organizationId: org, branchId: br, costumeId: c.id, costumeName: c.name, renterName: renter,
+      studentId: null, issuedAt: new Date(Date.now() - (overdue ? 6 : 0) * 86400000).toISOString(),
+      issuedBy: "Администратор", dueDate: due, fee: c.fee, deposit: 0, method: "cash",
+      issuePhoto: null, issueCondition: "ok", idPhoto: null, idNote,
+      returnedAt: null, returnedBy: null, returnPhoto: null, returnCondition: null, depositRefunded: null,
+      notes: null, status: "active",
+    });
+    costumeRentals.push(
+      rk(c1, "Амина (мама Даяны)", dPlus(3), "УДО: Ахметова Айгуль"),
+      rk(c4, "Тимур Сериков", dPlus(-2), "УДО: Сериков Тимур", true),
+    );
+  };
+
+  // Каталог + выдачи.
+  app.get("/api/mvp/costumes", ah(async (req, res) => {
+    const session = getSession(req);
+    if (supabaseEnabled) {
+      try {
+        const cs = await supabaseFetch<any[]>("costumes", `select=*&organization_id=eq.${session.organizationId}&order=created_at.desc`);
+        const rs = await supabaseFetch<any[]>("costume_rentals", `select=*&organization_id=eq.${session.organizationId}&order=issued_at.desc`);
+        const mapC = (c: any): any => ({ id: c.id, name: c.name, size: c.size, deposit: Number(c.deposit) || 0, fee: Number(c.fee) || 0, refPhoto: c.ref_photo, status: c.status, branchId: c.branch_id });
+        const mapR = (r: any): any => ({ id: r.id, costumeId: r.costume_id, costumeName: r.costume_name, renterName: r.renter_name, studentId: r.student_id, issuedAt: r.issued_at, issuedBy: r.issued_by, dueDate: r.due_date, fee: Number(r.fee) || 0, deposit: Number(r.deposit) || 0, method: r.method, issuePhoto: r.issue_photo, issueCondition: r.issue_condition, idPhoto: r.id_photo, idNote: r.id_note, returnedAt: r.returned_at, returnedBy: r.returned_by, returnPhoto: r.return_photo, returnCondition: r.return_condition, depositRefunded: r.deposit_refunded, notes: r.notes, status: r.status, branchId: r.branch_id });
+        return res.json({
+          costumes: cs.filter((c) => canSeeBranch(session, c.branch_id)).map(mapC),
+          rentals: rs.filter((r) => canSeeBranch(session, r.branch_id)).map(mapR),
+        });
+      } catch { /* fall to memory */ }
+    }
+    seedCostumes(session);
+    res.json(costumeScoped(session));
+  }));
+
+  // Добавить костюм в каталог.
+  app.post("/api/mvp/costumes", ah(async (req, res) => {
+    const session = getSession(req);
+    // Каталог костюмов ведут управляющий/владелец. Админ только выдаёт/принимает.
+    if (session.role !== "owner" && session.role !== "branch_manager")
+      return res.status(403).json({ error: "Каталог костюмов ведёт управляющий или владелец" });
+    const b = req.body || {};
+    if (!String(b.name || "").trim()) return res.status(400).json({ error: "Укажите название костюма" });
+    const rec: CostumeRec = {
+      id: uid(), organizationId: session.organizationId, branchId: session.dbBranchId || null,
+      name: String(b.name).trim(), size: b.size || null, deposit: Number(b.deposit) || 0, fee: Number(b.fee) || 0,
+      refPhoto: typeof b.refPhoto === "string" ? b.refPhoto : null, status: "available", createdAt: new Date().toISOString(),
+    };
+    costumes.unshift(rec);
+    if (supabaseEnabled) {
+      try {
+        await supabaseFetch("costumes", "", { method: "POST", body: JSON.stringify({ organization_id: session.organizationId, branch_id: rec.branchId, name: rec.name, size: rec.size, deposit: rec.deposit, fee: rec.fee, ref_photo: rec.refPhoto, status: "available" }) });
+      } catch { /* mock */ }
+    }
+    res.status(201).json({ costume: rec });
+  }));
+
+  // Изменить/списать костюм (каталог ведут управляющий/владелец).
+  app.patch("/api/mvp/costumes/:id", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager")
+      return res.status(403).json({ error: "Каталог костюмов ведёт управляющий или владелец" });
+    const b = req.body || {};
+    const rec = costumes.find((c) => c.id === req.params.id);
+    if (rec) {
+      if (typeof b.name === "string" && b.name.trim()) rec.name = b.name.trim();
+      if (b.size !== undefined) rec.size = b.size || null;
+      if (b.deposit !== undefined) rec.deposit = Number(b.deposit) || 0;
+      if (b.fee !== undefined) rec.fee = Number(b.fee) || 0;
+      if (typeof b.refPhoto === "string") rec.refPhoto = b.refPhoto;
+      if (typeof b.status === "string") rec.status = b.status;
+    }
+    if (supabaseEnabled) {
+      try {
+        const patch: any = {};
+        if (typeof b.name === "string" && b.name.trim()) patch.name = b.name.trim();
+        if (b.size !== undefined) patch.size = b.size || null;
+        if (b.deposit !== undefined) patch.deposit = Number(b.deposit) || 0;
+        if (b.fee !== undefined) patch.fee = Number(b.fee) || 0;
+        if (typeof b.refPhoto === "string") patch.ref_photo = b.refPhoto;
+        if (typeof b.status === "string") patch.status = b.status;
+        if (Object.keys(patch).length) await supabaseFetch("costumes", `id=eq.${req.params.id}`, { method: "PATCH", body: JSON.stringify(patch) });
+      } catch { /* mock */ }
+    }
+    res.json({ costume: rec || null });
+  }));
+
+  // Выдать костюм в прокат.
+  app.post("/api/mvp/costumes/issue", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "admin" && session.role !== "owner" && session.role !== "branch_manager")
+      return res.status(403).json({ error: "Недоступно" });
+    const b = req.body || {};
+    if (!String(b.renterName || "").trim()) return res.status(400).json({ error: "Укажите, кто берёт костюм" });
+    const costume = costumes.find((c) => c.id === b.costumeId);
+    const rec: RentalRec = {
+      id: uid(), organizationId: session.organizationId, branchId: session.dbBranchId || null,
+      costumeId: b.costumeId || null, costumeName: costume?.name || b.costumeName || "Костюм",
+      renterName: String(b.renterName).trim(), studentId: b.studentId || null,
+      issuedAt: new Date().toISOString(), issuedBy: session.fullName || session.role, dueDate: b.dueDate || null,
+      fee: Number(b.fee) || 0, deposit: Number(b.deposit) || 0, method: b.method || null,
+      issuePhoto: typeof b.issuePhoto === "string" ? b.issuePhoto : null, issueCondition: b.issueCondition || null,
+      idPhoto: typeof b.idPhoto === "string" ? b.idPhoto : null, idNote: typeof b.idNote === "string" ? b.idNote : null,
+      returnedAt: null, returnedBy: null, returnPhoto: null, returnCondition: null, depositRefunded: null,
+      notes: b.notes || null, status: "active",
+    };
+    costumeRentals.unshift(rec);
+    if (costume) costume.status = "rented";
+    if (supabaseEnabled) {
+      try {
+        await supabaseFetch("costume_rentals", "", { method: "POST", body: JSON.stringify({ organization_id: session.organizationId, branch_id: rec.branchId, costume_id: rec.costumeId, costume_name: rec.costumeName, renter_name: rec.renterName, student_id: rec.studentId, issued_by: rec.issuedBy, due_date: rec.dueDate, fee: rec.fee, deposit: rec.deposit, method: rec.method, issue_photo: rec.issuePhoto, issue_condition: rec.issueCondition, id_photo: rec.idPhoto, id_note: rec.idNote, status: "active" }) });
+        if (rec.costumeId) await supabaseFetch("costumes", `id=eq.${rec.costumeId}`, { method: "PATCH", body: JSON.stringify({ status: "rented" }) }).catch(() => {});
+      } catch { /* mock */ }
+    }
+    res.status(201).json({ rental: rec });
+  }));
+
+  // Принять костюм из проката. ОБЯЗАТЕЛЬНО фото приёма (в надлежащем виде).
+  app.post("/api/mvp/costumes/return", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "admin" && session.role !== "owner" && session.role !== "branch_manager")
+      return res.status(403).json({ error: "Недоступно" });
+    const b = req.body || {};
+    const returnPhoto = typeof b.returnPhoto === "string" && b.returnPhoto.trim() ? b.returnPhoto : null;
+    if (!returnPhoto) return res.status(400).json({ error: "Требуется фото костюма при приёме" });
+    const rec = costumeRentals.find((r) => r.id === b.rentalId);
+    if (!rec) return res.status(404).json({ error: "Выдача не найдена" });
+    const condition = b.returnCondition === "damaged" ? "damaged" : "ok";
+    rec.returnedAt = new Date().toISOString();
+    rec.returnedBy = session.fullName || session.role;
+    rec.returnPhoto = returnPhoto;
+    rec.returnCondition = condition;
+    rec.depositRefunded = b.depositRefunded !== false && condition === "ok";
+    if (b.notes) rec.notes = String(b.notes);
+    rec.status = "returned";
+    const costume = costumes.find((c) => c.id === rec.costumeId);
+    if (costume) costume.status = condition === "damaged" ? "cleaning" : "available";
+    if (supabaseEnabled) {
+      try {
+        if (rec.id && !String(rec.id).startsWith("mock")) await supabaseFetch("costume_rentals", `id=eq.${rec.id}`, { method: "PATCH", body: JSON.stringify({ returned_by: rec.returnedBy, return_photo: rec.returnPhoto, return_condition: condition, deposit_refunded: rec.depositRefunded, notes: rec.notes, status: "returned", returned_at: rec.returnedAt }) }).catch(() => {});
+        if (rec.costumeId) await supabaseFetch("costumes", `id=eq.${rec.costumeId}`, { method: "PATCH", body: JSON.stringify({ status: costume?.status || "available" }) }).catch(() => {});
+      } catch { /* mock */ }
+    }
+    res.status(201).json({ rental: rec });
   }));
 
   // Пробные занятия на сегодня (по отметкам is_trial у сегодняшних уроков).

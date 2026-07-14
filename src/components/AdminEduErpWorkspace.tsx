@@ -24,6 +24,7 @@ import {
   Settings,
   ShoppingBag,
   ShieldCheck,
+  Shirt,
   Sparkles,
   Tags,
   User,
@@ -39,36 +40,13 @@ import GroupScheduleFields from "./GroupScheduleFields";
 import { GroupsTable, GroupsArchivePanel } from "./GroupListAndArchive";
 import AttendanceJournalView from "./AttendanceJournalView";
 import { ProductsView } from "./OwnerExecutiveWorkspace";
+import { AdminShiftView } from "./AdminShiftToday";
+import { AdminCostumeRental } from "./AdminCostumeRental";
+import { toast } from "../toast";
 
-// --- Лёгкая система всплывающих уведомлений (toast) ---
-// Даёт видимый отклик кнопкам, у которых пока нет полноценного бэкенда,
-// чтобы интерфейс не выглядел «сломанным».
-let toastHandler: ((message: string) => void) | null = null;
-function notify(message: string) {
-  if (toastHandler) toastHandler(message);
-  else if (typeof window !== "undefined") console.info("[EduErp]", message);
-}
-
-function ToastHost() {
-  const [toasts, setToasts] = useState<{ id: number; message: string }[]>([]);
-  useEffect(() => {
-    toastHandler = (message: string) => {
-      const id = Date.now() + Math.random();
-      setToasts((prev) => [...prev, { id, message }]);
-      setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 2800);
-    };
-    return () => { toastHandler = null; };
-  }, []);
-  return (
-    <div className="pointer-events-none fixed bottom-5 right-5 z-[200] flex flex-col gap-2">
-      {toasts.map((t) => (
-        <div key={t.id} className="pointer-events-auto rounded-2xl border border-[#C5A059]/30 bg-[#161616] px-4 py-3 text-sm font-bold text-slate-100 shadow-xl shadow-black/50">
-          {t.message}
-        </div>
-      ))}
-    </div>
-  );
-}
+// Уведомления делегируем ГЛОБАЛЬНОМУ тосту (src/toast.ts) — тот же, что у владельца
+// в «Посетителях». Единый стиль «команда выполнена / ошибка» во всей системе.
+function notify(message: string) { toast.success(message); }
 
 // Экспорт произвольной таблицы в CSV (открывается в Excel/Numbers).
 function exportCsv(filename: string, headers: string[], rows: (string | number)[][]) {
@@ -145,28 +123,20 @@ interface AdminEduErpWorkspaceProps {
 type AdminTab =
   | "dashboard"
   | "visitors"
-  | "journal"
   | "calendar"
-  | "billing"
   | "products"
-  | "reports"
-  | "messages"
-  | "tasks"
-  | "org"
-  | "settings";
+  | "echo"
+  | "prokat"
+  | "reports";
 
 const tabs: { id: AdminTab; label: string; short: string; icon: React.ElementType }[] = [
-  { id: "dashboard", label: "Дашборд", short: "Главная", icon: Activity },
+  { id: "dashboard", label: "Смена", short: "Смена", icon: Activity },
   { id: "visitors", label: "Посетители", short: "Ученики", icon: Users },
-  { id: "journal", label: "Журнал", short: "Журнал", icon: ClipboardList },
-  { id: "calendar", label: "Расписание", short: "Календарь", icon: CalendarDays },
-  { id: "billing", label: "Счета и абонементы", short: "Оплата", icon: Receipt },
+  { id: "calendar", label: "Расписание", short: "Расписание", icon: CalendarDays },
   { id: "products", label: "Товары и мерч", short: "Товары", icon: ShoppingBag },
-  { id: "reports", label: "Отчеты", short: "Отчеты", icon: BarChart3 },
-  { id: "messages", label: "Рассылки", short: "Связь", icon: Send },
-  { id: "tasks", label: "Задачи", short: "Задачи", icon: CheckCircle },
-  { id: "org", label: "Организация", short: "Орг", icon: Building2 },
-  { id: "settings", label: "Справочники", short: "Еще", icon: Settings }
+  { id: "echo", label: "Заявки ЭхоБаксов", short: "ЭхоБаксы", icon: Coins },
+  { id: "prokat", label: "Прокат костюмов", short: "Прокат", icon: Shirt },
+  { id: "reports", label: "Сверка продаж", short: "Сверка", icon: BarChart3 }
 ];
 
 export function AdminEduErpWorkspace({
@@ -261,7 +231,6 @@ export function AdminEduErpWorkspace({
 
   return (
     <div className="min-h-full bg-[#080808] text-slate-200">
-      <ToastHost />
       <div className="mx-auto flex max-w-[1560px] gap-0 lg:gap-5">
         <aside className={`sticky top-3 my-3 ml-3 hidden h-[calc(100vh-88px)] w-64 shrink-0 flex-col overflow-hidden rounded-3xl border border-white/5 bg-[#0F0F0F] shadow-sm ${navCollapsed ? "lg:hidden" : "lg:flex"}`}>
           <div className="border-b border-white/5 px-5 py-5">
@@ -301,18 +270,21 @@ export function AdminEduErpWorkspace({
           </header>
 
           {activeTab === "dashboard" && (
-            <DashboardView
+            <AdminShiftView
+              branch={branches[0]}
               branches={branches}
               groups={groups}
               students={students}
               teachers={teachers}
+              payments={payments}
+              scheduleItems={scheduleItems}
+              tasks={tasks}
+              announcements={announcements}
               todayRevenue={todayRevenue}
               monthRevenue={monthRevenue}
               debt={debt}
               renewals={renewals}
-              attendanceRate={attendanceRate}
-              announcements={announcements}
-              auditLogs={auditLogs}
+              onNavigate={(tab) => setActiveTab(tab as AdminTab)}
             />
           )}
           {activeTab === "visitors" && (
@@ -346,22 +318,6 @@ export function AdminEduErpWorkspace({
               onDeleteLeadSource={onDeleteLeadSource}
             />
           )}
-          {activeTab === "journal" && (
-            <AttendanceJournalView
-              role="admin"
-              branches={branches}
-              groups={groups}
-              students={students}
-              teachers={teachers}
-              currentBranchId={branches?.[0]?.id}
-              canEdit={true}
-              onToggleAttendance={onToggleAttendance as any}
-              onBatchAttendance={onBatchAttendance as any}
-              onBulkAttendance={onBulkAttendance as any}
-              onCreateTask={onJournalTask}
-              journal={journal}
-            />
-          )}
           {activeTab === "calendar" && (
             <CalendarView
               groups={groups}
@@ -382,21 +338,110 @@ export function AdminEduErpWorkspace({
               onDeleteGroupPermanent={onDeleteGroupPermanent}
             />
           )}
-          {activeTab === "billing" && <BillingView students={students} groups={groups} branches={branches} payments={payments} debt={debt} renewals={renewals} onOpenPayment={onOpenPayment} />}
           {activeTab === "products" && <ProductsView role="admin" />}
-          {activeTab === "reports" && <ReportsView branches={branches} groups={groups} students={students} payments={payments} teachers={teachers} todayRevenue={todayRevenue} monthRevenue={monthRevenue} attendanceRate={attendanceRate} />}
-          {activeTab === "messages" && <MessagesView announcements={announcements} branches={branches} groups={groups} onCreateAnnouncement={onCreateAnnouncement} />}
-          {activeTab === "tasks" && <TasksView auditLogs={auditLogs} students={students} tasks={tasks} adminBranchId={branches[0]?.id || ""} onCreateTask={onCreateTask} onUpdateTask={onUpdateTask} onDeleteTask={onDeleteTask} />}
-          {activeTab === "org" && <OrganizationView branches={branches} groups={groups} teachers={teachers} students={students} />}
-          {activeTab === "settings" && <SettingsView branches={branches} groups={groups} subscriptionPlans={subscriptionPlans} leadSources={leadSources} onCreatePlan={onCreatePlan} onUpdatePlan={onUpdatePlan} onDeletePlan={onDeletePlan} onCreateLeadSource={onCreateLeadSource} onUpdateLeadSource={onUpdateLeadSource} onDeleteLeadSource={onDeleteLeadSource} />}
+          {activeTab === "echo" && <ProductsView role="admin" initialTab="echoOrders" />}
+          {activeTab === "prokat" && <AdminCostumeRental />}
+          {activeTab === "reports" && <SalesReconciliationView students={students} payments={payments} todayRevenue={todayRevenue} />}
         </main>
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-white/10 bg-[#080808]/95 px-2 py-2 backdrop-blur-xl lg:hidden">
-        {tabs.slice(0, 5).map((tab) => (
+      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 border-t border-white/10 bg-[#080808]/95 px-2 py-2 backdrop-blur-xl lg:hidden">
+        {tabs.map((tab) => (
           <MobileNavButton key={tab.id} tab={tab} active={activeTab === tab.id} onClick={() => setActiveTab(tab.id)} />
         ))}
       </nav>
+    </div>
+  );
+}
+
+// «Сверка продаж» — только СОБСТВЕННЫЕ продажи администратора за день по трём категориям
+// (абонементы + мерч + прокат), чтобы админ и управляющий сверили с фактической кассой.
+function SalesReconciliationView(_props: any) {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    setLoading(true);
+    fetch("/api/mvp/admin/my-sales", { headers: { "x-demo-role": "admin" } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setData(d))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const methodLabels: Record<string, string> = { cash: "Наличные", kaspi: "Kaspi", card: "Карта", transfer: "Перевод" };
+  const catLabels: Record<string, string> = { subscription: "Абонемент", merch: "Мерч", costume: "Прокат" };
+  const catTone: Record<string, string> = { subscription: "text-[#C5A059]", merch: "text-amber-400", costume: "text-indigo-300" };
+  const items = data?.items || [];
+  const bc = data?.byCategory || { subscriptions: { sum: 0, count: 0 }, merch: { sum: 0, count: 0 }, costumes: { sum: 0, count: 0 } };
+  const byMethod = data?.byMethod || {};
+  const total = data?.total || 0;
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-xl font-black text-white">Мои продажи за день</h2>
+        <p className="mt-1 text-sm text-slate-400">
+          Только ваши продажи ({data?.seller || "вы"}): абонементы, мерч и прокат. Сверьте с фактической кассой.
+        </p>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-16 text-slate-500"><span className="text-sm">Загрузка…</span></div>
+      ) : (
+        <>
+          {/* Итоги по категориям */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {[
+              { key: "subscriptions", label: "Абонементы", v: bc.subscriptions },
+              { key: "merch", label: "Товары и мерч", v: bc.merch },
+              { key: "costumes", label: "Прокат костюмов", v: bc.costumes },
+            ].map((c) => (
+              <div key={c.key} className="rounded-2xl border border-white/10 bg-[#0F0F0F] p-4">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">{c.label}</p>
+                <p className="mt-1 text-xl font-black text-white">{money(c.v?.sum || 0)}</p>
+                <p className="text-[10px] text-slate-500">{c.v?.count || 0} продаж</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Итоги по способам оплаты */}
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            {["cash", "kaspi", "card", "transfer"].map((k) => (
+              <div key={k} className="rounded-2xl border border-white/10 bg-[#0F0F0F] p-3">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">{methodLabels[k]}</p>
+                <p className="mt-1 text-lg font-black text-white">{money(byMethod[k] || 0)}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="rounded-2xl border border-[#C5A059]/25 bg-[#C5A059]/10 p-4">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-bold text-[#C5A059]">Итого моих продаж за сегодня</span>
+              <span className="text-2xl font-black text-[#C5A059]">{money(total)}</span>
+            </div>
+          </div>
+
+          {/* Реестр продаж */}
+          <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0F0F0F]">
+            <div className="grid grid-cols-[60px_100px_1fr_110px_110px] gap-2 border-b border-white/10 px-4 py-2.5 text-[10px] font-black uppercase tracking-wider text-slate-500">
+              <span>Время</span><span>Тип</span><span>Что продано</span><span>Способ</span><span className="text-right">Сумма</span>
+            </div>
+            {items.length === 0 ? (
+              <p className="py-10 text-center text-sm text-slate-500">Ваших продаж за сегодня пока нет</p>
+            ) : (
+              items.map((it: any, i: number) => (
+                <div key={i} className="grid grid-cols-[60px_100px_1fr_110px_110px] items-center gap-2 border-b border-white/5 px-4 py-2.5 text-sm last:border-0">
+                  <span className="text-slate-400">{it.time || "—"}</span>
+                  <span className={`font-bold ${catTone[it.category] || "text-slate-300"}`}>{catLabels[it.category] || it.category}</span>
+                  <span className="truncate text-slate-300">{it.title}</span>
+                  <span className="text-slate-400">{methodLabels[it.method] || it.method}</span>
+                  <span className="text-right font-black text-white">{money(Number(it.amount) || 0)}</span>
+                </div>
+              ))
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

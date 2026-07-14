@@ -34,6 +34,8 @@ import { GroupsTable, GroupsArchivePanel } from "./GroupListAndArchive";
 import GroupScheduleFields from "./GroupScheduleFields";
 import AttendanceJournalView from "./AttendanceJournalView";
 import { PayrollView, ProductsView } from "./OwnerExecutiveWorkspace";
+import { CostumeOverdueBanner } from "./CostumeOverdueBanner";
+import { CostumeCatalogSettings } from "./CostumeCatalogSettings";
 
 interface BranchManagerWorkspaceProps {
   branchId?: string;
@@ -227,6 +229,7 @@ export function BranchManagerWorkspace({
             <BranchIdentity branch={branch} compact />
           </div>
 
+          {activeTab === "dashboard" && <div className="mb-4"><CostumeOverdueBanner role="branch_manager" /></div>}
           {activeTab === "dashboard" && (
             <DashboardView
               branch={branch}
@@ -962,6 +965,7 @@ function AIAssistantView({ riskStudents, renewals, groups, debt }: any) {
 function SettingsView({ branch, teachers, groups }: any) {
   return (
     <Screen title="Настройки филиала" subtitle="Локальные данные филиала без доступа к глобальной сети и лицензии.">
+      <div className="mb-4"><CostumeCatalogSettings role="branch_manager" /></div>
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
           <h3 className="font-black text-white">Данные филиала</h3>
