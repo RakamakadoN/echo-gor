@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { ShieldCheck, CheckCircle2, Clock, XCircle, Camera, ChevronRight } from "lucide-react";
+import { ShieldCheck, CheckCircle2, Clock, XCircle, Camera, ChevronRight, ChevronDown } from "lucide-react";
 import type { Teacher, Group } from "../types";
 
 type ArrivalRow = { teacherId: string; teacherName?: string; time?: string; late?: boolean; hasPhoto?: boolean };
@@ -12,8 +12,8 @@ function almatyToday(): Date {
 const isoToday = () => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Almaty" }).format(new Date());
 
 // Компактная сводка стандартов на сегодня для дашборда. Клик → полный отчёт.
-export function StaffStandardsSummary({ role, teachers = [], groups = [], onOpen }: {
-  role: "owner" | "branch_manager"; teachers?: Teacher[]; groups?: Group[]; onOpen?: () => void;
+export function StaffStandardsSummary({ role, teachers = [], groups = [], onOpen, expanded }: {
+  role: "owner" | "branch_manager"; teachers?: Teacher[]; groups?: Group[]; onOpen?: () => void; expanded?: boolean;
 }) {
   const [arrivals, setArrivals] = useState<ArrivalRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -58,7 +58,8 @@ export function StaffStandardsSummary({ role, teachers = [], groups = [], onOpen
           <h3 className="text-sm font-black uppercase tracking-wider text-white">Стандарты сегодня</h3>
         </div>
         <span className="flex items-center gap-1 text-[11px] font-bold text-[#C5A059]">
-          Полный отчёт <ChevronRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" />
+          {expanded ? "Свернуть" : "Полный отчёт"}
+          {expanded ? <ChevronDown className="h-3.5 w-3.5 rotate-180 transition" /> : <ChevronRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" />}
         </span>
       </div>
 

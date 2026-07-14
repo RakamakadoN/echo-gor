@@ -82,13 +82,12 @@ interface BranchManagerWorkspaceProps {
   onJournalTask?: (p: { studentId: string; studentName: string; title: string }) => void;
 }
 
-type BranchTab = "dashboard" | "students" | "teachers" | "standards" | "groups" | "schedule" | "journal" | "finance" | "payroll" | "products" | "announcements" | "quality" | "ai" | "settings";
+type BranchTab = "dashboard" | "students" | "teachers" | "groups" | "schedule" | "journal" | "finance" | "payroll" | "products" | "announcements" | "quality" | "ai" | "settings";
 
 const branchTabs: { id: BranchTab; label: string; short: string; icon: React.ElementType }[] = [
   { id: "dashboard", label: "Dashboard", short: "Главная", icon: Activity },
   { id: "students", label: "Ученики", short: "Ученики", icon: Users },
   { id: "teachers", label: "Преподаватели", short: "Педагоги", icon: GraduationCap },
-  { id: "standards", label: "Стандарты работы", short: "Стандарты", icon: ShieldCheck },
   { id: "groups", label: "Группы", short: "Группы", icon: BookOpen },
   { id: "schedule", label: "Расписание", short: "Расписание", icon: CalendarDays },
   { id: "journal", label: "Журнал", short: "Журнал", icon: BookOpen },
@@ -244,7 +243,6 @@ export function BranchManagerWorkspace({
               renewals={renewals}
               monthRevenue={monthRevenue}
               debt={debt}
-              onOpenStandards={() => setActiveTab("standards")}
             />
           )}
           {activeTab === "students" && (
@@ -270,7 +268,6 @@ export function BranchManagerWorkspace({
             />
           )}
           {activeTab === "teachers" && <TeachersView teachers={branchTeachers} groups={branchGroups} students={branchStudents} />}
-          {activeTab === "standards" && <StaffStandardsView role="branch_manager" teachers={branchTeachers} groups={branchGroups} />}
           {activeTab === "groups" && (
             <GroupsView
               groups={branchGroups}
@@ -338,11 +335,13 @@ export function BranchManagerWorkspace({
   );
 }
 
-function DashboardView({ branch, metrics, attendanceWeek, attendanceMonth, groups, teachers, competitions, announcements, riskStudents, renewals, monthRevenue, debt, onOpenStandards }: any) {
+function DashboardView({ branch, metrics, attendanceWeek, attendanceMonth, groups, teachers, competitions, announcements, riskStudents, renewals, monthRevenue, debt }: any) {
+  const [showStandards, setShowStandards] = useState(false);
   return (
     <div className="space-y-5">
-      {/* Стандарты работы — сводка на сегодня, клик открывает полный отчёт */}
-      <StaffStandardsSummary role="branch_manager" teachers={teachers} groups={groups} onOpen={onOpenStandards} />
+      {/* Стандарты работы — сводка на сегодня; разворачивается в полный отчёт */}
+      <StaffStandardsSummary role="branch_manager" teachers={teachers} groups={groups} expanded={showStandards} onOpen={() => setShowStandards((v) => !v)} />
+      {showStandards && <StaffStandardsView role="branch_manager" teachers={teachers} groups={groups} />}
       <section className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-gradient-to-br from-[#171717] via-[#101318] to-black p-5 md:p-7">
         <div className="absolute right-[-90px] top-[-90px] h-72 w-72 rounded-full bg-[#C5A059]/10 blur-3xl" />
         <div className="relative flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">

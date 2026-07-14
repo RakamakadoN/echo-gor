@@ -230,14 +230,13 @@ interface OwnerExecutiveWorkspaceProps {
   entered?: boolean;
 }
 
-type OwnerTab = "dashboard" | "branches" | "students" | "teachers" | "standards" | "payroll" | "journal" | "schedule" | "finance" | "planning" | "meetings" | "reports" | "performances" | "products" | "documents" | "marketing" | "events" | "feed" | "announcements" | "analytics" | "ai" | "aihub" | "settings";
+type OwnerTab = "dashboard" | "branches" | "students" | "teachers" | "payroll" | "journal" | "schedule" | "finance" | "planning" | "meetings" | "reports" | "performances" | "products" | "documents" | "marketing" | "events" | "feed" | "announcements" | "analytics" | "ai" | "aihub" | "settings";
 
 const ownerTabs: { id: OwnerTab; label: string; short: string; icon: React.ElementType }[] = [
   { id: "dashboard", label: "Dashboard", short: "Главная", icon: Activity },
   { id: "branches", label: "Филиалы", short: "Филиалы", icon: Building2 },
   { id: "students", label: "Ученики", short: "Ученики", icon: Users },
   { id: "teachers", label: "Преподаватели", short: "Педагоги", icon: GraduationCap },
-  { id: "standards", label: "Стандарты работы", short: "Стандарты", icon: Shield },
   { id: "journal", label: "Журнал посещаемости", short: "Журнал", icon: ClipboardList },
   { id: "schedule", label: "Расписание", short: "Расписание", icon: CalendarDays },
   { id: "finance", label: "Бухгалтерия", short: "Учёт", icon: Coins },
@@ -484,7 +483,6 @@ export function OwnerExecutiveWorkspace({
           {activeTab === "branches" && <BranchesGroupsView branches={branchScorecards} rawBranches={branches} students={students} groups={groups} teachers={teachers} halls={halls} payments={payments} onCreateBranch={onCreateBranch} onUpdateBranch={onUpdateBranch} onDeleteBranch={onDeleteBranch} onCreateGroup={onCreateGroup} onUpdateGroup={onUpdateGroup} onDeleteGroup={onDeleteGroup} onCreateHall={onCreateHall} onUpdateHall={onUpdateHall} onDeleteHall={onDeleteHall} onOpenStudents={openStudentsWithPreset} />}
           {activeTab === "students" && <StudentsNetworkView students={students} branches={branches} groups={groups} teachers={teachers} onCreateStudent={onCreateStudent} onUpdateStudent={onUpdateStudent} onDeleteStudent={onDeleteStudent} onOpenPayment={onOpenPayment} onSellSubscription={onSellSubscription} subscriptionPlans={subscriptionPlans} studentTrash={studentTrash} onRestoreStudent={onRestoreStudent} onConfirmDeleteStudent={onConfirmDeleteStudent} studentArchive={studentArchive} onArchiveStudent={onArchiveStudent} onUnarchiveStudent={onUnarchiveStudent} onEditArchive={onEditArchive} onBookTrial={onBookTrial} leadSources={leadSources} waitlist={waitlist} onAddToWaitlist={onAddToWaitlist} onRemoveFromWaitlist={onRemoveFromWaitlist} onCreateLeadSource={onCreateLeadSource} onUpdateLeadSource={onUpdateLeadSource} onDeleteLeadSource={onDeleteLeadSource} preset={studentsPreset} />}
           {activeTab === "teachers" && <TeachersProtoView teachers={teachers} branches={branches} groups={groups} students={students} />}
-          {activeTab === "standards" && <StaffStandardsView role="owner" teachers={teachers} groups={groups} />}
           {activeTab === "finance" && <AccountingProtoView branches={branches} />}
           {activeTab === "planning" && <PlanningProtoView branches={branches} />}
           {activeTab === "meetings" && <MeetingsView />}
@@ -595,6 +593,7 @@ type BdrData = { period: string; network: ({ plan: number | null; fact: number; 
 
 function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawPayments, rawWaitlist, studentArchive = [], branchScorecards, onNavigate, onOpenStudents, onTriggerAiReport, aiResult, aiGenerating }: any) {
   const go = (tab: string) => onNavigate?.(tab);
+  const [showStandards, setShowStandards] = useState(false);
   // Локальные «сегодня» и «текущий месяц» (не toISOString — часовой пояс!).
   const localToday = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();
   // Режим периода (ТЗ 13.07): конкретный месяц / конкретный день / произвольный период.
@@ -972,8 +971,9 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
 
   return (
     <div className="space-y-5">
-      {/* Стандарты работы сотрудников — сводка на сегодня, клик открывает полный отчёт */}
-      <StaffStandardsSummary role="owner" teachers={rawTeachers} groups={rawGroups} onOpen={() => go("standards")} />
+      {/* Стандарты работы сотрудников — сводка на сегодня; разворачивается в полный отчёт */}
+      <StaffStandardsSummary role="owner" teachers={rawTeachers} groups={rawGroups} expanded={showStandards} onOpen={() => setShowStandards((v: boolean) => !v)} />
+      {showStandards && <StaffStandardsView role="owner" teachers={rawTeachers} groups={rawGroups} />}
 
       {/* 1. ФИЛЬТРЫ: период (месяц/день/диапазон) + филиал · группа · педагог */}
       <section className="rounded-[2rem] border border-white/10 bg-gradient-to-br from-[#171717] via-[#101318] to-black p-5 md:p-6">
