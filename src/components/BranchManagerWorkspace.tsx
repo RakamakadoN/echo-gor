@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { Announcement, AnnouncementAudience, Attendance, Branch, Competition, Group, Hall, Payment, Student, SubscriptionPlan, Teacher, LeadSource, WaitlistEntry } from "../types";
 import { StaffStandardsView } from "./StaffStandardsView";
+import { StaffStandardsSummary } from "./StaffStandardsSummary";
 import StudentManagementCard, { SellSubscriptionInput } from "./StudentManagementCard";
 import StudentsRegistry from "./StudentsRegistry";
 import GroupScheduleGrid from "./GroupScheduleGrid";
@@ -243,6 +244,7 @@ export function BranchManagerWorkspace({
               renewals={renewals}
               monthRevenue={monthRevenue}
               debt={debt}
+              onOpenStandards={() => setActiveTab("standards")}
             />
           )}
           {activeTab === "students" && (
@@ -336,9 +338,11 @@ export function BranchManagerWorkspace({
   );
 }
 
-function DashboardView({ branch, metrics, attendanceWeek, attendanceMonth, groups, teachers, competitions, announcements, riskStudents, renewals, monthRevenue, debt }: any) {
+function DashboardView({ branch, metrics, attendanceWeek, attendanceMonth, groups, teachers, competitions, announcements, riskStudents, renewals, monthRevenue, debt, onOpenStandards }: any) {
   return (
     <div className="space-y-5">
+      {/* Стандарты работы — сводка на сегодня, клик открывает полный отчёт */}
+      <StaffStandardsSummary role="branch_manager" teachers={teachers} groups={groups} onOpen={onOpenStandards} />
       <section className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-gradient-to-br from-[#171717] via-[#101318] to-black p-5 md:p-7">
         <div className="absolute right-[-90px] top-[-90px] h-72 w-72 rounded-full bg-[#C5A059]/10 blur-3xl" />
         <div className="relative flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">

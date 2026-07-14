@@ -74,6 +74,7 @@ import {
 } from "../teacherEconomics";
 import type { TnGroupBreak, TnMonth, TnFine, TnSeed, TnRow } from "../teacherEconomics";
 import { StaffStandardsView } from "./StaffStandardsView";
+import { StaffStandardsSummary } from "./StaffStandardsSummary";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell,
   LineChart as RLineChart, Line, Legend, AreaChart, Area
@@ -971,6 +972,9 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
 
   return (
     <div className="space-y-5">
+      {/* Стандарты работы сотрудников — сводка на сегодня, клик открывает полный отчёт */}
+      <StaffStandardsSummary role="owner" teachers={rawTeachers} groups={rawGroups} onOpen={() => go("standards")} />
+
       {/* 1. ФИЛЬТРЫ: период (месяц/день/диапазон) + филиал · группа · педагог */}
       <section className="rounded-[2rem] border border-white/10 bg-gradient-to-br from-[#171717] via-[#101318] to-black p-5 md:p-6">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
