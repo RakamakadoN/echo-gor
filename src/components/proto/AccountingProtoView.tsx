@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Branch } from "../../types";
+import { KassaView } from "./KassaView";
 import "./accounting-proto.css";
 
 /* ===== БУХГАЛТЕРИЯ — реальные данные через /api/mvp/accounting/* =====
@@ -77,7 +78,7 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
   const [period, setPeriod] = useState(PERIOD_DEFAULT);
   const [fBranch, setFBranch] = useState("");
   const [fAccount, setFAccount] = useState("");
-  const [view, setView] = useState<"ops" | "req" | "an" | "set" | "tax" | "hist">("ops");
+  const [view, setView] = useState<"kassa" | "ops" | "req" | "an" | "set" | "tax" | "hist">("kassa");
 
   /* ---- данные с сервера ---- */
   const [overview, setOverview] = useState<OverviewData>(EMPTY_OVERVIEW);
@@ -803,6 +804,7 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
 
         {/* tabs */}
         <div className="vtabs">
+          <button className={"vtab" + (view === "kassa" ? " active" : "")} onClick={() => setView("kassa")}>Касса</button>
           <button className={"vtab" + (view === "ops" ? " active" : "")} onClick={() => setView("ops")}>Операции</button>
           <button className={"vtab" + (view === "req" ? " active" : "")} onClick={() => setView("req")}>Заявки управляющих</button>
           <button className={"vtab" + (view === "an" ? " active" : "")} onClick={() => setView("an")}>Аналитика</button>
@@ -810,6 +812,9 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
           <button className={"vtab" + (view === "tax" ? " active" : "")} onClick={() => setView("tax")}>Налоги</button>
           <button className={"vtab" + (view === "hist" ? " active" : "")} onClick={() => setView("hist")}>История</button>
         </div>
+
+        {/* VIEW: КАССА */}
+        {view === "kassa" && <KassaView />}
 
         {/* VIEW: OPERATIONS */}
         {view === "ops" && (

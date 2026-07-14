@@ -297,6 +297,56 @@ async function ensureIncomeCategoryId(orgId: string): Promise<string | null> {
   return null;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// РАЗДЕЛ «КАССА» — подтверждение поступлений владельцем, распределение по счетам,
+// комиссия Kaspi отдельной статьёй расхода. Помощники (per-organization, кэш по org).
+// ─────────────────────────────────────────────────────────────────────────────
+const KASSA_COMMISSION_RATE = 0.0095;                          // Kaspi эквайринг 0.95%
+const KASSA_COMMISSION_METHODS = new Set(["card", "kaspi"]);   // эквайринг (перевод/наличные — без комиссии)
+// Поток → счёт назначения (наличные всегда идут на «Kaspi gold»).
+const KASSA_STREAMS: Record<string, { name: string; kind: string; income: string }> = {
+  abon:  { name: "Kaspi Pay",       kind: "bank", income: "Абонементы" },
+  perf:  { name: "Банкеты",         kind: "bank", income: "Выступления" },
+  tovar: { name: "Продажа товаров", kind: "bank", income: "Товары" },
+};
+const KASSA_CASH_ACCOUNT = { name: "Kaspi gold", kind: "cash" };
+const kassaAccCache: Record<string, string> = {};
+// Находит/создаёт счёт по потоку. streamKey: 'abon'|'perf'|'tovar'|'cash'.
+async function ensureKassaAccount(orgId: string, streamKey: string): Promise<string | null> {
+  if (!supabaseEnabled) return null;
+  const cfg = streamKey === "cash" ? KASSA_CASH_ACCOUNT : KASSA_STREAMS[streamKey];
+  if (!cfg) return null;
+  const ck = orgId + ":" + streamKey;
+  if (kassaAccCache[ck]) return kassaAccCache[ck];
+  try {
+    const tagged = await supabaseFetch<any[]>("finance_accounts", `select=id&organization_id=eq.${orgId}&kassa_stream=eq.${streamKey}&limit=1`);
+    if (tagged[0]?.id) { kassaAccCache[ck] = tagged[0].id; return tagged[0].id; }
+    // Счёт с таким именем мог быть заведён раньше вручную — помечаем потоком.
+    const byName = await supabaseFetch<any[]>("finance_accounts", `select=id&organization_id=eq.${orgId}&name=eq.${encodeURIComponent(cfg.name)}&limit=1`);
+    if (byName[0]?.id) {
+      await supabaseFetch("finance_accounts", `id=eq.${byName[0].id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ kassa_stream: streamKey }) });
+      kassaAccCache[ck] = byName[0].id; return byName[0].id;
+    }
+    const created = await supabaseFetch<any[]>("finance_accounts", "", { method: "POST", body: JSON.stringify({ organization_id: orgId, name: cfg.name, kind: cfg.kind, currency: "KZT", opening_balance: 0, is_active: true, kassa_stream: streamKey }) });
+    if (created[0]?.id) { kassaAccCache[ck] = created[0].id; return created[0].id; }
+  } catch { /* счёт не критичен для ответа */ }
+  return null;
+}
+const catCache: Record<string, string> = {};
+// Находит/создаёт статью нужного вида (income/expense) по имени.
+async function ensureCategoryId(orgId: string, name: string, kind: "income" | "expense", sort = 10): Promise<string | null> {
+  if (!supabaseEnabled) return null;
+  const ck = orgId + ":" + kind + ":" + name;
+  if (catCache[ck]) return catCache[ck];
+  try {
+    const found = await supabaseFetch<any[]>("finance_categories", `select=id&organization_id=eq.${orgId}&kind=eq.${kind}&name=eq.${encodeURIComponent(name)}&limit=1`);
+    if (found[0]?.id) { catCache[ck] = found[0].id; return found[0].id; }
+    const created = await supabaseFetch<any[]>("finance_categories", "", { method: "POST", body: JSON.stringify({ organization_id: orgId, name, kind, sort }) });
+    if (created[0]?.id) { catCache[ck] = created[0].id; return created[0].id; }
+  } catch { /* статья не критична */ }
+  return null;
+}
+
 // Дата в часовом поясе студии (Казахстан). Чистые даты (YYYY-MM-DD) не трогаем;
 // таймстампы (paid_at и т.п.) приходят из PostgREST в UTC — без сдвига ночная
 // оплата (00:00–05:00 по Астане) уезжала бы на «вчера».
@@ -4664,6 +4714,203 @@ export function registerMvpApi(app: express.Express) {
       res.json({ request: mapRefundReq(rows[0]) });
     } catch (error: any) {
       res.status(400).json({ error: error.message || "Не удалось отклонить возврат" });
+    }
+  });
+
+  // ───────────────────────── РАЗДЕЛ «КАССА» (подтверждение поступлений) ─────────────────────────
+  // Три потока → три таблицы. Владелец видит поступления за день, сверяет чек и подтверждает;
+  // при подтверждении деньги проводятся на СВОЙ счёт, комиссия Kaspi — отдельной статьёй расхода.
+  const KASSA_CFG: Record<string, { table: string; dateCol: string; isTs: boolean; label: string; emo: string }> = {
+    abon:  { table: "payments",             dateCol: "paid_at",   isTs: true,  label: "Абонементы",     emo: "📄" },
+    perf:  { table: "performance_payments", dateCol: "paid_date", isTs: false, label: "Выступления",    emo: "🎉" },
+    tovar: { table: "product_sales",        dateCol: "sale_date", isTs: false, label: "Товары/прокат",  emo: "🛍" },
+  };
+  const kassaCommission = (method: string, amount: number) =>
+    KASSA_COMMISSION_METHODS.has(String(method || "cash")) ? Math.round(Number(amount || 0) * KASSA_COMMISSION_RATE) : 0;
+  const kassaRowDate = (type: string, row: any) =>
+    type === "abon" ? toDate(row.paid_at) : (type === "perf" ? row.paid_date : row.sale_date);
+  const loadKassaRow = async (org: string, type: string, id: string) => {
+    const cfg = KASSA_CFG[type]; if (!cfg) return null;
+    const rows = await supabaseFetch<any[]>(cfg.table, `select=*&id=eq.${id}&organization_id=eq.${org}&limit=1`);
+    return rows[0] || null;
+  };
+  // Снять проводки, созданные при подтверждении (при отмене/отклонении). Доход абонемента
+  // создаётся при продаже — его НЕ трогаем, только обнуляем счёт-маршрут.
+  const kassaCleanupTxns = async (type: string, id: string, row: any, org: string) => {
+    const del = async (txnId?: string | null) => {
+      if (txnId) await supabaseFetch("finance_transactions", `id=eq.${txnId}&organization_id=eq.${org}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }).catch(() => {});
+    };
+    if (type === "abon") {
+      // Доход абонемента создан при продаже — его НЕ удаляем, лишь снимаем маршрут на счёт.
+      await supabaseFetch("finance_transactions", `payment_id=eq.${id}&organization_id=eq.${org}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ account_id: null }) }).catch(() => {});
+    } else {
+      await del(row.finance_transaction_id);
+    }
+    await del(row.kassa_commission_txn_id);
+  };
+
+  // Список поступлений за день + карточки счетов.
+  app.get("/api/mvp/accounting/kassa", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "Доступ только владельцу" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const date = (String(req.query.date || "").slice(0, 10)) || toDate(null);
+    const org = String(session.organizationId);
+    const orgF = `organization_id=eq.${org}`;
+    try {
+      const next = new Date(date + "T00:00:00Z"); next.setUTCDate(next.getUTCDate() + 1);
+      const nextStr = next.toISOString().slice(0, 10);
+      const [pays, perfPays, sales, perfs, products] = await Promise.all([
+        supabaseFetch<any[]>("payments", `select=id,student_id,amount,method,paid_at,attachment_url,attachment_name,kassa_status,branch_id&${orgF}&status=eq.paid&paid_at=gte.${date}&paid_at=lt.${nextStr}`),
+        supabaseFetch<any[]>("performance_payments", `select=id,performance_id,amount,method,paid_date,attachment_url,attachment_name,kassa_status&${orgF}&paid_date=eq.${date}`),
+        supabaseFetch<any[]>("product_sales", `select=id,product_id,qty,amount,method,sold_by,sale_date,attachment_url,attachment_name,kassa_status,branch_id&${orgF}&sale_date=eq.${date}`),
+        supabaseFetch<any[]>("performances", `select=id,client_name&${orgF}`),
+        supabaseFetch<any[]>("products", `select=id,name&${orgF}`),
+      ]);
+      const perfName: Record<string, string> = Object.fromEntries(perfs.map((p) => [p.id, p.client_name]));
+      const prodName: Record<string, string> = Object.fromEntries(products.map((p) => [p.id, p.name]));
+      const stuIds = [...new Set(pays.map((p) => p.student_id).filter(Boolean))];
+      let stuName: Record<string, string> = {};
+      if (stuIds.length) {
+        const stus = await supabaseFetch<any[]>("students", `select=id,first_name,last_name&${orgF}&id=in.(${stuIds.join(",")})`);
+        stuName = Object.fromEntries(stus.map((s) => [s.id, [s.first_name, s.last_name].filter(Boolean).join(" ").trim() || "Ученик"]));
+      }
+      const mk = (type: string, id: string, who: string, method: string, amount: number, au: any, an: any, status: any) => {
+        const m = String(method || "cash");
+        const accName = m === "cash" ? KASSA_CASH_ACCOUNT.name : KASSA_STREAMS[type].name;
+        return { type, id, stream: KASSA_CFG[type].label, emo: KASSA_CFG[type].emo, who: who || "—", method: m, amount: Number(amount || 0), commission: kassaCommission(m, amount), account: accName, attachmentUrl: au || null, attachmentName: an || null, status: status || "pending" };
+      };
+      const items = [
+        ...pays.map((p) => mk("abon", p.id, stuName[p.student_id] || "Ученик", p.method, p.amount, p.attachment_url, p.attachment_name, p.kassa_status)),
+        ...perfPays.map((p) => mk("perf", p.id, perfName[p.performance_id] || "Выступление", p.method, p.amount, p.attachment_url, p.attachment_name, p.kassa_status)),
+        ...sales.map((s) => mk("tovar", s.id, (prodName[s.product_id] || "Товар") + (Number(s.qty) > 1 ? ` ×${s.qty}` : "") + (s.sold_by ? ` · ${s.sold_by}` : ""), s.method, s.amount, s.attachment_url, s.attachment_name, s.kassa_status)),
+      ];
+      // Счета: гарантируем существование 4 счетов, считаем баланс по проводкам.
+      for (const k of ["abon", "perf", "tovar", "cash"]) await ensureKassaAccount(org, k);
+      const [accList, txns] = await Promise.all([
+        supabaseFetch<any[]>("finance_accounts", `select=id,name,opening_balance,kassa_stream&${orgF}&kassa_stream=not.is.null`),
+        supabaseFetch<any[]>("finance_transactions", `select=account_id,amount,type&${orgF}&account_id=not.is.null`),
+      ]);
+      const balById: Record<string, number> = {};
+      for (const a of accList) balById[a.id] = Number(a.opening_balance || 0);
+      for (const t of txns) if (balById[t.account_id] !== undefined) balById[t.account_id] += (t.type === "income" ? 1 : -1) * Number(t.amount || 0);
+      const accounts = accList
+        .sort((a, b) => ["abon", "perf", "tovar", "cash"].indexOf(a.kassa_stream) - ["abon", "perf", "tovar", "cash"].indexOf(b.kassa_stream))
+        .map((a) => ({ key: a.kassa_stream, name: a.name, balance: balById[a.id] }));
+      res.json({ date, items, accounts });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "Не удалось загрузить кассу" });
+    }
+  });
+
+  // Подтвердить поступление: провести деньги на счёт + комиссию отдельным расходом.
+  app.post("/api/mvp/accounting/kassa/confirm", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "Подтверждать может только владелец" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const { type, id } = req.body || {};
+    if (!KASSA_CFG[type] || !id) return res.status(400).json({ error: "Не указан тип или id поступления" });
+    const org = String(session.organizationId);
+    try {
+      const row = await loadKassaRow(org, type, id);
+      if (!row) return res.status(404).json({ error: "Поступление не найдено" });
+      if (row.kassa_status === "confirmed") return res.json({ ok: true });
+      const method = String(row.method || "cash");
+      const amount = Number(row.amount || 0);
+      const opDate = kassaRowDate(type, row);
+      const branchId = row.branch_id || null;
+      const isCash = method === "cash";
+      const accountId = await ensureKassaAccount(org, isCash ? "cash" : type);
+      const patch: any = { kassa_status: "confirmed", kassa_confirmed_at: new Date().toISOString() };
+      if (!session.userId.startsWith("demo-")) patch.kassa_confirmed_by = session.userId;
+
+      if (type === "abon") {
+        // Доход уже проведён при продаже — направляем ту проводку на нужный счёт.
+        if (accountId) await supabaseFetch("finance_transactions", `payment_id=eq.${id}&organization_id=eq.${org}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ account_id: accountId }) }).catch(() => {});
+      } else {
+        // Выступления/товары раньше не попадали в бухгалтерию — создаём доходную проводку.
+        const catId = await ensureCategoryId(org, KASSA_STREAMS[type].income, "income", type === "perf" ? 2 : 3);
+        const inc = await supabaseFetch<any[]>("finance_transactions", "", { method: "POST", body: JSON.stringify({ organization_id: org, branch_id: branchId, amount, type: "income", category: KASSA_STREAMS[type].income, category_id: catId, account_id: accountId, operation_date: opDate, status: "actual", description: `${KASSA_STREAMS[type].income}: ${row.comment || "поступление"}` }) });
+        if (inc[0]?.id) patch.finance_transaction_id = inc[0].id;
+      }
+      // Комиссия эквайринга — отдельный расход с того же счёта (как в BRIZO).
+      const commission = kassaCommission(method, amount);
+      if (commission > 0 && accountId) {
+        const commCat = await ensureCategoryId(org, "Комиссия", "expense", 50);
+        const exp = await supabaseFetch<any[]>("finance_transactions", "", { method: "POST", body: JSON.stringify({ organization_id: org, branch_id: branchId, amount: commission, type: "expense", category: "Комиссия", category_id: commCat, account_id: accountId, operation_date: opDate, status: "actual", description: "Комиссия Kaspi (эквайринг 0.95%)" }) });
+        if (exp[0]?.id) patch.kassa_commission_txn_id = exp[0].id;
+      }
+      await supabaseFetch(KASSA_CFG[type].table, `id=eq.${id}&organization_id=eq.${org}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(patch) });
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message || "Не удалось подтвердить" });
+    }
+  });
+
+  // Вернуть в «ждёт» (отмена) или «отклонить» — с откатом созданных проводок.
+  app.post("/api/mvp/accounting/kassa/set-status", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "Доступно только владельцу" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const { type, id, status } = req.body || {};
+    if (!KASSA_CFG[type] || !id || !["pending", "rejected"].includes(status)) return res.status(400).json({ error: "Некорректный запрос" });
+    const org = String(session.organizationId);
+    try {
+      const row = await loadKassaRow(org, type, id);
+      if (!row) return res.status(404).json({ error: "Поступление не найдено" });
+      await kassaCleanupTxns(type, id, row, org);
+      // finance_transaction_id есть только у выступлений/товаров (у payments его нет).
+      const reset: any = { kassa_status: status, kassa_confirmed_by: null, kassa_confirmed_at: null, kassa_commission_txn_id: null };
+      if (type !== "abon") reset.finance_transaction_id = null;
+      await supabaseFetch(KASSA_CFG[type].table, `id=eq.${id}&organization_id=eq.${org}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(reset) });
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message || "Не удалось изменить статус" });
+    }
+  });
+
+  // Приложить чек (base64 data-URL — как фото прихода педагога; отдельного стораджа нет).
+  app.post("/api/mvp/accounting/kassa/attach", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "Доступно только владельцу" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const { type, id, dataUrl, name } = req.body || {};
+    if (!KASSA_CFG[type] || !id) return res.status(400).json({ error: "Не указан тип или id" });
+    if (dataUrl && String(dataUrl).length > 6_000_000) return res.status(413).json({ error: "Файл слишком большой (макс ~4 МБ)" });
+    const org = String(session.organizationId);
+    try {
+      await supabaseFetch(KASSA_CFG[type].table, `id=eq.${id}&organization_id=eq.${org}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ attachment_url: dataUrl || null, attachment_name: name || null }) });
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message || "Не удалось приложить чек" });
+    }
+  });
+
+  // Архив чеков — все прикреплённые файлы (последние сверху).
+  app.get("/api/mvp/accounting/kassa/receipts", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "Доступ только владельцу" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const org = String(session.organizationId);
+    const orgF = `organization_id=eq.${org}`;
+    try {
+      const [pays, perfPays, sales, perfs, products] = await Promise.all([
+        supabaseFetch<any[]>("payments", `select=id,amount,method,paid_at,attachment_url,attachment_name,kassa_status&${orgF}&attachment_url=not.is.null&order=paid_at.desc&limit=300`),
+        supabaseFetch<any[]>("performance_payments", `select=id,performance_id,amount,method,paid_date,attachment_url,attachment_name,kassa_status&${orgF}&attachment_url=not.is.null&order=paid_date.desc&limit=300`),
+        supabaseFetch<any[]>("product_sales", `select=id,product_id,amount,method,sold_by,sale_date,attachment_url,attachment_name,kassa_status&${orgF}&attachment_url=not.is.null&order=sale_date.desc&limit=300`),
+        supabaseFetch<any[]>("performances", `select=id,client_name&${orgF}`),
+        supabaseFetch<any[]>("products", `select=id,name&${orgF}`),
+      ]);
+      const perfName: Record<string, string> = Object.fromEntries(perfs.map((p) => [p.id, p.client_name]));
+      const prodName: Record<string, string> = Object.fromEntries(products.map((p) => [p.id, p.name]));
+      const items = [
+        ...pays.map((p) => ({ type: "abon", id: p.id, date: toDate(p.paid_at), stream: "Абонементы", who: "Абонемент", method: String(p.method || "cash"), amount: Number(p.amount || 0), attachmentName: p.attachment_name, attachmentUrl: p.attachment_url, status: p.kassa_status || "pending" })),
+        ...perfPays.map((p) => ({ type: "perf", id: p.id, date: p.paid_date, stream: "Выступления", who: perfName[p.performance_id] || "Выступление", method: String(p.method || "cash"), amount: Number(p.amount || 0), attachmentName: p.attachment_name, attachmentUrl: p.attachment_url, status: p.kassa_status || "pending" })),
+        ...sales.map((s) => ({ type: "tovar", id: s.id, date: s.sale_date, stream: "Товары/прокат", who: (prodName[s.product_id] || "Товар") + (s.sold_by ? ` · ${s.sold_by}` : ""), method: String(s.method || "cash"), amount: Number(s.amount || 0), attachmentName: s.attachment_name, attachmentUrl: s.attachment_url, status: s.kassa_status || "pending" })),
+      ].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+      res.json({ receipts: items });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "Не удалось загрузить архив" });
     }
   });
 
