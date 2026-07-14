@@ -89,6 +89,10 @@ import { ArchiveReasonModal } from "./ArchiveReasonModal";
 import AttendanceJournalView from "./AttendanceJournalView";
 import { BranchesGroupsView } from "./BranchesGroupsView";
 import AiHubView from "./AiHubView";
+import TeachersProtoView from "./proto/TeachersProtoView";
+import AccountingProtoView from "./proto/AccountingProtoView";
+import PlanningProtoView from "./proto/PlanningProtoView";
+import ReportsProtoView from "./proto/ReportsProtoView";
 import { useOwnerSectionSettings, SectionSettingsDrawer, SectionGearButton, type ResolvedTab } from "./OwnerSectionSettings";
 import { SubscriptionPlansManager } from "./SubscriptionPlansManager";
 import StatusSettings from "./StatusSettings";
@@ -476,11 +480,11 @@ export function OwnerExecutiveWorkspace({
           )}
           {activeTab === "branches" && <BranchesGroupsView branches={branchScorecards} rawBranches={branches} students={students} groups={groups} teachers={teachers} halls={halls} payments={payments} onCreateBranch={onCreateBranch} onUpdateBranch={onUpdateBranch} onDeleteBranch={onDeleteBranch} onCreateGroup={onCreateGroup} onUpdateGroup={onUpdateGroup} onDeleteGroup={onDeleteGroup} onCreateHall={onCreateHall} onUpdateHall={onUpdateHall} onDeleteHall={onDeleteHall} onOpenStudents={openStudentsWithPreset} />}
           {activeTab === "students" && <StudentsNetworkView students={students} branches={branches} groups={groups} teachers={teachers} onCreateStudent={onCreateStudent} onUpdateStudent={onUpdateStudent} onDeleteStudent={onDeleteStudent} onOpenPayment={onOpenPayment} onSellSubscription={onSellSubscription} subscriptionPlans={subscriptionPlans} studentTrash={studentTrash} onRestoreStudent={onRestoreStudent} onConfirmDeleteStudent={onConfirmDeleteStudent} studentArchive={studentArchive} onArchiveStudent={onArchiveStudent} onUnarchiveStudent={onUnarchiveStudent} onEditArchive={onEditArchive} onBookTrial={onBookTrial} leadSources={leadSources} waitlist={waitlist} onAddToWaitlist={onAddToWaitlist} onRemoveFromWaitlist={onRemoveFromWaitlist} onCreateLeadSource={onCreateLeadSource} onUpdateLeadSource={onUpdateLeadSource} onDeleteLeadSource={onDeleteLeadSource} preset={studentsPreset} />}
-          {activeTab === "teachers" && <TeachersNetworkView teachers={teachers} metrics={metrics} branches={branches} students={students} groups={groups} payments={payments} onCreateTeacher={onCreateTeacher} onUpdateTeacher={onUpdateTeacher} onDeleteTeacher={onDeleteTeacher} />}
-          {activeTab === "finance" && <BookkeepingView branches={branchScorecards} payments={payments} monthRevenue={monthRevenue} todayRevenue={todayRevenue} debt={debt} renewals={renewals} />}
-          {activeTab === "planning" && <PlanningView />}
+          {activeTab === "teachers" && <TeachersProtoView teachers={teachers} branches={branches} groups={groups} students={students} />}
+          {activeTab === "finance" && <AccountingProtoView branches={branches} />}
+          {activeTab === "planning" && <PlanningProtoView branches={branches} />}
           {activeTab === "meetings" && <MeetingsView />}
-          {activeTab === "reports" && <ReportsView students={students} payments={payments} branches={branches} groups={groups} teachers={teachers} leadSources={leadSources} />}
+          {activeTab === "reports" && <ReportsProtoView students={students} payments={payments} branches={branches} groups={groups} teachers={teachers} leadSources={leadSources} />}
           {activeTab === "performances" && <PerformancesView />}
           {activeTab === "products" && <ProductsView />}
           {activeTab === "documents" && <DocumentologistView />}

@@ -1,0 +1,174 @@
+/* ЭХО ГОР — Бухгалтерия, порт статического прототипа. Только ночная тема. */
+.proto-accounting{
+  /* ===== палитра (ночь) ===== */
+  --bg:#12161A; --panel:#1A2027; --inset:#161B21; --control:#1E252D; --hover:#232D37;
+  --nav-active:#222C36; --border-c:#2A333C; --border2:#232C35; --row-border:#1F272F;
+  --chip:#232C35; --scrollbar:#2C353F;
+  --text:#E9ECEF; --heading:#F2F4F6; --text2:#AEB6BE; --text-muted:#9AA4AE;
+  --muted-c:#7E8893; --muted2:#6E7884; --faint:#5E6873;
+  --gold-c:#BF9D5F; --gold-deep:#947C51; --blue-c:#8FB8CC; --blue-deep:#5E8194;
+  --green-c:#7FB089; --red-c:#C45A5A; --on-gold:#1A2027;
+  --ok-bg:rgba(127,176,137,.14); --gold-bg:rgba(191,157,95,.16);
+  --red-bg2:rgba(196,90,90,.15); --blue-bg2:rgba(143,184,204,.15);
+  --shadow:0 8px 28px rgba(0,0,0,.45); --r:16px;
+  /* алиасы старых переменных файла -> тема */
+  --card:var(--panel); --line:var(--border-c); --ink:var(--heading); --muted:var(--muted-c);
+  --gold:var(--gold-c); --gold-soft:var(--gold-bg); --gold-ink:var(--gold-c);
+  --green:var(--green-c); --green-soft:var(--ok-bg);
+  --red:var(--red-c); --red-soft:var(--red-bg2);
+  --blue:var(--blue-c); --blue-soft:var(--blue-bg2); --blue-ink:var(--blue-c);
+  --purple:var(--gold-c); --purple-soft:var(--gold-bg);
+  --amber:var(--gold-c); --amber-soft:var(--gold-bg);
+
+  background:transparent;
+  color:var(--text);
+  font-family:'IBM Plex Sans','Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+.proto-accounting *{box-sizing:border-box}
+
+.proto-accounting .acc-content{width:100%;min-width:0;padding:30px 36px;overflow-x:hidden}
+.proto-accounting .acc-content>*{max-width:1280px;margin-left:auto;margin-right:auto}
+
+.proto-accounting h1{font-family:'Oswald',sans-serif;font-size:38px;font-weight:800;letter-spacing:.3px;color:var(--heading)}
+.proto-accounting h2,.proto-accounting h3{font-family:'Oswald',sans-serif;letter-spacing:.3px;color:var(--heading)}
+.proto-accounting .eyebrow{font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--gold-c)}
+.proto-accounting .lead{color:var(--muted-c);max-width:760px;margin:8px 0 24px;font-size:16px}
+.proto-accounting .owner-tag{display:inline-flex;align-items:center;gap:6px;background:var(--gold-bg);color:var(--gold-c);
+  font-size:12px;font-weight:800;padding:5px 12px;border-radius:999px;margin-left:10px;vertical-align:middle}
+
+.proto-accounting .toolbar{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:20px}
+.proto-accounting .filters{display:flex;gap:10px;flex-wrap:wrap}
+.proto-accounting select{background:var(--control);border:1px solid var(--border-c);border-radius:12px;padding:10px 14px;font-size:14px;
+  color:var(--text);font-weight:600;cursor:pointer;outline:none;font-family:inherit}
+.proto-accounting select:focus{border-color:var(--gold-c)}
+.proto-accounting select.period{background:var(--gold-bg);border-color:var(--gold-c);color:var(--gold-c)}
+.proto-accounting .btn-gold{background:var(--gold-c);color:var(--on-gold);border:none;border-radius:999px;padding:13px 22px;font-weight:800;
+  font-size:14px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:.15s;box-shadow:0 6px 16px rgba(148,124,81,.3)}
+.proto-accounting .btn-gold:hover{filter:brightness(1.05)}
+.proto-accounting .btn-ghost{background:var(--control);color:var(--text);border:1px solid var(--border-c);border-radius:999px;padding:13px 20px;font-weight:700;font-size:14px;cursor:pointer;transition:.15s}
+.proto-accounting .btn-ghost:hover{border-color:var(--gold-c);color:var(--gold-c)}
+.proto-accounting .btn-sm{border:1px solid var(--border-c);background:var(--control);color:var(--text);border-radius:999px;padding:9px 16px;font-weight:700;font-size:13px;cursor:pointer;transition:.12s;font-family:inherit}
+.proto-accounting .btn-sm:hover{border-color:var(--gold-c);color:var(--gold-c)}
+
+/* KPI tiles */
+.proto-accounting .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px}
+.proto-accounting .tile{background:var(--inset);border:1px solid var(--border-c);border-radius:var(--r);padding:20px 22px;box-shadow:var(--shadow)}
+.proto-accounting .tile .lbl{font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted-c)}
+.proto-accounting .tile .val{font-size:30px;font-weight:800;margin-top:8px;font-family:'Oswald',sans-serif;color:var(--heading)}
+.proto-accounting .tile .sub{font-size:13px;color:var(--muted-c);margin-top:4px}
+.proto-accounting .tile.profit .val{color:var(--green-c)}
+.proto-accounting .tile.exp .val{color:var(--red-c)}
+
+.proto-accounting .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:24px}
+@media(max-width:1100px){.proto-accounting .grid2{grid-template-columns:1fr}}
+.proto-accounting .card{background:var(--panel);border:1px solid var(--border-c);border-radius:var(--r);box-shadow:var(--shadow);padding:24px}
+.proto-accounting .card h3{font-size:16px;font-weight:800;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;color:var(--heading)}
+.proto-accounting .card h3 .ai-ic{color:var(--gold-c)}
+
+.proto-accounting table{width:100%;border-collapse:collapse}
+.proto-accounting th{text-align:left;padding:12px 10px;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--muted-c);background:var(--inset);border-bottom:1px solid var(--border-c)}
+.proto-accounting td{padding:13px 10px;font-size:14px;border-bottom:1px solid var(--row-border);color:var(--text)}
+.proto-accounting tr:last-child td{border-bottom:none}
+.proto-accounting tr:hover td{background:var(--hover)}
+.proto-accounting td.r,.proto-accounting th.r{text-align:right}
+.proto-accounting .badge{display:inline-block;padding:4px 11px;border-radius:999px;font-size:12px;font-weight:800;border:1px solid var(--border-c)}
+.proto-accounting .b-green{color:var(--green-c);background:var(--ok-bg)}
+.proto-accounting .b-red{color:var(--red-c);background:var(--red-bg2)}
+.proto-accounting .b-gray{color:var(--muted-c);background:var(--chip)}
+.proto-accounting .b-gold{color:var(--gold-c);background:var(--gold-bg)}
+.proto-accounting .b-blue{color:var(--blue-c);background:var(--blue-bg2)}
+
+/* accounts */
+.proto-accounting .accounts{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:6px}
+@media(max-width:760px){.proto-accounting .accounts{grid-template-columns:1fr}}
+.proto-accounting .acc{background:var(--inset);border:1px solid var(--border-c);border-radius:14px;padding:16px 18px;cursor:pointer;transition:.12s}
+.proto-accounting .acc:hover{border-color:var(--gold-c)}
+.proto-accounting .acc .nm{font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px;color:var(--heading)}
+.proto-accounting .acc .bal{font-size:24px;font-weight:800;margin-top:8px;font-family:'Oswald',sans-serif;color:var(--heading)}
+.proto-accounting .acc .flow{font-size:12px;color:var(--muted-c);margin-top:6px}
+.proto-accounting .acc .flow .in{color:var(--green-c)}
+.proto-accounting .acc .flow .out{color:var(--red-c)}
+
+/* tabs */
+.proto-accounting .vtabs{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap}
+.proto-accounting .vtab{padding:9px 18px;border-radius:999px;border:1px solid var(--border-c);background:transparent;font-weight:700;font-size:14px;color:var(--text2);cursor:pointer;font-family:inherit}
+.proto-accounting .vtab.active{background:var(--gold-c);color:var(--on-gold);border-color:var(--gold-c)}
+
+/* analytics bars */
+.proto-accounting .barrow{margin-bottom:12px}
+.proto-accounting .barrow .bl{display:flex;justify-content:space-between;font-size:14px;font-weight:600;margin-bottom:6px;color:var(--text)}
+.proto-accounting .bar{height:10px;border-radius:5px;background:var(--inset);overflow:hidden}
+.proto-accounting .bar span{display:block;height:100%;border-radius:5px;background:var(--gold-c)}
+
+.proto-accounting .ai-box{background:var(--gold-bg);border:1px solid var(--gold-c);border-radius:var(--r);padding:22px 24px;margin-bottom:24px}
+.proto-accounting .ai-box .ttl{display:flex;align-items:center;gap:10px;font-weight:800;font-size:17px;margin-bottom:12px;color:var(--heading)}
+.proto-accounting .ai-box .ttl svg{width:22px;height:22px;color:var(--gold-c)}
+.proto-accounting .ai-box p{font-size:15px;color:var(--text);margin:6px 0}
+.proto-accounting .ai-box .pt{display:flex;gap:8px;margin:4px 0;font-size:14px;color:var(--text)}
+.proto-accounting .ai-box .pt b,.proto-accounting .ai-box p b{color:var(--heading)}
+/* daily digest */
+.proto-accounting .digest{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+@media(max-width:900px){.proto-accounting .digest{grid-template-columns:repeat(2,1fr)}}
+.proto-accounting .dg{background:var(--panel);border:1px solid var(--border-c);border-radius:12px;padding:14px 16px}
+.proto-accounting .dg .dl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted-c)}
+.proto-accounting .dg .dv{font-size:22px;font-weight:800;margin-top:6px;font-family:'Oswald',sans-serif;color:var(--heading)}
+.proto-accounting .dg .ds{font-size:12px;margin-top:4px;color:var(--text)}
+.proto-accounting .dg.ok{border-color:var(--green-c)}
+.proto-accounting .dg.ok .dv{color:var(--green-c)}
+.proto-accounting .dg.warn{border-color:var(--red-c)}
+.proto-accounting .dg.warn .dv{color:var(--red-c)}
+.proto-accounting .dg .dot-ok{color:var(--green-c)}
+.proto-accounting .dg .dot-warn{color:var(--red-c)}
+
+/* ops filters */
+.proto-accounting .ops-filters{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.proto-accounting .ops-search{flex:1;min-width:240px;display:flex;align-items:center;gap:8px;background:var(--control);border:1px solid var(--border-c);border-radius:12px;padding:0 14px}
+.proto-accounting .ops-search svg{color:var(--muted-c);flex-shrink:0}
+.proto-accounting .ops-search input{border:none;background:transparent;outline:none;padding:11px 0;font-size:14px;width:100%;font-family:inherit;color:var(--text)}
+.proto-accounting .ops-summary{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:var(--muted-c);margin-bottom:14px;padding:10px 14px;background:var(--inset);border-radius:12px}
+.proto-accounting .ops-summary b{color:var(--heading)}
+.proto-accounting .ops-summary .in{color:var(--green-c)}
+.proto-accounting .ops-summary .out{color:var(--red-c)}
+.proto-accounting .set-row{display:flex;justify-content:space-between;align-items:center;padding:11px 14px;border:1px solid var(--border-c);border-radius:12px;margin-bottom:8px;font-size:14px;background:var(--inset)}
+.proto-accounting .set-row b{color:var(--heading)}
+.proto-accounting .set-del{border:1px solid var(--red-c);background:var(--control);color:var(--red-c);border-radius:999px;padding:6px 14px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit}
+.proto-accounting .set-del:hover{background:var(--red-bg2)}
+.proto-accounting .rev-details{background:var(--inset);border-radius:14px;padding:8px 16px}
+.proto-accounting .rev-details .rd{display:flex;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--border-c);font-size:14px;gap:16px}
+.proto-accounting .rev-details .rd:last-child{border-bottom:none}
+.proto-accounting .rev-details .rd span{color:var(--muted-c)}
+.proto-accounting .rev-details .rd b{text-align:right;color:var(--heading)}
+
+/* modal */
+.proto-accounting .overlay{position:fixed;inset:0;background:rgba(8,11,15,.62);display:none;z-index:50;backdrop-filter:blur(3px);padding:40px 20px;overflow-y:auto}
+.proto-accounting .overlay.open{display:flex;align-items:flex-start;justify-content:center}
+.proto-accounting .sheet{background:var(--panel);color:var(--text);width:100%;max-width:600px;border-radius:24px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.4);animation:proto-acc-rise .25s}
+@keyframes proto-acc-rise{from{transform:translateY(12px);opacity:0}to{transform:translateY(0);opacity:1}}
+.proto-accounting .sheet-head{background:var(--inset);border-bottom:1px solid var(--border-c);padding:24px 28px;display:flex;justify-content:space-between;align-items:center}
+.proto-accounting .sheet-head h2{font-size:21px;font-weight:800;color:var(--heading)}
+.proto-accounting .close{width:38px;height:38px;border:none;background:var(--control);border-radius:11px;font-size:19px;cursor:pointer;color:var(--text-muted)}
+.proto-accounting .sheet-body{padding:22px 28px 28px}
+.proto-accounting .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.proto-accounting .field{display:flex;flex-direction:column;gap:6px}
+.proto-accounting .field.full{grid-column:1/-1}
+.proto-accounting .field label{font-size:12px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:var(--muted-c)}
+.proto-accounting .field input,.proto-accounting .field select,.proto-accounting .field textarea{border:1px solid var(--border-c);border-radius:12px;padding:11px 14px;font-size:14px;outline:none;background:var(--control);color:var(--text);font-family:inherit}
+.proto-accounting .field input:focus,.proto-accounting .field select:focus,.proto-accounting .field textarea:focus{border-color:var(--gold-c)}
+.proto-accounting input::placeholder,.proto-accounting textarea::placeholder{color:var(--faint)}
+.proto-accounting .hint{font-size:12px;color:var(--muted-c);margin-top:4px}
+.proto-accounting .hint b{color:var(--heading)}
+.proto-accounting .modal-foot{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
+
+.proto-accounting .toasts{position:fixed;bottom:24px;right:24px;display:flex;flex-direction:column;gap:10px;z-index:90}
+.proto-accounting .toast{background:var(--panel);border:1px solid var(--border-c);color:var(--text);padding:14px 20px;border-radius:14px;font-weight:600;font-size:14px;box-shadow:0 10px 30px rgba(0,0,0,.3);display:flex;align-items:center;gap:10px;animation:proto-acc-rise .2s;max-width:360px}
+.proto-accounting .toast .dot{width:8px;height:8px;border-radius:50%;background:var(--gold-c);flex-shrink:0}
+.proto-accounting .toast.err .dot{background:var(--red-c)}
+
+@media(max-width:900px){
+  .proto-accounting .acc-content{padding:22px 16px}
+  .proto-accounting h1{font-size:30px}
+  .proto-accounting .tiles{grid-template-columns:repeat(2,1fr)}
+  .proto-accounting .form-grid{grid-template-columns:1fr}
+}
