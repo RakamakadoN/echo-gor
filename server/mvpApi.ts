@@ -7569,12 +7569,31 @@ export function registerMvpApi(app: express.Express) {
     res.status(201).json({ arrival: { time, late } });
   }));
 
+  // Демо-данные приходов (только mock-режим) — чтобы отчёт «Стандарты» было на что смотреть.
+  const TINY_PHOTO = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+  const seedDemoArrivals = (org: string) => {
+    const d = KZ_DATE.format(new Date());
+    const yD = new Date(); yD.setDate(yD.getDate() - 1);
+    const yesterday = KZ_DATE.format(yD);
+    const mk = (date: string, teacherId: string, teacherName: string, time: string, late: boolean, photo: string | null) => {
+      const key = arrivalKey(org, date, teacherId);
+      if (!arrivalStore[key]) arrivalStore[key] = { teacherId, teacherName, time, late, photo, date };
+    };
+    // Сегодня: Аслан — вовремя с фото; Фатима — опоздание без фото. Шамиль не отмечался.
+    mk(d, "teach-aslan", "Аслан Плиев", "16:52", false, TINY_PHOTO);
+    mk(d, "teach-fatima", "Фатима Царикаева", "17:14", true, null);
+    // Вчера — для недельного отчёта.
+    mk(yesterday, "teach-aslan", "Аслан Плиев", "16:58", false, TINY_PHOTO);
+    mk(yesterday, "teach-shamil", "Шамиль Гамзатов", "18:20", true, TINY_PHOTO);
+  };
+
   // Отчёт по стандартам сотрудников (владелец/управляющий). Приходы за период.
   // Возвращает записи прихода; фронт мержит со списком педагогов и показывает «не отмечен».
   app.get("/api/mvp/staff/standards", ah(async (req, res) => {
     const session = getSession(req);
     if (session.role !== "owner" && session.role !== "branch_manager")
       return res.status(403).json({ error: "Раздел доступен владельцу и управляющему" });
+    if (!supabaseEnabled) seedDemoArrivals(session.organizationId); // тестовые данные в demo-режиме
     const from = String(req.query.from || KZ_DATE.format(new Date()));
     const to = String(req.query.to || from);
     // in-memory (mock) записи за период
