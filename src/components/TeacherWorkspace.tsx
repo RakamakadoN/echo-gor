@@ -14,6 +14,7 @@ import { EchoGrantPanel } from './OwnerExecutiveWorkspace';
 import { TeacherEarningsDashboard } from './TeacherEarningsDashboard';
 import { TeacherStandardsToday } from './TeacherStandardsToday';
 import { TeacherDayBriefing } from './TeacherDayBriefing';
+import { TeacherAchievements } from './TeacherAchievements';
 import { motion, AnimatePresence } from 'motion/react';
 // @ts-ignore
 import teacherProfileCard from '../assets/images/teacher_profile_card.png';
@@ -1034,6 +1035,9 @@ function DashboardView({ teacherName, teachers, groups, students, announcements,
         onNavigate={(tab) => onNavigate?.(tab)}
         onOpenLessonPlan={onOpenLessonPlan}
       />
+
+      {/* Достижения педагога с празднующей анимацией */}
+      <TeacherAchievements teacherName={teacherName} teachers={teachers} />
 
     </div>
   );

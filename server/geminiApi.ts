@@ -100,6 +100,22 @@ context=${JSON.stringify(context ?? {})}`;
     }
   });
 
+  // Итоги урока: педагог наговаривает/пишет, ИИ структурирует и даёт советы.
+  app.post("/api/gemini/lesson-summary", async (req, res) => {
+    if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });
+    const { transcript, groupName, groupLevel, studentCount } = req.body || {};
+    const prompt = `Ты — методист школы кавказского танца «Эхо Гор». Педагог наговорил итоги проведённого занятия (может быть сумбурно, с речи). Приведи в порядок и верни СТРОГО JSON по схеме:
+{"summary": string, "done": string[], "progress": string[], "attention": string[], "advice": string[]}
+Пиши по-русски, кратко и по делу. summary — 1-2 предложения. done — что успели на занятии. progress — у кого/в чём прогресс. attention — на что обратить внимание в следующий раз. advice — 2-3 практичных совета педагогу. Опирайся только на сказанное, не выдумывай фактов.
+transcript=${JSON.stringify(transcript ?? "")}
+group=${JSON.stringify({ groupName, groupLevel, studentCount })}`;
+    try {
+      res.json(await generateJson(prompt));
+    } catch (e: any) {
+      res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
+
   // План урока: педагог пишет сам, ИИ УПОРЯДОЧИВАЕТ (mode=organize) или ПОМОГАЕТ
   // черновиком (mode=assist). НЕ придумывает план за педагога без запроса.
   // kind: 'lesson' (обычный урок) | 'open' (открытый урок для родителей).

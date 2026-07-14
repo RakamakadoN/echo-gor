@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ClipboardCheck, CalendarClock, Cake, Coins, CalendarDays, Camera, Presentation,
-  ChevronRight, X, Sparkles, Loader2, Send, Copy, Check, Gift, Clock, CheckCircle2, RefreshCw,
+  ChevronRight, X, Sparkles, Loader2, Send, Copy, Check, Gift, Clock, CheckCircle2, RefreshCw, Mic,
 } from "lucide-react";
 import type { Student, Group } from "../types";
 import { TeacherLessonPlanEditor } from "./TeacherLessonPlanEditor";
+import { TeacherLessonSummary } from "./TeacherLessonSummary";
 
 // «Сегодня» по Алматы (sv-SE → YYYY-MM-DD), как в остальном приложении.
 function almatyToday(): Date {
@@ -47,6 +48,7 @@ export function TeacherStandardsToday({
   const [arrivalOpen, setArrivalOpen] = useState(false);
   const [arrival, setArrival] = useState<{ time: string; late: boolean } | null>(null);
   const [planKind, setPlanKind] = useState<"lesson" | "open" | null>(null);
+  const [summaryOpen, setSummaryOpen] = useState(false);
   const [trials, setTrials] = useState<TrialItem[]>([]);
   const [trialsOpen, setTrialsOpen] = useState(false);
 
@@ -146,6 +148,12 @@ export function TeacherStandardsToday({
       onClick: () => setPlanKind("lesson"),
     },
     {
+      key: "summary", icon: Mic, tone: "emerald",
+      title: "Итоги урока", sub: "наговорите — ИИ разложит",
+      status: "Голос", action: "Подвести",
+      onClick: () => setSummaryOpen(true),
+    },
+    {
       key: "open", icon: Presentation, tone: "rose",
       title: "Открытый урок", sub: "для родителей · вы пишете, ИИ поможет",
       status: "План", action: "Открыть",
@@ -185,7 +193,7 @@ export function TeacherStandardsToday({
                 <span className={`flex h-9 w-9 items-center justify-center rounded-xl ${toneCls[s.tone]}`}>
                   <Icon className="h-4.5 w-4.5" style={{ width: 18, height: 18 }} />
                 </span>
-                {s.status && s.status !== "Готово" && s.status !== "К отметке" && s.status !== "План" && s.status !== "ИИ" && s.status !== "Не отмечен" && (
+                {s.status && !["Готово", "К отметке", "План", "ИИ", "Не отмечен", "Голос", "Поздно"].includes(s.status) && (
                   <span className="rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-black text-white">{s.status}</span>
                 )}
               </div>
@@ -228,6 +236,15 @@ export function TeacherStandardsToday({
 
       {trialsOpen && (
         <TrialsListModal trials={trials} onClose={() => setTrialsOpen(false)} onJournal={() => { setTrialsOpen(false); onNavigate?.("journal"); }} />
+      )}
+
+      {summaryOpen && (
+        <TeacherLessonSummary
+          groupName={groups[0]?.name}
+          groupLevel={(groups[0] as any)?.level}
+          studentCount={students.length}
+          onClose={() => setSummaryOpen(false)}
+        />
       )}
     </div>
   );
