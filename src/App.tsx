@@ -144,11 +144,8 @@ export default function App() {
 
   // Active role
   const [activeRole, setActiveRole] = useState<string>("owner");
-  const [themeMode, setThemeMode] = useState<"dark" | "day" | "iman">(() => {
-    if (typeof window === "undefined") return "day";
-    const saved = window.localStorage.getItem("echogor-theme");
-    return saved === "day" || saved === "iman" || saved === "dark" ? saved : "day";
-  });
+  // Тема одна — дневная (остальные убраны, выбора темы нет).
+  const [themeMode, setThemeMode] = useState<"dark" | "day" | "iman">("day");
   const [isThemeMenuOpen, setIsThemeMenuOpen] = useState<boolean>(false);
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -336,6 +333,8 @@ export default function App() {
   const [loginVideoTarget, setLoginVideoTarget] = useState<"desktop" | "mobile" | null>(null);
   const [isLoginVideoPlaying, setIsLoginVideoPlaying] = useState<boolean>(false);
   const [loginVideoNeedsTap, setLoginVideoNeedsTap] = useState<boolean>(false);
+  // Короткая анимация «ухода» экрана входа при клике «Войти» (плавный переход в кабинет).
+  const [loginExiting, setLoginExiting] = useState<boolean>(false);
 
   // New item modal states / fields
   const [showAddStudentModal, setShowAddStudentModal] = useState<boolean>(false);
@@ -2522,7 +2521,9 @@ export default function App() {
     setLoginVideoTarget(null);
 
     if (target === "desktop") {
-      setIsPlayingPromo(false);
+      // Плавный «уход»: экран входа отдаляется и растворяется, открывая кабинет.
+      setLoginExiting(true);
+      window.setTimeout(() => { setIsPlayingPromo(false); setLoginExiting(false); }, 460);
     } else if (target === "mobile") {
       setMobileAuthStep("main");
     }
@@ -2581,7 +2582,7 @@ export default function App() {
   };
 
   return (
-    <div className={`flex flex-col h-screen w-screen overflow-hidden bg-[#0A0A0A] text-slate-200 font-sans ${themeMode === "day" ? "day-theme-app" : themeMode === "iman" ? "iman-theme-app" : ""}`}>
+    <div className={`flex flex-col h-screen w-full overflow-hidden bg-[#0A0A0A] text-slate-200 font-sans ${themeMode === "day" ? "day-theme-app" : themeMode === "iman" ? "iman-theme-app" : ""}`}>
       <ToastHost />
 
       {/* Desktop login uses the supplied image as the visible UI, with real controls as transparent hotspots. */}
@@ -2593,7 +2594,7 @@ export default function App() {
           затемнение вместо жёсткой колонки 42%, логотип и тэглайн вынесены
           в разметку (раньше были вшиты в картинку). */}
       {isPlayingPromo && (
-        <div className="login-auth-screen fixed inset-0 z-[9999] bg-[#0A0D14] overflow-hidden select-none animate-fade-in font-sans text-slate-200">
+        <div className={`login-auth-screen fixed inset-0 z-[9999] bg-[#0A0D14] overflow-hidden select-none animate-fade-in font-sans text-slate-200 ${loginExiting ? "login-exit" : ""}`}>
           {/* Базовый тёмный фон — всегда виден, даже если фото не подгрузилось. */}
           <div className="absolute inset-0" style={{ background: "radial-gradient(120% 120% at 15% 10%, #1a2536 0%, #0B1018 45%, #05070C 100%)" }} />
 
@@ -2627,11 +2628,11 @@ export default function App() {
           <img
             src={echoLogo}
             alt="ЭХОГОР — студия кавказского танца"
-            className="pointer-events-none absolute z-[5] left-1/2 top-[clamp(20px,4vw,44px)] w-[clamp(190px,52vw,300px)] -translate-x-1/2 drop-shadow-[0_6px_24px_rgba(0,0,0,0.5)] md:left-[clamp(28px,4vw,56px)] md:translate-x-0"
+            className="login-fade-a pointer-events-none absolute z-[5] left-1/2 top-[clamp(20px,4vw,44px)] w-[clamp(190px,52vw,300px)] -translate-x-1/2 drop-shadow-[0_6px_24px_rgba(0,0,0,0.5)] md:left-[clamp(28px,4vw,56px)] md:translate-x-0"
           />
 
           {/* Тэглайн «Сила | Честь | Традиции» — живой вёрсткой: снизу по центру / слева на десктопе. */}
-          <div className="pointer-events-none absolute z-[5] bottom-[clamp(20px,4vw,44px)] left-1/2 flex -translate-x-1/2 items-center gap-[0.55rem] whitespace-nowrap text-[clamp(14px,3.3vw,18px)] font-extrabold uppercase tracking-[0.14em] drop-shadow-[0_2px_10px_rgba(0,0,0,0.6)] md:left-[clamp(28px,4vw,56px)] md:translate-x-0">
+          <div className="login-fade-b pointer-events-none absolute z-[5] bottom-[clamp(20px,4vw,44px)] left-1/2 flex -translate-x-1/2 items-center gap-[0.55rem] whitespace-nowrap text-[clamp(14px,3.3vw,18px)] font-extrabold uppercase tracking-[0.14em] drop-shadow-[0_2px_10px_rgba(0,0,0,0.6)] md:left-[clamp(28px,4vw,56px)] md:translate-x-0">
             <span className="text-[#8FB4C9]">Сила</span>
             <span className="font-medium text-white/35">|</span>
             <span className="text-[#C5A059]">Честь</span>
@@ -2645,7 +2646,7 @@ export default function App() {
             <form
               onSubmit={handleDesktopLogin}
               noValidate
-              className="my-auto w-full max-w-[400px] rounded-[24px] border border-white/10 bg-[#0E1420]/90 p-6 shadow-[0_30px_80px_-20px_rgba(0,0,0,0.85)] backdrop-blur-xl sm:rounded-[28px] sm:p-8"
+              className="login-form-in my-auto w-full max-w-[400px] rounded-[24px] border border-white/10 bg-[#0E1420]/90 p-6 shadow-[0_30px_80px_-20px_rgba(0,0,0,0.85)] backdrop-blur-xl sm:rounded-[28px] sm:p-8"
             >
               <div className="mb-6 text-center">
                 <h2 className="text-[26px] font-black tracking-tight text-white sm:text-[28px]">Добро пожаловать!</h2>
@@ -3106,34 +3107,8 @@ export default function App() {
 
       {/* Top Header */}
       <header className="h-16 flex items-center justify-between px-4 md:px-6 border-b border-white/5 bg-[#121212] flex-shrink-0">
-        <div className="flex items-center space-x-3">
-          {/* Logo badge */}
-          <img
-            src={logoImg}
-            alt="Эхо Гор Лого"
-            className="w-11 h-11 object-contain rounded-lg flex-shrink-0 border border-white/5"
-            referrerPolicy="no-referrer"
-          />
-          <div>
-            <h1 className="text-sm md:text-base font-bold tracking-wider uppercase text-white leading-tight flex items-center gap-2">
-              Эхо <span className="text-[#C5A059]">Гор</span>
-              <button
-                onClick={() => setIsPlayingPromo(true)}
-                className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-[#C5A059]/15 hover:bg-[#C5A059]/30 text-[#C5A059] hover:text-[#D5B069] border border-[#C5A059]/25 hover:border-[#C5A059]/40 rounded-full text-[9px] font-bold uppercase tracking-wider transition-all shadow-md cursor-pointer"
-                title="Воспроизвести промо-видео"
-              >
-                <Video className="w-2.5 h-2.5 animate-pulse" />
-                <span>Промо</span>
-              </button>
-            </h1>
-            <p className="hidden md:block text-[10px] text-slate-500 uppercase tracking-widest leading-none">
-              Студия кавказского танца
-            </p>
-          </div>
-        </div>
-
-        {/* Middle quick simulator bar */}
-        <div className="mx-2 flex min-w-0 items-center space-x-2 overflow-x-auto bg-white/5 p-1 rounded-xl border border-white/10 max-h-11">
+        {/* Верхняя полоса: только «Эмуляция роли» (остальное убрано по ТЗ). */}
+        <div className="mx-auto flex min-w-0 items-center space-x-2 overflow-x-auto bg-white/5 p-1 rounded-xl border border-white/10 max-h-11">
           <span className="hidden lg:inline text-[10px] text-slate-400 font-semibold px-2 uppercase tracking-wide whitespace-nowrap">
             Эмуляция роли:
           </span>
@@ -3163,101 +3138,8 @@ export default function App() {
           </div>
         </div>
 
-        {/* Right Status */}
-        <div className="hidden xl:flex items-center space-x-4">
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setIsThemeMenuOpen((open) => !open)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all outline-none ${
-                themeMode === "day"
-                  ? "bg-sky-100 text-slate-900 border border-sky-200 shadow-sm"
-                  : themeMode === "iman"
-                  ? "bg-[#C9A861]/15 border border-[#C9A861]/40 text-[#D8BC7E]"
-                  : "bg-white/5 border border-white/10 hover:bg-[#C5A059]/20 hover:text-[#C5A059] text-slate-300"
-              }`}
-              title="Выбрать тему оформления"
-            >
-              {themeMode === "day" ? <Sun className="w-3.5 h-3.5" /> : themeMode === "iman" ? <Sparkles className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
-              <span>{themeMode === "day" ? "Дневная" : themeMode === "iman" ? "Iman Ver 1.0" : "Ночная"}</span>
-              <ChevronDown className={`w-3 h-3 transition-transform ${isThemeMenuOpen ? "rotate-180" : ""}`} />
-            </button>
-            {isThemeMenuOpen && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setIsThemeMenuOpen(false)} />
-                <div className="absolute right-0 mt-2 w-48 z-50 rounded-xl border border-white/10 bg-[#141414] shadow-2xl shadow-black/50 overflow-hidden py-1">
-                  {([
-                    { id: "dark", label: "Ночная", Icon: Moon },
-                    { id: "day", label: "Дневная", Icon: Sun },
-                    { id: "iman", label: "Iman Ver 1.0", Icon: Sparkles },
-                  ] as const).map(({ id, label, Icon }) => (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => { setThemeMode(id); setIsThemeMenuOpen(false); }}
-                      className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 text-xs font-semibold text-left transition-colors ${
-                        themeMode === id ? "bg-[#C5A059]/15 text-[#C5A059]" : "text-slate-300 hover:bg-white/5"
-                      }`}
-                    >
-                      <Icon className="w-3.5 h-3.5 shrink-0" />
-                      <span>{label}</span>
-                      {themeMode === id && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-[#C5A059]" />}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-
-          <button
-            onClick={() => {
-              setIsMobileSimulatorOpen(!isMobileSimulatorOpen);
-              if (!isMobileSimulatorOpen) {
-                setMobileAuthStep("welcome");
-              }
-              addAuditLog("Симулятор Мобилки", isMobileSimulatorOpen ? "Симулятор закрыт" : "Симулятор запущен");
-            }}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all outline-none ${
-              isMobileSimulatorOpen 
-                ? "bg-[#C5A059] text-black shadow-lg shadow-[#C5A059]/20" 
-                : "bg-white/5 border border-white/10 hover:bg-[#C5A059]/20 hover:text-[#C5A059] text-slate-300"
-            }`}
-            title="Переключить в симулятор мобильного кабинета"
-          >
-            <Smartphone className="w-3.5 h-3.5" />
-            <span>{isMobileSimulatorOpen ? "Закрыть симулятор" : "Мобильная версия"}</span>
-          </button>
-
-          <div className="bg-white/5 px-3 py-1.5 rounded-full flex items-center space-x-2 border border-white/10">
-            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-            <span className="text-[10px] font-medium text-slate-400 uppercase tracking-widest">
-              Статус: Высокий приоритет
-            </span>
-          </div>
-          {/* Active user dummy */}
-          <div className="flex items-center space-x-2">
-            <div className="text-right">
-              <p className="text-xs font-bold text-white line-clamp-1">дияс.рф</p>
-              <p className="text-[10px] text-[#C5A059] uppercase tracking-tighter">
-                {roles.find((r) => r.id === activeRole)?.badge || "Сотрудник"}
-              </p>
-            </div>
-            <div className="w-8 h-8 rounded-full border border-[#C5A059] bg-[#161616] flex items-center justify-center text-xs font-bold text-[#C5A059]">
-              Д
-            </div>
-          </div>
-        </div>
-
-        {/* Mobile menu trigger */}
+        {/* Мобильное меню (только на узких экранах) */}
         <div className="flex items-center gap-2 xl:hidden">
-          <button
-            type="button"
-            onClick={() => setThemeMode((current) => current === "dark" ? "day" : current === "day" ? "iman" : "dark")}
-            className="p-2 text-slate-400 hover:text-white rounded-xl bg-white/5 border border-white/10"
-            title={`Тема: ${themeMode === "day" ? "Дневная" : themeMode === "iman" ? "Iman Ver 1.0" : "Ночная"} — нажмите, чтобы сменить`}
-          >
-            {themeMode === "day" ? <Sun className="w-5 h-5" /> : themeMode === "iman" ? <Sparkles className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-          </button>
           <button
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             className="lg:hidden p-2 text-slate-400 hover:text-white"
@@ -3497,21 +3379,17 @@ export default function App() {
               Сбросить демо-данные
             </button>
           </div>
-          <div className="border-t border-white/5 px-5 py-4">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#C5A059]" style={{ fontFamily: "'Oswald', sans-serif" }}>Культура · Сила · Характер</div>
-            <div className="mt-1.5 text-xs leading-relaxed text-slate-400">Казахстан · обучаем от 5 лет</div>
-          </div>
         </aside>
         )}
 
         {/* Main Workspace Area */}
         <main className={`flex-1 flex flex-col p-4 md:p-6 space-y-6 overflow-y-auto min-w-0 ${activeRole === 'teacher' || activeRole === 'branch' || activeRole === 'owner' || activeRole === 'admin' ? 'p-0 md:p-0 space-y-0' : ''}`}>
-          <div className="fixed right-4 top-4 z-[80] hidden max-w-md rounded-2xl border border-white/10 bg-black/70 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-slate-300 backdrop-blur-xl md:block">
-            <span className={mvpDataMode === "supabase" ? "text-emerald-400" : "text-[#C5A059]"}>
-              {mvpDataMode === "supabase" ? "Supabase DB" : "Mock fallback"}
-            </span>
-            {mvpDataError && <span className="ml-2 text-rose-300">• {mvpDataError.slice(0, 80)}</span>}
-          </div>
+          {/* Индикатор источника данных виден только при ошибке подключения. */}
+          {mvpDataError && (
+            <div className="fixed right-4 top-4 z-[80] hidden max-w-md rounded-2xl border border-rose-400/30 bg-black/70 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-rose-300 backdrop-blur-xl md:block">
+              Нет связи с базой • {mvpDataError.slice(0, 80)}
+            </div>
+          )}
 
           {activeRole === "chart" ? (
             <AnimatedBarChartShowcase />
@@ -3594,6 +3472,7 @@ export default function App() {
           ) : activeRole === "owner" ? (
             <React.Suspense fallback={<WorkspaceLoader />}>
             <OwnerExecutiveWorkspace
+              entered={!isPlayingPromo}
               branches={branches}
               groups={groups}
               students={students}
@@ -6532,21 +6411,6 @@ export default function App() {
       </div>
 
       {/* Bottom Context Bar */}
-      <footer className="h-12 bg-[#0F0F0F] border-t border-white/5 px-4 md:px-6 flex items-center justify-between flex-shrink-0 select-none">
-        <div className="flex space-x-4 md:space-x-8 text-[9px] md:text-[10px] uppercase tracking-widest text-slate-500">
-          <span>Версия 1.1.2 - "Lezginka Edition"</span>
-          <span className="hidden md:inline">Облачная синхронизация активна</span>
-          <span className="hidden lg:inline">Безопасность: Ролевой протокол</span>
-        </div>
-        <div className="flex space-x-3 items-center">
-          <span className="text-[9px] md:text-[10px] text-[#C5A059] uppercase tracking-wider font-bold">
-            100% Локальный демо-режим
-          </span>
-          <div className="w-2 h-2 rounded-full bg-[#C5A059]"></div>
-        </div>
-      </footer>
-
-
       {/* FORM MODAL: REGISTER NEW STUDENT */}
       {showAddStudentModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-55 p-4">

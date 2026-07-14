@@ -2,19 +2,105 @@
 
 /* Экран входа переведён на настоящую форму — легаси-правила прозрачности удалены. */
 
+/* ─────────────────────────────────────────────────────────────
+   Анимации интерфейса (мягкие, без «прыжков»). Уважают настройку
+   пользователя «уменьшить движение» — тогда анимации отключаются.
+   ───────────────────────────────────────────────────────────── */
+@keyframes owner-tab-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+/* Появление контента при смене вкладки (перемонтируется по key=activeTab). */
+.owner-tab-view {
+  animation: owner-tab-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Плавные ховеры карточек, кнопок, строк таблиц и пунктов меню по всему кабинету. */
+:root.day-theme .day-theme-app aside nav > *,
+:root.day-theme .day-theme-app button,
+:root.day-theme .day-theme-app table tbody tr,
+:root.day-theme .day-theme-app [class*="rounded-"][class*="border"] {
+  transition: background-color 0.18s ease, border-color 0.18s ease,
+              color 0.18s ease, box-shadow 0.22s ease, transform 0.18s ease;
+}
+/* Карточки чуть приподнимаются при наведении, если они кликабельны. */
+:root.day-theme .day-theme-app [class*="cursor-pointer"][class*="rounded-"]:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 26px rgba(17, 23, 29, 0.10) !important;
+}
+
+/* Ступенчатое появление карточек в сетках дашборда (первые 8 — с нарастающей
+   задержкой, дальше все одновременно, чтобы длинные списки не «ползли» долго). */
+.owner-tab-view [class*="grid-cols"] > * {
+  animation: owner-tab-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.owner-tab-view [class*="grid-cols"] > *:nth-child(1) { animation-delay: 0.02s; }
+.owner-tab-view [class*="grid-cols"] > *:nth-child(2) { animation-delay: 0.06s; }
+.owner-tab-view [class*="grid-cols"] > *:nth-child(3) { animation-delay: 0.10s; }
+.owner-tab-view [class*="grid-cols"] > *:nth-child(4) { animation-delay: 0.14s; }
+.owner-tab-view [class*="grid-cols"] > *:nth-child(5) { animation-delay: 0.18s; }
+.owner-tab-view [class*="grid-cols"] > *:nth-child(6) { animation-delay: 0.22s; }
+.owner-tab-view [class*="grid-cols"] > *:nth-child(7) { animation-delay: 0.26s; }
+.owner-tab-view [class*="grid-cols"] > *:nth-child(8) { animation-delay: 0.30s; }
+
+/* Микро-отклик нажатия: кнопка слегка «вдавливается». */
+:root.day-theme .day-theme-app button:active {
+  transform: translateY(1px) scale(0.985);
+}
+
+/* ── Анимация входа: логотип и тэглайн мягко проявляются, форма приподнимается ── */
+@keyframes login-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes login-rise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
+.login-fade-a { animation: login-fade 0.9s ease 0.10s both; }
+.login-fade-b { animation: login-fade 0.9s ease 0.35s both; }
+.login-form-in { animation: login-rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.20s both; }
+
+/* Уход экрана входа при клике «Войти»: лёгкое приближение + растворение. */
+@keyframes login-out { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(1.04); } }
+.login-exit { animation: login-out 0.46s cubic-bezier(0.4, 0, 1, 1) both; }
+
+/* Спарклайны: бары «вырастают» снизу при появлении (со ступенчатой задержкой). */
+@keyframes spark-grow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+.spark-bar { transform-origin: bottom; animation: spark-grow 0.55s cubic-bezier(0.22, 1, 0.36, 1) both; }
+@media (prefers-reduced-motion: reduce) { .spark-bar { animation: none; } }
+
+/* Акцентная карточка (дневная тема): тёплый градиент + мягкое золотое свечение,
+   чтобы ключевой блок выделялся среди белых карточек. Своя специфичность —
+   не перебивается общим правилом «тёмная карточка → белая». */
+:root.day-theme .day-theme-app .accent-card {
+  background: linear-gradient(135deg, #FFFFFF 0%, #FBF7EF 55%, #F6EEDD 100%) !important;
+  border-color: rgba(148, 124, 81, 0.30) !important;
+  box-shadow: 0 12px 34px rgba(148, 124, 81, 0.14) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .owner-tab-view,
+  .owner-tab-view [class*="grid-cols"] > *,
+  .login-fade-a, .login-fade-b, .login-form-in { animation: none; }
+  :root.day-theme .day-theme-app * { transition: none !important; }
+  :root.day-theme .day-theme-app button:active { transform: none; }
+  :root.day-theme .day-theme-app [class*="cursor-pointer"]:hover { transform: none; }
+}
+
+/* ── Логотип ЭХОГОР в сайдбаре: тёмные буквы для светлой темы, светлые для тёмной ── */
+.day-logo { display: none; }
+.night-logo { display: block; }
+:root.day-theme .day-logo { display: block; }
+:root.day-theme .night-logo { display: none; }
+
 :root.day-theme {
   color-scheme: light;
 }
 
 :root.day-theme body {
   background: #E8ECF1;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: 'Manrope', 'Inter', system-ui, -apple-system, sans-serif;
 }
 
 :root.day-theme .day-theme-app {
   background: #E8ECF1 !important;
   color: #222B33 !important;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: 'Manrope', 'Inter', system-ui, -apple-system, sans-serif;
 }
 
 /* Reference typography — Inter for headings too (matches prototype: wide, bold,
@@ -22,7 +108,7 @@
 :root.day-theme .day-theme-app h1,
 :root.day-theme .day-theme-app h2,
 :root.day-theme .day-theme-app h3 {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: 'Manrope', 'Inter', system-ui, -apple-system, sans-serif;
   letter-spacing: -0.02em;
   color: #11171D !important;
 }
@@ -137,6 +223,21 @@
   color: #7E6840 !important;
 }
 
+/* ---- Active sidebar item — reference .sidebar-item.active: neutral grey
+   fill + INK text (no gold), bold. Overrides the gold remap above and the
+   component's inline gold colour on the label/icon (stylesheet !important
+   beats a non-important inline style). Scoped to the aside nav so the rest
+   of the app's gold accents are untouched. Dark theme keeps its gold. ---- */
+:root.day-theme .day-theme-app aside nav [class*="bg-[#C5A059]/"] {
+  background-color: #ECF0F4 !important;
+  border-color: transparent !important;
+  color: #11171D !important;
+}
+:root.day-theme .day-theme-app aside nav [class*="bg-[#C5A059]/"] span,
+:root.day-theme .day-theme-app aside nav [class*="bg-[#C5A059]/"] svg {
+  color: #11171D !important;
+}
+
 /* ---- Tables — reference table look (inset thead, hairline rows) ---- */
 :root.day-theme .day-theme-app table thead th {
   background-color: #F1F4F7 !important;
@@ -157,21 +258,21 @@
   background-color: rgba(79, 138, 99, 0.12) !important;
 }
 
-/* ---- Display type: large headings & KPI numbers use Oswald, like the
-   reference (h1 38px / h2 26px / .kpi .v 28px, all condensed & bold). Only
-   applied to display sizes so small bold UI labels stay in Inter. ---- */
+/* ---- Display type: Inter ВЕЗДЕ, включая крупные заголовки и цифры KPI
+   (по просьбе заказчика — единый шрифт, как в макете «Ученики»). Плотное
+   межбуквенное расстояние держит крупные цифры компактными. ---- */
 :root.day-theme .day-theme-app [class*="text-2xl"],
 :root.day-theme .day-theme-app [class*="text-3xl"],
 :root.day-theme .day-theme-app [class*="text-4xl"],
 :root.day-theme .day-theme-app [class*="text-5xl"],
 :root.day-theme .day-theme-app [class*="text-6xl"] {
-  font-family: 'Oswald', 'Inter', system-ui, sans-serif;
-  letter-spacing: -0.01em;
+  font-family: 'Manrope', 'Inter', system-ui, -apple-system, sans-serif;
+  letter-spacing: -0.02em;
 }
 
 /* ---- Buttons — primary gold CTA & neutral controls (reference .btn) ---- */
 :root.day-theme .day-theme-app button {
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: 'Manrope', 'Inter', system-ui, sans-serif;
 }
 
 /* ---- Pills / badges keep the reference pill geometry (rounded-full already

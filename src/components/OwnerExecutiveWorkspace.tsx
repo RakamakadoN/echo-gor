@@ -65,6 +65,8 @@ import {
   Bot,
   X
 } from "lucide-react";
+import ownerLogoDay from "../assets/images/logo_sidebar_day.png";
+import ownerLogoNight from "../assets/images/logo_sidebar_night.png";
 import { Announcement, AnnouncementAudience, Branch, Competition, ExecutiveSummary, Group, Payment, Student, SubscriptionPlan, Teacher, LeadSource, WaitlistEntry } from "../types";
 import {
   TN_KPI_WEIGHTS, TN_RATES, TN_RET_BONUS, TN_TOM_BONUS, TN_MONTHS, TN_SEED,
@@ -218,6 +220,8 @@ interface OwnerExecutiveWorkspaceProps {
   onCreatePlan?: (data: any) => Promise<boolean>;
   onUpdatePlan?: (id: string, data: any) => Promise<boolean>;
   onDeletePlan?: (id: string) => Promise<boolean>;
+  /** false, пока показан экран входа. Стартовые анимации ждут завершения входа. */
+  entered?: boolean;
 }
 
 type OwnerTab = "dashboard" | "branches" | "students" | "teachers" | "payroll" | "journal" | "schedule" | "finance" | "planning" | "meetings" | "reports" | "performances" | "products" | "documents" | "marketing" | "events" | "feed" | "announcements" | "analytics" | "ai" | "aihub" | "settings";
@@ -315,8 +319,37 @@ export function OwnerExecutiveWorkspace({
   onBulkAttendance,
   journal,
   onJournalTask,
+  entered = true,
 }: OwnerExecutiveWorkspaceProps) {
-  const [activeTab, setActiveTab] = useState<OwnerTab>("dashboard");
+  // Активная вкладка синхронизирована с адресом браузера (#dashboard, #students…),
+  // чтобы кнопка «назад» возвращала на предыдущую вкладку, а не выкидывала с сайта.
+  const [activeTab, setActiveTab] = useState<OwnerTab>(() => {
+    if (typeof window === "undefined") return "dashboard";
+    const h = window.location.hash.replace(/^#/, "");
+    return ownerTabs.some((t) => t.id === h) ? (h as OwnerTab) : "dashboard";
+  });
+  // true → смена вкладки пришла от «назад/вперёд» браузера; тогда новую запись
+  // в историю не добавляем (иначе история зациклится).
+  const fromPopState = useRef(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (fromPopState.current) { fromPopState.current = false; return; }
+    const target = `#${activeTab}`;
+    if (window.location.hash !== target) {
+      window.history.pushState({ ownerTab: activeTab }, "", target);
+    }
+  }, [activeTab]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onPop = () => {
+      const h = window.location.hash.replace(/^#/, "");
+      const tab = ownerTabs.some((t) => t.id === h) ? (h as OwnerTab) : "dashboard";
+      fromPopState.current = true;
+      setActiveTab(tab);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
   // Настройки разделов от Владельца (переименование/видимость/порядок/акцент/роли/описание).
   const sectionSettings = useOwnerSectionSettings(ownerTabs);
   const [settingsForTab, setSettingsForTab] = useState<OwnerTab | null>(null);
@@ -360,19 +393,16 @@ export function OwnerExecutiveWorkspace({
 
   return (
     <div className="min-h-full bg-[#080808] text-slate-200">
-      <div className="mx-auto flex max-w-[1560px] gap-0 lg:gap-5">
-        <aside className={`sticky top-0 hidden h-[calc(100vh-64px)] w-64 shrink-0 flex-col border-r border-white/5 bg-[#0F0F0F] ${navCollapsed ? "lg:hidden" : "lg:flex"}`}>
-          {/* Лого-бокс (референс .eg-logo-box) */}
-          <div className="border-b border-white/5 px-5 py-5">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#C5A059] text-black">
-                <Crown className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">Владелец сети</p>
-                <h2 className="text-lg font-black leading-tight text-white" style={{ fontFamily: "'Oswald', sans-serif" }}>ЭХО ГОР</h2>
-              </div>
-            </div>
+      {/* Раскладка на всю ширину: сайдбар прижат к левому краю и НЕ уезжает при
+          зуме браузера (раньше mx-auto max-w-[1560px] центрировал и сдвигал его). */}
+      <div className="flex w-full gap-0 lg:gap-5">
+        <aside className={`sticky top-3 my-3 ml-3 hidden h-[calc(100vh-88px)] w-64 shrink-0 flex-col overflow-hidden rounded-3xl border border-white/5 bg-[#0F0F0F] shadow-sm ${navCollapsed ? "lg:hidden" : "lg:flex"}`}>
+          {/* Лого-бокс (референс .eg-logo-box): фирменный логотип ЭХОГОР.
+              Тёмный вариант (тёмные буквы) для светлой темы, светлый — для тёмной.
+              Переключение через CSS-классы day-logo/night-logo в index.css. */}
+          <div className="border-b border-white/5 px-6 py-5">
+            <img src={ownerLogoDay} alt="Эхо Гор" className="day-logo w-full max-w-[168px]" />
+            <img src={ownerLogoNight} alt="Эхо Гор" className="night-logo w-full max-w-[168px]" />
           </div>
           {/* Навигация (референс .nav) — прокручиваемая */}
           <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
@@ -385,11 +415,6 @@ export function OwnerExecutiveWorkspace({
               />
             ))}
           </nav>
-          {/* Ценности (референс .eg-values) */}
-          <div className="border-t border-white/5 px-5 py-4">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#C5A059]" style={{ fontFamily: "'Oswald', sans-serif" }}>Культура · Сила · Характер</div>
-            <div className="mt-1.5 text-xs leading-relaxed text-slate-400">Казахстан · обучаем от 5 лет</div>
-          </div>
         </aside>
 
         <main className="min-w-0 flex-1 px-4 pb-24 pt-4 md:px-6 md:pt-6 lg:pb-8">
@@ -429,6 +454,9 @@ export function OwnerExecutiveWorkspace({
             </div>
           </div>
 
+          {/* key=activeTab → контейнер перемонтируется при смене вкладки и
+              заново проигрывает мягкую анимацию появления (см. .owner-tab-view). */}
+          <div key={`${activeTab}-${entered ? "in" : "wait"}`} className="owner-tab-view">
           {activeTab === "dashboard" && (
             <OwnerDashboard
               rawBranches={branches}
@@ -499,6 +527,7 @@ export function OwnerExecutiveWorkspace({
           {activeTab === "aihub" && <AiHubView roleHeader="owner" />}
           {activeTab === "marketing" && <MarketingView studentArchive={studentArchive} branches={branches} groups={groups} teachers={teachers} />}
           {activeTab === "settings" && <NetworkSettingsView branches={branches} teachers={teachers} subscriptionPlans={subscriptionPlans} onCreatePlan={onCreatePlan} onUpdatePlan={onUpdatePlan} onDeletePlan={onDeletePlan} />}
+          </div>
         </main>
       </div>
 
@@ -1031,6 +1060,22 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
           onRevenue={openRevenue} onBdr={openBdr} onOccupancy={openOccupancy} />
       </CollapsibleSection>
 
+      {/* КЛЮЧЕВЫЕ ПРОЦЕНТЫ — кольца прогресса (акцентная карточка с тёплым градиентом) */}
+      <div className="accent-card rounded-[2rem] border border-[#C5A059]/25 p-5 md:p-6">
+        <div className="flex items-center gap-3">
+          <div className="rounded-2xl bg-[#C5A059] p-2.5 text-black"><LineChart className="h-5 w-5" /></div>
+          <div className="min-w-0">
+            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">Ключевые проценты</p>
+            <p className="mt-1 text-sm text-slate-400">Заполненность · удержание · выполнение плана БДР</p>
+          </div>
+        </div>
+        <div className="mt-5 grid grid-cols-3 gap-4">
+          <ProgressRing pct={m.occupancy.pct} label="Заполненность" color="#5E8194" />
+          <ProgressRing pct={m.retention.pct} label="Удержание" color="#4F8A63" />
+          <ProgressRing pct={bdr?.network?.pct ?? null} label="План БДР" color="#947C51" />
+        </div>
+      </div>
+
       {/* ТРЕБУЮТ РЕШЕНИЯ: заявки на расходы/возвраты + необработанные пробные */}
       <CollapsibleSection id="decisions" icon={CheckCircle} title="Требуют решения" hint="Заявки филиалов и вчерашние пробные"
         locked open={sectionOpen("decisions")} onToggle={() => toggleSection("decisions")}>
@@ -1527,7 +1572,9 @@ function BigKpi({ label, value, rows, tone = "gold", onClick }: { label: string;
   return (
     <section onClick={onClick} className="cursor-pointer rounded-[1.75rem] border border-white/10 bg-[#141414] p-4 transition hover:border-[#C5A059]/40">
       <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{label}</p>
-      <p className={`mt-1.5 text-2xl font-black ${valColor}`}>{value}</p>
+      <p className={`mt-1.5 text-2xl font-black ${valColor}`}>
+        {(typeof value === "string" || typeof value === "number") ? <CountUpText text={String(value)} /> : value}
+      </p>
       <div className="mt-3 space-y-1.5 border-t border-white/5 pt-3">
         {rows.map((r, i) => (
           <div key={i} className="flex items-center justify-between gap-2">
@@ -1540,6 +1587,62 @@ function BigKpi({ label, value, rows, tone = "gold", onClick }: { label: string;
   );
 }
 
+// «Набегающее» число: плавно считает от 0 до target при появлении (easeOutCubic).
+// format форматирует ТЕКУЩЕЕ значение (деньги/проценты/штуки). Уважает reduce-motion.
+function CountUp({ to, format, durationMs = 1500 }: { to: number; format?: (n: number) => string; durationMs?: number }) {
+  const [val, setVal] = useState(0);
+  const raf = useRef<number | null>(null);
+  useEffect(() => {
+    const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) { setVal(to); return; }
+    let startTs = 0;
+    const tick = (now: number) => {
+      if (!startTs) startTs = now;
+      const t = Math.min(1, (now - startTs) / durationMs);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setVal(to * eased);
+      if (t < 1) raf.current = requestAnimationFrame(tick);
+      else setVal(to);
+    };
+    raf.current = requestAnimationFrame(tick);
+    // Страховка: если rAF затормозит (фоновая вкладка/headless), точное значение
+    // всё равно выставится по таймеру — цифра никогда не «застрянет» неверной.
+    const guard = window.setTimeout(() => setVal(to), durationMs + 80);
+    return () => { if (raf.current) cancelAnimationFrame(raf.current); window.clearTimeout(guard); };
+  }, [to, durationMs]);
+  return <>{format ? format(val) : String(Math.round(val))}</>;
+}
+
+// «Умный» count-up для уже отформатированного значения: находит целое число
+// (с пробелами-разделителями) внутри строки, сохраняет префикс/суффикс
+// («₸», «%», «/80» и т.п.) и анимирует только число. Дроби и «—» — как есть.
+function CountUpText({ text, durationMs = 1500 }: { text: string; durationMs?: number }) {
+  const s = String(text);
+  const m = s.match(/^(\D*?)(\d[\d\s]*\d|\d)(\s*\D*)$/);
+  const hasDecimal = /[.,]\d/.test(s);
+  const target = m && !hasDecimal ? parseInt(m[2].replace(/\s/g, ""), 10) : NaN;
+  const animate = Boolean(m) && !hasDecimal && Number.isFinite(target);
+  const [v, setV] = useState(0);
+  const raf = useRef<number | null>(null);
+  useEffect(() => {
+    if (!animate) return;
+    const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) { setV(target); return; }
+    let start = 0;
+    const tick = (now: number) => {
+      if (!start) start = now;
+      const t = Math.min(1, (now - start) / durationMs);
+      setV(target * (1 - Math.pow(1 - t, 3)));
+      if (t < 1) raf.current = requestAnimationFrame(tick); else setV(target);
+    };
+    raf.current = requestAnimationFrame(tick);
+    const guard = window.setTimeout(() => setV(target), durationMs + 80);
+    return () => { if (raf.current) cancelAnimationFrame(raf.current); window.clearTimeout(guard); };
+  }, [target, animate, durationMs]);
+  if (!animate || !m) return <>{s}</>;
+  return <>{m[1]}{new Intl.NumberFormat("ru-RU").format(Math.round(v))}{m[3]}</>;
+}
+
 // Мини-график (спарклайн) из вертикальных баров — как на макете дашборда.
 function Sparkbars({ series, color }: { series: number[]; color: string }) {
   const data = series && series.length ? series : [0];
@@ -1547,9 +1650,51 @@ function Sparkbars({ series, color }: { series: number[]; color: string }) {
   return (
     <div className="mt-3 flex h-9 items-end gap-[3px]">
       {data.map((v, i) => (
-        <div key={i} className="flex-1 rounded-t-[3px]"
-          style={{ height: `${Math.max(6, Math.round((v / max) * 100))}%`, backgroundColor: color, opacity: 0.35 + 0.65 * (v / max) }} />
+        <div key={i} className="spark-bar flex-1 rounded-t-[3px]"
+          style={{ height: `${Math.max(6, Math.round((v / max) * 100))}%`, backgroundColor: color, opacity: 0.35 + 0.65 * (v / max), animationDelay: `${i * 45}ms` }} />
       ))}
+    </div>
+  );
+}
+
+// Кольцо прогресса: анимированное SVG-кольцо + число в центре (count-up).
+// pct = null → показываем «—». color задаёт цвет дуги.
+function ProgressRing({ pct, label, color, size = 92 }: { pct: number | null; label: string; color: string; size?: number }) {
+  const stroke = 8;
+  const r = (size - stroke) / 2;
+  const circ = 2 * Math.PI * r;
+  const real = pct === null ? 0 : Math.max(0, pct);           // реальное число (может быть >100)
+  const arcTarget = Math.min(100, real);                       // дуга упирается в 100%
+  const [frac, setFrac] = useState(0);                         // прогресс анимации 0→1
+  useEffect(() => {
+    const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) { setFrac(1); return; }
+    let start = 0; let raf = 0;
+    const tick = (now: number) => {
+      if (!start) start = now;
+      const t = Math.min(1, (now - start) / 1500);
+      setFrac(1 - Math.pow(1 - t, 3));
+      if (t < 1) raf = requestAnimationFrame(tick); else setFrac(1);
+    };
+    raf = requestAnimationFrame(tick);
+    const guard = window.setTimeout(() => setFrac(1), 1600);
+    return () => { cancelAnimationFrame(raf); window.clearTimeout(guard); };
+  }, [real]);
+  const arc = arcTarget * frac;      // заполнение дуги (0..100)
+  const centerNum = real * frac;     // число в центре (реальное, до 106% и т.п.)
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div className="relative" style={{ width: size, height: size }}>
+        <svg width={size} height={size} className="-rotate-90">
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="currentColor" strokeWidth={stroke} className="text-black/10" />
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeLinecap="round"
+            strokeDasharray={circ} strokeDashoffset={circ - (arc / 100) * circ} />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center text-lg font-black" style={{ color }}>
+          {pct === null ? "—" : `${Math.round(centerNum)}%`}
+        </div>
+      </div>
+      <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</span>
     </div>
   );
 }
@@ -1563,7 +1708,9 @@ function StreamCard({ label, value, momPct, yoyPct, series, color, onClick, foot
   return (
     <section onClick={onClick} className={`rounded-[1.75rem] border border-white/10 bg-[#141414] p-4 transition hover:border-[#C5A059]/40 ${onClick ? "cursor-pointer" : ""}`}>
       <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{label}</p>
-      <p className="mt-1.5 text-2xl font-black" style={{ color }}>{value}</p>
+      <p className="mt-1.5 text-2xl font-black" style={{ color }}>
+        {(typeof value === "string" || typeof value === "number") ? <CountUpText text={String(value)} /> : value}
+      </p>
       {(momPct !== null || yoyPct !== null) && (
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
           {momPct !== null && <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">к пред. периоду <DeltaBadge pct={momPct} /></span>}
@@ -1612,7 +1759,7 @@ function HealthKpi({ icon: Icon, label, value, valueTone = "white", momPct, yoyP
         <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">{label}</p>
       </div>
       <div className="mt-2 flex items-end justify-between gap-3">
-        <p className={`text-2xl font-black leading-none ${valColor}`}>{value}</p>
+        <p className={`text-2xl font-black leading-none ${valColor}`}>{(typeof value === "string" || typeof value === "number") ? <CountUpText text={String(value)} /> : value}</p>
         {(hasCompare || extra) && (
           <div className="shrink-0 space-y-0.5 text-right">
             {momPct !== undefined && (
@@ -1645,13 +1792,15 @@ function DailyManagerReport({ m, bdr, scopeLabel, periodLabel, onOpenList, onPay
   const report = m.dailyReport as DailyReport;
   const bdrPct = bdr?.network?.pct ?? null;
   const openActive = () => onOpenList({ segment: "active", label: "Ученики с активным абонементом" });
+  const intFmt = (n: number) => String(Math.round(n));
 
   // Компактные плитки-действия (клик открывает список/окно).
-  const actions: { label: string; value: React.ReactNode; tone: string; hint?: string; onClick: () => void }[] = [
-    { label: "Выручка сегодня", value: money(report.revenueToday), tone: "gold", hint: `${report.paymentsToday} ${report.paymentsToday === 1 ? "оплата" : report.paymentsToday >= 2 && report.paymentsToday <= 4 ? "оплаты" : "оплат"} — список`, onClick: onPayments },
-    { label: "Записи на пробный", value: report.upcomingTrials.count, tone: report.upcomingTrials.count > 0 ? "gold" : "white", hint: "на будущие даты", onClick: () => onOpenList({ ids: report.upcomingTrials.ids, label: "Записаны на пробный (будущие даты)" }) },
-    { label: "Не оплачен текущий месяц", value: report.unpaidCurrentMonth.count, tone: report.unpaidCurrentMonth.count > 0 ? "rose" : "emerald", hint: "открыть список", onClick: () => onOpenList({ ids: report.unpaidCurrentMonth.ids, label: "Не оплатили текущий месяц" }) },
-    { label: "Не оплатили прошлый месяц", value: report.unpaidPrevMonth.count, tone: report.unpaidPrevMonth.count > 0 ? "amber" : "emerald", hint: "открыть список", onClick: () => onOpenList({ ids: report.unpaidPrevMonth.ids, label: "Не оплатили прошлый месяц" }) },
+  // num/format → значение «набегает» от 0 при появлении вкладки.
+  const actions: { label: string; value: React.ReactNode; tone: string; hint?: string; onClick: () => void; num?: number; format?: (n: number) => string }[] = [
+    { label: "Выручка сегодня", value: money(report.revenueToday), num: report.revenueToday, format: money, tone: "gold", hint: `${report.paymentsToday} ${report.paymentsToday === 1 ? "оплата" : report.paymentsToday >= 2 && report.paymentsToday <= 4 ? "оплаты" : "оплат"} — список`, onClick: onPayments },
+    { label: "Записи на пробный", value: report.upcomingTrials.count, num: report.upcomingTrials.count, format: intFmt, tone: report.upcomingTrials.count > 0 ? "gold" : "white", hint: "на будущие даты", onClick: () => onOpenList({ ids: report.upcomingTrials.ids, label: "Записаны на пробный (будущие даты)" }) },
+    { label: "Не оплачен текущий месяц", value: report.unpaidCurrentMonth.count, num: report.unpaidCurrentMonth.count, format: intFmt, tone: report.unpaidCurrentMonth.count > 0 ? "rose" : "emerald", hint: "открыть список", onClick: () => onOpenList({ ids: report.unpaidCurrentMonth.ids, label: "Не оплатили текущий месяц" }) },
+    { label: "Не оплатили прошлый месяц", value: report.unpaidPrevMonth.count, num: report.unpaidPrevMonth.count, format: intFmt, tone: report.unpaidPrevMonth.count > 0 ? "amber" : "emerald", hint: "открыть список", onClick: () => onOpenList({ ids: report.unpaidPrevMonth.ids, label: "Не оплатили прошлый месяц" }) },
   ];
   const toneCls: Record<string, string> = { gold: "text-[#C5A059]", white: "text-white", rose: "text-rose-400", emerald: "text-emerald-400", amber: "text-amber-400" };
 
@@ -1691,7 +1840,9 @@ function DailyManagerReport({ m, bdr, scopeLabel, periodLabel, onOpenList, onPay
           <button key={s.label} onClick={s.onClick}
             className="group rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 text-left transition hover:border-[#C5A059]/45 hover:bg-white/[0.06]">
             <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">{s.label}</p>
-            <p className={`mt-1.5 text-xl font-black ${toneCls[s.tone] || "text-white"}`}>{s.value}</p>
+            <p className={`mt-1.5 text-xl font-black ${toneCls[s.tone] || "text-white"}`}>
+              {s.num !== undefined ? <CountUp to={s.num} format={s.format} /> : s.value}
+            </p>
             <p className="mt-1 flex items-center gap-1 text-[10px] font-bold text-slate-500 group-hover:text-[#C5A059]">
               {s.hint || "Открыть список"} <ArrowRight className="h-3 w-3" />
             </p>
