@@ -56,8 +56,10 @@ export function StandardsHealthAlert({ role, teachers = [], groups = [], onOpen 
     <button onClick={onOpen} className="group flex w-full items-center gap-3 rounded-2xl border border-rose-500/50 bg-[#3a1116] px-4 py-3 text-left transition hover:bg-[#461419]">
       <AlertTriangle className="h-5 w-5 shrink-0 text-rose-300" />
       <div className="min-w-0 flex-1">
-        <div className="text-xs font-black uppercase tracking-wider text-white">Отклонения от стандартов · {dev.total}</div>
-        <div className="mt-0.5 text-[11px] font-medium leading-relaxed text-rose-100">{parts.join(" · ")}</div>
+        {/* Произвольные hex-классы: дневная тема перекрашивает text-white/text-slate-* в тёмный,
+            а фон #3a1116 остаётся тёмным в обеих темах — поэтому светлый текст задаём напрямую. */}
+        <div className="text-xs font-black uppercase tracking-wider text-[#ffffff]">Отклонения от стандартов · {dev.total}</div>
+        <div className="mt-0.5 text-[11px] font-medium leading-relaxed text-[#f6ccd1]">{parts.join(" · ")}</div>
       </div>
       <ChevronRight className="h-4 w-4 shrink-0 text-rose-300 transition group-hover:translate-x-0.5" />
     </button>
