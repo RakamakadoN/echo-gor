@@ -7512,14 +7512,22 @@ export function registerMvpApi(app: express.Express) {
   }));
 
   // ===================== Приход педагога (стандарт работы: фото + вовремя) =====================
-  const arrivalStore: Record<string, { time: string; late: boolean; photo?: string | null; date: string }> = {};
-  const arrivalKey = (session: MvpSession, date: string) => `${session.organizationId}:${date}:${session.userId}`;
+  // Время фиксирует СЕРВЕР (не телефон) — часы клиента не спуфятся. Опоздание считает
+  // сервер: серверное время прихода vs начало занятия (expectedStart, минуты от 00:00).
+  const arrivalStore: Record<string, { time: string; late: boolean; photo?: string | null; date: string; teacherId: string; teacherName: string }> = {};
+  const arrivalKey = (org: string, date: string, userId: string) => `${org}:${date}:${userId}`;
+  const almatyNowMinutes = () => {
+    const t = new Intl.DateTimeFormat("ru-RU", { timeZone: "Asia/Almaty", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
+    const [h, m] = t.split(":").map(Number);
+    return h * 60 + m;
+  };
+  const minsToHHMM = (mins: number) => `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
 
-  // Статус прихода на сегодня.
+  // Статус прихода на сегодня (для самого педагога).
   app.get("/api/mvp/teachers/arrival/today", ah(async (req, res) => {
     const session = getSession(req);
     const date = KZ_DATE.format(new Date());
-    const local = arrivalStore[arrivalKey(session, date)];
+    const local = arrivalStore[arrivalKey(session.organizationId, date, session.userId)];
     if (local) return res.json({ arrival: { time: local.time, late: local.late } });
     if (supabaseEnabled) {
       try {
@@ -7531,25 +7539,27 @@ export function registerMvpApi(app: express.Express) {
     res.json({ arrival: null });
   }));
 
-  // Отметить приход (фото + время). Один приход в день — перезаписываем.
+  // Отметить приход (фото). ВРЕМЯ и ОПОЗДАНИЕ считает сервер. Один приход в день.
   app.post("/api/mvp/teachers/arrival", ah(async (req, res) => {
     const session = getSession(req);
     if (session.role !== "teacher" && session.role !== "owner" && session.role !== "branch_manager" && session.role !== "admin")
       return res.status(403).json({ error: "Недоступно" });
     const b = req.body || {};
     const date = KZ_DATE.format(new Date());
-    const time = String(b.time || "").match(/^\d{1,2}:\d{2}$/) ? String(b.time) : KZ_DATE.format(new Date());
-    const late = Boolean(b.late);
+    const nowMin = almatyNowMinutes();          // серверное время (Almaty)
+    const time = minsToHHMM(nowMin);
+    const expected = Number(b.expectedStart);    // начало занятия из расписания
+    const late = Number.isFinite(expected) ? nowMin > expected + 5 : Boolean(b.late);
     const photo = typeof b.photo === "string" ? b.photo : null;
-    arrivalStore[arrivalKey(session, date)] = { time, late, photo, date };
+    const teacherName = session.fullName || "Педагог";
+    arrivalStore[arrivalKey(session.organizationId, date, session.userId)] = { time, late, photo, date, teacherId: session.userId, teacherName };
     if (supabaseEnabled) {
       try {
-        // teacher_id оставляем null: demo-сессия не всегда = реальному teachers.id (FK).
         await supabaseFetch("teacher_arrivals", "", {
           method: "POST",
           headers: { Prefer: "resolution=merge-duplicates" },
           body: JSON.stringify({
-            organization_id: session.organizationId, teacher_id: null,
+            organization_id: session.organizationId, teacher_id: session.userId, teacher_name: teacherName,
             branch_id: session.dbBranchId || null,
             arrival_date: date, arrival_time: time, is_late: late, photo,
           }),
@@ -7557,6 +7567,29 @@ export function registerMvpApi(app: express.Express) {
       } catch { /* mock */ }
     }
     res.status(201).json({ arrival: { time, late } });
+  }));
+
+  // Отчёт по стандартам сотрудников (владелец/управляющий). Приходы за период.
+  // Возвращает записи прихода; фронт мержит со списком педагогов и показывает «не отмечен».
+  app.get("/api/mvp/staff/standards", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager")
+      return res.status(403).json({ error: "Раздел доступен владельцу и управляющему" });
+    const from = String(req.query.from || KZ_DATE.format(new Date()));
+    const to = String(req.query.to || from);
+    // in-memory (mock) записи за период
+    const local = Object.values(arrivalStore).filter((a) =>
+      a.date >= from && a.date <= to && arrivalStore[arrivalKey(session.organizationId, a.date, a.teacherId)]);
+    let arrivals: any[] = local.map((a) => ({ teacherId: a.teacherId, teacherName: a.teacherName, date: a.date, time: a.time, late: a.late, hasPhoto: !!a.photo }));
+    if (supabaseEnabled) {
+      try {
+        let q = `organization_id=eq.${session.organizationId}&arrival_date=gte.${from}&arrival_date=lte.${to}&select=teacher_id,teacher_name,arrival_date,arrival_time,is_late,photo`;
+        if (session.role === "branch_manager" && session.dbBranchId) q += `&branch_id=eq.${session.dbBranchId}`;
+        const rows = await supabaseFetch<any[]>("teacher_arrivals", q).catch(() => [] as any[]);
+        if (rows.length) arrivals = rows.map((r) => ({ teacherId: r.teacher_id, teacherName: r.teacher_name, date: r.arrival_date, time: r.arrival_time, late: r.is_late, hasPhoto: !!r.photo }));
+      } catch { /* mock */ }
+    }
+    res.json({ from, to, arrivals });
   }));
 
   // Пробные занятия на сегодня (по отметкам is_trial у сегодняшних уроков).

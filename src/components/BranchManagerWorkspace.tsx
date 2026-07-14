@@ -27,6 +27,7 @@ import {
   WalletCards,
 } from "lucide-react";
 import { Announcement, AnnouncementAudience, Attendance, Branch, Competition, Group, Hall, Payment, Student, SubscriptionPlan, Teacher, LeadSource, WaitlistEntry } from "../types";
+import { StaffStandardsView } from "./StaffStandardsView";
 import StudentManagementCard, { SellSubscriptionInput } from "./StudentManagementCard";
 import StudentsRegistry from "./StudentsRegistry";
 import GroupScheduleGrid from "./GroupScheduleGrid";
@@ -80,12 +81,13 @@ interface BranchManagerWorkspaceProps {
   onJournalTask?: (p: { studentId: string; studentName: string; title: string }) => void;
 }
 
-type BranchTab = "dashboard" | "students" | "teachers" | "groups" | "schedule" | "journal" | "finance" | "payroll" | "products" | "announcements" | "quality" | "ai" | "settings";
+type BranchTab = "dashboard" | "students" | "teachers" | "standards" | "groups" | "schedule" | "journal" | "finance" | "payroll" | "products" | "announcements" | "quality" | "ai" | "settings";
 
 const branchTabs: { id: BranchTab; label: string; short: string; icon: React.ElementType }[] = [
   { id: "dashboard", label: "Dashboard", short: "Главная", icon: Activity },
   { id: "students", label: "Ученики", short: "Ученики", icon: Users },
   { id: "teachers", label: "Преподаватели", short: "Педагоги", icon: GraduationCap },
+  { id: "standards", label: "Стандарты работы", short: "Стандарты", icon: ShieldCheck },
   { id: "groups", label: "Группы", short: "Группы", icon: BookOpen },
   { id: "schedule", label: "Расписание", short: "Расписание", icon: CalendarDays },
   { id: "journal", label: "Журнал", short: "Журнал", icon: BookOpen },
@@ -266,6 +268,7 @@ export function BranchManagerWorkspace({
             />
           )}
           {activeTab === "teachers" && <TeachersView teachers={branchTeachers} groups={branchGroups} students={branchStudents} />}
+          {activeTab === "standards" && <StaffStandardsView role="branch_manager" teachers={branchTeachers} />}
           {activeTab === "groups" && (
             <GroupsView
               groups={branchGroups}

@@ -73,6 +73,7 @@ import {
   tnInitials, tnCatName, tnKpiComponents, tnKpiTotal, tnSalary, tnEnrich,
 } from "../teacherEconomics";
 import type { TnGroupBreak, TnMonth, TnFine, TnSeed, TnRow } from "../teacherEconomics";
+import { StaffStandardsView } from "./StaffStandardsView";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell,
   LineChart as RLineChart, Line, Legend, AreaChart, Area
@@ -228,13 +229,14 @@ interface OwnerExecutiveWorkspaceProps {
   entered?: boolean;
 }
 
-type OwnerTab = "dashboard" | "branches" | "students" | "teachers" | "payroll" | "journal" | "schedule" | "finance" | "planning" | "meetings" | "reports" | "performances" | "products" | "documents" | "marketing" | "events" | "feed" | "announcements" | "analytics" | "ai" | "aihub" | "settings";
+type OwnerTab = "dashboard" | "branches" | "students" | "teachers" | "standards" | "payroll" | "journal" | "schedule" | "finance" | "planning" | "meetings" | "reports" | "performances" | "products" | "documents" | "marketing" | "events" | "feed" | "announcements" | "analytics" | "ai" | "aihub" | "settings";
 
 const ownerTabs: { id: OwnerTab; label: string; short: string; icon: React.ElementType }[] = [
   { id: "dashboard", label: "Dashboard", short: "Главная", icon: Activity },
   { id: "branches", label: "Филиалы", short: "Филиалы", icon: Building2 },
   { id: "students", label: "Ученики", short: "Ученики", icon: Users },
   { id: "teachers", label: "Преподаватели", short: "Педагоги", icon: GraduationCap },
+  { id: "standards", label: "Стандарты работы", short: "Стандарты", icon: Shield },
   { id: "journal", label: "Журнал посещаемости", short: "Журнал", icon: ClipboardList },
   { id: "schedule", label: "Расписание", short: "Расписание", icon: CalendarDays },
   { id: "finance", label: "Бухгалтерия", short: "Учёт", icon: Coins },
@@ -481,6 +483,7 @@ export function OwnerExecutiveWorkspace({
           {activeTab === "branches" && <BranchesGroupsView branches={branchScorecards} rawBranches={branches} students={students} groups={groups} teachers={teachers} halls={halls} payments={payments} onCreateBranch={onCreateBranch} onUpdateBranch={onUpdateBranch} onDeleteBranch={onDeleteBranch} onCreateGroup={onCreateGroup} onUpdateGroup={onUpdateGroup} onDeleteGroup={onDeleteGroup} onCreateHall={onCreateHall} onUpdateHall={onUpdateHall} onDeleteHall={onDeleteHall} onOpenStudents={openStudentsWithPreset} />}
           {activeTab === "students" && <StudentsNetworkView students={students} branches={branches} groups={groups} teachers={teachers} onCreateStudent={onCreateStudent} onUpdateStudent={onUpdateStudent} onDeleteStudent={onDeleteStudent} onOpenPayment={onOpenPayment} onSellSubscription={onSellSubscription} subscriptionPlans={subscriptionPlans} studentTrash={studentTrash} onRestoreStudent={onRestoreStudent} onConfirmDeleteStudent={onConfirmDeleteStudent} studentArchive={studentArchive} onArchiveStudent={onArchiveStudent} onUnarchiveStudent={onUnarchiveStudent} onEditArchive={onEditArchive} onBookTrial={onBookTrial} leadSources={leadSources} waitlist={waitlist} onAddToWaitlist={onAddToWaitlist} onRemoveFromWaitlist={onRemoveFromWaitlist} onCreateLeadSource={onCreateLeadSource} onUpdateLeadSource={onUpdateLeadSource} onDeleteLeadSource={onDeleteLeadSource} preset={studentsPreset} />}
           {activeTab === "teachers" && <TeachersProtoView teachers={teachers} branches={branches} groups={groups} students={students} />}
+          {activeTab === "standards" && <StaffStandardsView role="owner" teachers={teachers} />}
           {activeTab === "finance" && <AccountingProtoView branches={branches} />}
           {activeTab === "planning" && <PlanningProtoView branches={branches} />}
           {activeTab === "meetings" && <MeetingsView />}

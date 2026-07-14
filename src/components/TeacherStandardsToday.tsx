@@ -349,14 +349,18 @@ function ArrivalCheckModal({ expectedStart, onClose, onDone }: {
   async function submit() {
     setBusy(true);
     try {
-      await fetch("/api/mvp/teachers/arrival", {
+      // Время и «опоздание» считает СЕРВЕР — отправляем только начало занятия и фото.
+      const res = await fetch("/api/mvp/teachers/arrival", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-demo-role": "teacher" },
-        body: JSON.stringify({ time: nowStr, late, photo }),
-      }).catch(() => {});
+        body: JSON.stringify({ expectedStart, photo }),
+      });
+      const data = res.ok ? await res.json().catch(() => null) : null;
+      onDone(data?.arrival ? { time: data.arrival.time, late: data.arrival.late } : { time: nowStr, late });
+    } catch {
+      onDone({ time: nowStr, late });
     } finally {
       setBusy(false);
-      onDone({ time: nowStr, late });
     }
   }
 
