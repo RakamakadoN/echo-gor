@@ -136,7 +136,7 @@ export default function App() {
   // Roles list
   const roles = [
     { id: "owner", name: "Владелец сети", icon: Shield, badge: "Network Owner" },
-    { id: "branch", name: "Руководитель филиала", icon: Building2, badge: "Branch Manager" },
+    { id: "branch", name: "Управляющий", icon: Building2, badge: "Branch Manager" },
     { id: "admin", name: "Администратор", icon: UserCheck, badge: "Registrar" },
     { id: "teacher", name: "Преподаватель", icon: GraduationCap, badge: "Sifu/Ustaz" },
     { id: "student", name: "Ученик", icon: Flame, badge: "Artist Way" },
@@ -2410,7 +2410,7 @@ export default function App() {
           date: new Date().toISOString().split("T")[0],
           authorId: activeRole,
           authorName: "Владелец", // Using actual owner's name for consistency
-          authorRole: roles.find(r => r.id === activeRole)?.name || "Руководитель",
+          authorRole: roles.find(r => r.id === activeRole)?.name || "Управляющий",
           audience: "all",
           isImportant: notifIsImportant,
           likes: 0
@@ -4027,7 +4027,7 @@ export default function App() {
                                 <span className="text-white text-right font-semibold">{b.address}</span>
                               </div>
                               <div className="flex justify-between border-b border-white/5 pb-2">
-                                <span className="text-slate-500 font-medium">Руководитель:</span>
+                                <span className="text-slate-500 font-medium">Управляющий:</span>
                                 <span className="text-[#C5A059] font-bold">{b.managerName}</span>
                               </div>
                               <div className="flex justify-between border-b border-white/5 pb-2">

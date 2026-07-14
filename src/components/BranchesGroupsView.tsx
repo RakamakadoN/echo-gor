@@ -638,7 +638,7 @@ function BranchModal({ mode, branch, onClose, onSubmit }: {
         <Field label="Название филиала *"><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Эхо Гор · Чокина 109/1" className={inputCls} /></Field>
         <Field label="Город"><input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} placeholder="Алматы" className={inputCls} /></Field>
         <Field label="Адрес"><input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="ул. Чокина 109/1" className={inputCls} /></Field>
-        <Field label="Ответственный / руководитель"><input value={form.managerName} onChange={(e) => setForm({ ...form, managerName: e.target.value })} placeholder="ФИО" className={inputCls} /></Field>
+        <Field label="Ответственный / управляющий"><input value={form.managerName} onChange={(e) => setForm({ ...form, managerName: e.target.value })} placeholder="ФИО" className={inputCls} /></Field>
         <Field label="Телефон филиала"><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+7 (___) ___-__-__" className={inputCls} /></Field>
         <Field label="Статус">
           <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className={inputCls}>

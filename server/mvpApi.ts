@@ -455,6 +455,7 @@ function mapDbStudent(row: any, attendanceByStudent: Map<string, Record<string, 
     waitlistAddedAt: row.__waitlist_added_at || null,
     parentName: row.parent_name || "Родитель",
     parentPhone: row.parent_phone || "",
+    parentChatAdded: Boolean(row.parent_chat_added),
     balance: computeStudentBalance(subsByStudent.get(row.id) || [], row.status),
     artistLevel: ArtistLevel.FIRST_STEP,
     artistLevelPoints: 0,
@@ -7557,5 +7558,102 @@ export function registerMvpApi(app: express.Express) {
       } catch { /* mock */ }
     }
     res.status(201).json({ arrival: { time, late } });
+  }));
+
+  // ===================== Надзор управляющего: сверки касс филиалов =====================
+  // Управляющий (и владелец) видит дневные закрытия смен админов по своим филиалам:
+  // ожидаемый нал из CRM vs пересчитанный факт, расхождения, статус. Ввод факта —
+  // на стороне админа (кабинет администратора, worktree-admin). Здесь — только надзор
+  // и подтверждение управляющим. Источник — таблица admin_shifts.
+  app.get("/api/mvp/manager/reconciliations", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager")
+      return res.status(403).json({ error: "Доступно управляющему и владельцу" });
+    if (!supabaseEnabled) return res.json({ shifts: [] });
+    const from = typeof req.query.from === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.query.from) ? req.query.from : "";
+    const parts = [
+      `organization_id=eq.${session.organizationId}`,
+      "select=id,branch_id,shift_date,opened_at,closed_at,expected_cash,counted_cash,cash_diff,cash_reason,cash_status,cash_closed_by,cash_confirmed_by,cash_confirmed_at",
+      "order=shift_date.desc",
+      "limit=300",
+    ];
+    if (from) parts.push(`shift_date=gte.${from}`);
+    const shifts = await supabaseFetch<any[]>("admin_shifts", parts.join("&")).catch(() => [] as any[]);
+    res.json({ shifts });
+  }));
+
+  // Управляющий подтверждает сверку кассы за день (после проверки расхождения).
+  app.post("/api/mvp/manager/reconciliations/:id/confirm", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager")
+      return res.status(403).json({ error: "Доступно управляющему и владельцу" });
+    const id = String(req.params.id || "");
+    if (!/^[0-9a-fA-F-]{36}$/.test(id)) return res.status(400).json({ error: "Некорректный id" });
+    if (!supabaseEnabled) return res.json({ ok: true });
+    await supabaseFetch("admin_shifts", `id=eq.${id}&organization_id=eq.${session.organizationId}`, {
+      method: "PATCH",
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({
+        cash_status: "confirmed",
+        cash_confirmed_by: session.fullName || "Управляющий",
+        cash_confirmed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }),
+    }).catch(() => { /* best-effort */ });
+    res.json({ ok: true });
+  }));
+
+  // Отметка «родитель добавлен в WhatsApp-чат филиала» (управляющий/владелец/админ).
+  app.post("/api/mvp/students/:id/chat-added", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role === "teacher" || session.role === "student")
+      return res.status(403).json({ error: "Недоступно" });
+    const id = String(req.params.id || "");
+    if (!/^[0-9a-fA-F-]{36}$/.test(id)) return res.status(400).json({ error: "Некорректный id" });
+    const added = req.body && typeof req.body.added === "boolean" ? req.body.added : true;
+    if (!supabaseEnabled) return res.json({ ok: true, added });
+    await supabaseFetch("students", `id=eq.${id}&organization_id=eq.${session.organizationId}`, {
+      method: "PATCH",
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({ parent_chat_added: added }),
+    }).catch(() => { /* best-effort */ });
+    res.json({ ok: true, added });
+  }));
+
+  // ===================== Оплата управляющего (настраивает владелец) =====================
+  // Оклад + бонусы за уровни выполнения плана БДР. Читают владелец и управляющий,
+  // меняет только владелец. Память процесса + best-effort таблица manager_compensation.
+  const managerCompStore: Record<string, { baseSalary: number; tiers: { threshold: number; bonus: number }[] }> = {};
+  const managerCompDefaults = () => ({ baseSalary: 250000, tiers: [{ threshold: 80, bonus: 80000 }, { threshold: 100, bonus: 180000 }, { threshold: 110, bonus: 320000 }] });
+
+  app.get("/api/mvp/manager/compensation", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager") return res.status(403).json({ error: "Недоступно" });
+    let cfg = managerCompStore[session.organizationId];
+    if (!cfg && supabaseEnabled) {
+      const rows = await supabaseFetch<any[]>("manager_compensation", `organization_id=eq.${session.organizationId}&select=base_salary,tiers`).catch(() => [] as any[]);
+      if (rows[0]) cfg = { baseSalary: Number(rows[0].base_salary) || 0, tiers: Array.isArray(rows[0].tiers) ? rows[0].tiers : [] };
+    }
+    res.json(cfg || managerCompDefaults());
+  }));
+
+  app.put("/api/mvp/manager/compensation", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "Настраивать может только владелец" });
+    const b = req.body || {};
+    const baseSalary = Math.max(0, Number(b.baseSalary) || 0);
+    const tiers = Array.isArray(b.tiers)
+      ? b.tiers.map((t: any) => ({ threshold: Math.max(0, Number(t.threshold) || 0), bonus: Math.max(0, Number(t.bonus) || 0) })).sort((x: any, y: any) => x.threshold - y.threshold)
+      : [];
+    const cfg = { baseSalary, tiers };
+    managerCompStore[session.organizationId] = cfg;
+    if (supabaseEnabled) {
+      await supabaseFetch("manager_compensation", "", {
+        method: "POST",
+        headers: { Prefer: "resolution=merge-duplicates" },
+        body: JSON.stringify({ organization_id: session.organizationId, base_salary: baseSalary, tiers, updated_at: new Date().toISOString() }),
+      }).catch(() => { /* best-effort */ });
+    }
+    res.json(cfg);
   }));
 }

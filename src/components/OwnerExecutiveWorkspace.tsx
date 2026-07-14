@@ -386,7 +386,7 @@ export function OwnerExecutiveWorkspace({
       return {
         ...branchMetric,
         city: branch?.city || "Филиал",
-        managerName: branch?.managerName || "Руководитель филиала",
+        managerName: branch?.managerName || "Управляющий",
         teachersCount,
         newLeads: 0,
         retention: Math.max(0, Math.round(100 - metrics.churnRate)),
@@ -2605,7 +2605,7 @@ function BranchesView({ branches, rawBranches, students, groups, teachers, halls
   };
 
   return (
-    <OwnerScreen title="Филиалы сети" subtitle="Все филиалы, руководители, финансы, посещаемость. Владелец может добавлять, редактировать и архивировать филиалы и группы.">
+    <OwnerScreen title="Филиалы сети" subtitle="Все филиалы, управляющие, финансы, посещаемость. Владелец может добавлять, редактировать и архивировать филиалы и группы.">
       <div className="mb-5 inline-flex rounded-2xl border border-white/10 bg-[#121212] p-1">
         <button
           onClick={() => setSection("branches")}
@@ -3042,7 +3042,7 @@ function OwnerEduErpView({ branches, groups, students, teachers, payments, month
     { icon: Send, title: "Рассылка", text: "SMS, email, push, шаблоны, будущая отправка, история доставки.", accent: "100%" },
     { icon: CheckCircle, title: "Задачи", text: "Просроченные, на сегодня, мои, шаблоны задач и реестр.", accent: "2062" },
     { icon: BarChart3, title: "Отчеты", text: "Выручка, потери, взаиморасчеты, источники, посещаемость.", accent: "12", area: "reports" as const },
-    { icon: UserRound, title: "Сотрудники", text: "Преподаватели, администраторы, руководители, роли, нагрузка.", accent: `${teachers.length}`, area: "employees" as const },
+    { icon: UserRound, title: "Сотрудники", text: "Преподаватели, администраторы, управляющие, роли, нагрузка.", accent: `${teachers.length}`, area: "employees" as const },
     { icon: Settings, title: "Справочники", text: "Филиалы, группы, статусы, источники, стоимость, интеграции.", accent: "18", area: "directories" as const }
   ];
 
@@ -3050,7 +3050,7 @@ function OwnerEduErpView({ branches, groups, students, teachers, payments, month
     {
       title: "Финансовые отчеты",
       text: "Контроль денег сети, долгов, повторных продаж и потерь по филиалам.",
-      items: ["Руководители по месяцам", "Отчет о выручке и потерях", "Взаиморасчеты", "Реестр операций", "Проданные абонементы", "Средний чек"]
+      items: ["Управляющие по месяцам", "Отчет о выручке и потерях", "Взаиморасчеты", "Реестр операций", "Проданные абонементы", "Средний чек"]
     },
     {
       title: "Ученики и группы",
@@ -3073,7 +3073,7 @@ function OwnerEduErpView({ branches, groups, students, teachers, payments, month
     {
       title: "Сотрудники филиалов",
       text: "Единый список людей по всей сети с фильтром по филиалу и роли.",
-      items: ["Руководители филиалов", "Администраторы", "Преподаватели", "Стажеры", "Уволенные / архив", "Без назначенного филиала"]
+      items: ["Управляющие", "Администраторы", "Преподаватели", "Стажеры", "Уволенные / архив", "Без назначенного филиала"]
     },
     {
       title: "Роли и доступы",
@@ -3087,7 +3087,7 @@ function OwnerEduErpView({ branches, groups, students, teachers, payments, month
     },
     {
       title: "Кадровые действия",
-      text: "Операции, которые нужны владельцу и руководителям филиалов.",
+      text: "Операции, которые нужны владельцу и управляющим.",
       items: ["Добавить сотрудника", "Назначить филиал", "Назначить группы", "Изменить роль", "Заблокировать доступ", "Открыть audit log"]
     }
   ];
@@ -3388,7 +3388,7 @@ function StudentsNetworkView({ students, branches, groups, teachers, onCreateStu
             <div className="rounded-2xl bg-rose-500/15 p-2.5 text-rose-400"><Trash2 className="h-5 w-5" /></div>
             <div>
               <h3 className="font-black text-white">Корзина учеников</h3>
-              <p className="text-xs text-slate-500">Заявки на удаление от руководителей филиалов. Владелец возвращает ученика или переводит в архив (данные сохраняются).</p>
+              <p className="text-xs text-slate-500">Заявки на удаление от управляющих. Владелец возвращает ученика или переводит в архив (данные сохраняются).</p>
             </div>
           </div>
           <span className={`rounded-full px-3 py-1 text-xs font-black ${studentTrash.length ? "bg-rose-500/15 text-rose-400" : "bg-white/5 text-slate-500"}`}>{studentTrash.length}</span>
@@ -4290,9 +4290,19 @@ export function PayrollView({ teachers, students, groups, payments, role = "owne
         <div className="flex flex-wrap gap-2">
           <button disabled={busy} onClick={autoclose} className="inline-flex items-center gap-2 rounded-xl border border-white/10 px-4 py-2 text-xs font-bold text-slate-200 hover:border-[#C5A059]/40 disabled:opacity-50"><CheckCircle className="h-4 w-4" /> Закрыть прошедшие уроки</button>
           <button onClick={exportCsv} className="inline-flex items-center gap-2 rounded-xl border border-white/10 px-4 py-2 text-xs font-bold text-slate-200 hover:border-[#C5A059]/40"><FileSpreadsheet className="h-4 w-4" /> Экспорт CSV</button>
-          <button disabled={busy} onClick={accrueAll} className="inline-flex items-center gap-2 rounded-xl bg-[#C5A059] px-4 py-2 text-xs font-black text-black hover:brightness-110 disabled:opacity-50"><Wallet className="h-4 w-4" /> Начислить всем за период</button>
+          {role === "branch_manager" ? (
+            <button disabled={busy} onClick={() => setMsg("Ведомость рассчитана. Начисление проводит владелец — передайте расчёт (Экспорт CSV) или запросите начисление у владельца.")} className="inline-flex items-center gap-2 rounded-xl border border-[#C5A059]/40 bg-[#C5A059]/10 px-4 py-2 text-xs font-black text-[#C5A059] hover:bg-[#C5A059]/20 disabled:opacity-50"><Wallet className="h-4 w-4" /> Запросить начисление у владельца</button>
+          ) : (
+            <button disabled={busy} onClick={accrueAll} className="inline-flex items-center gap-2 rounded-xl bg-[#C5A059] px-4 py-2 text-xs font-black text-black hover:brightness-110 disabled:opacity-50"><Wallet className="h-4 w-4" /> Начислить всем за период</button>
+          )}
         </div>
       </div>
+
+      {role === "branch_manager" && (
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-xs text-slate-400">
+          Управляющий <b className="text-slate-200">ведёт расчёт</b> зарплат и отправляет заявку — само начисление проводит владелец.
+        </div>
+      )}
 
       {msg && <div className="rounded-2xl border border-[#C5A059]/30 bg-[#C5A059]/10 px-4 py-3 text-sm text-[#C5A059]">{msg}</div>}
 
@@ -5960,7 +5970,7 @@ function useSettingsList(kind: string, role: string = "owner") {
   return items;
 }
 
-function PerformancesView() {
+export function PerformancesView() {
   const [list, setList] = useState<any[]>([]);
   const [overview, setOverview] = useState<any>(null);
   const [period, setPeriod] = useState("month");
@@ -8391,12 +8401,101 @@ function AdOfferStudio({ groups, branches, teachers }: { groups: Group[]; branch
   );
 }
 
+// Редактор оплаты управляющих (только владелец): оклад + бонусы за уровни плана БДР.
+// Значения читает вкладка «Мой KPI / P&L» у управляющего.
+function ManagerCompensationEditor() {
+  const [baseSalary, setBaseSalary] = useState(0);
+  const [tiers, setTiers] = useState<{ threshold: number; bonus: number }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/mvp/manager/compensation", { headers: { "x-demo-role": "owner" } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d) { setBaseSalary(Number(d.baseSalary) || 0); setTiers(Array.isArray(d.tiers) ? d.tiers : []); } })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const setTier = (i: number, key: "threshold" | "bonus", v: number) =>
+    setTiers((prev) => prev.map((t, idx) => (idx === i ? { ...t, [key]: v } : t)));
+  const addTier = () => setTiers((prev) => [...prev, { threshold: 0, bonus: 0 }]);
+  const removeTier = (i: number) => setTiers((prev) => prev.filter((_, idx) => idx !== i));
+
+  const save = async () => {
+    setSaving(true); setMsg(null);
+    try {
+      const res = await fetch("/api/mvp/manager/compensation", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "x-demo-role": "owner" },
+        body: JSON.stringify({ baseSalary, tiers }),
+      });
+      setMsg(res.ok ? "Сохранено ✓" : "Ошибка сохранения");
+    } catch {
+      setMsg("Ошибка сети");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="rounded-[1.75rem] border border-white/10 bg-gradient-to-br from-[#141414] to-black p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-black uppercase tracking-wider text-white">Оплата управляющих</h3>
+          <p className="mt-1 text-xs text-slate-500">Оклад + бонусы за уровни выполнения плана БДР. Управляющий видит это в своём кабинете («Мой KPI / P&L»): текущая и потенциальная зарплата.</p>
+        </div>
+        <button onClick={save} disabled={saving || loading} className="rounded-2xl bg-[#C5A059] px-4 py-2 text-sm font-bold text-black transition hover:bg-[#d4b06a] disabled:opacity-50">
+          {saving ? "Сохранение…" : "Сохранить"}
+        </button>
+      </div>
+
+      {loading ? (
+        <p className="mt-4 text-sm text-slate-500">Загрузка…</p>
+      ) : (
+        <div className="mt-4 space-y-4">
+          <div className="max-w-xs">
+            <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Оклад (₸ / месяц)</label>
+            <input type="number" min={0} value={baseSalary} onChange={(e) => setBaseSalary(Math.max(0, Number(e.target.value) || 0))}
+              className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm font-semibold text-white outline-none focus:border-[#C5A059]/50" />
+          </div>
+
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Бонусы за уровни плана</p>
+            <div className="mt-2 space-y-2">
+              {tiers.map((t, i) => (
+                <div key={i} className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-slate-500">при</span>
+                  <input type="number" min={0} value={t.threshold} onChange={(e) => setTier(i, "threshold", Math.max(0, Number(e.target.value) || 0))}
+                    className="w-20 rounded-xl border border-white/10 bg-black/40 px-2 py-1.5 text-sm font-semibold text-white outline-none focus:border-[#C5A059]/50" />
+                  <span className="text-xs text-slate-500">% плана → бонус</span>
+                  <input type="number" min={0} value={t.bonus} onChange={(e) => setTier(i, "bonus", Math.max(0, Number(e.target.value) || 0))}
+                    className="w-32 rounded-xl border border-white/10 bg-black/40 px-2 py-1.5 text-sm font-semibold text-[#C5A059] outline-none focus:border-[#C5A059]/50" />
+                  <span className="text-xs text-slate-500">₸</span>
+                  <button onClick={() => removeTier(i)} className="rounded-lg border border-white/10 px-2 py-1 text-xs text-slate-400 hover:border-rose-500/40 hover:text-rose-400">Удалить</button>
+                </div>
+              ))}
+            </div>
+            <button onClick={addTier} className="mt-2 rounded-xl border border-white/10 px-3 py-1.5 text-xs font-bold text-slate-200 hover:border-[#C5A059]/40">+ Добавить уровень</button>
+          </div>
+
+          {msg && <p className={`text-sm ${msg.includes("✓") ? "text-emerald-400" : "text-rose-400"}`}>{msg}</p>}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function NetworkSettingsView({ branches, teachers, subscriptionPlans = [], onCreatePlan, onUpdatePlan, onDeletePlan }: { branches: Branch[]; teachers: Teacher[]; subscriptionPlans?: SubscriptionPlan[]; onCreatePlan?: (data: any) => Promise<boolean>; onUpdatePlan?: (id: string, data: any) => Promise<boolean>; onDeletePlan?: (id: string) => Promise<boolean> }) {
   const [showStatusSettings, setShowStatusSettings] = useState(false);
   return (
     <OwnerScreen title="Настройки сети" subtitle="Тарифы, статусы учеников, справочники (рекламные источники и др.), роли и audit log.">
       {/* Тарифы абонементов: владелец задаёт названия, кол-во занятий, срок и цену. */}
       <SubscriptionPlansManager plans={subscriptionPlans} branches={branches} onCreatePlan={onCreatePlan} onUpdatePlan={onUpdatePlan} onDeletePlan={onDeletePlan} />
+
+      {/* Оплата управляющих: оклад + бонусы за уровни выполнения плана БДР. */}
+      <ManagerCompensationEditor />
 
       {/* Статусы учеников: те же настройки, что открываются из вкладки «Ученики». */}
       <section className="rounded-[1.75rem] border border-white/10 bg-gradient-to-br from-[#141414] to-black p-5">
@@ -8428,7 +8527,7 @@ function NetworkSettingsView({ branches, teachers, subscriptionPlans = [], onCre
         <ExecutivePanel icon={<Shield />} title="RBAC владельца" text="Полный доступ к сети, филиалам, финансам, ролям, настройкам, лицензии и audit log." />
         <ExecutivePanel icon={<Settings />} title="Глобальные настройки" text={`Филиалов: ${branches.length}. Преподавателей: ${teachers.length}. Управление тарифами и шаблонами уведомлений.`} />
         <ExecutivePanel icon={<CheckCircle />} title="Защищенные действия" text="Удаление филиалов, экспорт данных и доступ к чувствительным данным проходят через подтверждение и журналирование." />
-        <ExecutivePanel icon={<Activity />} title="Audit log сети" text="Все действия владельца, руководителей филиалов, администраторов и преподавателей фиксируются." />
+        <ExecutivePanel icon={<Activity />} title="Audit log сети" text="Все действия владельца, управляющих, администраторов и преподавателей фиксируются." />
       </div>
     </OwnerScreen>
   );
@@ -10470,7 +10569,7 @@ function OwnerEduAreaPreview({ activeArea, branches, teachers, groups, payments,
           <MiniMetric label="Сотрудники" value={teachers.length} />
           <MiniMetric label="Преподаватели" value={teachers.length} />
           <MiniMetric label="Админы" value="7" />
-          <MiniMetric label="Руководители" value={branches.length} />
+          <MiniMetric label="Управляющие" value={branches.length} />
         </div>
         <OwnerMiniTable title="Сотрудники сети" headers={["ФИО", "Филиал", "Групп", "Статус"]} rows={rows} />
         <div className="mt-3 grid grid-cols-2 gap-2">

@@ -149,6 +149,7 @@ export const initialStudents: Student[] = [
     teacherId: "teach-aslan",
     parentName: "Алина Болотаева",
     parentPhone: "+7 (701) 400-30-30",
+    parentChatAdded: true,
     guardians: [initialGuardians[0]],
     balance: 15000,
     artistLevel: ArtistLevel.SOLOIST,
@@ -172,6 +173,7 @@ export const initialStudents: Student[] = [
     teacherId: "teach-aslan",
     parentName: "Хетаг Дзагоев",
     parentPhone: "+7 (701) 333-55-77",
+    parentChatAdded: false,
     guardians: [initialGuardians[1]],
     balance: -45000,
     artistLevel: ArtistLevel.SCHOOL_REPRESENTATIVE,
@@ -184,6 +186,51 @@ export const initialStudents: Student[] = [
       { id: "sub-2", studentId: "stud-alan", name: "Абонемент Ансамбль (12 занятий)", price: 4500, lessonsTotal: 12, lessonsLeft: 0, validUntil: "2026-05-30", isAutoRenew: false, status: "expired" }
     ],
     paymentStatus: "В ожидании оплаты"
+  },
+  {
+    id: "stud-madina",
+    organizationId: orgId,
+    name: "Мадина Кагермазова",
+    age: 14,
+    photoUrl: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=200&fit=crop&q=80",
+    branchId: "branch-almaty",
+    groupIds: ["group-almaty-ensemble"],
+    teacherId: "teach-aslan",
+    status: "left",
+    parentName: "Зарема Кагермазова",
+    parentPhone: "+7 (701) 222-11-44",
+    parentChatAdded: true,
+    balance: 0,
+    artistLevel: ArtistLevel.FIRST_STEP,
+    artistLevelPoints: 120,
+    achievements: [],
+    performances: [],
+    notes: [],
+    attendance: {},
+    subscriptions: []
+  },
+  {
+    id: "stud-timur",
+    organizationId: orgId,
+    name: "Тимур Бекбоев",
+    age: 13,
+    photoUrl: "https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?w=200&fit=crop&q=80",
+    branchId: "branch-almaty",
+    groupIds: ["group-almaty-ensemble"],
+    teacherId: "teach-aslan",
+    parentName: "Айгуль Бекбоева",
+    parentPhone: "+7 (701) 555-88-22",
+    parentChatAdded: false,
+    balance: 0,
+    artistLevel: ArtistLevel.FIRST_STEP,
+    artistLevelPoints: 60,
+    achievements: [],
+    performances: [],
+    notes: [],
+    attendance: {},
+    subscriptions: [
+      { id: "sub-3", studentId: "stud-timur", name: "Абонемент Ансамбль (12 занятий)", price: 4500, lessonsTotal: 12, lessonsLeft: 10, validUntil: "2026-07-20", isAutoRenew: true, status: "active" }
+    ]
   }
 ];
 

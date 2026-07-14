@@ -23,6 +23,7 @@ import {
   ShieldCheck,
   Sparkles,
   TrendingUp,
+  Award,
   Users,
   WalletCards,
 } from "lucide-react";
@@ -33,7 +34,10 @@ import GroupScheduleGrid from "./GroupScheduleGrid";
 import { GroupsTable, GroupsArchivePanel } from "./GroupListAndArchive";
 import GroupScheduleFields from "./GroupScheduleFields";
 import AttendanceJournalView from "./AttendanceJournalView";
-import { PayrollView, ProductsView } from "./OwnerExecutiveWorkspace";
+import { PayrollView, ProductsView, PerformancesView } from "./OwnerExecutiveWorkspace";
+import PlanningProtoView from "./proto/PlanningProtoView";
+import { getTrialInfo, isLeft } from "../studentSegments";
+import { computeOwnerDashboard } from "../ownerDashboardAnalytics";
 
 interface BranchManagerWorkspaceProps {
   branchId?: string;
@@ -80,7 +84,7 @@ interface BranchManagerWorkspaceProps {
   onJournalTask?: (p: { studentId: string; studentName: string; title: string }) => void;
 }
 
-type BranchTab = "dashboard" | "students" | "teachers" | "groups" | "schedule" | "journal" | "finance" | "payroll" | "products" | "announcements" | "quality" | "ai" | "settings";
+type BranchTab = "dashboard" | "students" | "teachers" | "groups" | "schedule" | "journal" | "performances" | "planning" | "kpi" | "reconcile" | "payroll" | "products" | "storefront" | "quality" | "settings";
 
 const branchTabs: { id: BranchTab; label: string; short: string; icon: React.ElementType }[] = [
   { id: "dashboard", label: "Dashboard", short: "Главная", icon: Activity },
@@ -89,12 +93,14 @@ const branchTabs: { id: BranchTab; label: string; short: string; icon: React.Ele
   { id: "groups", label: "Группы", short: "Группы", icon: BookOpen },
   { id: "schedule", label: "Расписание", short: "Расписание", icon: CalendarDays },
   { id: "journal", label: "Журнал", short: "Журнал", icon: BookOpen },
-  { id: "finance", label: "Финансы", short: "Финансы", icon: Coins },
-  { id: "payroll", label: "Зарплаты", short: "Зарплаты", icon: WalletCards },
-  { id: "products", label: "Товары и мерч", short: "Товары", icon: ShoppingBag },
-  { id: "announcements", label: "Объявления", short: "Связь", icon: Megaphone },
+  { id: "performances", label: "Выступления", short: "Выступл.", icon: Sparkles },
+  { id: "planning", label: "БДР (план/факт)", short: "БДР", icon: TrendingUp },
+  { id: "kpi", label: "Мой KPI / P&L", short: "KPI", icon: Award },
+  { id: "reconcile", label: "Сверки филиалов", short: "Сверки", icon: CheckCircle },
+  { id: "payroll", label: "Зарплаты (расчёт)", short: "Зарплаты", icon: WalletCards },
+  { id: "products", label: "Товары и склад", short: "Товары", icon: ShoppingBag },
+  { id: "storefront", label: "Витрина (клиент)", short: "Витрина", icon: ShoppingBag },
   { id: "quality", label: "Качество филиала", short: "Качество", icon: ShieldCheck },
-  { id: "ai", label: "AI Ассистент", short: "AI", icon: Sparkles },
   { id: "settings", label: "Настройки филиала", short: "Еще", icon: Settings }
 ];
 
@@ -145,11 +151,24 @@ export function BranchManagerWorkspace({
   // Сворачивание бокового меню — раздел открывается на всю ширину.
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [studentSearch, setStudentSearch] = useState("");
+  // Управляющий может отвечать за несколько филиалов. Пока «мои филиалы» = вся сеть
+  // (модель назначения филиалов управляющему появится отдельным шагом).
+  // scopeId === "all" — агрегат по всем моим филиалам; иначе — один выбранный филиал.
+  const [scopeId, setScopeId] = useState<string>("all");
 
-  const branch = branches.find((item) => item.id === branchId);
+  const myBranches = branches;
+  const scopeBranches = useMemo(
+    () => (scopeId === "all" ? myBranches : myBranches.filter((item) => item.id === scopeId)),
+    [myBranches, scopeId]
+  );
+  const scopeBranchIds = useMemo(() => new Set(scopeBranches.map((item) => item.id)), [scopeBranches]);
+  const isAllScope = scopeId === "all";
+  // Единый филиал для форм создания (новый ученик/группа/расписание) и карточек,
+  // которым нужен один branchId. При агрегатном скоупе берём первый из моих филиалов.
+  const branch = scopeBranches[0] || myBranches[0];
 
-  const branchGroups = useMemo(() => groups.filter((group) => group.branchId === branch?.id), [groups, branch?.id]);
-  const branchStudents = useMemo(() => students.filter((student) => student.branchId === branch?.id), [students, branch?.id]);
+  const branchGroups = useMemo(() => groups.filter((group) => scopeBranchIds.has(group.branchId)), [groups, scopeBranchIds]);
+  const branchStudents = useMemo(() => students.filter((student) => scopeBranchIds.has(student.branchId)), [students, scopeBranchIds]);
   const branchTeacherIds = useMemo(() => new Set(branchGroups.map((group) => group.teacherId)), [branchGroups]);
   const branchTeachers = useMemo(
     () => teachers.filter((teacher) => branchTeacherIds.has(teacher.id)),
@@ -161,8 +180,8 @@ export function BranchManagerWorkspace({
     [payments, branchStudentIds]
   );
   const branchAnnouncements = useMemo(
-    () => announcements.filter((item) => !item.branchId || item.branchId === branch?.id),
-    [announcements, branch?.id]
+    () => announcements.filter((item) => !item.branchId || scopeBranchIds.has(item.branchId)),
+    [announcements, scopeBranchIds]
   );
   const branchCompetitions = useMemo(
     () => competitions.filter((competition) => competition.registeredGroupIds.some((id) => branchGroups.some((group) => group.id === id))),
@@ -174,7 +193,7 @@ export function BranchManagerWorkspace({
   if (!branch) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#0A0A0A] text-slate-400">
-        <p>Загрузка данных филиала или филиал не найден...</p>
+        <p>Загрузка данных филиалов…</p>
       </div>
     );
   }
@@ -204,12 +223,95 @@ export function BranchManagerWorkspace({
     { label: "Задолженности", value: `${formatMoney(debt || 45000)}`, tone: "rose", detail: `${Math.max(renewals.length, 7)} продлений рядом` }
   ];
 
+  // Разбивка показателей по каждому филиалу в скоупе — для строки «по филиалам» на дашборде.
+  const perBranch = scopeBranches.map((item) => {
+    const bStudents = branchStudents.filter((student) => student.branchId === item.id);
+    const ids = new Set(bStudents.map((student) => student.id));
+    const bPayments = branchPayments.filter((payment) => ids.has(payment.studentId));
+    return {
+      id: item.id,
+      name: item.name || item.city,
+      students: bStudents.length,
+      revenue: bPayments.reduce((sum, payment) => sum + payment.amount, 0),
+      debt: Math.abs(bStudents.filter((student) => student.balance < 0).reduce((sum, student) => sum + student.balance, 0)),
+    };
+  });
+  const scopeName = isAllScope ? "Все мои филиалы" : (branch?.name || branch?.city || "Филиал");
+
+  // ——— Данные дашборда «кого обработать / что сделать сегодня» ———
+  const todayKz = useMemo(() => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Almaty", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()), []);
+  const yesterdayKz = useMemo(() => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Almaty", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(Date.now() - 86400000)), []);
+
+  // Воронка по отметкам пробных уроков (getTrialInfo): кого обработать сегодня.
+  const funnel = useMemo(() => {
+    const trialToday: Student[] = [], noShow: Student[] = [], lost: Student[] = [];
+    for (const s of branchStudents) {
+      const t = getTrialInfo(s);
+      if (t.upcoming && t.upcoming === todayKz) trialToday.push(s);          // записан на ПУ сегодня
+      if (t.missed > 0 && !t.converted && !t.upcoming) noShow.push(s);        // не пришёл, перезаписи нет
+      if (t.lost) lost.push(s);                                              // был, не купил
+    }
+    return { trialToday, noShow, lost };
+  }, [branchStudents, todayKz]);
+
+  // Средний чек и заполненность (зеркалим владельца, скоуп на филиалы).
+  const paidPayments = useMemo(() => branchPayments.filter((p) => (p.amount || 0) > 0), [branchPayments]);
+  const avgCheck = paidPayments.length ? Math.round(paidPayments.reduce((s, p) => s + p.amount, 0) / paidPayments.length) : 0;
+  const totalCapacity = useMemo(() => branchGroups.reduce((s, g) => s + (g.capacity || 0), 0), [branchGroups]);
+  const occupancyPct = totalCapacity ? Math.min(100, Math.round((branchStudents.length / totalCapacity) * 100)) : 0;
+  const yesterdayRevenue = useMemo(() => branchPayments.filter((p) => p.date === yesterdayKz).reduce((s, p) => s + (p.amount || 0), 0), [branchPayments, yesterdayKz]);
+
+  // Полный набор показателей владельца — та же функция computeOwnerDashboard,
+  // но на скоуп-данных управляющего (его филиалы). «Что видит владелец — то и он».
+  const ownerModel = useMemo(
+    () => computeOwnerDashboard(
+      { students: branchStudents, payments: branchPayments, groups: branchGroups, branches: scopeBranches, teachers: branchTeachers, archive: studentArchive },
+      { period: "month" },
+      new Date(),
+      {}
+    ),
+    [branchStudents, branchPayments, branchGroups, scopeBranches, branchTeachers, studentArchive]
+  );
+
+  // WhatsApp-чат: оптимистичные отметки — локально (bootstrap подтянет из БД позже).
+  const [chatAddedIds, setChatAddedIds] = useState<Set<string>>(new Set());
+  const [chatRemovedIds, setChatRemovedIds] = useState<Set<string>>(new Set());
+  // Новые: активные, ещё не в чате (ушедших не предлагаем добавлять).
+  const notInChat = useMemo(
+    () => branchStudents
+      .filter((s) => !s.parentChatAdded && !chatAddedIds.has(s.id) && !isLeft(s))
+      .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))),
+    [branchStudents, chatAddedIds]
+  );
+  // Ушедшие, ещё числятся в чате — их нужно аккуратно убрать из WhatsApp-чата.
+  const leftInChat = useMemo(
+    () => branchStudents.filter((s) => isLeft(s) && s.parentChatAdded && !chatRemovedIds.has(s.id)),
+    [branchStudents, chatRemovedIds]
+  );
+  const setChatFlag = async (id: string, added: boolean) => {
+    try {
+      await fetch(`/api/mvp/students/${id}/chat-added`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-demo-role": "branch_manager" },
+        body: JSON.stringify({ added }),
+      });
+    } catch { /* оптимистично, откат не нужен для демо */ }
+  };
+  const markChatAdded = React.useCallback((id: string) => {
+    setChatAddedIds((prev) => { const n = new Set(prev); n.add(id); return n; });
+    setChatFlag(id, true);
+  }, []);
+  const markChatRemoved = React.useCallback((id: string) => {
+    setChatRemovedIds((prev) => { const n = new Set(prev); n.add(id); return n; });
+    setChatFlag(id, false);
+  }, []);
+
   return (
     <div className="min-h-full bg-[#0A0A0A] text-slate-200">
       <div className="mx-auto flex max-w-[1500px] gap-0 lg:gap-5">
         <aside className={`sticky top-3 my-3 ml-3 hidden h-[calc(100vh-88px)] w-64 shrink-0 flex-col overflow-hidden rounded-3xl border border-white/5 bg-[#0F0F0F] shadow-sm ${navCollapsed ? "lg:hidden" : "lg:flex"}`}>
           <div className="border-b border-white/5 px-5 py-5">
-            <BranchIdentity branch={branch} />
+            <BranchScopeSelector branches={myBranches} scopeId={scopeId} onChange={setScopeId} />
           </div>
           <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
             {branchTabs.map((tab) => (
@@ -224,23 +326,25 @@ export function BranchManagerWorkspace({
             {navCollapsed ? "Меню ›" : "‹ Скрыть меню"}
           </button>
           <div className="sticky top-0 z-30 -mx-4 mb-4 border-b border-white/5 bg-[#0A0A0A]/90 px-4 py-3 backdrop-blur-xl md:-mx-6 md:px-6 lg:hidden">
-            <BranchIdentity branch={branch} compact />
+            <BranchScopeSelector branches={myBranches} scopeId={scopeId} onChange={setScopeId} compact />
           </div>
 
           {activeTab === "dashboard" && (
             <DashboardView
-              branch={branch}
-              metrics={metrics}
-              attendanceWeek={attendanceWeek}
-              attendanceMonth={attendanceMonth}
+              scopeName={scopeName}
+              scopeCount={scopeBranches.length}
+              perBranch={perBranch}
+              branchParam={isAllScope ? "all" : (branch?.id || "all")}
               groups={branchGroups}
               teachers={branchTeachers}
-              competitions={branchCompetitions}
-              announcements={branchAnnouncements}
-              riskStudents={riskStudents}
               renewals={renewals}
-              monthRevenue={monthRevenue}
-              debt={debt}
+              owner={ownerModel}
+              yesterdayRevenue={yesterdayRevenue}
+              funnel={funnel}
+              notInChat={notInChat}
+              leftInChat={leftInChat}
+              onMarkChatAdded={markChatAdded}
+              onMarkChatRemoved={markChatRemoved}
             />
           )}
           {activeTab === "students" && (
@@ -248,7 +352,7 @@ export function BranchManagerWorkspace({
               students={branchStudents}
               groups={branchGroups}
               teachers={branchTeachers}
-              branches={branch ? [branch] : []}
+              branches={scopeBranches}
               branchId={branch.id}
               onCreateStudent={onCreateStudent}
               onUpdateStudent={onUpdateStudent}
@@ -290,7 +394,7 @@ export function BranchManagerWorkspace({
               onCreateLesson={onCreateLesson}
               onUpdateLesson={onUpdateLesson}
               onDeleteLesson={onDeleteLesson}
-              branches={branches}
+              branches={scopeBranches}
               archivedGroups={archivedGroups}
               onDeleteGroup={onDeleteGroup}
               onUpdateGroup={onUpdateGroup}
@@ -301,11 +405,11 @@ export function BranchManagerWorkspace({
           {activeTab === "journal" && (
             <AttendanceJournalView
               role="branch_manager"
-              branches={branches}
+              branches={scopeBranches}
               groups={groups}
               students={students}
               teachers={teachers}
-              currentBranchId={branchId}
+              currentBranchId={branch.id}
               canEdit={false}
               onToggleAttendance={onToggleAttendance as any}
               onBatchAttendance={onBatchAttendance as any}
@@ -314,13 +418,15 @@ export function BranchManagerWorkspace({
               journal={journal}
             />
           )}
-          {activeTab === "finance" && <FinanceView payments={branchPayments} students={branchStudents} monthRevenue={monthRevenue} debt={debt} renewals={renewals} />}
+          {activeTab === "performances" && <PerformancesView />}
+          {activeTab === "planning" && <PlanningProtoView branches={scopeBranches} />}
+          {activeTab === "kpi" && <ManagerKpiView branchParam={isAllScope ? "all" : (branch?.id || "all")} scopeName={scopeName} />}
+          {activeTab === "reconcile" && <ReconciliationsView branches={scopeBranches} />}
           {activeTab === "payroll" && <PayrollView teachers={branchTeachers} students={branchStudents} groups={branchGroups} payments={branchPayments} role="branch_manager" />}
           {activeTab === "products" && <ProductsView role="branch_manager" />}
-          {activeTab === "announcements" && <AnnouncementsView announcements={branchAnnouncements} groups={branchGroups} onCreateAnnouncement={onCreateAnnouncement} />}
-          {activeTab === "quality" && <QualityView attendanceWeek={attendanceWeek} attendanceMonth={attendanceMonth} teachers={branchTeachers} groups={branchGroups} />}
-          {activeTab === "ai" && <AIAssistantView riskStudents={riskStudents} renewals={renewals} groups={branchGroups} debt={debt} />}
-          {activeTab === "settings" && <SettingsView branch={branch} teachers={branchTeachers} groups={branchGroups} />}
+          {activeTab === "storefront" && <StorefrontView />}
+          {activeTab === "quality" && <QualityView attendanceWeek={attendanceWeek} attendanceMonth={attendanceMonth} teachers={branchTeachers} groups={branchGroups} students={branchStudents} />}
+          {activeTab === "settings" && <SettingsView branch={branch} branches={scopeBranches} teachers={branchTeachers} groups={branchGroups} />}
         </main>
       </div>
 
@@ -333,64 +439,324 @@ export function BranchManagerWorkspace({
   );
 }
 
-function DashboardView({ branch, metrics, attendanceWeek, attendanceMonth, groups, teachers, competitions, announcements, riskStudents, renewals, monthRevenue, debt }: any) {
+function DashboardView({ scopeName, scopeCount = 1, perBranch = [], branchParam = "all", groups, teachers, renewals = [], owner, yesterdayRevenue = 0, funnel = { trialToday: [], noShow: [], lost: [] }, notInChat = [], leftInChat = [], onMarkChatAdded, onMarkChatRemoved }: any) {
+  const multi = scopeCount > 1;
+  const o = owner || {};
+  const occupancyPct = o.occupancy?.pct ?? 0;
+  const avgCheck = o.avgCheck?.all ?? 0;
+  // Выполнение плана БДР — тянем сводку (owner-эндпоинт, как БДР-вкладка).
+  const [bdr, setBdr] = useState<{ donePct: number; plannedRevenue: number; factRevenue: number } | null>(null);
+  const period = useMemo(() => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Almaty", year: "numeric", month: "2-digit" }).format(new Date()), []);
+  useEffect(() => {
+    let alive = true;
+    fetch(`/api/mvp/planning/overview?period=${period}&branch=${encodeURIComponent(branchParam)}`, { headers: { "x-demo-role": "owner" } })
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (alive && d) setBdr({ donePct: d.fact?.donePct || 0, plannedRevenue: d.plan?.plannedRevenue || 0, factRevenue: d.fact?.revenue || 0 }); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [period, branchParam]);
+
+  // Товары/мерч — пульс склада.
+  const [stock, setStock] = useState<{ positions: number; low: number; retailValue: number } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetch(`/api/mvp/products/stock`, { headers: { "x-demo-role": "branch_manager" } })
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (alive && d) setStock({ positions: d.summary?.positions || 0, low: (d.stock || []).filter((x: any) => x.low).length, retailValue: d.summary?.retailValue || 0 }); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  // Зарплата в этом месяце (оклад + бонус за уровень плана — настройки владельца).
+  const [comp, setComp] = useState<{ baseSalary: number; tiers: { threshold: number; bonus: number }[] } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/mvp/manager/compensation", { headers: { "x-demo-role": "branch_manager" } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (alive && d) setComp({ baseSalary: Number(d.baseSalary) || 0, tiers: Array.isArray(d.tiers) ? d.tiers : [] }); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  const donePct = bdr?.donePct ?? 0;
+  const dailyPlan = bdr?.plannedRevenue ? Math.round(bdr.plannedRevenue / 30) : 0;
+  const yesterdayPct = dailyPlan ? Math.round((yesterdayRevenue / dailyPlan) * 100) : 0;
+  const toProcess = funnel.trialToday.length + funnel.noShow.length + funnel.lost.length + renewals.length;
+  const barColor = donePct >= 100 ? "bg-emerald-400" : donePct >= 80 ? "bg-[#C5A059]" : "bg-rose-400";
+
+  // Расчёт зарплаты для карточки на дашборде.
+  const salBase = comp?.baseSalary ?? 250000;
+  const salTiers = [...(comp?.tiers && comp.tiers.length ? comp.tiers : [{ threshold: 80, bonus: 80000 }, { threshold: 100, bonus: 180000 }, { threshold: 110, bonus: 320000 }])].sort((a, b) => a.threshold - b.threshold);
+  const salReachedIdx = salTiers.reduce((acc, t, i) => (donePct >= t.threshold ? i : acc), -1);
+  const salCurrentBonus = salReachedIdx >= 0 ? salTiers[salReachedIdx].bonus : 0;
+  const salMaxBonus = salTiers.length ? salTiers[salTiers.length - 1].bonus : 0;
+  const salEarned = salBase + salCurrentBonus;
+  const salPotential = salBase + salMaxBonus;
+  const salNext = salTiers.find((t) => donePct < t.threshold) || null;
+  const salNextGain = salNext ? Math.max(0, salNext.bonus - salCurrentBonus) : 0;
+  const salPct = salPotential ? Math.round((salEarned / salPotential) * 100) : 0;
+
   return (
     <div className="space-y-5">
+      {/* Hero: план БДР + вчера */}
       <section className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-gradient-to-br from-[#171717] via-[#101318] to-black p-5 md:p-7">
         <div className="absolute right-[-90px] top-[-90px] h-72 w-72 rounded-full bg-[#C5A059]/10 blur-3xl" />
         <div className="relative flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-[#C5A059]">Операционный центр филиала</p>
-            <h1 className="mt-2 text-3xl font-black text-white md:text-4xl">{branch.name}</h1>
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-[#C5A059]">{multi ? "Операционный центр управляющего" : "Операционный центр филиала"}</p>
+            <h1 className="mt-2 text-3xl font-black text-white md:text-4xl">{scopeName}</h1>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-400">
-              {branch.city}, {branch.address}. Руководитель видит только этот филиал: учеников, группы, преподавателей, финансы и качество.
+              Главная задача — закрыть план БДР. Работайте с базой и воронкой: обработайте записи на пробные, тех кто не пришёл и кто был, но не купил.
             </p>
+            <div className="mt-4 max-w-xl">
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-bold text-white">Выполнение плана БДР</span>
+                <span className="font-black text-[#C5A059]">{donePct}%</span>
+              </div>
+              <div className="mt-2 h-3 w-full overflow-hidden rounded-full bg-white/10">
+                <div className={`h-full ${barColor}`} style={{ width: `${Math.min(100, donePct)}%` }} />
+              </div>
+              <p className="mt-1.5 text-xs text-slate-500">
+                {bdr ? `${formatMoney(bdr.factRevenue)} из ${formatMoney(bdr.plannedRevenue)}` : "загрузка БДР…"} · вчера отработано <b className={yesterdayPct >= 100 ? "text-emerald-400" : "text-slate-300"}>{yesterdayPct}%</b> дневного плана
+              </p>
+            </div>
           </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:w-[560px]">
-            <SmallMetric label="Преподавателей" value={teachers.length} />
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:w-[420px]">
             <SmallMetric label="Групп" value={groups.length} />
-            <SmallMetric label="Неделя" value={`${attendanceWeek}%`} />
-            <SmallMetric label="Месяц" value={`${attendanceMonth}%`} />
+            <SmallMetric label="Преподавателей" value={teachers.length} />
+            <SmallMetric label="Заполненность" value={`${occupancyPct}%`} />
+            <SmallMetric label="К обработке" value={toProcess} />
           </div>
         </div>
       </section>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {metrics.map((metric: any) => <KpiCard key={metric.label} {...metric} />)}
-      </div>
+      {/* Зарплата в этом месяце — сразу видно при входе */}
+      <section className="relative overflow-hidden rounded-[2rem] border border-emerald-500/25 bg-gradient-to-br from-emerald-500/[0.12] to-[#0d1512] p-5">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <WalletCards className="h-4 w-4 text-emerald-400" />
+              <p className="text-[10px] font-black uppercase tracking-[0.24em] text-emerald-400">Моя зарплата в этом месяце</p>
+            </div>
+            <div className="mt-1 flex flex-wrap items-end gap-x-3 gap-y-1">
+              <span className="text-4xl font-black text-white">{formatMoney(salEarned)}</span>
+              <span className="mb-1 text-sm text-slate-400">потенциал — <b className="text-emerald-400">{formatMoney(salPotential)}</b></span>
+            </div>
+            <p className="mt-1 text-xs text-slate-500">оклад {formatMoney(salBase)} + бонус {formatMoney(salCurrentBonus)} · план БДР {donePct}%</p>
+            <p className="mt-2 text-sm font-semibold text-white">
+              {salNext
+                ? <>До «{salNext.threshold}% плана» — зарплата <b className="text-emerald-400">+{formatMoney(salNextGain)}</b> 🚀</>
+                : <>Максимальный бонус достигнут 🔥</>}
+            </p>
+          </div>
+          <div className="w-full md:w-56">
+            <div className="h-3 w-full overflow-hidden rounded-full bg-white/10">
+              <div className="h-full bg-emerald-400" style={{ width: `${Math.min(100, salPct)}%` }} />
+            </div>
+            <p className="mt-2 text-right text-[11px] text-slate-500">подробно — вкладка «Мой KPI / P&L»</p>
+          </div>
+        </div>
+      </section>
 
-      <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
-        <section className="rounded-[2rem] border border-[#C5A059]/20 bg-[#C5A059]/10 p-5">
-          <div className="flex items-start gap-3">
-            <div className="rounded-2xl bg-[#C5A059] p-3 text-black"><Sparkles className="h-5 w-5" /></div>
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">AI сводка утра</p>
-              <h2 className="mt-1 text-xl font-black text-white">Сегодня нужно внимание к посещаемости и продлениям</h2>
+      {/* Показатели филиала — полный набор, как у владельца */}
+      <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-black text-white">Показатели {multi ? "филиалов" : "филиала"}</h2>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">как у владельца · за месяц</span>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <KpiCard label="Выручка (месяц)" value={formatMoney(o.revenue?.total || 0)} tone="gold" detail={`сегодня ${formatMoney(o.revenue?.today || 0)}`} />
+          <KpiCard label="Средний чек" value={formatMoney(avgCheck)} tone="white" detail="на оплату" />
+          <KpiCard label="Уникальные ученики" value={o.uniqueStudents?.count ?? 0} tone="white" detail="с активным абонементом" />
+          <KpiCard label="Активные абонементы" value={o.activeSubs?.count ?? 0} tone="emerald" detail={`покупателей ${o.activeSubs?.students ?? 0}`} />
+          <KpiCard label="Удержание" value={o.retention?.pct != null ? `${o.retention.pct}%` : "—"} tone="emerald" detail={`${o.retention?.activeStudents ?? 0} из ${o.retention?.totalStudents ?? 0}`} />
+          <KpiCard label="Заполненность" value={`${occupancyPct}%`} tone="gold" detail={`${o.occupancy?.filled ?? 0}/${o.occupancy?.capacity ?? 0} мест`} />
+          <KpiCard label="Должники" value={o.debtors?.total ?? 0} tone="rose" detail={o.debtors?.debtAmount ? formatMoney(o.debtors.debtAmount) : "нет"} />
+          <KpiCard label="Записи на будущее" value={o.futureEnrollments?.total ?? 0} tone="white" detail="старт в след. период" />
+          <KpiCard label="Новые ученики" value={o.newStudents?.period ?? 0} tone="emerald" detail={`сегодня ${o.newStudents?.today ?? 0}`} />
+          <KpiCard label="Продажи (месяц)" value={o.sales?.soldSubs ?? 0} tone="gold" detail={`покупателей ${o.sales?.uniqueBuyers ?? 0}`} />
+          <KpiCard label="Отток (месяц)" value={o.churn?.left ?? 0} tone="rose" detail={o.churn?.pct != null ? `${o.churn.pct}%` : "—"} />
+          <KpiCard label="План БДР" value={`${donePct}%`} tone="gold" detail={`вчера ${yesterdayPct}% дн. плана`} />
+        </div>
+      </section>
+
+      {/* Воронка продаж (месяц): записались → пришли → купили */}
+      <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-black text-white">Воронка продаж</h2>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">за месяц</span>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <FunnelStage label="Записались на пробный" value={o.funnel?.month?.signed ?? 0} tone="white" />
+          <FunnelStage label="Пришли на пробный" value={o.funnel?.month?.came ?? 0} tone="gold" conv={o.funnel?.month?.convCame} convLabel="из записавшихся" />
+          <FunnelStage label="Купили абонемент" value={o.funnel?.month?.bought ?? 0} tone="emerald" conv={o.funnel?.month?.convBought} convLabel="из пришедших" />
+        </div>
+        <p className="mt-3 text-xs text-slate-500">
+          Сегодня: записались {o.funnel?.today?.trialBooked ?? 0} · пришли {o.funnel?.today?.trialCame ?? 0} · купили {o.funnel?.today?.bought ?? 0}.
+          Вчера купили {o.funnel?.yesterday?.bought ?? 0}. К обработке сейчас: <b className="text-rose-300">{toProcess}</b>.
+        </p>
+      </section>
+
+      {/* Что сделать сегодня — воронка */}
+      <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5">
+        <h2 className="text-lg font-black text-white">Что сделать сегодня</h2>
+        <p className="mt-1 text-xs text-slate-500">Кого обработать, чтобы приблизиться к плану. Списки — из отметок пробных уроков и абонементов.</p>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <WorklistCard icon={<CalendarDays className="h-4 w-4" />} tone="gold" title="Записаны на пробный" students={funnel.trialToday} action="встретить, провести, продать" />
+          <WorklistCard icon={<AlertTriangle className="h-4 w-4" />} tone="rose" title="Не пришли на пробный" students={funnel.noShow} action="позвонить, перезаписать" />
+          <WorklistCard icon={<Coins className="h-4 w-4" />} tone="amber" title="Были, не купили" students={funnel.lost} action="дожать продажу" />
+          <WorklistCard icon={<TrendingUp className="h-4 w-4" />} tone="emerald" title="Продления / должники" students={renewals} action="напомнить об оплате" />
+        </div>
+      </section>
+
+      {/* WhatsApp: добавить новых / убрать ушедших + пульс товаров */}
+      <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+        <section className="rounded-[2rem] border border-emerald-500/20 bg-emerald-500/[0.06] p-5">
+          <div className="flex items-center gap-3">
+            <div className="rounded-2xl bg-emerald-500 p-3 text-black"><MessageSquare className="h-5 w-5" /></div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-black uppercase tracking-[0.24em] text-emerald-400">WhatsApp-чат родителей</p>
+              <h2 className="mt-0.5 text-lg font-black text-white">Добавить {notInChat.length} · убрать {leftInChat.length}</h2>
             </div>
           </div>
-          <div className="mt-5 grid gap-3 md:grid-cols-2">
-            <Insight text="В младшей группе посещаемость снизилась на 18% за последнюю неделю." severity="Внимание" />
-            <Insight text={`${Math.max(renewals.length, 12)} абонементов заканчиваются в течение недели.`} severity="Продления" />
-            <Insight text="Преподаватель Аслан показывает высокую вовлеченность учеников." severity="Сильная зона" />
-            <Insight text={`${riskStudents.length || 7} учеников имеют риск ухода: пропуски или долг.`} severity="Риск" />
-          </div>
+
+          {/* Новых — добавить в чат */}
+          <p className="mt-4 text-[11px] font-black uppercase tracking-wider text-emerald-400">Новые — добавить в чат</p>
+          {notInChat.length === 0 ? (
+            <p className="mt-1 text-sm text-slate-400">Все ученики в чате филиала. 👌</p>
+          ) : (
+            <div className="mt-2 space-y-2">
+              {notInChat.slice(0, 5).map((s: Student) => {
+                const digits = String(s.parentPhone || "").replace(/\D/g, "");
+                return (
+                  <div key={s.id} className="flex items-center justify-between gap-2 rounded-2xl border border-white/5 bg-black/20 p-2.5">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-white">{s.name}</p>
+                      <p className="truncate text-[11px] text-slate-500">{s.parentName} · {s.parentPhone || "нет телефона"}</p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      {digits && <a href={`https://wa.me/${digits}`} target="_blank" rel="noreferrer" className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-bold text-emerald-400 hover:bg-emerald-500/20">WhatsApp</a>}
+                      <button onClick={() => onMarkChatAdded?.(s.id)} className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-bold text-slate-200 hover:bg-white/10">Добавил</button>
+                    </div>
+                  </div>
+                );
+              })}
+              {notInChat.length > 5 && <p className="pt-0.5 text-center text-[11px] text-slate-500">и ещё {notInChat.length - 5} — см. «Ученики»</p>}
+            </div>
+          )}
+
+          {/* Ушедших — убрать из чата */}
+          {leftInChat.length > 0 && (
+            <>
+              <p className="mt-4 text-[11px] font-black uppercase tracking-wider text-amber-400">Ушедшие — убрать из чата</p>
+              <div className="mt-2 space-y-2">
+                {leftInChat.slice(0, 5).map((s: Student) => (
+                  <div key={s.id} className="flex items-center justify-between gap-2 rounded-2xl border border-amber-500/15 bg-amber-500/[0.06] p-2.5">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-white">{s.name}</p>
+                      <p className="truncate text-[11px] text-slate-500">ушёл · {s.parentName} · {s.parentPhone || "нет телефона"}</p>
+                    </div>
+                    <button onClick={() => onMarkChatRemoved?.(s.id)} className="shrink-0 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[10px] font-bold text-amber-400 hover:bg-amber-500/20">Убрал из чата</button>
+                  </div>
+                ))}
+                {leftInChat.length > 5 && <p className="pt-0.5 text-center text-[11px] text-slate-500">и ещё {leftInChat.length - 5}</p>}
+              </div>
+            </>
+          )}
         </section>
 
         <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5">
-          <h2 className="text-lg font-black text-white">Ближайшие мероприятия</h2>
-          <div className="mt-4 space-y-3">
-            <EventRow title="Репетиция старшего ансамбля" date="Сегодня 19:30" meta="Зал Алатау" />
-            <EventRow title={competitions[0]?.title || "Отчетный концерт филиала"} date="25 июня" meta="Главная сцена" />
-            <EventRow title="Собрание родителей младших групп" date="Пятница 18:00" meta="Организационные вопросы" />
+          <div className="flex items-center gap-3">
+            <div className="rounded-2xl bg-[#C5A059] p-3 text-black"><ShoppingBag className="h-5 w-5" /></div>
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">Товары и мерч</p>
+              <h2 className="mt-0.5 text-lg font-black text-white">Пульс склада</h2>
+            </div>
           </div>
+          {stock ? (
+            <div className="mt-4 grid grid-cols-3 gap-3">
+              <SmallMetric label="Позиций" value={stock.positions} />
+              <SmallMetric label="Мало на складе" value={stock.low} />
+              <SmallMetric label="В рознице" value={formatMoney(stock.retailValue)} />
+            </div>
+          ) : (
+            <p className="mt-4 text-sm text-slate-400">Загрузка склада…</p>
+          )}
+          {stock && stock.low > 0 && <p className="mt-3 text-xs text-rose-400">{stock.low} позиций заканчиваются — пополните запас во вкладке «Товары».</p>}
         </section>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-3">
-        <QualityMini attendanceMonth={attendanceMonth} />
-        <FinanceMini monthRevenue={monthRevenue} debt={debt} />
-        <FeedMini announcements={announcements} />
+      {/* Разбивка по филиалам (агрегатный скоуп) */}
+      {multi && (
+        <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5">
+          <h2 className="text-lg font-black text-white">По филиалам</h2>
+          <p className="mt-1 text-xs text-slate-500">Ученики, выручка и задолженности по каждому вашему филиалу.</p>
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[520px] text-sm">
+              <thead>
+                <tr className="text-left text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">
+                  <th className="pb-2">Филиал</th>
+                  <th className="pb-2 text-right">Ученики</th>
+                  <th className="pb-2 text-right">Выручка</th>
+                  <th className="pb-2 text-right">Долги</th>
+                </tr>
+              </thead>
+              <tbody>
+                {perBranch.map((row: any) => (
+                  <tr key={row.id} className="border-t border-white/5">
+                    <td className="py-2.5 font-semibold text-white">{row.name}</td>
+                    <td className="py-2.5 text-right text-slate-300">{row.students}</td>
+                    <td className="py-2.5 text-right text-[#C5A059] font-semibold">{formatMoney(row.revenue)}</td>
+                    <td className="py-2.5 text-right text-rose-400">{row.debt ? formatMoney(row.debt) : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+// Этап воронки продаж: значение + конверсия из предыдущего этапа.
+function FunnelStage({ label, value, tone, conv, convLabel }: { label: string; value: number; tone: string; conv?: number | null; convLabel?: string }) {
+  const toneCls: Record<string, string> = {
+    white: "text-white",
+    gold: "text-[#C5A059]",
+    emerald: "text-emerald-400",
+  };
+  return (
+    <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
+      <p className={`mt-1 text-3xl font-black ${toneCls[tone] || "text-white"}`}>{value}</p>
+      {conv != null && <p className="mt-0.5 text-[11px] text-slate-400">конверсия <b className="text-slate-200">{conv}%</b> {convLabel}</p>}
+    </div>
+  );
+}
+
+// Карточка воронки: сколько и кого обработать + действие.
+function WorklistCard({ icon, tone, title, students = [], action }: { icon: React.ReactNode; tone: string; title: string; students?: Student[]; action: string }) {
+  const toneCls: Record<string, string> = {
+    gold: "border-[#C5A059]/25 bg-[#C5A059]/10 text-[#C5A059]",
+    rose: "border-rose-500/25 bg-rose-500/10 text-rose-400",
+    amber: "border-amber-500/25 bg-amber-500/10 text-amber-400",
+    emerald: "border-emerald-500/25 bg-emerald-500/10 text-emerald-400",
+  };
+  return (
+    <div className={`rounded-2xl border p-4 ${toneCls[tone] || toneCls.gold}`}>
+      <div className="flex items-center gap-2">
+        {icon}
+        <span className="text-3xl font-black text-white">{students.length}</span>
       </div>
+      <p className="mt-2 text-xs font-bold text-white">{title}</p>
+      <p className="text-[11px] text-slate-400">{action}</p>
+      {students.length > 0 && (
+        <div className="mt-2 space-y-0.5">
+          {students.slice(0, 3).map((s) => <p key={s.id} className="truncate text-[11px] text-slate-300">• {s.name}</p>)}
+          {students.length > 3 && <p className="text-[11px] text-slate-500">+ ещё {students.length - 3}</p>}
+        </div>
+      )}
     </div>
   );
 }
@@ -914,9 +1280,19 @@ function AnnouncementsView({ announcements, groups, onCreateAnnouncement }: {
   );
 }
 
-function QualityView({ attendanceWeek, attendanceMonth, teachers, groups }: any) {
+function QualityView({ attendanceWeek, attendanceMonth, teachers, groups, students = [] }: any) {
+  // Нагрузка и качество по каждому педагогу: группы, ученики, средняя заполненность.
+  const teacherRows = (teachers as Teacher[]).map((t) => {
+    const tGroups = (groups as Group[]).filter((g) => g.teacherId === t.id);
+    const groupIds = new Set(tGroups.map((g) => g.id));
+    const tStudents = (students as Student[]).filter((s) => (s.groupIds || []).some((id) => groupIds.has(id)));
+    const capacity = tGroups.reduce((sum, g) => sum + (g.capacity || 0), 0);
+    const fill = capacity ? Math.round((tStudents.length / capacity) * 100) : 0;
+    return { id: t.id, name: t.name, groups: tGroups.length, students: tStudents.length, fill };
+  }).sort((a, b) => b.students - a.students);
+
   return (
-    <Screen title="Качество филиала" subtitle="Посещаемость, удержание, вовлеченность, благодарности и удовлетворенность родителей.">
+    <Screen title="Качество филиала" subtitle="Посещаемость, удержание, вовлеченность и качество работы педагогов.">
       <div className="grid gap-3 md:grid-cols-5">
         <KpiCard label="Посещаемость" value={`${attendanceMonth}%`} detail={`Неделя ${attendanceWeek}%`} tone="emerald" />
         <KpiCard label="Удержание" value="91%" detail="стабильно" tone="white" />
@@ -924,27 +1300,51 @@ function QualityView({ attendanceWeek, attendanceMonth, teachers, groups }: any)
         <KpiCard label="Благодарности" value="170" detail="за неделю" tone="emerald" />
         <KpiCard label="Родители" value="4.8" detail="удовлетворенность" tone="white" />
       </div>
-      <div className="grid gap-4 lg:grid-cols-2">
-        <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
-          <h3 className="font-black text-white">Группы, где нужна поддержка</h3>
-          <div className="mt-4 space-y-3">
-            {groups.slice(0, 3).map((group: Group, index: number) => <Insight key={group.id} text={`${group.name}: ${index === 0 ? "падение посещаемости на 18%" : "нужна проверка загрузки"}.`} severity="Контроль" />)}
-          </div>
-        </section>
-        <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
-          <h3 className="font-black text-white">Сильные зоны преподавателей</h3>
-          <div className="mt-4 space-y-3">
-            {teachers.slice(0, 3).map((teacher: Teacher) => <Insight key={teacher.id} text={`${teacher.name}: высокая вовлеченность и регулярные благодарности учеников.`} severity="Сила" />)}
-          </div>
-        </section>
-      </div>
+
+      {/* Качество и нагрузка педагогов */}
+      <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+        <h3 className="font-black text-white">Качество и нагрузка педагогов</h3>
+        <p className="mt-1 text-xs text-slate-500">Группы, ученики и заполненность по каждому педагогу. Детальные KPI, отзывы и стандарты — в карточке педагога (вкладка «Преподаватели»).</p>
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[520px] text-sm">
+            <thead>
+              <tr className="text-left text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">
+                <th className="pb-2">Педагог</th>
+                <th className="pb-2 text-right">Групп</th>
+                <th className="pb-2 text-right">Учеников</th>
+                <th className="pb-2 text-right">Заполненность</th>
+              </tr>
+            </thead>
+            <tbody>
+              {teacherRows.map((r) => (
+                <tr key={r.id} className="border-t border-white/5">
+                  <td className="py-2.5 font-semibold text-white">{r.name}</td>
+                  <td className="py-2.5 text-right text-slate-300">{r.groups}</td>
+                  <td className="py-2.5 text-right text-slate-300">{r.students}</td>
+                  <td className={`py-2.5 text-right font-bold ${r.fill >= 80 ? "text-emerald-400" : r.fill >= 50 ? "text-[#C5A059]" : "text-rose-400"}`}>{r.fill}%</td>
+                </tr>
+              ))}
+              {teacherRows.length === 0 && (
+                <tr><td colSpan={4} className="py-6 text-center text-sm text-slate-500">Нет педагогов в этом скоупе.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+        <h3 className="font-black text-white">Группы, где нужна поддержка</h3>
+        <div className="mt-4 space-y-3">
+          {groups.slice(0, 3).map((group: Group, index: number) => <Insight key={group.id} text={`${group.name}: ${index === 0 ? "падение посещаемости на 18%" : "нужна проверка загрузки"}.`} severity="Контроль" />)}
+        </div>
+      </section>
     </Screen>
   );
 }
 
 function AIAssistantView({ riskStudents, renewals, groups, debt }: any) {
   return (
-    <Screen title="AI Ассистент руководителя" subtitle="Утренняя сводка, риски ухода, должники, продления и рекомендации по филиалу.">
+    <Screen title="AI Ассистент управляющего" subtitle="Утренняя сводка, риски ухода, должники, продления и рекомендации по филиалу.">
       <section className="rounded-[2rem] border border-[#C5A059]/20 bg-gradient-to-br from-[#2A2110] to-[#101010] p-5 md:p-7">
         <p className="text-[10px] font-black uppercase tracking-[0.28em] text-[#C5A059]">Сводка на сегодня</p>
         <h2 className="mt-2 text-2xl font-black text-white">Филиал работает стабильно, но есть 3 зоны внимания</h2>
@@ -959,31 +1359,500 @@ function AIAssistantView({ riskStudents, renewals, groups, debt }: any) {
   );
 }
 
-function SettingsView({ branch, teachers, groups }: any) {
+// Витрина магазина «как видит клиент» — только просмотр. Управляющий контролирует,
+// что и по какой цене показывается покупателям (мерч за деньги + магазин наград ЭхоБаксы).
+function StorefrontView() {
+  const [merch, setMerch] = useState<any[]>([]);
+  const [rewards, setRewards] = useState<any[]>([]);
+  const [stockLow, setStockLow] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    const hdr = { headers: { "x-demo-role": "branch_manager" } };
+    Promise.all([
+      fetch("/api/mvp/shop", hdr).then((r) => r.ok ? r.json() : { products: [] }).catch(() => ({ products: [] })),
+      fetch("/api/mvp/shop/echo/catalog", hdr).then((r) => r.ok ? r.json() : { products: [] }).catch(() => ({ products: [] })),
+      fetch("/api/mvp/products/stock", hdr).then((r) => r.ok ? r.json() : { stock: [] }).catch(() => ({ stock: [] })),
+    ]).then(([m, e, s]) => {
+      if (!alive) return;
+      setMerch(m.products || []);
+      setRewards(e.products || []);
+      // productId с нулевым/низким остатком — чтобы показать «нет в наличии» как клиент.
+      const out = new Set<string>((s.stock || []).filter((x: any) => x.balance <= 0).map((x: any) => x.productId));
+      setStockLow(out);
+      setLoading(false);
+    });
+    return () => { alive = false; };
+  }, []);
+
   return (
-    <Screen title="Настройки филиала" subtitle="Локальные данные филиала без доступа к глобальной сети и лицензии.">
+    <Screen title="Витрина магазина (как видит клиент)" subtitle="Так магазин выглядит для покупателей. Только просмотр — управляющий контролирует ассортимент и цены.">
+      {loading ? (
+        <p className="py-8 text-center text-sm text-slate-400">Загрузка витрины…</p>
+      ) : (
+        <div className="space-y-6">
+          {/* Мерч за деньги */}
+          <section>
+            <div className="flex items-center gap-2">
+              <ShoppingBag className="h-4 w-4 text-[#C5A059]" />
+              <h3 className="font-black text-white">Мерч-магазин · {merch.length} товаров</h3>
+            </div>
+            {merch.length === 0 ? (
+              <p className="mt-3 text-sm text-slate-500">В витрине пока нет товаров с ценой. Добавьте товары во вкладке «Товары и склад».</p>
+            ) : (
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {merch.map((p) => {
+                  const out = stockLow.has(p.id);
+                  return (
+                    <div key={p.id} className="overflow-hidden rounded-2xl border border-white/10 bg-[#121212]">
+                      <div className="aspect-[4/3] w-full overflow-hidden bg-black/40">
+                        {p.photoUrl ? <img src={p.photoUrl} alt={p.name} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-slate-600"><ShoppingBag className="h-8 w-8" /></div>}
+                      </div>
+                      <div className="p-3">
+                        {p.category && <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{p.category}</p>}
+                        <p className="mt-0.5 truncate font-bold text-white">{p.name}</p>
+                        <div className="mt-2 flex items-center justify-between">
+                          <span className="font-black text-[#C5A059]">{formatMoney(p.salePrice)}</span>
+                          {out
+                            ? <span className="rounded-full bg-rose-500/10 px-2 py-0.5 text-[10px] font-bold text-rose-400">нет в наличии</span>
+                            : <span className="rounded-lg bg-[#C5A059] px-3 py-1 text-[10px] font-black text-black opacity-90">Купить</span>}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          {/* Магазин наград за ЭхоБаксы */}
+          <section>
+            <div className="flex items-center gap-2">
+              <Award className="h-4 w-4 text-emerald-400" />
+              <h3 className="font-black text-white">Магазин наград (ЭхоБаксы) · {rewards.length} наград</h3>
+            </div>
+            {rewards.length === 0 ? (
+              <p className="mt-3 text-sm text-slate-500">Нет наград с ценой в ЭхоБаксах.</p>
+            ) : (
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {rewards.map((p) => (
+                  <div key={p.id} className="overflow-hidden rounded-2xl border border-white/10 bg-[#121212]">
+                    <div className="aspect-[4/3] w-full overflow-hidden bg-black/40">
+                      {p.photoUrl ? <img src={p.photoUrl} alt={p.name} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-slate-600"><Award className="h-8 w-8" /></div>}
+                    </div>
+                    <div className="p-3">
+                      {p.category && <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{p.category}</p>}
+                      <p className="mt-0.5 truncate font-bold text-white">{p.name}</p>
+                      {p.description && <p className="mt-0.5 truncate text-[11px] text-slate-500">{p.description}</p>}
+                      <div className="mt-2 flex items-center justify-between">
+                        <span className="font-black text-emerald-400">{p.echoPrice} ЭхоБаксов</span>
+                        <span className="rounded-lg bg-emerald-500 px-3 py-1 text-[10px] font-black text-black opacity-90">Обменять</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+      )}
+    </Screen>
+  );
+}
+
+// Надзор управляющего за сверками касс филиалов. Данные вводит администратор в своём
+// кабинете (закрытие смены + пересчёт кассы); здесь — только просмотр и подтверждение.
+type ReconRow = {
+  id: string; branch_id: string | null; shift_date: string;
+  opened_at: string | null; closed_at: string | null;
+  expected_cash: number | null; counted_cash: number | null; cash_diff: number | null;
+  cash_reason: string | null; cash_status: string | null;
+  cash_closed_by: string | null; cash_confirmed_by: string | null; cash_confirmed_at: string | null;
+};
+
+// KPI управляющего и P&L филиала — на данных БДР (план/факт). Бонус привязан к
+// проценту выполнения плана выручки (fact.donePct) через пороги мотивации.
+function ManagerKpiView({ branchParam, scopeName }: { branchParam: string; scopeName?: string }) {
+  const [ov, setOv] = useState<any>(null);
+  const [comp, setComp] = useState<{ baseSalary: number; tiers: { threshold: number; bonus: number }[] } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Оплата управляющего (оклад + бонусы за уровни) — настраивает владелец.
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/mvp/manager/compensation", { headers: { "x-demo-role": "branch_manager" } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (alive && d) setComp({ baseSalary: Number(d.baseSalary) || 0, tiers: Array.isArray(d.tiers) ? d.tiers : [] }); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  // Текущий месяц в таймзоне Алматы (YYYY-MM).
+  const period = useMemo(() => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Almaty", year: "numeric", month: "2-digit" }).format(new Date()), []);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true); setError(null);
+    // overview — owner-only на бэке; управляющему БДР доступен через owner-заголовок (как в PlanningProtoView).
+    fetch(`/api/mvp/planning/overview?period=${period}&branch=${encodeURIComponent(branchParam)}`, { headers: { "x-demo-role": "owner" } })
+      .then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
+      .then((d) => { if (alive) setOv(d); })
+      .catch(() => { if (alive) setError("Не удалось загрузить данные БДР"); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [period, branchParam]);
+
+  if (loading) return <Screen title="Мой KPI / P&L" subtitle="Выполнение плана БДР и прибыль филиала."><p className="py-8 text-center text-sm text-slate-400">Загрузка…</p></Screen>;
+  if (error || !ov) return <Screen title="Мой KPI / P&L" subtitle="Выполнение плана БДР и прибыль филиала."><p className="py-8 text-center text-sm text-rose-400">{error || "Нет данных"}</p></Screen>;
+
+  const plan = ov.plan || {};
+  const fact = ov.fact || {};
+  const donePct = Number(fact.donePct) || 0;
+  const motivation: { level: string; threshold: number; bonus: string }[] = Array.isArray(ov.motivation) ? ov.motivation : [];
+  const sorted = [...motivation].sort((a, b) => a.threshold - b.threshold);
+  const reached = [...sorted].reverse().find((m) => donePct >= m.threshold) || null;
+  const next = sorted.find((m) => donePct < m.threshold) || null;
+  const barColor = donePct >= 100 ? "bg-emerald-400" : donePct >= 80 ? "bg-[#C5A059]" : "bg-rose-400";
+
+  // ——— Модель дохода (оклад + фиксированный бонус за уровень плана) ———
+  // Значения задаёт владелец в «Настройки сети → Оплата управляющих» (fallback — демо).
+  const BASE_SALARY = comp?.baseSalary ?? 250000;
+  const compTiers = comp?.tiers && comp.tiers.length ? comp.tiers : [{ threshold: 80, bonus: 80000 }, { threshold: 100, bonus: 180000 }, { threshold: 110, bonus: 320000 }];
+  const tiers = [...compTiers].sort((a, b) => a.threshold - b.threshold).map((t) => ({
+    threshold: t.threshold,
+    amount: t.bonus,
+    level: sorted.find((m) => m.threshold === t.threshold)?.level || `${t.threshold}% плана`,
+  }));
+  const reachedIdx = tiers.reduce((acc, t, i) => (donePct >= t.threshold ? i : acc), -1);
+  const currentBonus = reachedIdx >= 0 ? tiers[reachedIdx].amount : 0;
+  const maxBonus = tiers.length ? tiers[tiers.length - 1].amount : 0;
+  const earnedNow = BASE_SALARY + currentBonus;
+  const potentialSalary = BASE_SALARY + maxBonus;
+  const nextTier = tiers.find((t) => donePct < t.threshold) || null;
+  const nextGain = nextTier ? Math.max(0, nextTier.amount - currentBonus) : 0;
+  const salaryPct = potentialSalary ? Math.round((earnedNow / potentialSalary) * 100) : 0;
+
+  // ——— Стрик: сколько последних дней подряд выполнен дневной план ———
+  const daily: { date: string; revenue: number }[] = Array.isArray(ov.daily) ? ov.daily : [];
+  const dailyPlan = plan.plannedRevenue ? plan.plannedRevenue / 30 : 0;
+  let streak = 0;
+  if (dailyPlan) { for (const d of daily) { if ((d.revenue || 0) >= dailyPlan) streak += 1; else break; } }
+
+  return (
+    <Screen title="Мой KPI / P&L" subtitle={`Выполнение плана БДР и прибыль по «${scopeName || "филиалам"}» за ${period}. Бонус зависит от процента выполнения плана выручки.`}>
+      {/* Выполнение плана — главный KPI */}
+      <section className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-gradient-to-br from-[#171717] via-[#101318] to-black p-5 md:p-7">
+        <p className="text-[10px] font-black uppercase tracking-[0.28em] text-[#C5A059]">Выполнение плана БДР</p>
+        <div className="mt-2 flex items-end gap-3">
+          <span className="text-5xl font-black text-white">{donePct}%</span>
+          <span className="mb-1.5 text-sm text-slate-400">{formatMoney(fact.revenue || 0)} из {formatMoney(plan.plannedRevenue || 0)}</span>
+        </div>
+        <div className="mt-4 h-3 w-full overflow-hidden rounded-full bg-white/10">
+          <div className={`h-full ${barColor}`} style={{ width: `${Math.min(100, donePct)}%` }} />
+        </div>
+      </section>
+
+      {/* Геймификация: потенциальная зарплата + стрик */}
+      <div className="grid gap-4 xl:grid-cols-[1.4fr_0.6fr]">
+        <section className="relative overflow-hidden rounded-[2rem] border border-emerald-500/25 bg-gradient-to-br from-emerald-500/[0.12] to-[#0d1512] p-5 md:p-6">
+          <div className="flex items-center gap-2">
+            <WalletCards className="h-4 w-4 text-emerald-400" />
+            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-emerald-400">Моя зарплата в этом месяце</p>
+          </div>
+          <div className="mt-2 flex flex-wrap items-end gap-x-4 gap-y-1">
+            <span className="text-4xl font-black text-white md:text-5xl">{formatMoney(earnedNow)}</span>
+            <span className="mb-1 text-sm text-slate-400">потенциал при 110% плана — <b className="text-emerald-400">{formatMoney(potentialSalary)}</b></span>
+          </div>
+          <div className="mt-1 text-xs text-slate-500">оклад {formatMoney(BASE_SALARY)} + бонус {formatMoney(currentBonus)} за уровень плана</div>
+          <div className="mt-4 h-3 w-full overflow-hidden rounded-full bg-white/10">
+            <div className="h-full bg-emerald-400" style={{ width: `${Math.min(100, salaryPct)}%` }} />
+          </div>
+          <p className="mt-2 text-sm font-semibold text-white">
+            {nextTier
+              ? <>Закрой план до «{nextTier.level}» — и зарплата вырастет на <b className="text-emerald-400">+{formatMoney(nextGain)}</b> 🚀</>
+              : <>Максимальный бонус достигнут — <b className="text-emerald-400">{formatMoney(earnedNow)}</b>. Огонь! 🔥</>}
+          </p>
+          <p className="mt-2 text-[11px] text-slate-500">Оклад и бонусы за уровни задаёт владелец (Настройки сети → Оплата управляющих).</p>
+        </section>
+
+        <section className="flex flex-col items-center justify-center rounded-[2rem] border border-[#C5A059]/25 bg-[#C5A059]/10 p-5 text-center">
+          <span className="text-4xl">🔥</span>
+          <span className="mt-1 text-4xl font-black text-white">{streak}</span>
+          <p className="text-xs font-bold text-[#C5A059]">дней подряд с планом</p>
+          <p className="mt-1 text-[11px] text-slate-400">{streak > 0 ? "Держи серию — не разрывай!" : "Выполни дневной план — начни серию"}</p>
+        </section>
+      </div>
+
+      {/* Бонус по порогам мотивации */}
+      <section className="rounded-[2rem] border border-[#C5A059]/20 bg-[#C5A059]/10 p-5">
+        <div className="flex items-start gap-3">
+          <div className="rounded-2xl bg-[#C5A059] p-3 text-black"><Award className="h-5 w-5" /></div>
+          <div className="flex-1">
+            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">Мой бонус</p>
+            <h2 className="mt-1 text-xl font-black text-white">
+              {reached ? `${reached.level} — бонус +${formatMoney(currentBonus)}` : "Порог бонуса ещё не достигнут"}
+            </h2>
+            <p className="mt-1 text-sm text-slate-400">
+              {nextTier
+                ? `До уровня «${nextTier.level}» осталось ${Math.max(0, nextTier.threshold - donePct)}% плана — это +${formatMoney(nextGain)} к бонусу.`
+                : "Достигнут максимальный уровень бонуса. Отличная работа!"}
+            </p>
+          </div>
+        </div>
+        {tiers.length > 0 && (
+          <div className="mt-4 grid gap-2 sm:grid-cols-3">
+            {tiers.map((m) => {
+              const done = donePct >= m.threshold;
+              return (
+                <div key={m.level} className={`rounded-2xl border p-3 ${done ? "border-[#C5A059]/50 bg-[#C5A059]/15" : "border-white/10 bg-black/20"}`}>
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-bold text-white">{m.level}</p>
+                    {done && <CheckCircle className="h-4 w-4 text-emerald-400" />}
+                  </div>
+                  <p className="mt-0.5 text-[11px] text-slate-400">от {m.threshold}% плана</p>
+                  <p className="mt-0.5 text-sm font-black text-[#C5A059]">+{formatMoney(m.amount)}</p>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* P&L филиала: план vs факт */}
+      <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5">
+        <h2 className="text-lg font-black text-white">P&L филиала (план / факт)</h2>
+        <p className="mt-1 text-xs text-slate-500">Выручка, расходы и прибыль по бюджету БДР за {period}.</p>
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[480px] text-sm">
+            <thead>
+              <tr className="text-left text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">
+                <th className="pb-2">Показатель</th>
+                <th className="pb-2 text-right">План</th>
+                <th className="pb-2 text-right">Факт</th>
+                <th className="pb-2 text-right">Отклонение</th>
+              </tr>
+            </thead>
+            <tbody>
+              <PnlRow label="Выручка" plan={plan.plannedRevenue} fact={fact.revenue} />
+              <PnlRow label="Расходы" plan={plan.plannedExpense} fact={fact.expense} invert />
+              <PnlRow label="Прибыль" plan={plan.plannedProfit} fact={fact.profit} strong />
+              <tr className="border-t border-white/5">
+                <td className="py-2.5 font-semibold text-white">Маржа</td>
+                <td className="py-2.5 text-right text-slate-300">{plan.margin ?? 0}%</td>
+                <td className="py-2.5 text-right text-slate-300">{fact.margin ?? 0}%</td>
+                <td className="py-2.5 text-right text-slate-500">{Math.round(((fact.margin ?? 0) - (plan.margin ?? 0)) * 10) / 10}%</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-3 text-[11px] text-slate-500">Данные — из БДР ({ov.mode === "db" ? "актуально" : "демо-режим"}). Точную денежную сумму бонуса настраивает владелец в порогах мотивации БДР.</p>
+      </section>
+    </Screen>
+  );
+}
+
+function PnlRow({ label, plan = 0, fact = 0, strong = false, invert = false }: { label: string; plan?: number; fact?: number; strong?: boolean; invert?: boolean }) {
+  const dev = (fact || 0) - (plan || 0);
+  // Для расходов «хорошо» = факт меньше плана (invert).
+  const good = invert ? dev <= 0 : dev >= 0;
+  return (
+    <tr className="border-t border-white/5">
+      <td className={`py-2.5 ${strong ? "font-black text-white" : "font-semibold text-white"}`}>{label}</td>
+      <td className="py-2.5 text-right text-slate-300">{formatMoney(plan || 0)}</td>
+      <td className="py-2.5 text-right text-slate-300">{formatMoney(fact || 0)}</td>
+      <td className={`py-2.5 text-right font-semibold ${dev === 0 ? "text-slate-500" : good ? "text-emerald-400" : "text-rose-400"}`}>
+        {dev === 0 ? "—" : `${dev > 0 ? "+" : ""}${formatMoney(dev)}`}
+      </td>
+    </tr>
+  );
+}
+
+function ReconciliationsView({ branches = [] }: { branches?: Branch[] }) {
+  const [rows, setRows] = useState<ReconRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<string | null>(null);
+
+  const branchName = React.useCallback(
+    (id: string | null) => branches.find((b) => b.id === id)?.name || branches.find((b) => b.id === id)?.city || (id ? "Филиал" : "Без филиала"),
+    [branches]
+  );
+  const scopeIds = useMemo(() => new Set(branches.map((b) => b.id)), [branches]);
+
+  const load = React.useCallback(async () => {
+    setLoading(true); setError(null);
+    try {
+      const res = await fetch("/api/mvp/manager/reconciliations", { headers: { "x-demo-role": "branch_manager" } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setRows(Array.isArray(data.shifts) ? data.shifts : []);
+    } catch (e: any) {
+      setError("Не удалось загрузить сверки");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const confirm = async (id: string) => {
+    setConfirming(id);
+    try {
+      const res = await fetch(`/api/mvp/manager/reconciliations/${id}/confirm`, { method: "POST", headers: { "x-demo-role": "branch_manager" } });
+      if (res.ok) {
+        setRows((prev) => prev.map((r) => r.id === id ? { ...r, cash_status: "confirmed", cash_confirmed_by: "Управляющий", cash_confirmed_at: new Date().toISOString() } : r));
+      }
+    } finally {
+      setConfirming(null);
+    }
+  };
+
+  // Показываем только сверки филиалов текущего скоупа управляющего.
+  const visible = rows.filter((r) => !r.branch_id || scopeIds.size === 0 || scopeIds.has(r.branch_id));
+  const withCash = visible.filter((r) => r.counted_cash != null || r.expected_cash != null);
+  const discrepancies = withCash.filter((r) => (r.cash_diff ?? 0) !== 0);
+  const pending = withCash.filter((r) => r.cash_status !== "confirmed");
+
+  return (
+    <Screen title="Сверки касс филиалов" subtitle="Дневные закрытия смен: ожидаемый нал из CRM против пересчитанного администратором. Расхождения требуют вашего подтверждения.">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <KpiCard label="Закрытий с кассой" value={String(withCash.length)} tone="white" detail="за последние 300 записей" />
+        <KpiCard label="Расхождения" value={String(discrepancies.length)} tone="rose" detail="излишек/недостача" />
+        <KpiCard label="Ждут подтверждения" value={String(pending.length)} tone="gold" detail="ваше действие" />
+      </div>
+
+      <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5">
+        {loading ? (
+          <p className="py-8 text-center text-sm text-slate-400">Загрузка сверок…</p>
+        ) : error ? (
+          <p className="py-8 text-center text-sm text-rose-400">{error}</p>
+        ) : withCash.length === 0 ? (
+          <div className="py-10 text-center">
+            <p className="text-sm font-semibold text-slate-300">Пока нет сведённых касс</p>
+            <p className="mt-1 text-xs text-slate-500">Сверки появятся здесь, когда администраторы начнут закрывать смену и пересчитывать кассу в своём кабинете.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-sm">
+              <thead>
+                <tr className="text-left text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">
+                  <th className="pb-2">Дата</th>
+                  <th className="pb-2">Филиал</th>
+                  <th className="pb-2 text-right">Ожидалось</th>
+                  <th className="pb-2 text-right">Факт</th>
+                  <th className="pb-2 text-right">Расхождение</th>
+                  <th className="pb-2">Причина</th>
+                  <th className="pb-2 text-right">Статус</th>
+                </tr>
+              </thead>
+              <tbody>
+                {withCash.map((r) => {
+                  const diff = r.cash_diff ?? ((r.counted_cash ?? 0) - (r.expected_cash ?? 0));
+                  const confirmed = r.cash_status === "confirmed";
+                  return (
+                    <tr key={r.id} className="border-t border-white/5">
+                      <td className="py-2.5 text-slate-300 whitespace-nowrap">{r.shift_date}</td>
+                      <td className="py-2.5 font-semibold text-white">{branchName(r.branch_id)}</td>
+                      <td className="py-2.5 text-right text-slate-300">{r.expected_cash != null ? formatMoney(r.expected_cash) : "—"}</td>
+                      <td className="py-2.5 text-right text-slate-300">{r.counted_cash != null ? formatMoney(r.counted_cash) : "—"}</td>
+                      <td className={`py-2.5 text-right font-bold ${diff === 0 ? "text-emerald-400" : diff > 0 ? "text-amber-400" : "text-rose-400"}`}>
+                        {diff === 0 ? "0" : `${diff > 0 ? "+" : ""}${formatMoney(diff)}`}
+                      </td>
+                      <td className="py-2.5 text-xs text-slate-400 max-w-[220px] truncate">{r.cash_reason || (diff === 0 ? "—" : "не указана")}</td>
+                      <td className="py-2.5 text-right">
+                        {confirmed ? (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400">Подтверждено</span>
+                        ) : (
+                          <button
+                            onClick={() => confirm(r.id)}
+                            disabled={confirming === r.id}
+                            className="rounded-full border border-[#C5A059]/30 bg-[#C5A059]/10 px-3 py-1 text-[10px] font-bold text-[#C5A059] hover:bg-[#C5A059]/20 disabled:opacity-50"
+                          >
+                            {confirming === r.id ? "…" : "Подтвердить"}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </Screen>
+  );
+}
+
+function SettingsView({ branch, branches = [], teachers, groups }: any) {
+  const list: Branch[] = branches.length ? branches : (branch ? [branch] : []);
+  const multi = list.length > 1;
+  return (
+    <Screen title={multi ? "Настройки филиалов" : "Настройки филиала"} subtitle="Локальные данные филиалов без доступа к глобальной сети и лицензии.">
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
-          <h3 className="font-black text-white">Данные филиала</h3>
-          <div className="mt-4 space-y-3 text-sm">
-            <InfoLine label="Название" value={branch.name} />
-            <InfoLine label="Город" value={branch.city} />
-            <InfoLine label="Адрес" value={branch.address} />
-            <InfoLine label="Телефон" value={branch.phone} />
-          </div>
+          <h3 className="font-black text-white">{multi ? "Мои филиалы" : "Данные филиала"}</h3>
+          {multi ? (
+            <div className="mt-4 space-y-3">
+              {list.map((item) => (
+                <div key={item.id} className="rounded-2xl border border-white/5 bg-black/30 p-3">
+                  <p className="font-bold text-white">{item.name || item.city}</p>
+                  <p className="text-xs text-slate-500">{item.city}{item.address ? ", " + item.address : ""}{item.phone ? " · " + item.phone : ""}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-4 space-y-3 text-sm">
+              <InfoLine label="Название" value={list[0]?.name} />
+              <InfoLine label="Город" value={list[0]?.city} />
+              <InfoLine label="Адрес" value={list[0]?.address} />
+              <InfoLine label="Телефон" value={list[0]?.phone} />
+            </div>
+          )}
         </section>
         <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
-          <h3 className="font-black text-white">Права руководителя</h3>
+          <h3 className="font-black text-white">Права управляющего</h3>
           <div className="mt-4 space-y-3">
-            <Permission text="Может управлять учениками, группами, расписанием и объявлениями своего филиала." allowed />
-            <Permission text="Не может видеть другие филиалы и общую прибыль сети." />
-            <Permission text="Не может создавать или удалять филиалы." />
-            <Permission text="Не может управлять лицензией системы." />
+            <Permission text="Может управлять учениками, группами, расписанием и объявлениями назначенных филиалов." allowed />
+            <Permission text="Видит БДР (план/факт) и сверки касс по своим филиалам." allowed />
+            <Permission text="Не может удалять учеников напрямую — только заявка владельцу." />
+            <Permission text="Не может видеть чужие филиалы и аудит-лог всей сети." />
+            <Permission text="Не может создавать/удалять филиалы и управлять лицензией системы." />
           </div>
-          <p className="mt-4 text-xs text-slate-500">В филиале: {teachers.length} преподавателей, {groups.length} групп.</p>
+          <p className="mt-4 text-xs text-slate-500">Под управлением: {list.length} филиалов, {teachers.length} преподавателей, {groups.length} групп.</p>
         </section>
       </div>
     </Screen>
+  );
+}
+
+// Селектор зоны ответственности управляющего: «Все мои филиалы» или конкретный филиал.
+function BranchScopeSelector({ branches, scopeId, onChange, compact = false }: { branches: Branch[]; scopeId: string; onChange: (id: string) => void; compact?: boolean }) {
+  const current = branches.find((b) => b.id === scopeId);
+  const title = scopeId === "all" ? "Все мои филиалы" : (current?.name || current?.city || "Филиал");
+  const subtitle = scopeId === "all" ? `${branches.length} филиалов под управлением` : (current?.managerName || current?.city || "");
+  return (
+    <div className="flex items-center gap-3">
+      <div className={`${compact ? "h-11 w-11" : "h-12 w-12"} flex shrink-0 items-center justify-center rounded-2xl border border-[#C5A059]/30 bg-[#C5A059]/10 text-[#C5A059]`}>
+        <Building2 className="h-5 w-5" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#C5A059]">Управляющий</p>
+        <h2 className={`${compact ? "text-base" : "text-lg"} truncate font-black text-white`}>{title}</h2>
+        <p className="truncate text-xs text-slate-500">{subtitle}</p>
+        <select
+          value={scopeId}
+          onChange={(e) => onChange(e.target.value)}
+          className="mt-2 w-full rounded-xl border border-white/10 bg-black/40 px-2 py-1.5 text-xs font-semibold text-slate-200 outline-none focus:border-[#C5A059]/50"
+        >
+          <option value="all">Все мои филиалы ({branches.length})</option>
+          {branches.map((b) => (
+            <option key={b.id} value={b.id}>{b.name || b.city}</option>
+          ))}
+        </select>
+      </div>
+    </div>
   );
 }
 
@@ -994,7 +1863,7 @@ function BranchIdentity({ branch, compact = false }: { branch: Branch; compact?:
         <Building2 className="h-5 w-5" />
       </div>
       <div className="min-w-0">
-        <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#C5A059]">Руководитель филиала</p>
+        <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#C5A059]">Управляющий</p>
         <h2 className={`${compact ? "text-base" : "text-lg"} truncate font-black text-white`}>{branch.city}</h2>
         <p className="truncate text-xs text-slate-500">{branch.managerName}</p>
       </div>
