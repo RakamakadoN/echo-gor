@@ -39,6 +39,7 @@ import GroupScheduleFields from "./GroupScheduleFields";
 import { GroupsTable, GroupsArchivePanel } from "./GroupListAndArchive";
 import AttendanceJournalView from "./AttendanceJournalView";
 import { ProductsView } from "./OwnerExecutiveWorkspace";
+import { AdminShiftView } from "./AdminShiftToday";
 
 // --- Лёгкая система всплывающих уведомлений (toast) ---
 // Даёт видимый отклик кнопкам, у которых пока нет полноценного бэкенда,
@@ -156,7 +157,7 @@ type AdminTab =
   | "settings";
 
 const tabs: { id: AdminTab; label: string; short: string; icon: React.ElementType }[] = [
-  { id: "dashboard", label: "Дашборд", short: "Главная", icon: Activity },
+  { id: "dashboard", label: "Смена", short: "Смена", icon: Activity },
   { id: "visitors", label: "Посетители", short: "Ученики", icon: Users },
   { id: "journal", label: "Журнал", short: "Журнал", icon: ClipboardList },
   { id: "calendar", label: "Расписание", short: "Календарь", icon: CalendarDays },
@@ -301,18 +302,21 @@ export function AdminEduErpWorkspace({
           </header>
 
           {activeTab === "dashboard" && (
-            <DashboardView
+            <AdminShiftView
+              branch={branches[0]}
               branches={branches}
               groups={groups}
               students={students}
               teachers={teachers}
+              payments={payments}
+              scheduleItems={scheduleItems}
+              tasks={tasks}
+              announcements={announcements}
               todayRevenue={todayRevenue}
               monthRevenue={monthRevenue}
               debt={debt}
               renewals={renewals}
-              attendanceRate={attendanceRate}
-              announcements={announcements}
-              auditLogs={auditLogs}
+              onNavigate={(tab) => setActiveTab(tab as AdminTab)}
             />
           )}
           {activeTab === "visitors" && (
@@ -1125,7 +1129,7 @@ function CalendarView({ groups, teachers, branches, halls, scheduleItems, schedu
   const weekAhead = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
 
   const [lessonForm, setLessonForm] = useState({ groupId: "", teacherId: "", hallId: "", date: "", startTime: "", endTime: "", reason: "", topic: "" });
-  // Список времени (08:00–22:00, шаг 30 мин) — как у владельца и руководителя.
+  // Список времени (08:00–22:00, шаг 30 мин) — как у владельца и управляющего.
   const LESSON_TIMES = useMemo(() => { const o: string[] = []; for (let h = 8; h <= 22; h++) for (const m of [0, 30]) o.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`); return o; }, []);
   const [groupForm, setGroupForm] = useState({ name: "", branchId: "", teacherId: "", hallId: "", ageFrom: "", ageTo: "", level: "Начинающие", scheduleDays: "", scheduleTime: "" });
   const [saving, setSaving] = useState(false);

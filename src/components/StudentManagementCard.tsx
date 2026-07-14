@@ -4,7 +4,7 @@
  *
  * StudentManagementCard — единая «светлая» карточка управления учеником.
  * Открывается по тапу на ученика во всех кабинетах (Администратор,
- * Руководитель филиала, Владелец, Преподаватель). Дизайн — светлая CRM-карточка:
+ * Управляющий, Владелец, Преподаватель). Дизайн — светлая CRM-карточка:
  * шапка с аватаром и статусом, ряд действий, вкладки, блок «Текущий абонемент».
  */
 import React, { useEffect, useMemo, useState } from "react";
@@ -106,7 +106,7 @@ export interface StudentManagementCardProps {
   onAddToWaitlist?: (payload: { studentId: string; branchId?: string | null; groupId?: string | null; comment?: string | null }) => Promise<boolean> | boolean;
   /** true — ученик уже состоит в активном листе ожидания (кнопка становится неактивной). */
   inWaitlist?: boolean;
-  /** Показывать блок «Вход ученика» (QR/ссылка). Только для владельца/руководителя/админа. */
+  /** Показывать блок «Вход ученика» (QR/ссылка). Только для владельца/управляющего/админа. */
   canGrantAccess?: boolean;
   /** Значение заголовка x-demo-role для API доступа (owner | branch_manager | admin). */
   roleHeader?: string;
@@ -300,7 +300,7 @@ export default function StudentManagementCard({
     setPanel((prev) => (prev === next ? null : next));
   };
 
-  // ——— Вход ученика по ссылке/QR (владелец/руководитель/админ) ———
+  // ——— Вход ученика по ссылке/QR (владелец/управляющий/админ) ———
   const [accessBusy, setAccessBusy] = useState(false);
   const [accessErr, setAccessErr] = useState<string | null>(null);
   const [accessStatus, setAccessStatus] = useState<null | { enabled: boolean; level: "junior" | "senior"; levelManual: "junior" | "senior" | null; autoLevel: "junior" | "senior"; token: string | null; code: string | null }>(null);
@@ -710,6 +710,7 @@ export default function StudentManagementCard({
           {onDelete && (
             <button
               onClick={onDelete}
+              title="Ученик перемещается в корзину как заявка на удаление. Окончательно удаляет только владелец — данные сохраняются."
               className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-white px-4 py-2.5 text-sm font-bold text-rose-500 transition hover:bg-rose-50"
             >
               <Trash2 className="h-4 w-4" /> В корзину
@@ -951,7 +952,7 @@ export default function StudentManagementCard({
           </div>
         )}
 
-        {/* Панель: вход ученика по ссылке/QR (владелец/руководитель/админ) */}
+        {/* Панель: вход ученика по ссылке/QR (владелец/управляющий/админ) */}
         {panel === "access" && canGrantAccess && (
           <div className="mt-3 rounded-2xl border border-[#C5A059]/40 bg-[#FBF7EE] p-4">
             <div className="mb-1 flex items-center gap-2">
@@ -1358,7 +1359,7 @@ const SELL_DISCOUNTS: { label: string; kind: "none" | "pct" | "custom"; pct?: nu
   { label: "Семейная скидка (10%)", kind: "pct", pct: 10 },
   { label: "Акция (15%)", kind: "pct", pct: 15 },
   { label: "Ручная скидка", kind: "custom" },
-  { label: "Скидка руководителя (20%)", kind: "pct", pct: 20 },
+  { label: "Скидка управляющего (20%)", kind: "pct", pct: 20 },
 ];
 
 // Счёт поступления: по требованию заказчика оставляем только два варианта —

@@ -153,6 +153,7 @@ var initialStudents = [
     teacherId: "teach-aslan",
     parentName: "\u0410\u043B\u0438\u043D\u0430 \u0411\u043E\u043B\u043E\u0442\u0430\u0435\u0432\u0430",
     parentPhone: "+7 (701) 400-30-30",
+    parentChatAdded: true,
     guardians: [initialGuardians[0]],
     balance: 15e3,
     artistLevel: "\u0421\u043E\u043B\u0438\u0441\u0442" /* SOLOIST */,
@@ -176,6 +177,7 @@ var initialStudents = [
     teacherId: "teach-aslan",
     parentName: "\u0425\u0435\u0442\u0430\u0433 \u0414\u0437\u0430\u0433\u043E\u0435\u0432",
     parentPhone: "+7 (701) 333-55-77",
+    parentChatAdded: false,
     guardians: [initialGuardians[1]],
     balance: -45e3,
     artistLevel: "\u041F\u0440\u0435\u0434\u0441\u0442\u0430\u0432\u0438\u0442\u0435\u043B\u044C \u0448\u043A\u043E\u043B\u044B" /* SCHOOL_REPRESENTATIVE */,
@@ -188,6 +190,51 @@ var initialStudents = [
       { id: "sub-2", studentId: "stud-alan", name: "\u0410\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442 \u0410\u043D\u0441\u0430\u043C\u0431\u043B\u044C (12 \u0437\u0430\u043D\u044F\u0442\u0438\u0439)", price: 4500, lessonsTotal: 12, lessonsLeft: 0, validUntil: "2026-05-30", isAutoRenew: false, status: "expired" }
     ],
     paymentStatus: "\u0412 \u043E\u0436\u0438\u0434\u0430\u043D\u0438\u0438 \u043E\u043F\u043B\u0430\u0442\u044B"
+  },
+  {
+    id: "stud-madina",
+    organizationId: orgId,
+    name: "\u041C\u0430\u0434\u0438\u043D\u0430 \u041A\u0430\u0433\u0435\u0440\u043C\u0430\u0437\u043E\u0432\u0430",
+    age: 14,
+    photoUrl: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=200&fit=crop&q=80",
+    branchId: "branch-almaty",
+    groupIds: ["group-almaty-ensemble"],
+    teacherId: "teach-aslan",
+    status: "left",
+    parentName: "\u0417\u0430\u0440\u0435\u043C\u0430 \u041A\u0430\u0433\u0435\u0440\u043C\u0430\u0437\u043E\u0432\u0430",
+    parentPhone: "+7 (701) 222-11-44",
+    parentChatAdded: true,
+    balance: 0,
+    artistLevel: "\u041F\u0435\u0440\u0432\u044B\u0439 \u0448\u0430\u0433" /* FIRST_STEP */,
+    artistLevelPoints: 120,
+    achievements: [],
+    performances: [],
+    notes: [],
+    attendance: {},
+    subscriptions: []
+  },
+  {
+    id: "stud-timur",
+    organizationId: orgId,
+    name: "\u0422\u0438\u043C\u0443\u0440 \u0411\u0435\u043A\u0431\u043E\u0435\u0432",
+    age: 13,
+    photoUrl: "https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?w=200&fit=crop&q=80",
+    branchId: "branch-almaty",
+    groupIds: ["group-almaty-ensemble"],
+    teacherId: "teach-aslan",
+    parentName: "\u0410\u0439\u0433\u0443\u043B\u044C \u0411\u0435\u043A\u0431\u043E\u0435\u0432\u0430",
+    parentPhone: "+7 (701) 555-88-22",
+    parentChatAdded: false,
+    balance: 0,
+    artistLevel: "\u041F\u0435\u0440\u0432\u044B\u0439 \u0448\u0430\u0433" /* FIRST_STEP */,
+    artistLevelPoints: 60,
+    achievements: [],
+    performances: [],
+    notes: [],
+    attendance: {},
+    subscriptions: [
+      { id: "sub-3", studentId: "stud-timur", name: "\u0410\u0431\u043E\u043D\u0435\u043C\u0435\u043D\u0442 \u0410\u043D\u0441\u0430\u043C\u0431\u043B\u044C (12 \u0437\u0430\u043D\u044F\u0442\u0438\u0439)", price: 4500, lessonsTotal: 12, lessonsLeft: 10, validUntil: "2026-07-20", isAutoRenew: true, status: "active" }
+    ]
   }
 ];
 var initialAnnouncements = [
@@ -1632,6 +1679,7 @@ function mapDbStudent(row, attendanceByStudent, subsByStudent) {
     waitlistAddedAt: row.__waitlist_added_at || null,
     parentName: row.parent_name || "\u0420\u043E\u0434\u0438\u0442\u0435\u043B\u044C",
     parentPhone: row.parent_phone || "",
+    parentChatAdded: Boolean(row.parent_chat_added),
     balance: computeStudentBalance(subsByStudent.get(row.id) || [], row.status),
     artistLevel: "\u041F\u0435\u0440\u0432\u044B\u0439 \u0448\u0430\u0433" /* FIRST_STEP */,
     artistLevelPoints: 0,
@@ -8336,11 +8384,17 @@ function registerMvpApi(app2) {
     res.json({ ok: true });
   }));
   const arrivalStore = {};
-  const arrivalKey = (session, date) => `${session.organizationId}:${date}:${session.userId}`;
+  const arrivalKey = (org, date, userId) => `${org}:${date}:${userId}`;
+  const almatyNowMinutes = () => {
+    const t = new Intl.DateTimeFormat("ru-RU", { timeZone: "Asia/Almaty", hour: "2-digit", minute: "2-digit", hour12: false }).format(/* @__PURE__ */ new Date());
+    const [h, m] = t.split(":").map(Number);
+    return h * 60 + m;
+  };
+  const minsToHHMM = (mins) => `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
   app2.get("/api/mvp/teachers/arrival/today", ah(async (req, res) => {
     const session = getSession(req);
     const date = KZ_DATE.format(/* @__PURE__ */ new Date());
-    const local = arrivalStore[arrivalKey(session, date)];
+    const local = arrivalStore[arrivalKey(session.organizationId, date, session.userId)];
     if (local) return res.json({ arrival: { time: local.time, late: local.late } });
     if (supabaseEnabled) {
       try {
@@ -8358,10 +8412,13 @@ function registerMvpApi(app2) {
       return res.status(403).json({ error: "\u041D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u043E" });
     const b = req.body || {};
     const date = KZ_DATE.format(/* @__PURE__ */ new Date());
-    const time = String(b.time || "").match(/^\d{1,2}:\d{2}$/) ? String(b.time) : KZ_DATE.format(/* @__PURE__ */ new Date());
-    const late = Boolean(b.late);
+    const nowMin = almatyNowMinutes();
+    const time = minsToHHMM(nowMin);
+    const expected = Number(b.expectedStart);
+    const late = Number.isFinite(expected) ? nowMin > expected + 5 : Boolean(b.late);
     const photo = typeof b.photo === "string" ? b.photo : null;
-    arrivalStore[arrivalKey(session, date)] = { time, late, photo, date };
+    const teacherName = session.fullName || "\u041F\u0435\u0434\u0430\u0433\u043E\u0433";
+    arrivalStore[arrivalKey(session.organizationId, date, session.userId)] = { time, late, photo, date, teacherId: session.userId, teacherName };
     if (supabaseEnabled) {
       try {
         await supabaseFetch("teacher_arrivals", "", {
@@ -8369,7 +8426,8 @@ function registerMvpApi(app2) {
           headers: { Prefer: "resolution=merge-duplicates" },
           body: JSON.stringify({
             organization_id: session.organizationId,
-            teacher_id: null,
+            teacher_id: session.userId,
+            teacher_name: teacherName,
             branch_id: session.dbBranchId || null,
             arrival_date: date,
             arrival_time: time,
@@ -8381,6 +8439,41 @@ function registerMvpApi(app2) {
       }
     }
     res.status(201).json({ arrival: { time, late } });
+  }));
+  const TINY_PHOTO = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+  const seedDemoArrivals = (org) => {
+    const d = KZ_DATE.format(/* @__PURE__ */ new Date());
+    const yD = /* @__PURE__ */ new Date();
+    yD.setDate(yD.getDate() - 1);
+    const yesterday = KZ_DATE.format(yD);
+    const mk = (date, teacherId, teacherName, time, late, photo) => {
+      const key = arrivalKey(org, date, teacherId);
+      if (!arrivalStore[key]) arrivalStore[key] = { teacherId, teacherName, time, late, photo, date };
+    };
+    mk(d, "teach-aslan", "\u0410\u0441\u043B\u0430\u043D \u041F\u043B\u0438\u0435\u0432", "16:52", false, TINY_PHOTO);
+    mk(d, "teach-fatima", "\u0424\u0430\u0442\u0438\u043C\u0430 \u0426\u0430\u0440\u0438\u043A\u0430\u0435\u0432\u0430", "17:14", true, null);
+    mk(yesterday, "teach-aslan", "\u0410\u0441\u043B\u0430\u043D \u041F\u043B\u0438\u0435\u0432", "16:58", false, TINY_PHOTO);
+    mk(yesterday, "teach-shamil", "\u0428\u0430\u043C\u0438\u043B\u044C \u0413\u0430\u043C\u0437\u0430\u0442\u043E\u0432", "18:20", true, TINY_PHOTO);
+  };
+  app2.get("/api/mvp/staff/standards", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager")
+      return res.status(403).json({ error: "\u0420\u0430\u0437\u0434\u0435\u043B \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443 \u0438 \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0435\u043C\u0443" });
+    if (!supabaseEnabled) seedDemoArrivals(session.organizationId);
+    const from = String(req.query.from || KZ_DATE.format(/* @__PURE__ */ new Date()));
+    const to = String(req.query.to || from);
+    const local = Object.values(arrivalStore).filter((a) => a.date >= from && a.date <= to && arrivalStore[arrivalKey(session.organizationId, a.date, a.teacherId)]);
+    let arrivals = local.map((a) => ({ teacherId: a.teacherId, teacherName: a.teacherName, date: a.date, time: a.time, late: a.late, hasPhoto: !!a.photo }));
+    if (supabaseEnabled) {
+      try {
+        let q = `organization_id=eq.${session.organizationId}&arrival_date=gte.${from}&arrival_date=lte.${to}&select=teacher_id,teacher_name,arrival_date,arrival_time,is_late,photo`;
+        if (session.role === "branch_manager" && session.dbBranchId) q += `&branch_id=eq.${session.dbBranchId}`;
+        const rows = await supabaseFetch("teacher_arrivals", q).catch(() => []);
+        if (rows.length) arrivals = rows.map((r) => ({ teacherId: r.teacher_id, teacherName: r.teacher_name, date: r.arrival_date, time: r.arrival_time, late: r.is_late, hasPhoto: !!r.photo }));
+      } catch {
+      }
+    }
+    res.json({ from, to, arrivals });
   }));
   app2.get("/api/mvp/teachers/trials-today", ah(async (req, res) => {
     const session = getSession(req);
@@ -8433,6 +8526,88 @@ function registerMvpApi(app2) {
     } catch {
       res.json({ trials: [] });
     }
+  }));
+  app2.get("/api/mvp/manager/reconciliations", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager")
+      return res.status(403).json({ error: "\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0435\u043C\u0443 \u0438 \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    if (!supabaseEnabled) return res.json({ shifts: [] });
+    const from = typeof req.query.from === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.query.from) ? req.query.from : "";
+    const parts = [
+      `organization_id=eq.${session.organizationId}`,
+      "select=id,branch_id,shift_date,opened_at,closed_at,expected_cash,counted_cash,cash_diff,cash_reason,cash_status,cash_closed_by,cash_confirmed_by,cash_confirmed_at",
+      "order=shift_date.desc",
+      "limit=300"
+    ];
+    if (from) parts.push(`shift_date=gte.${from}`);
+    const shifts = await supabaseFetch("admin_shifts", parts.join("&")).catch(() => []);
+    res.json({ shifts });
+  }));
+  app2.post("/api/mvp/manager/reconciliations/:id/confirm", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager")
+      return res.status(403).json({ error: "\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0435\u043C\u0443 \u0438 \u0432\u043B\u0430\u0434\u0435\u043B\u044C\u0446\u0443" });
+    const id = String(req.params.id || "");
+    if (!/^[0-9a-fA-F-]{36}$/.test(id)) return res.status(400).json({ error: "\u041D\u0435\u043A\u043E\u0440\u0440\u0435\u043A\u0442\u043D\u044B\u0439 id" });
+    if (!supabaseEnabled) return res.json({ ok: true });
+    await supabaseFetch("admin_shifts", `id=eq.${id}&organization_id=eq.${session.organizationId}`, {
+      method: "PATCH",
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({
+        cash_status: "confirmed",
+        cash_confirmed_by: session.fullName || "\u0423\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0438\u0439",
+        cash_confirmed_at: (/* @__PURE__ */ new Date()).toISOString(),
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      })
+    }).catch(() => {
+    });
+    res.json({ ok: true });
+  }));
+  app2.post("/api/mvp/students/:id/chat-added", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role === "teacher" || session.role === "student")
+      return res.status(403).json({ error: "\u041D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u043E" });
+    const id = String(req.params.id || "");
+    if (!/^[0-9a-fA-F-]{36}$/.test(id)) return res.status(400).json({ error: "\u041D\u0435\u043A\u043E\u0440\u0440\u0435\u043A\u0442\u043D\u044B\u0439 id" });
+    const added = req.body && typeof req.body.added === "boolean" ? req.body.added : true;
+    if (!supabaseEnabled) return res.json({ ok: true, added });
+    await supabaseFetch("students", `id=eq.${id}&organization_id=eq.${session.organizationId}`, {
+      method: "PATCH",
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({ parent_chat_added: added })
+    }).catch(() => {
+    });
+    res.json({ ok: true, added });
+  }));
+  const managerCompStore = {};
+  const managerCompDefaults = () => ({ baseSalary: 25e4, tiers: [{ threshold: 80, bonus: 8e4 }, { threshold: 100, bonus: 18e4 }, { threshold: 110, bonus: 32e4 }] });
+  app2.get("/api/mvp/manager/compensation", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner" && session.role !== "branch_manager") return res.status(403).json({ error: "\u041D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u043E" });
+    let cfg = managerCompStore[session.organizationId];
+    if (!cfg && supabaseEnabled) {
+      const rows = await supabaseFetch("manager_compensation", `organization_id=eq.${session.organizationId}&select=base_salary,tiers`).catch(() => []);
+      if (rows[0]) cfg = { baseSalary: Number(rows[0].base_salary) || 0, tiers: Array.isArray(rows[0].tiers) ? rows[0].tiers : [] };
+    }
+    res.json(cfg || managerCompDefaults());
+  }));
+  app2.put("/api/mvp/manager/compensation", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "\u041D\u0430\u0441\u0442\u0440\u0430\u0438\u0432\u0430\u0442\u044C \u043C\u043E\u0436\u0435\u0442 \u0442\u043E\u043B\u044C\u043A\u043E \u0432\u043B\u0430\u0434\u0435\u043B\u0435\u0446" });
+    const b = req.body || {};
+    const baseSalary = Math.max(0, Number(b.baseSalary) || 0);
+    const tiers = Array.isArray(b.tiers) ? b.tiers.map((t) => ({ threshold: Math.max(0, Number(t.threshold) || 0), bonus: Math.max(0, Number(t.bonus) || 0) })).sort((x, y) => x.threshold - y.threshold) : [];
+    const cfg = { baseSalary, tiers };
+    managerCompStore[session.organizationId] = cfg;
+    if (supabaseEnabled) {
+      await supabaseFetch("manager_compensation", "", {
+        method: "POST",
+        headers: { Prefer: "resolution=merge-duplicates" },
+        body: JSON.stringify({ organization_id: session.organizationId, base_salary: baseSalary, tiers, updated_at: (/* @__PURE__ */ new Date()).toISOString() })
+      }).catch(() => {
+      });
+    }
+    res.json(cfg);
   }));
 }
 

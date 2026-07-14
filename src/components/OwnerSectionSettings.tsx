@@ -18,7 +18,7 @@ export type SectionRoleKey = "owner" | "branch" | "admin" | "teacher" | "student
 
 export const SECTION_ROLE_LABELS: { id: SectionRoleKey; label: string }[] = [
   { id: "owner", label: "Владелец" },
-  { id: "branch", label: "Руководитель филиала" },
+  { id: "branch", label: "Управляющий" },
   { id: "admin", label: "Администратор" },
   { id: "teacher", label: "Педагог" },
   { id: "student", label: "Ученик" },
