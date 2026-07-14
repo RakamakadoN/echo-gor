@@ -100,6 +100,32 @@ context=${JSON.stringify(context ?? {})}`;
     }
   });
 
+  // План урока: педагог пишет сам, ИИ УПОРЯДОЧИВАЕТ (mode=organize) или ПОМОГАЕТ
+  // черновиком (mode=assist). НЕ придумывает план за педагога без запроса.
+  // kind: 'lesson' (обычный урок) | 'open' (открытый урок для родителей).
+  app.post("/api/gemini/lesson-plan-organize", async (req, res) => {
+    if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });
+    const { mode, kind, draft, groupName, groupLevel, studentCount } = req.body || {};
+    // ⬇️ МЕТОДИКА ЭХО ГОР: сюда заказчик добавит правила стиля/структуры урока.
+    const METHODOLOGY = `Методика школы «Эхо Гор»: уважение к традиции кавказского танца, дисциплина, характер, чистота техники. (правила будут дополнены)`;
+    const kindLabel = kind === "open" ? "открытый урок для родителей" : "занятие";
+    const task = mode === "assist"
+      ? `Педагог просит ПОМОЧЬ составить черновик плана (${kindLabel}). Предложи практичный план, который педагог затем доработает сам.`
+      : `Педагог написал СВОЙ план (${kindLabel}) ниже. Приведи его в порядок: структурируй, дополни недостающее, сохрани смысл и авторские идеи педагога. НЕ выдумывай лишнего.`;
+    const prompt = `Ты — методист школы кавказского танца «Эхо Гор». ${task}
+${METHODOLOGY}
+Верни СТРОГО JSON по схеме:
+{"title": string, "summary": string, "sections": [{"heading": string, "items": string[]}]}
+Пиши по-русски, конкретно и применимо. Для урока используй этапы: разминка, основная часть, отработка, завершение (для открытого урока — вовлечение родителей и показательные номера).
+draft=${JSON.stringify(draft ?? "")}
+group=${JSON.stringify({ groupName, groupLevel, studentCount })}`;
+    try {
+      res.json(await generateJson(prompt));
+    } catch (e: any) {
+      res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
+
   // Сводка дня для педагога: краткий план на сегодня + рекомендации.
   app.post("/api/gemini/teacher-daily-briefing", async (req, res) => {
     if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });

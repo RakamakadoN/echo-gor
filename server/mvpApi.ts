@@ -7081,4 +7081,54 @@ export function registerMvpApi(app: express.Express) {
     }
     res.status(201).json({ arrival: { time, late } });
   }));
+
+  // Пробные занятия на сегодня (по отметкам is_trial у сегодняшних уроков).
+  app.get("/api/mvp/teachers/trials-today", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) return res.json({ trials: [] });
+    const today = KZ_DATE.format(new Date()); // YYYY-MM-DD (Almaty)
+    const start = new Date(`${today}T00:00:00+05:00`).toISOString();
+    const endD = new Date(`${today}T00:00:00+05:00`); endD.setDate(endD.getDate() + 1);
+    const end = endD.toISOString();
+    const timeFmt = new Intl.DateTimeFormat("ru-RU", { timeZone: "Asia/Almaty", hour: "2-digit", minute: "2-digit", hour12: false });
+    try {
+      const lessons = await supabaseFetch<any[]>("schedule_lessons",
+        `select=id,group_id,starts_at&organization_id=eq.${session.organizationId}&starts_at=gte.${encodeURIComponent(start)}&starts_at=lt.${encodeURIComponent(end)}`).catch(() => [] as any[]);
+      if (!lessons.length) return res.json({ trials: [] });
+      const lessonIds = lessons.map((l) => l.id).filter(Boolean);
+      const marks = await supabaseFetch<any[]>("attendance",
+        `select=student_id,lesson_id,trial_outcome,status&is_trial=eq.true&lesson_id=in.(${lessonIds.join(",")})`).catch(() => [] as any[]);
+      if (!marks.length) return res.json({ trials: [] });
+      const studentIds = [...new Set(marks.map((m) => m.student_id).filter(Boolean))];
+      const groupIds = [...new Set(lessons.map((l) => l.group_id).filter(Boolean))];
+      const students = studentIds.length
+        ? await supabaseFetch<any[]>("students", `select=id,name,phone,parent_phone&id=in.(${studentIds.join(",")})`).catch(() => [] as any[]) : [];
+      const groups = groupIds.length
+        ? await supabaseFetch<any[]>("groups", `select=id,name,teacher_id&id=in.(${groupIds.join(",")})`).catch(() => [] as any[]) : [];
+      const gById: Record<string, any> = Object.fromEntries(groups.map((g) => [g.id, g]));
+      const lById: Record<string, any> = Object.fromEntries(lessons.map((l) => [l.id, l]));
+      const sById: Record<string, any> = Object.fromEntries(students.map((s) => [s.id, s]));
+      let trials = marks.map((m) => {
+        const l = lById[m.lesson_id];
+        const g = l ? gById[l.group_id] : null;
+        const s = sById[m.student_id];
+        const outcome = m.trial_outcome || (m.status === "unknown" || !m.status ? "pending" : m.status);
+        return {
+          studentId: m.student_id,
+          studentName: s?.name || "Ученик",
+          phone: s?.phone || s?.parent_phone || "",
+          groupId: l?.group_id || null,
+          groupName: g?.name || "",
+          teacherId: g?.teacher_id || null,
+          time: l?.starts_at ? timeFmt.format(new Date(l.starts_at)) : "",
+          outcome, // pending | converted | lost
+        };
+      });
+      if (session.role === "teacher") trials = trials.filter((t) => !t.teacherId || t.teacherId === session.userId);
+      trials.sort((a, b) => String(a.time).localeCompare(String(b.time)));
+      res.json({ trials });
+    } catch {
+      res.json({ trials: [] });
+    }
+  }));
 }
