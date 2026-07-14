@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ClipboardCheck, CalendarClock, Cake, Coins, CalendarDays, Camera, Presentation,
-  ChevronRight, X, Sparkles, Loader2, Send, Copy, Check, Gift, Clock, CheckCircle2, RefreshCw,
+  ChevronRight, X, Sparkles, Loader2, Send, Copy, Check, Gift, Clock, CheckCircle2, RefreshCw, Mic,
 } from "lucide-react";
 import type { Student, Group } from "../types";
+import { TeacherLessonPlanEditor } from "./TeacherLessonPlanEditor";
+import { TeacherLessonSummary } from "./TeacherLessonSummary";
 
 // «Сегодня» по Алматы (sv-SE → YYYY-MM-DD), как в остальном приложении.
 function almatyToday(): Date {
@@ -26,6 +28,7 @@ const ageOn = (iso: string, on: Date) => {
 const waDigits = (phone?: string) => (phone || "").replace(/\D/g, "").replace(/^8/, "7");
 
 type BirthdayItem = { student: Student; age: number; inDays: number; groupName?: string };
+type TrialItem = { studentId: string; studentName: string; phone?: string; groupName?: string; time?: string; outcome?: string };
 
 type Props = {
   teacherName: string;
@@ -44,6 +47,20 @@ export function TeacherStandardsToday({
   const [bdayOpen, setBdayOpen] = useState(false);
   const [arrivalOpen, setArrivalOpen] = useState(false);
   const [arrival, setArrival] = useState<{ time: string; late: boolean } | null>(null);
+  const [planKind, setPlanKind] = useState<"lesson" | "open" | null>(null);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [trials, setTrials] = useState<TrialItem[]>([]);
+  const [trialsOpen, setTrialsOpen] = useState(false);
+
+  // Реальные пробные на сегодня.
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/mvp/teachers/trials-today", { headers: { "x-demo-role": "teacher" } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (alive && Array.isArray(d?.trials)) setTrials(d.trials); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   // Подтянуть статус прихода на сегодня (если уже отмечен).
   useEffect(() => {
@@ -90,13 +107,7 @@ export function TeacherStandardsToday({
     return { todayBirthdays, upcoming };
   }, [students, groups]);
 
-  const trialsToday = useMemo(() => {
-    // Пробные на сегодня: из отметок ученика (isTrial) или из расписания.
-    const fromStudents = students.filter((s) => (s as any).isTrial).length;
-    const fromSchedule = (scheduleItems || []).filter((i: any) => i?.isTrial || i?.type === "trial").length;
-    return Math.max(fromStudents, fromSchedule);
-  }, [students, scheduleItems]);
-
+  const trialsToday = trials.length;
   const lessonsToday = scheduleItems?.length || groups.length;
 
   const standards = [
@@ -116,7 +127,7 @@ export function TeacherStandardsToday({
       key: "trials", icon: CalendarDays, tone: "sky",
       title: "Пробные занятия", sub: trialsToday ? `${trialsToday} на сегодня` : "на сегодня нет",
       status: trialsToday ? String(trialsToday) : "0", action: "Список",
-      onClick: () => onNavigate?.("journal"),
+      onClick: () => setTrialsOpen(true), highlight: trialsToday > 0,
     },
     {
       key: "bday", icon: Cake, tone: "pink",
@@ -132,15 +143,21 @@ export function TeacherStandardsToday({
     },
     {
       key: "plan", icon: CalendarClock, tone: "indigo",
-      title: "План на урок", sub: "ИИ поможет составить",
-      status: "ИИ", action: "Составить",
-      onClick: () => onOpenLessonPlan?.("Составь план занятия на сегодня", { groupName: groups[0]?.name, studentCount: students.length }),
+      title: "План на урок", sub: "вы пишете — ИИ упорядочит",
+      status: "План", action: "Открыть",
+      onClick: () => setPlanKind("lesson"),
+    },
+    {
+      key: "summary", icon: Mic, tone: "emerald",
+      title: "Итоги урока", sub: "наговорите — ИИ разложит",
+      status: "Голос", action: "Подвести",
+      onClick: () => setSummaryOpen(true),
     },
     {
       key: "open", icon: Presentation, tone: "rose",
-      title: "Открытый урок", sub: "для родителей · раз в месяц",
-      status: "План", action: "Наметить",
-      onClick: () => onOpenLessonPlan?.("Составь сценарий открытого урока для родителей: структура, номера, вовлечение родителей", { groupName: groups[0]?.name, studentCount: students.length }),
+      title: "Открытый урок", sub: "для родителей · вы пишете, ИИ поможет",
+      status: "План", action: "Открыть",
+      onClick: () => setPlanKind("open"),
     },
   ];
 
@@ -176,7 +193,7 @@ export function TeacherStandardsToday({
                 <span className={`flex h-9 w-9 items-center justify-center rounded-xl ${toneCls[s.tone]}`}>
                   <Icon className="h-4.5 w-4.5" style={{ width: 18, height: 18 }} />
                 </span>
-                {s.status && s.status !== "Готово" && s.status !== "К отметке" && s.status !== "План" && s.status !== "ИИ" && s.status !== "Не отмечен" && (
+                {s.status && !["Готово", "К отметке", "План", "ИИ", "Не отмечен", "Голос", "Поздно"].includes(s.status) && (
                   <span className="rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-black text-white">{s.status}</span>
                 )}
               </div>
@@ -206,6 +223,90 @@ export function TeacherStandardsToday({
           onDone={(r) => { setArrival(r); onConfirmArrival?.(); setArrivalOpen(false); }}
         />
       )}
+
+      {planKind && (
+        <TeacherLessonPlanEditor
+          kind={planKind}
+          groupName={groups[0]?.name}
+          groupLevel={(groups[0] as any)?.level}
+          studentCount={students.length}
+          onClose={() => setPlanKind(null)}
+        />
+      )}
+
+      {trialsOpen && (
+        <TrialsListModal trials={trials} onClose={() => setTrialsOpen(false)} onJournal={() => { setTrialsOpen(false); onNavigate?.("journal"); }} />
+      )}
+
+      {summaryOpen && (
+        <TeacherLessonSummary
+          groupName={groups[0]?.name}
+          groupLevel={(groups[0] as any)?.level}
+          studentCount={students.length}
+          onClose={() => setSummaryOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+const trialOutcomeLabel: Record<string, { text: string; cls: string }> = {
+  pending: { text: "Ожидает", cls: "bg-amber-500/15 text-amber-300" },
+  converted: { text: "Купил", cls: "bg-emerald-500/15 text-emerald-300" },
+  lost: { text: "Не купил", cls: "bg-rose-500/15 text-rose-300" },
+};
+
+function TrialsListModal({ trials, onClose, onJournal }: { trials: TrialItem[]; onClose: () => void; onJournal: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:p-4" onClick={onClose}>
+      <div className="flex max-h-[88vh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-white/10 bg-[#141414] shadow-2xl sm:rounded-3xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+          <div className="flex items-center gap-2">
+            <CalendarDays className="h-5 w-5 text-sky-400" />
+            <h3 className="text-base font-black text-white">Пробные на сегодня</h3>
+          </div>
+          <button onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/5 text-slate-400 hover:text-white">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto p-5" style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))" }}>
+          {trials.length === 0 ? (
+            <div className="py-8 text-center">
+              <p className="text-sm text-slate-400">На сегодня пробных занятий нет.</p>
+              <p className="mt-1 text-[11px] text-slate-600">Записи появляются, когда ученику ставят пробную отметку.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {trials.map((t) => {
+                const badge = trialOutcomeLabel[t.outcome || "pending"] || trialOutcomeLabel.pending;
+                const wa = (t.phone || "").replace(/\D/g, "").replace(/^8/, "7");
+                return (
+                  <div key={t.studentId} className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-3.5 py-3">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-400/15 text-sm font-black text-sky-300">
+                      {t.studentName.trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase()}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-bold text-white">{t.studentName}</div>
+                      <div className="text-[10px] text-slate-500">{t.time ? `${t.time} · ` : ""}{t.groupName || "—"}</div>
+                    </div>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${badge.cls}`}>{badge.text}</span>
+                    {wa && (
+                      <a href={`https://wa.me/${wa}`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#25D366]/15 text-[#25D366]">
+                        <Send className="h-4 w-4" />
+                      </a>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <button onClick={onJournal} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-bold text-slate-200 hover:bg-white/10">
+            <ClipboardCheck className="h-4 w-4" /> Открыть журнал — отметить пробные
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
