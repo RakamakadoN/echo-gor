@@ -1,4 +1,5 @@
 import type express from "express";
+import { createHmac, timingSafeEqual, scryptSync, randomBytes } from "node:crypto";
 import {
   initialAnnouncements,
   initialAuditLogs,
@@ -37,6 +38,7 @@ type MvpSession = {
   fullName: string;
   studentId?: string;                 // задан только для сессии ученика (вход по токену)
   accessLevel?: "junior" | "senior";  // уровень прав кабинета ученика
+  branchIds?: string[];               // все филиалы ответственности (мультифилиальность, миграция 046)
 };
 
 // Возраст (включительно), до которого ученик по умолчанию считается «маленькой»
@@ -51,8 +53,78 @@ const SENIOR_TABS = ["Главная", "Наклейки", "Достижения
 // Кто может выдавать/отзывать вход ученику.
 const accessGrantStaff = ["owner", "branch_manager", "admin"];
 
-// Стандартный пароль ученика (один для всех). Вход — по номеру телефона + этот пароль.
+// Legacy: раньше пароль ученика был один на всех. Теперь у каждого свой (миграция
+// 046): при первом входе ученик задаёт пароль сам. Константа оставлена как
+// разрешённый «переходный» пароль для учеников, которым пароль ещё не задан
+// (password_set=false) — тогда любой ввод инициирует создание своего пароля.
 const STUDENT_STANDARD_PASSWORD = "12345";
+
+// ── Реальная авторизация (миграция 046) ──────────────────────────────────────
+// Vercel — serverless (stateless между вызовами), поэтому сессию НЕЛЬЗЯ хранить
+// в памяти. Используем подписанный (HMAC-SHA256) stateless-токен: клиент хранит
+// его и шлёт в заголовке x-auth-token; сервер проверяет подпись синхронно —
+// getSession остаётся синхронным. Секрет — из окружения (в проде задать AUTH_SECRET).
+const AUTH_SECRET = process.env.AUTH_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || "echo-gor-dev-secret-change-me";
+
+// scrypt-хэш пароля: формат "scrypt$<salt hex>$<hash hex>". Чистый stdlib —
+// без нативных зависимостей (важно для сборки на Vercel).
+function hashPassword(plain: string): string {
+  const salt = randomBytes(16).toString("hex");
+  const derived = scryptSync(String(plain), salt, 32).toString("hex");
+  return `scrypt$${salt}$${derived}`;
+}
+function verifyPassword(plain: string, stored: string | null | undefined): boolean {
+  if (!stored) return false;
+  const parts = String(stored).split("$");
+  if (parts.length !== 3 || parts[0] !== "scrypt") return false;
+  const [, salt, hashHex] = parts;
+  let derived: Buffer;
+  try { derived = scryptSync(String(plain), salt, 32); } catch { return false; }
+  const expected = Buffer.from(hashHex, "hex");
+  if (expected.length !== derived.length) return false;
+  return timingSafeEqual(expected, derived);
+}
+
+type AuthTokenPayload = {
+  sub: string;                         // userId (сотрудник) или "student-<id>"
+  role: MvpSession["role"];
+  org: string;
+  branchId: string | null;             // основной филиал (UUID)
+  branchIds?: string[];                // все филиалы ответственности
+  name?: string;
+  studentId?: string;
+  level?: "junior" | "senior";
+};
+function signAuthToken(payload: AuthTokenPayload): string {
+  const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const sig = createHmac("sha256", AUTH_SECRET).update(body).digest("base64url");
+  return `${body}.${sig}`;
+}
+function verifyAuthToken(token: string): AuthTokenPayload | null {
+  const [body, sig] = String(token || "").split(".");
+  if (!body || !sig) return null;
+  const expected = createHmac("sha256", AUTH_SECRET).update(body).digest("base64url");
+  const a = Buffer.from(sig);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+  try { return JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as AuthTokenPayload; }
+  catch { return null; }
+}
+function sessionFromAuthToken(p: AuthTokenPayload): MvpSession {
+  if (p.role === "student") {
+    return {
+      userId: p.sub, organizationId: p.org, role: "student",
+      branchId: p.branchId, dbBranchId: p.branchId, fullName: p.name || "Ученик",
+      studentId: p.studentId, accessLevel: p.level,
+    };
+  }
+  const branchIds = (p.branchIds && p.branchIds.length ? p.branchIds : (p.branchId ? [p.branchId] : []));
+  return {
+    userId: p.sub, organizationId: p.org, role: p.role,
+    branchId: p.branchId, dbBranchId: p.branchId, fullName: p.name || "Сотрудник",
+    branchIds,
+  };
+}
 
 // Эффективный уровень: ручное переопределение приоритетнее авто-расчёта по возрасту.
 // Возраст неизвестен (null/undefined/некорректный) → безопасный минимум «junior»
@@ -136,9 +208,19 @@ const isPlaceholder = (value?: string) => {
 const supabaseEnabled = Boolean(supabaseUrl && supabaseKey && !isPlaceholder(supabaseKey));
 
 function getSession(req: express.Request): MvpSession {
-  // Сессия ученика: вход по токену из ссылки/QR (x-student-token).
-  // Разрешается только по уже известному токену (наполняется при выдаче доступа
-  // персоналом и при /student-auth), поэтому getSession остаётся синхронным.
+  // 1) Настоящая сессия: подписанный stateless-токен (сотрудник или ученик).
+  //    Приоритетнее всего — реальная авторизация (миграция 046). Проверка подписи
+  //    синхронна, работает на serverless (Vercel) без хранения состояния в памяти.
+  const authToken = String(req.headers["x-auth-token"] || "");
+  if (authToken) {
+    const payload = verifyAuthToken(authToken);
+    if (payload) return sessionFromAuthToken(payload);
+    // невалидная подпись → игнорируем токен, падаем в демо-логику ниже
+  }
+
+  // 2) Сессия ученика: вход по токену из ссылки/QR (x-student-token).
+  //    Разрешается только по уже известному токену (наполняется при выдаче доступа
+  //    персоналом и при /student-auth), поэтому getSession остаётся синхронным.
   const studentToken = String(req.headers["x-student-token"] || "");
   if (studentToken) {
     const rec = studentAccessTokens.get(studentToken);
@@ -166,7 +248,9 @@ function canSeeBranch(session: MvpSession, branchId?: string | null) {
   if (session.role === "owner" || !branchId) return true;
   // Accept either the mock branch key or the real Supabase branch UUID,
   // so branch-scoped roles work in both mock and Supabase modes.
-  return branchId === session.branchId || branchId === session.dbBranchId;
+  // Мультифилиальность (миграция 046): сотрудник видит все свои филиалы.
+  if (branchId === session.branchId || branchId === session.dbBranchId) return true;
+  return Boolean(session.branchIds && session.branchIds.includes(branchId));
 }
 
 async function supabaseFetch<T>(table: string, query = "select=*", init: RequestInit = {}): Promise<T> {
@@ -358,6 +442,9 @@ function mapDbWaitlist(row: any) {
 }
 
 function mapDbUserToTeacher(user: any) {
+  const branchIds: string[] = Array.isArray(user.branch_ids) && user.branch_ids.length
+    ? user.branch_ids.filter(Boolean)
+    : (user.branch_id ? [user.branch_id] : []);
   return {
     id: user.id,
     organizationId: user.organization_id,
@@ -368,7 +455,11 @@ function mapDbUserToTeacher(user: any) {
     bio: "Преподаватель школы Эхо Гор.",
     experienceYears: 5,
     branchId: user.branch_id || null,
-    role: user.role || "teacher"
+    branchIds,                                  // все филиалы ответственности (046)
+    role: user.role || "teacher",
+    login: user.login || user.phone || "",     // логин для входа (046)
+    status: user.status || "active",           // активен/неактивен
+    hasPassword: Boolean(user.password_hash && user.password_hash !== "demo-only"),
   };
 }
 
@@ -614,7 +705,9 @@ async function dbBootstrap(session: MvpSession) {
   // Role-based scoping (mirrors fallbackPayload): owner sees everything;
   // branch_manager/admin see only their branch; teacher sees only their own students/groups.
   const isOwner = session.role === "owner";
-  const branchAllowed = (branchId?: string | null) => isOwner || branchId === session.dbBranchId;
+  // Мультифилиальность (миграция 046): управляющий/админ может отвечать за 2 филиала.
+  const sessionBranchSet = new Set([session.dbBranchId, ...(session.branchIds || [])].filter(Boolean));
+  const branchAllowed = (branchId?: string | null) => isOwner || (branchId != null && sessionBranchSet.has(branchId));
 
   const students = studentsRaw
     .filter((student) => {
@@ -623,7 +716,7 @@ async function dbBootstrap(session: MvpSession) {
         const group = groupById.get(student.group_id);
         return group?.teacher_id === session.userId;
       }
-      return student.branch_id === session.dbBranchId;
+      return branchAllowed(student.branch_id);
     })
     .map((student) => {
       const group = groupById.get(student.group_id);
@@ -687,7 +780,7 @@ async function dbBootstrap(session: MvpSession) {
   const groupsVisible = groupsMapped.filter((group) => {
     if (isOwner) return true;
     if (session.role === "teacher") return group.teacherId === session.userId;
-    return group.branchId === session.dbBranchId;
+    return branchAllowed(group.branchId);
   });
 
   const studentNameById = new Map(
@@ -814,13 +907,16 @@ export function registerMvpApi(app: express.Express) {
     "/session/demo-users",
     "/session/demo-login",
     "/student-auth",
+    "/student-auth/set-password", // первый вход ученика: создание своего пароля
+    "/auth/login",                // настоящий вход сотрудника (логин + пароль)
   ]);
   app.use("/api/mvp", (req, res, next) => {
     if (PUBLIC_MVP_PATHS.has(req.path)) return next();
+    const hasAuthToken = Boolean(req.headers["x-auth-token"]);
     const hasRole = Boolean(req.headers["x-demo-role"]);
     const hasStudentToken = Boolean(req.headers["x-student-token"]);
-    if (!hasRole && !hasStudentToken) {
-      return res.status(401).json({ error: "Не авторизовано: укажите роль или войдите как ученик" });
+    if (!hasAuthToken && !hasRole && !hasStudentToken) {
+      return res.status(401).json({ error: "Не авторизовано: войдите в систему" });
     }
     return next();
   });
@@ -891,6 +987,59 @@ export function registerMvpApi(app: express.Express) {
     const session = demoUsers.find((user) => user.userId === requested || user.role === requested) || demoUsers[0];
     res.json({ session });
   });
+
+  // ── Настоящий вход сотрудника: логин + пароль (миграция 046). ───────────────
+  // Проверяем пароль по users.password_hash. Логин ищем по колонке login,
+  // либо (для совместимости) по email или phone. Возвращаем подписанный токен —
+  // клиент шлёт его в x-auth-token, и getSession выдаёт реальную сессию сотрудника
+  // с его ролью, филиалами и userId (→ видит только свои данные).
+  app.post("/api/mvp/auth/login", ah(async (req, res) => {
+    const login = String(req.body?.login || "").trim();
+    const password = String(req.body?.password || "");
+    if (!login || !password) return res.status(400).json({ error: "Введите логин и пароль" });
+    if (!supabaseEnabled) {
+      // Демо-режим без БД: сотрудников с паролями нет — подсказываем демо-вход.
+      return res.status(503).json({ error: "База не подключена — используйте демо-вход по роли" });
+    }
+    const digits = login.replace(/\D/g, "");
+    const ors = [`login.eq.${login}`, `email.eq.${login}`];
+    if (digits.length >= 5) ors.push(`phone.like.*${digits.slice(-7)}*`);
+    const rows = await supabaseFetch<any[]>(
+      "users",
+      `select=id,role,full_name,branch_id,branch_ids,status,phone,email,login,password_hash&organization_id=eq.${orgId}&or=(${ors.join(",")})&limit=20`
+    ).catch(() => [] as any[]);
+    // Точное совпадение логина/email/телефона (без чужих по частичному phone-like).
+    const norm = (v: any) => String(v || "").trim().toLowerCase();
+    const loginLc = norm(login);
+    const candidate = rows.find((u) =>
+      norm(u.login) === loginLc || norm(u.email) === loginLc ||
+      (digits.length >= 5 && String(u.phone || "").replace(/\D/g, "").slice(-10) === digits.slice(-10))
+    );
+    if (!candidate) return res.status(401).json({ error: "Неверный логин или пароль" });
+    if (candidate.status && candidate.status !== "active") {
+      return res.status(403).json({ error: "Учётная запись неактивна. Обратитесь к владельцу." });
+    }
+    if (!verifyPassword(password, candidate.password_hash)) {
+      return res.status(401).json({ error: "Неверный логин или пароль" });
+    }
+    const branchIds: string[] = Array.isArray(candidate.branch_ids) && candidate.branch_ids.length
+      ? candidate.branch_ids.filter(Boolean)
+      : (candidate.branch_id ? [candidate.branch_id] : []);
+    const token = signAuthToken({
+      sub: candidate.id, role: candidate.role, org: orgId,
+      branchId: branchIds[0] || candidate.branch_id || null, branchIds,
+      name: candidate.full_name || "Сотрудник",
+    });
+    // Отметка последнего входа — не критично для ответа.
+    supabaseFetch("users", `id=eq.${candidate.id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ last_login_at: new Date().toISOString() }) }).catch(() => { /* no-op */ });
+    res.json({
+      token,
+      role: candidate.role,
+      userId: candidate.id,
+      fullName: candidate.full_name || "Сотрудник",
+      branchIds,
+    });
+  }));
 
   app.get("/api/mvp/bootstrap", async (req, res) => {
     const session = getSession(req);
@@ -1238,7 +1387,10 @@ export function registerMvpApi(app: express.Express) {
         status: payload.status || "lead",
         manual_status: payload.manualStatus || null,
         skill_level: payload.skillLevel || null,
-        comment: payload.comment || null
+        comment: payload.comment || null,
+        // Личный кабинет заводится сразу при добавлении ученика (миграция 046):
+        // вход по телефону, пароль ученик создаёт сам при первом входе.
+        access_enabled: true
       })
     });
     await logStatusEvent(session, inserted[0]?.id, inserted[0]?.status, null, payload.branchId);
@@ -2643,6 +2795,21 @@ export function registerMvpApi(app: express.Express) {
     const role = String(value || "teacher");
     return (allowedRoles as readonly string[]).includes(role) ? role : "teacher";
   };
+  // Статус учётной записи: активен/неактивен (неактивный не может войти).
+  const normalizeStatus = (value: unknown) => (String(value) === "inactive" ? "inactive" : "active");
+  // До 2 филиалов ответственности (мультифилиальность, миграция 046).
+  const normalizeBranchIds = (payload: any): string[] => {
+    const arr = Array.isArray(payload.branchIds) ? payload.branchIds : [];
+    const single = payload.branchId ? [payload.branchId] : [];
+    return Array.from(new Set([...arr, ...single].filter(Boolean))).slice(0, 2);
+  };
+  // Понятная ошибка при конфликте уникальности логина/email.
+  const friendlyUserError = (raw: string) => {
+    const s = String(raw || "");
+    if (/duplicate key|unique/i.test(s) && /login/i.test(s)) return "Такой логин уже занят";
+    if (/duplicate key|unique/i.test(s) && /email/i.test(s)) return "Такой email уже используется";
+    return s || "Не удалось сохранить сотрудника";
+  };
 
   app.post("/api/mvp/teachers", async (req, res) => {
     const session = getSession(req);
@@ -2651,24 +2818,35 @@ export function registerMvpApi(app: express.Express) {
     if (!payload.name || !String(payload.name).trim()) {
       return res.status(400).json({ error: "Имя обязательно" });
     }
+    const branchIds = normalizeBranchIds(payload);
+    // Логин: явный login, иначе телефон. Пароль — хэшируем; без пароля вход
+    // невозможен (метка "demo-only"), поэтому для админ/управляющего он обязателен.
+    const login = String(payload.login || payload.phone || "").trim() || null;
+    const role = normalizeRole(payload.role);
+    const password = String(payload.password || "");
+    if (role !== "teacher" && !password) {
+      return res.status(400).json({ error: "Для админа/управляющего задайте пароль" });
+    }
     try {
       const inserted = await supabaseFetch<any[]>("users", "", {
         method: "POST",
         body: JSON.stringify({
           organization_id: session.organizationId,
-          branch_id: payload.branchId || null,
-          role: normalizeRole(payload.role),
+          branch_id: branchIds[0] || payload.branchId || null,
+          branch_ids: branchIds,
+          role,
           full_name: String(payload.name).trim(),
           phone: payload.phone || null,
+          login,
           email: payload.email || `staff-${Date.now()}@echogor.demo`,
-          password_hash: "demo-only",
+          password_hash: password ? hashPassword(password) : "demo-only",
           specialization: payload.specialization || null,
-          status: "active"
+          status: normalizeStatus(payload.status)
         })
       });
       res.status(201).json({ teacher: mapDbUserToTeacher(inserted[0]) });
     } catch (error: any) {
-      res.status(400).json({ error: error.message || "Не удалось создать преподавателя" });
+      res.status(400).json({ error: friendlyUserError(error.message) });
     }
   });
 
@@ -2680,8 +2858,18 @@ export function registerMvpApi(app: express.Express) {
     if (payload.name !== undefined) updates.full_name = String(payload.name).trim();
     if (payload.phone !== undefined) updates.phone = payload.phone || null;
     if (payload.specialization !== undefined) updates.specialization = payload.specialization || null;
-    if (payload.branchId !== undefined) updates.branch_id = payload.branchId || null;
+    if (payload.login !== undefined) updates.login = String(payload.login || "").trim() || null;
+    if (payload.status !== undefined) updates.status = normalizeStatus(payload.status);
     if (payload.role !== undefined) updates.role = normalizeRole(payload.role);
+    if (payload.branchId !== undefined || payload.branchIds !== undefined) {
+      const branchIds = normalizeBranchIds(payload);
+      updates.branch_ids = branchIds;
+      updates.branch_id = branchIds[0] || null;
+    }
+    // Пароль меняем только если прислан непустой — иначе оставляем прежний.
+    if (payload.password !== undefined && String(payload.password)) {
+      updates.password_hash = hashPassword(String(payload.password));
+    }
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({ error: "Нет полей для обновления" });
     }
@@ -2694,7 +2882,7 @@ export function registerMvpApi(app: express.Express) {
       if (!rows[0]) return res.status(404).json({ error: "Сотрудник не найден" });
       res.json({ teacher: mapDbUserToTeacher(rows[0]) });
     } catch (error: any) {
-      res.status(400).json({ error: error.message || "Не удалось обновить преподавателя" });
+      res.status(400).json({ error: friendlyUserError(error.message) });
     }
   });
 
@@ -2714,6 +2902,24 @@ export function registerMvpApi(app: express.Express) {
       res.status(400).json({ error: error.message || "Не удалось удалить преподавателя" });
     }
   });
+
+  // Список сотрудников (для раздела «Сотрудники» в Настройках сети).
+  // По умолчанию — админы и управляющие (владельцем управляют отдельно); ?roles=all
+  // вернёт всех, включая педагогов и владельца. Только для владельца.
+  app.get("/api/mvp/staff", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!ownerOnly(session, res)) return;
+    const rolesParam = String(req.query.roles || "").trim();
+    const wantAll = rolesParam === "all";
+    if (!supabaseEnabled) {
+      const list = initialTeachers.map((t: any) => ({ ...t, login: t.phone || "", status: "active", branchIds: t.branchId ? [t.branchId] : [], hasPassword: false }));
+      return res.json({ staff: wantAll ? list : [] });
+    }
+    const rows = await supabaseFetch<any[]>("users", `select=*&organization_id=eq.${orgId}&status=neq.archived`).catch(() => [] as any[]);
+    const mapped = rows.map(mapDbUserToTeacher);
+    const staff = wantAll ? mapped : mapped.filter((u) => u.role === "admin" || u.role === "branch_manager");
+    res.json({ staff });
+  }));
 
   // ───────────────── Каталог событий кавказского танца (турниры + концерты) ──
 
@@ -5168,6 +5374,18 @@ export function registerMvpApi(app: express.Express) {
   // ======================================================================
   // mock-хранилище состояния доступа: studentId -> { token, code, level(ручной|null), enabled, by, at }
   const mockStudentAccess: Record<string, { token: string; code: string; level: "junior" | "senior" | null; enabled: boolean; by: string | null; at: string }> = {};
+  // mock-хранилище персональных паролей ученика (миграция 046 — без БД). studentId -> hash.
+  const mockStudentPasswords: Record<string, string> = {};
+
+  // Собрать подписанную сессию ученика (serverless-safe) + сохранить кэш-токен.
+  const issueStudentSession = (opts: { studentId: string; name: string; level: "junior" | "senior"; branchId: string | null }) => {
+    const authToken = signAuthToken({
+      sub: `student-${opts.studentId}`, role: "student", org: orgId,
+      branchId: opts.branchId, studentId: opts.studentId, level: opts.level, name: opts.name,
+    });
+    studentAccessTokens.set(authToken, { studentId: opts.studentId, level: opts.level, branchId: opts.branchId });
+    return { studentId: opts.studentId, name: opts.name, level: opts.level, token: authToken, tabs: tabsForLevel(opts.level) };
+  };
 
   const ageFromBirthday = (b?: string | null): number | null => {
     if (!b) return null;
@@ -5291,26 +5509,37 @@ export function registerMvpApi(app: express.Express) {
     const password = String(body.password || "");
     const badCred = () => res.status(401).json({ error: "Код недействителен или доступ отозван" });
 
-    // ── Приоритетный путь: телефон + пароль (пароль у всех учеников стандартный) ──
+    // ── Приоритетный путь: вход по номеру телефона + ПЕРСОНАЛЬНЫЙ пароль (046) ──
+    // Первый вход — без пароля: если пароль ещё не задан (password_set=false),
+    // возвращаем { needsPassword: true } → фронт показывает обязательный экран
+    // создания пароля (пропустить нельзя), затем /student-auth/set-password.
     if (phoneDigits) {
       if (phoneDigits.length < 10) return res.status(400).json({ error: "Введите номер телефона полностью" });
-      if (password !== STUDENT_STANDARD_PASSWORD) return res.status(401).json({ error: "Неверный пароль" });
       const last10 = (v: any) => String(v || "").replace(/\D/g, "").slice(-10);
       if (!supabaseEnabled) {
         const s: any = initialStudents.find((x: any) => last10(x.phone) === phoneDigits || last10(x.parentPhone) === phoneDigits);
         if (!s) return res.status(404).json({ error: "Ученик с таким номером не найден" });
         const level = effectiveAccessLevel(mockStudentAccess[s.id]?.level ?? null, s.age ?? ageFromBirthday(s.birthday));
-        return res.json({ studentId: s.id, name: s.name, level, token: null, tabs: tabsForLevel(level) });
+        const stored = mockStudentPasswords[s.id];
+        if (!stored) return res.json({ needsPassword: true, studentId: s.id, name: s.name, phone: phoneDigits });
+        if (!verifyPassword(password, stored)) return res.status(401).json({ error: "Неверный пароль" });
+        return res.json(issueStudentSession({ studentId: s.id, name: s.name, level, branchId: s.branchId ?? null }));
       }
       const tail7 = phoneDigits.slice(-7);
       // Внимание: колонки full_name в students НЕТ — её наличие в select ломает
       // весь запрос PostgREST (400), .catch() превращал это в «ученик не найден».
-      const rows = await supabaseFetch<any[]>("students", `select=id,first_name,last_name,birthday,branch_id,access_level,phone,parent_phone&or=(phone.like.*${tail7}*,parent_phone.like.*${tail7}*)&limit=20`).catch(() => [] as any[]);
+      const rows = await supabaseFetch<any[]>("students", `select=id,first_name,last_name,birthday,branch_id,access_level,phone,parent_phone,password_hash,password_set&or=(phone.like.*${tail7}*,parent_phone.like.*${tail7}*)&limit=20`).catch(() => [] as any[]);
       const r = rows.find((x) => last10(x.phone) === phoneDigits || last10(x.parent_phone) === phoneDigits);
       if (!r) return res.status(404).json({ error: "Ученик с таким номером не найден" });
       const name = [r.first_name, r.last_name].filter(Boolean).join(" ") || "Ученик";
       const level = effectiveAccessLevel(r.access_level, ageFromBirthday(r.birthday));
-      return res.json({ studentId: r.id, name, level, token: null, tabs: tabsForLevel(level) });
+      // Первый вход (пароль не задан) — либо старый общий "12345" не сработает,
+      // предлагаем создать свой пароль.
+      if (!r.password_set || !r.password_hash) {
+        return res.json({ needsPassword: true, studentId: r.id, name, phone: phoneDigits });
+      }
+      if (!verifyPassword(password, r.password_hash)) return res.status(401).json({ error: "Неверный пароль" });
+      return res.json(issueStudentSession({ studentId: r.id, name, level, branchId: r.branch_id ?? null }));
     }
 
     if (!token && !code) return res.status(400).json({ error: "Введите номер телефона и пароль" });
@@ -5325,9 +5554,7 @@ export function registerMvpApi(app: express.Express) {
       if (!s) return res.status(404).json({ error: "Ученик не найден" });
       const rec = mockStudentAccess[studentId];
       const level = effectiveAccessLevel(rec?.level ?? null, s.age ?? ageFromBirthday(s.birthday));
-      const outToken = rec?.token || token || "";
-      if (outToken) studentAccessTokens.set(outToken, { studentId, level, branchId: s.branchId ?? null });
-      return res.json({ studentId, name: s.name, level, token: outToken || null, tabs: tabsForLevel(level) });
+      return res.json(issueStudentSession({ studentId, name: s.name, level, branchId: s.branchId ?? null }));
     }
 
     const filter = token
@@ -5338,9 +5565,41 @@ export function registerMvpApi(app: express.Express) {
     if (!r) return badCred();
     const name = [r.first_name, r.last_name].filter(Boolean).join(" ") || r.full_name || "Ученик";
     const level = effectiveAccessLevel(r.access_level, ageFromBirthday(r.birthday));
-    const outToken = r.access_token || token || "";
-    if (outToken) studentAccessTokens.set(outToken, { studentId: r.id, level, branchId: r.branch_id ?? null });
-    res.json({ studentId: r.id, name, level, token: outToken || null, tabs: tabsForLevel(level) });
+    res.json(issueStudentSession({ studentId: r.id, name, level, branchId: r.branch_id ?? null }));
+  }));
+
+  // ── Первый вход ученика: создание своего пароля (обязательный шаг, миграция 046). ──
+  // Вызывается после того, как /student-auth вернул { needsPassword: true }.
+  // Находим ученика по телефону, ставим password_hash + password_set=true и сразу
+  // выдаём сессию — ученик попадает в кабинет.
+  app.post("/api/mvp/student-auth/set-password", ah(async (req, res) => {
+    const body = req.body || {};
+    const phoneDigits = String(body.phone || "").replace(/\D/g, "").slice(-10);
+    const password = String(body.password || "");
+    if (phoneDigits.length < 10) return res.status(400).json({ error: "Введите номер телефона полностью" });
+    if (password.length < 4) return res.status(400).json({ error: "Пароль должен быть не короче 4 символов" });
+    const last10 = (v: any) => String(v || "").replace(/\D/g, "").slice(-10);
+    if (!supabaseEnabled) {
+      const s: any = initialStudents.find((x: any) => last10(x.phone) === phoneDigits || last10(x.parentPhone) === phoneDigits);
+      if (!s) return res.status(404).json({ error: "Ученик с таким номером не найден" });
+      mockStudentPasswords[s.id] = hashPassword(password);
+      const level = effectiveAccessLevel(mockStudentAccess[s.id]?.level ?? null, s.age ?? ageFromBirthday(s.birthday));
+      return res.json(issueStudentSession({ studentId: s.id, name: s.name, level, branchId: s.branchId ?? null }));
+    }
+    const tail7 = phoneDigits.slice(-7);
+    const rows = await supabaseFetch<any[]>("students", `select=id,first_name,last_name,birthday,branch_id,access_level,phone,parent_phone,password_set&or=(phone.like.*${tail7}*,parent_phone.like.*${tail7}*)&limit=20`).catch(() => [] as any[]);
+    const r = rows.find((x) => last10(x.phone) === phoneDigits || last10(x.parent_phone) === phoneDigits);
+    if (!r) return res.status(404).json({ error: "Ученик с таким номером не найден" });
+    // Пароль уже задан раньше — не даём переустановить без старого (безопасность):
+    // смену делаем в кабинете. Здесь только ПЕРВАЯ установка.
+    if (r.password_set) return res.status(409).json({ error: "Пароль уже создан — войдите с ним" });
+    await supabaseFetch("students", `id=eq.${r.id}`, {
+      method: "PATCH", headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({ password_hash: hashPassword(password), password_set: true, access_enabled: true }),
+    });
+    const name = [r.first_name, r.last_name].filter(Boolean).join(" ") || "Ученик";
+    const level = effectiveAccessLevel(r.access_level, ageFromBirthday(r.birthday));
+    res.json(issueStudentSession({ studentId: r.id, name, level, branchId: r.branch_id ?? null }));
   }));
 
   // ======================================================================

@@ -243,16 +243,15 @@ const ownerTabs: { id: OwnerTab; label: string; short: string; icon: React.Eleme
   { id: "reports", label: "Отчётность", short: "Отчёты", icon: FileSpreadsheet },
   { id: "performances", label: "Выступления", short: "Сцена", icon: Mic2 },
   { id: "products", label: "Товары и склад", short: "Товары", icon: ShoppingBag },
-  { id: "documents", label: "Документолог", short: "Договоры", icon: FileText },
   { id: "marketing", label: "Маркетинг", short: "Маркетинг", icon: Send },
-  { id: "events", label: "Концерты", short: "Концерты", icon: Trophy },
   { id: "feed", label: "Афиша СНГ", short: "Афиша", icon: CalendarDays },
   { id: "announcements", label: "Объявления", short: "Связь", icon: Megaphone },
-  { id: "analytics", label: "Аналитика", short: "BI", icon: BarChart3 },
-  { id: "ai", label: "AI Assistant", short: "AI", icon: Sparkles },
   { id: "aihub", label: "AI HUB", short: "AI HUB", icon: Bot },
   { id: "settings", label: "Настройки сети", short: "Еще", icon: Settings }
 ];
+// Удалённые вкладки (документолог, аналитика, концерты, AI Assistant) — всё это
+// уже есть в дашборде/других разделах. Их render-блоки ниже остаются как dead code,
+// но в меню и hash-роутинг больше не попадают (ownerTabs — единственный источник).
 
 export function OwnerExecutiveWorkspace({
   branches,
@@ -8433,46 +8432,266 @@ function AdOfferStudio({ groups, branches, teachers }: { groups: Group[]; branch
   );
 }
 
+type SettingsSub = "staff" | "plans" | "statuses" | "dicts";
+const SETTINGS_SUBS: { id: SettingsSub; label: string; icon: React.ElementType }[] = [
+  { id: "staff", label: "Сотрудники", icon: Users },
+  { id: "plans", label: "Тарифы", icon: Coins },
+  { id: "statuses", label: "Статусы учеников", icon: ClipboardList },
+  { id: "dicts", label: "Справочники", icon: Settings },
+];
+
 function NetworkSettingsView({ branches, teachers, subscriptionPlans = [], onCreatePlan, onUpdatePlan, onDeletePlan }: { branches: Branch[]; teachers: Teacher[]; subscriptionPlans?: SubscriptionPlan[]; onCreatePlan?: (data: any) => Promise<boolean>; onUpdatePlan?: (id: string, data: any) => Promise<boolean>; onDeletePlan?: (id: string) => Promise<boolean> }) {
   const [showStatusSettings, setShowStatusSettings] = useState(false);
+  const [sub, setSub] = useState<SettingsSub>("staff");
   return (
-    <OwnerScreen title="Настройки сети" subtitle="Тарифы, статусы учеников, справочники (рекламные источники и др.), роли и audit log.">
-      {/* Тарифы абонементов: владелец задаёт названия, кол-во занятий, срок и цену. */}
-      <SubscriptionPlansManager plans={subscriptionPlans} branches={branches} onCreatePlan={onCreatePlan} onUpdatePlan={onUpdatePlan} onDeletePlan={onDeletePlan} />
+    <OwnerScreen title="Настройки сети" subtitle="Всё управление в одном месте: сотрудники и доступы, тарифы, статусы учеников, справочники.">
+      {/* Подвкладки — вся конфигурация сети собрана и разложена по разделам. */}
+      <div className="flex flex-wrap gap-2">
+        {SETTINGS_SUBS.map((s) => {
+          const Icon = s.icon;
+          const active = sub === s.id;
+          return (
+            <button key={s.id} onClick={() => setSub(s.id)}
+              className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-bold transition ${active ? "bg-[#C5A059] text-black" : "border border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.07]"}`}>
+              <Icon className="h-4 w-4" /> {s.label}
+            </button>
+          );
+        })}
+      </div>
 
-      {/* Статусы учеников: те же настройки, что открываются из вкладки «Ученики». */}
-      <section className="rounded-[1.75rem] border border-white/10 bg-gradient-to-br from-[#141414] to-black p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h3 className="text-sm font-black uppercase tracking-wider text-white">Статусы учеников</h3>
-            <p className="mt-1 text-xs text-slate-500">Цвета автостатусов и список ручных статусов (Каникулы, Заморозка и т.д.). Автостатусы система ставит сама — их переименовать нельзя.</p>
+      {sub === "staff" && <EmployeesManager branches={branches} />}
+
+      {sub === "plans" && (
+        <SubscriptionPlansManager plans={subscriptionPlans} branches={branches} onCreatePlan={onCreatePlan} onUpdatePlan={onUpdatePlan} onDeletePlan={onDeletePlan} />
+      )}
+
+      {sub === "statuses" && (
+        <section className="rounded-[1.75rem] border border-white/10 bg-gradient-to-br from-[#141414] to-black p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-black uppercase tracking-wider text-white">Статусы учеников</h3>
+              <p className="mt-1 text-xs text-slate-500">Цвета автостатусов и список ручных статусов (Каникулы, Заморозка и т.д.). Автостатусы система ставит сама — их переименовать нельзя.</p>
+            </div>
+            <button onClick={() => setShowStatusSettings(true)} className="rounded-2xl bg-[#C5A059] px-4 py-2 text-sm font-bold text-black transition hover:bg-[#d4b06a]">
+              Настроить статусы
+            </button>
           </div>
-          <button onClick={() => setShowStatusSettings(true)} className="rounded-2xl bg-[#C5A059] px-4 py-2 text-sm font-bold text-black transition hover:bg-[#d4b06a]">
-            Настроить статусы
-          </button>
-        </div>
-      </section>
+        </section>
+      )}
       {showStatusSettings && <StatusSettings roleHeader="owner" onClose={() => setShowStatusSettings(false)} />}
 
-      {/* Настраиваемые справочники: владелец добавляет значения, остальные выбирают из готового. */}
-      <section className="rounded-[1.75rem] border border-white/10 bg-gradient-to-br from-[#141414] to-black p-5">
-        <h3 className="text-sm font-black uppercase tracking-wider text-white">Справочники</h3>
-        <p className="mt-1 text-xs text-slate-500">Эти списки используются в выпадающих полях. Управленцы и администраторы выбирают из готовых значений.</p>
-        <div className="mt-4 grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
-          <LeadSourcesEditor />
-          <SettingsListEditor kind="performance_type" title="Типы выступлений" />
-          <SettingsListEditor kind="product_category" title="Категории товаров" />
-          <SettingsListEditor kind="group_level" title="Уровни групп" />
-        </div>
-      </section>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <ExecutivePanel icon={<Shield />} title="RBAC владельца" text="Полный доступ к сети, филиалам, финансам, ролям, настройкам, лицензии и audit log." />
-        <ExecutivePanel icon={<Settings />} title="Глобальные настройки" text={`Филиалов: ${branches.length}. Преподавателей: ${teachers.length}. Управление тарифами и шаблонами уведомлений.`} />
-        <ExecutivePanel icon={<CheckCircle />} title="Защищенные действия" text="Удаление филиалов, экспорт данных и доступ к чувствительным данным проходят через подтверждение и журналирование." />
-        <ExecutivePanel icon={<Activity />} title="Audit log сети" text="Все действия владельца, руководителей филиалов, администраторов и преподавателей фиксируются." />
-      </div>
+      {sub === "dicts" && (
+        <section className="rounded-[1.75rem] border border-white/10 bg-gradient-to-br from-[#141414] to-black p-5">
+          <h3 className="text-sm font-black uppercase tracking-wider text-white">Справочники</h3>
+          <p className="mt-1 text-xs text-slate-500">Эти списки используются в выпадающих полях. Управленцы и администраторы выбирают из готовых значений.</p>
+          <div className="mt-4 grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
+            <LeadSourcesEditor />
+            <SettingsListEditor kind="performance_type" title="Типы выступлений" />
+            <SettingsListEditor kind="product_category" title="Категории товаров" />
+            <SettingsListEditor kind="group_level" title="Уровни групп" />
+          </div>
+          <div className="mt-4 rounded-2xl border border-white/5 bg-black/30 p-4 text-xs text-slate-500">
+            <p className="font-bold text-slate-300">Настройки, живущие в своих разделах (по контексту):</p>
+            <ul className="mt-2 space-y-1 list-disc pl-4">
+              <li><span className="text-slate-300">Залы</span> — вкладка «Филиалы» (у каждого филиала свои залы).</li>
+              <li><span className="text-slate-300">Статьи доходов/расходов, счета</span> — вкладка «Бухгалтерия» → «Настройки».</li>
+              <li><span className="text-slate-300">Мотивация (бонусы за план)</span> — вкладка «Планирование (БДР)».</li>
+            </ul>
+          </div>
+        </section>
+      )}
     </OwnerScreen>
+  );
+}
+
+// ── Раздел «Сотрудники» (Настройки сети): администраторы и управляющие. ────────
+// Заводим учётные записи с логином/паролем/ролью/статусом/филиалами (до 2) —
+// эти данные работают при входе (миграция 046). Педагоги добавляются во вкладке
+// «Преподаватели»; здесь — только admin и branch_manager.
+type StaffRow = { id: string; name: string; login: string; role: string; status: string; branchIds?: string[]; branchId?: string | null; hasPassword?: boolean };
+const STAFF_ROLE_LABEL: Record<string, string> = { admin: "Администратор", branch_manager: "Управляющий", teacher: "Преподаватель", owner: "Владелец" };
+
+function EmployeesManager({ branches }: { branches: Branch[] }) {
+  const [rows, setRows] = useState<StaffRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+  const [editing, setEditing] = useState<StaffRow | null>(null);
+  const [showForm, setShowForm] = useState(false);
+
+  const load = async () => {
+    setLoading(true); setErr(null);
+    try {
+      const r = await fetch("/api/mvp/staff", { headers: { "x-demo-role": "owner" } });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { setErr(d?.error || `Ошибка ${r.status}`); return; }
+      setRows(d.staff || []);
+    } catch { setErr("Нет связи с сервером"); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, []);
+
+  const remove = async (row: StaffRow) => {
+    if (!window.confirm(`Удалить сотрудника «${row.name}»? Вход в систему станет недоступен.`)) return;
+    try {
+      const r = await fetch(`/api/mvp/teachers/${row.id}`, { method: "DELETE", headers: { "x-demo-role": "owner" } });
+      if (!r.ok) { const d = await r.json().catch(() => ({})); setErr(d?.error || "Не удалось удалить"); return; }
+      await load(); requestDataRefresh();
+    } catch { setErr("Нет связи с сервером"); }
+  };
+
+  const openNew = () => { setEditing(null); setShowForm(true); };
+  const openEdit = (row: StaffRow) => { setEditing(row); setShowForm(true); };
+
+  const branchLabel = (ids?: string[], single?: string | null) => {
+    const list = (ids && ids.length ? ids : (single ? [single] : []));
+    if (!list.length) return "—";
+    return list.map((id) => branches.find((b) => b.id === id)?.name || "?").join(", ");
+  };
+
+  return (
+    <section className="rounded-[1.75rem] border border-white/10 bg-gradient-to-br from-[#141414] to-black p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-black uppercase tracking-wider text-white">Сотрудники · администраторы и управляющие</h3>
+          <p className="mt-1 text-xs text-slate-500">Логин, пароль, роль, статус и филиалы (до 2). Эти данные работают при входе в личный кабинет. Педагогов добавляйте во вкладке «Преподаватели».</p>
+        </div>
+        <button onClick={openNew} className="inline-flex items-center gap-2 rounded-2xl bg-[#C5A059] px-4 py-2 text-sm font-black text-black transition hover:bg-[#d4b06a]">
+          <Plus className="h-4 w-4" /> Добавить сотрудника
+        </button>
+      </div>
+
+      {err && <p className="mt-3 rounded-lg bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-300">{err}</p>}
+
+      <div className="mt-4 space-y-2">
+        {loading && <p className="text-xs text-slate-500">Загрузка…</p>}
+        {!loading && rows.length === 0 && <p className="text-xs text-slate-600">Пока нет администраторов и управляющих. Нажмите «Добавить сотрудника».</p>}
+        {rows.map((row) => (
+          <div key={row.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/5 bg-black/30 px-4 py-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-bold text-white">{row.name}</span>
+                <span className="rounded-full bg-[#C5A059]/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-[#C5A059]">{STAFF_ROLE_LABEL[row.role] || row.role}</span>
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase ${row.status === "active" ? "bg-emerald-500/15 text-emerald-300" : "bg-slate-500/15 text-slate-400"}`}>{row.status === "active" ? "Активен" : "Неактивен"}</span>
+                {!row.hasPassword && <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-black uppercase text-amber-300">нет пароля</span>}
+              </div>
+              <div className="mt-1 text-[11px] text-slate-500">Логин: <span className="text-slate-300">{row.login || "—"}</span> · Филиалы: {branchLabel(row.branchIds, row.branchId)}</div>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button onClick={() => openEdit(row)} className="rounded-lg border border-white/10 p-2 text-slate-300 hover:bg-white/10" title="Редактировать"><Pencil className="h-3.5 w-3.5" /></button>
+              <button onClick={() => remove(row)} className="rounded-lg border border-white/10 p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10" title="Удалить"><Trash2 className="h-3.5 w-3.5" /></button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {showForm && (
+        <EmployeeForm
+          branches={branches}
+          initial={editing}
+          onClose={() => setShowForm(false)}
+          onSaved={async () => { setShowForm(false); await load(); requestDataRefresh(); }}
+        />
+      )}
+    </section>
+  );
+}
+
+function EmployeeForm({ branches, initial, onClose, onSaved }: { branches: Branch[]; initial: StaffRow | null; onClose: () => void; onSaved: () => void }) {
+  const isEdit = Boolean(initial);
+  const [name, setName] = useState(initial?.name || "");
+  const [login, setLogin] = useState(initial?.login || "");
+  const [password, setPassword] = useState("");
+  const [role, setRole] = useState(initial?.role === "branch_manager" ? "branch_manager" : "admin");
+  const [status, setStatus] = useState(initial?.status === "inactive" ? "inactive" : "active");
+  const [branchIds, setBranchIds] = useState<string[]>(initial?.branchIds && initial.branchIds.length ? initial.branchIds : (initial?.branchId ? [initial.branchId] : []));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const hdr = { "Content-Type": "application/json", "x-demo-role": "owner" };
+
+  const toggleBranch = (id: string) => {
+    setBranchIds((cur) => {
+      if (cur.includes(id)) return cur.filter((x) => x !== id);
+      if (cur.length >= 2) return cur; // максимум 2 филиала
+      return [...cur, id];
+    });
+  };
+
+  const save = async () => {
+    if (!name.trim()) { setErr("Введите имя"); return; }
+    if (!login.trim()) { setErr("Введите логин"); return; }
+    if (!isEdit && !password) { setErr("Задайте пароль для входа"); return; }
+    setBusy(true); setErr(null);
+    const body: any = { name: name.trim(), login: login.trim(), role, status, branchIds };
+    if (password) body.password = password;
+    try {
+      const url = isEdit ? `/api/mvp/teachers/${initial!.id}` : "/api/mvp/teachers";
+      const method = isEdit ? "PATCH" : "POST";
+      const r = await fetch(url, { method, headers: hdr, body: JSON.stringify(body) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { setErr(d?.error || `Ошибка ${r.status}`); return; }
+      onSaved();
+    } catch { setErr("Нет связи с сервером"); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[10040] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-lg rounded-3xl border border-white/10 bg-gradient-to-br from-[#161616] to-[#0A0A0A] p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-black text-white">{isEdit ? "Редактировать сотрудника" : "Новый сотрудник"}</h3>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <label className="sm:col-span-2 block">
+            <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">Имя *</span>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Фамилия Имя" className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#C5A059]/60" />
+          </label>
+          <label className="block">
+            <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">Логин *</span>
+            <input value={login} onChange={(e) => setLogin(e.target.value)} placeholder="Телефон или логин" className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#C5A059]/60" />
+          </label>
+          <label className="block">
+            <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">{isEdit ? "Новый пароль" : "Пароль *"}</span>
+            <input type="text" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={isEdit ? "Оставьте пустым — без изменений" : "Пароль для входа"} className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#C5A059]/60" />
+          </label>
+          <label className="block">
+            <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">Роль</span>
+            <select value={role} onChange={(e) => setRole(e.target.value)} className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#C5A059]/60">
+              <option value="admin">Администратор</option>
+              <option value="branch_manager">Управляющий</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">Статус</span>
+            <select value={status} onChange={(e) => setStatus(e.target.value)} className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#C5A059]/60">
+              <option value="active">Активен</option>
+              <option value="inactive">Неактивен</option>
+            </select>
+          </label>
+          <div className="sm:col-span-2">
+            <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">Филиалы (до 2)</span>
+            <div className="mt-1.5 flex flex-wrap gap-2">
+              {branches.length === 0 && <span className="text-xs text-slate-600">Сначала создайте филиалы во вкладке «Филиалы».</span>}
+              {branches.map((b) => {
+                const on = branchIds.includes(b.id);
+                const disabled = !on && branchIds.length >= 2;
+                return (
+                  <button key={b.id} type="button" onClick={() => toggleBranch(b.id)} disabled={disabled}
+                    className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${on ? "bg-[#C5A059] text-black" : disabled ? "border border-white/5 text-slate-600" : "border border-white/10 text-slate-300 hover:bg-white/10"}`}>
+                    {b.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+        {err && <p className="mt-3 rounded-lg bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-300">{err}</p>}
+        <div className="mt-5 flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-xl border border-white/10 px-4 py-2 text-sm font-bold text-slate-300 hover:bg-white/5">Отмена</button>
+          <button onClick={save} disabled={busy} className="rounded-xl bg-[#C5A059] px-5 py-2 text-sm font-black text-black transition hover:bg-[#d4b06a] disabled:opacity-50">{busy ? "Сохранение…" : "Сохранить"}</button>
+        </div>
+      </div>
+    </div>
   );
 }
 

@@ -1,6 +1,14 @@
 import { useState, useEffect, useMemo } from "react";
 import type { Teacher, Branch, Group, Student } from "../../types";
+import { requestDataRefresh } from "../../dataRefresh";
 import "./teachers-proto.css";
+
+/* Ярлык роли (форма) -> id роли в БД. Обратное к roleLabel(). */
+const ROLE_TO_ID: Record<string, string> = {
+  "Преподаватель": "teacher", "Администратор": "admin", "Управляющий": "branch_manager", "Владелец": "owner",
+};
+/* Статус карточки -> статус учётной записи (active/inactive). */
+const statusToAccount = (s?: string): string => (/неактив/i.test(String(s || "")) ? "inactive" : "active");
 
 /* =========================================================================
    Порт статического прототипа «Преподаватели — Эхо Гор CRM».
@@ -84,8 +92,8 @@ function buildTeachers(teachers: Teacher[], branches: Branch[], groups: Group[],
       name: t.name,
       initials: initialsOf(t.name),
       phone: t.phone || "—",
-      login: t.phone || "—",
-      pass: "",
+      login: (t as any).login || t.phone || "—",
+      pass: (t as any).hasPassword ? "********" : "",
       spec: t.specialties && t.specialties.length ? t.specialties.join(", ") : "—",
       branch: branchName(t.branchId),
       cat: null,
@@ -539,13 +547,27 @@ export function TeachersProtoView({ teachers: teachersProp = [], branches = [], 
     if (!form.phone.trim()) { toast("Введите телефон"); return; }
     const parts = name.split(" ");
     const initials = ((parts[0][0] || "") + (parts[1] ? parts[1][0] : "")).toUpperCase();
+    // Логин, роль и филиал для входа в систему (миграция 046).
+    const login = form.login.trim() || form.phone.trim();
+    const role = ROLE_TO_ID[form.rl] || "teacher";
+    const branchId = branches.find((b) => b.name === form.br)?.id || null;
+    const password = String(form.pass || "");
+    // Для админа/управляющего пароль обязателен — иначе войти нельзя.
+    if (role !== "teacher" && !password) { toast("Для админа/управляющего задайте пароль"); return; }
     if (editId) {
       setTeachers((list) => list.map((t) => t.id === editId ? {
         ...t, name, phone: form.phone, spec: form.spec.trim() || "—", branch: form.br, role: form.rl, status: form.st,
-        initials, login: form.login.trim() || form.phone.trim(), pass: form.pass,
+        initials, login, pass: form.pass,
       } : t));
-      /* профиль (категория/даты/статус/заметки) сохраняем на сервере для реального педагога */
+      /* Реальный сотрудник (не локальная карточка) — сохраняем на сервере в users:
+         имя/телефон/логин/роль/филиал/статус + пароль (если задан) + профиль. */
       if (!String(editId).startsWith("local-")) {
+        const body: any = { name, phone: form.phone, login, role, branchId, status: statusToAccount(form.st), specialization: form.spec.trim() || null };
+        if (password) body.password = password;
+        fetch("/api/mvp/teachers/" + editId, { method: "PATCH", headers: JSON_HEADERS, body: JSON.stringify(body) })
+          .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
+          .then(({ ok, d }) => { if (!ok) throw new Error(d?.error || "fail"); requestDataRefresh(); })
+          .catch((e) => toast("Не сохранено: " + (e?.message || "ошибка")));
         const pbody = {
           category: form.ct ? Number(form.ct) : null,
           birthDate: form.birth || null,
@@ -556,27 +578,22 @@ export function TeachersProtoView({ teachers: teachersProp = [], branches = [], 
         fetch("/api/mvp/teachers/" + editId + "/profile", { method: "PATCH", headers: JSON_HEADERS, body: JSON.stringify(pbody) })
           .then((r) => { if (!r.ok) throw new Error("fail"); return r.json(); })
           .then(() => fetchProfileInto(editId))
-          .catch(() => toast("Профиль не сохранён на сервере"));
+          .catch(() => { /* профиль второстепенен */ });
       }
       toast("Сохранено: " + name);
     } else {
-      setTeachers((list) => {
-        const id = "local-" + Date.now();
-        const nt = {
-          id, name, initials, phone: form.phone, spec: form.spec.trim() || "—", branch: form.br, cat: null, role: form.rl, status: form.st,
-          login: form.login.trim() || form.phone.trim(), pass: form.pass,
-          birth: "—", hired: form.hired || "—", years: "—", thanks: 0, ltvMonths: 0, bio: "", studentsCount: 0, fines: {}, leavers: {},
-          byMonth: Object.fromEntries(MONTHS.map((mn) => [mn, null])),
-          groups: [],
-          standards: [],
-          training: [],
-          attest: [],
-          reviews: [],
-          ai: null,
-        };
-        return [...list, nt];
-      });
-      toast("Добавлен преподаватель: " + name);
+      /* Новый сотрудник — создаём НА СЕРВЕРЕ (users), чтобы логин/пароль работали
+         при входе. Карточка появится после перезагрузки данных (requestDataRefresh). */
+      const body: any = { name, phone: form.phone, login, role, branchId, status: statusToAccount(form.st), specialization: form.spec.trim() || null };
+      if (password) body.password = password;
+      fetch("/api/mvp/teachers", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(body) })
+        .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
+        .then(({ ok, d }) => {
+          if (!ok) { toast("Не создан: " + (d?.error || "ошибка")); return; }
+          toast("Добавлен: " + name + (password ? " · вход работает" : ""));
+          requestDataRefresh();
+        })
+        .catch(() => toast("Нет связи с сервером — сотрудник не создан"));
     }
     closeForm();
   };

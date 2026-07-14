@@ -132,6 +132,43 @@ import {
 
 import { getAvailableAchievements, getExecutiveSummary } from "./dataMock";
 
+// ── Настоящая сессия (миграция 046) ──────────────────────────────────────────
+// Подписанный сервером токен сессии (сотрудник/ученик). Храним в localStorage и
+// шлём в заголовке x-auth-token со ВСЕМИ запросами к /api/mvp — это делает
+// перехватчик fetch ниже (один раз при загрузке модуля). Так не нужно править
+// сотню мест, где формируются заголовки, и сессия работает на Vercel (serverless).
+const AUTH_TOKEN_KEY = "echogor:auth-token";
+function setAuthToken(token: string | null) {
+  try {
+    if (token) window.localStorage.setItem(AUTH_TOKEN_KEY, token);
+    else window.localStorage.removeItem(AUTH_TOKEN_KEY);
+  } catch { /* приватный режим — просто без сохранения */ }
+}
+// Сервер отдаёт роли в БД-нотации (branch_manager), фронт использует свои id.
+function serverRoleToClient(role: string): string {
+  if (role === "branch_manager") return "branch";
+  if (["owner", "admin", "teacher", "student"].includes(role)) return role;
+  return "owner";
+}
+if (typeof window !== "undefined" && !(window as any).__echoAuthFetchPatched) {
+  (window as any).__echoAuthFetchPatched = true;
+  const origFetch = window.fetch.bind(window);
+  window.fetch = (input: any, init: RequestInit = {}) => {
+    try {
+      const url = typeof input === "string" ? input : (input instanceof URL ? input.toString() : input?.url);
+      if (url && String(url).includes("/api/mvp")) {
+        const token = window.localStorage.getItem(AUTH_TOKEN_KEY);
+        if (token) {
+          const headers = new Headers(init.headers || (input instanceof Request ? input.headers : undefined));
+          if (!headers.has("x-auth-token")) headers.set("x-auth-token", token);
+          init = { ...init, headers };
+        }
+      }
+    } catch { /* no-op */ }
+    return origFetch(input, init);
+  };
+}
+
 export default function App() {
   // Roles list
   const roles = [
@@ -308,6 +345,14 @@ export default function App() {
   const [studentCodeInput, setStudentCodeInput] = useState<string>("");
   const [studentLoginBusy, setStudentLoginBusy] = useState<boolean>(false);
   const [studentLoginError, setStudentLoginError] = useState<string | null>(null);
+  // Первый вход ученика: обязательный экран создания своего пароля (миграция 046).
+  const [showStudentPwSetup, setShowStudentPwSetup] = useState<boolean>(false);
+  const [pwSetupPhone, setPwSetupPhone] = useState<string>("");
+  const [pwSetupName, setPwSetupName] = useState<string>("");
+  const [pwSetupPass1, setPwSetupPass1] = useState<string>("");
+  const [pwSetupPass2, setPwSetupPass2] = useState<string>("");
+  const [pwSetupBusy, setPwSetupBusy] = useState<boolean>(false);
+  const [pwSetupError, setPwSetupError] = useState<string | null>(null);
   const [mvpDataMode, setMvpDataMode] = useState<"mock" | "supabase">("mock");
   const [mvpDataError, setMvpDataError] = useState<string | null>(null);
   // Единая точка ошибки: баннер + всплывающий тост с причиной.
@@ -482,6 +527,7 @@ export default function App() {
 
   // Применить успешный вход ученика (общий путь для ссылки/QR и кода).
   const applyStudentAuth = (data: any, fallbackToken?: string) => {
+    setAuthToken(data?.token || fallbackToken || null); // сессия для x-auth-token
     setStudentAccessToken(data?.token || fallbackToken || "");
     setStudentAccessLevel(data?.level === "junior" ? "junior" : "senior");
     if (data?.studentId) setSelectedStudentId(data.studentId);
@@ -2534,11 +2580,14 @@ export default function App() {
 
   const handleDesktopLogin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    setDesktopLoginError(null);
 
-    const phone = (desktopEmail || "").replace(/\D/g, "");
+    const loginRaw = (desktopEmail || "").trim();
+    const phone = loginRaw.replace(/\D/g, "");
 
-    // 1) Вход ученика: номер телефона + стандартный пароль (12345).
-    if (phone.length >= 10 && desktopPassword) {
+    // 1) Вход ученика: номер телефона + СВОЙ пароль. Первый вход (пароль ещё не
+    //    задан) → сервер отвечает needsPassword → показываем экран создания пароля.
+    if (phone.length >= 10) {
       setStudentLoginBusy(true);
       try {
         const resp = await fetch("/api/mvp/student-auth", {
@@ -2547,33 +2596,98 @@ export default function App() {
           body: JSON.stringify({ phone, password: desktopPassword }),
         });
         const data = await resp.json().catch(() => ({}));
+        if (resp.ok && data?.needsPassword) {
+          // Первый вход — обязательное создание пароля (пропустить нельзя).
+          setPwSetupPhone(phone);
+          setPwSetupName(data?.name || "");
+          setPwSetupPass1(""); setPwSetupPass2(""); setPwSetupError(null);
+          setShowStudentPwSetup(true);
+          setStudentLoginBusy(false);
+          return;
+        }
         if (resp.ok) {
           addAuditLog("Авторизация ученика", `Вход по телефону +7${phone}. Права: ${data?.level === "junior" ? "маленькая" : "взрослая"} группа`);
           applyStudentAuth(data);
           return;
         }
-        // Телефон совпал с учеником, но пароль неверный — не пускаем дальше.
-        if (resp.status === 401) {
+        if (resp.status === 401) { // телефон ученика, но пароль неверный
           setDesktopLoginError(data?.error || "Неверный пароль");
+          setStudentLoginBusy(false);
           return;
         }
-        // 404 — телефон не принадлежит ученику: пробуем как персонал (демо).
+        // 404 — телефон не принадлежит ученику: пробуем как сотрудника.
       } catch {
-        // нет связи с сервером — падаем в демо-вход персонала
+        // нет связи — попробуем сотрудника/демо ниже
       } finally {
         setStudentLoginBusy(false);
       }
     }
 
-    // 2) Персонал (демо): по умолчанию — Владелец сети.
+    // 2) Настоящий вход сотрудника: логин (email/телефон) + пароль.
+    if (loginRaw && desktopPassword) {
+      try {
+        const resp = await fetch("/api/mvp/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ login: loginRaw, password: desktopPassword }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (resp.ok && data?.token) {
+          setAuthToken(data.token);
+          const role = serverRoleToClient(data.role);
+          setActiveRole(role);
+          setActiveHotspot(null);
+          addAuditLog("Вход сотрудника", `${data.fullName || loginRaw} · роль: ${data.role}`);
+          startLoginVideo("desktop");
+          return;
+        }
+        if (resp.status === 401 || resp.status === 403) {
+          setDesktopLoginError(data?.error || "Неверный логин или пароль");
+          return;
+        }
+        // 503 (нет БД) → демо-фолбэк ниже
+      } catch {
+        // нет связи → демо-фолбэк
+      }
+    }
+
+    // 3) Демо-фолбэк: без валидных данных — Владелец сети (для демонстрации CRM).
+    setAuthToken(null);
     setActiveRole("owner");
-    addAuditLog("Авторизация CRM (Десктоп)", `Вход персонала: ${phone ? "+7" + phone : "Владелец (по умолчанию)"}`);
+    addAuditLog("Демо-вход CRM", loginRaw ? `Демо: ${loginRaw}` : "Владелец (по умолчанию)");
     startLoginVideo("desktop");
   };
 
-  // Быстрый вход выбором роли-плитки на экране входа
+  // Первый вход ученика: сохранить придуманный пароль и войти в кабинет.
+  const submitStudentPwSetup = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setPwSetupError(null);
+    if (pwSetupPass1.length < 4) { setPwSetupError("Пароль должен быть не короче 4 символов"); return; }
+    if (pwSetupPass1 !== pwSetupPass2) { setPwSetupError("Пароли не совпадают"); return; }
+    setPwSetupBusy(true);
+    try {
+      const resp = await fetch("/api/mvp/student-auth/set-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: pwSetupPhone, password: pwSetupPass1 }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) { setPwSetupError(data?.error || "Не удалось сохранить пароль"); return; }
+      addAuditLog("Ученик создал пароль", `Первый вход, телефон +7${pwSetupPhone}`);
+      setShowStudentPwSetup(false);
+      setPwSetupPass1(""); setPwSetupPass2("");
+      applyStudentAuth(data);
+    } catch {
+      setPwSetupError("Нет связи с сервером. Попробуйте ещё раз.");
+    } finally {
+      setPwSetupBusy(false);
+    }
+  };
+
+  // Быстрый вход выбором роли-плитки на экране входа (ДЕМО — без пароля).
   const handleRoleLogin = (roleId: string) => {
     const roleName = roles.find((r) => r.id === roleId)?.name || roleId;
+    setAuthToken(null); // сбрасываем настоящую сессию — это демо-переключение роли
     setActiveRole(roleId);
     setActiveHotspot(null);
     setDesktopLoginError(null);
@@ -2584,6 +2698,43 @@ export default function App() {
   return (
     <div className={`flex flex-col h-screen w-full overflow-hidden bg-[#0A0A0A] text-slate-200 font-sans ${themeMode === "day" ? "day-theme-app" : themeMode === "iman" ? "iman-theme-app" : ""}`}>
       <ToastHost />
+
+      {/* ═══ Первый вход ученика: обязательное создание пароля (миграция 046) ═══
+          Появляется, когда сервич вернул needsPassword. Пропустить нельзя —
+          нет кнопки закрытия, только сохранение пароля открывает кабинет. */}
+      {showStudentPwSetup && (
+        <div className="fixed inset-0 z-[10050] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+          <form onSubmit={submitStudentPwSetup} className="w-full max-w-sm rounded-3xl border border-white/10 bg-gradient-to-br from-[#161616] to-[#0A0A0A] p-6 shadow-2xl">
+            <div className="mb-1 text-xs font-black uppercase tracking-widest text-[#C5A059]">Первый вход</div>
+            <h2 className="text-lg font-black text-white">Придумайте пароль</h2>
+            <p className="mt-1 text-xs text-slate-400">
+              {pwSetupName ? `${pwSetupName}, ` : ""}это ваш первый вход. Задайте пароль — дальше вы будете входить по номеру телефона и этому паролю.
+            </p>
+            <div className="mt-4 space-y-3">
+              <input
+                type="password" autoFocus value={pwSetupPass1}
+                onChange={(e) => setPwSetupPass1(e.target.value)}
+                placeholder="Новый пароль"
+                className="w-full rounded-xl border border-white/10 bg-black/40 px-3.5 py-2.5 text-sm text-white outline-none focus:border-[#C5A059]/60"
+              />
+              <input
+                type="password" value={pwSetupPass2}
+                onChange={(e) => setPwSetupPass2(e.target.value)}
+                placeholder="Повторите пароль"
+                className="w-full rounded-xl border border-white/10 bg-black/40 px-3.5 py-2.5 text-sm text-white outline-none focus:border-[#C5A059]/60"
+              />
+            </div>
+            {pwSetupError && <p className="mt-3 rounded-lg bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-300">{pwSetupError}</p>}
+            <button
+              type="submit" disabled={pwSetupBusy}
+              className="mt-4 w-full rounded-xl bg-[#C5A059] px-4 py-2.5 text-sm font-black text-black transition hover:bg-[#d4b06a] disabled:opacity-50"
+            >
+              {pwSetupBusy ? "Сохранение…" : "Сохранить и войти"}
+            </button>
+            <p className="mt-3 text-center text-[10px] text-slate-600">Этот шаг обязателен для входа в личный кабинет.</p>
+          </form>
+        </div>
+      )}
 
       {/* Desktop login uses the supplied image as the visible UI, with real controls as transparent hotspots. */}
       {/* ═══ Экран входа «Эхогор» — фон-фото + логотип/тэглайн живой вёрсткой ═══
