@@ -30,6 +30,27 @@ async function generateJson(prompt: string): Promise<unknown> {
 }
 
 export function registerGeminiApi(app: express.Express) {
+  // Отчёт для планёрки (ТЗ 14.07): недельный (итоги недели + фокус на текущую)
+  // или месячный (БДР план/факт, прибыль, по филиалам, план на месяц).
+  // Данные собирает фронт из того же движка, что дашборд, — ИИ только оформляет.
+  app.post("/api/gemini/period-report", async (req, res) => {
+    if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });
+    const { kind, metrics } = req.body || {};
+    const isMonth = kind === "month";
+    const audience = isMonth
+      ? "месячная планёрка с управляющими филиалов: разбор БДР план/факт, чистая прибыль, удержание/отток, воронка, показатели по филиалам, и план на текущий месяц"
+      : "недельная планёрка с управляющими: итоги прошедшей недели и фокус-задачи на текущую неделю";
+    const prompt = `Ты — операционный директор сети школ кавказского танца «Эхо Гор» (Казахстан). Составь деловой отчёт для планёрки владельца с управляющими. Тип: ${audience}. Верни СТРОГО JSON по схеме:
+{"title": string, "tldr": string, "sections": [{"title": string, "points": string[]}], "focus": string[]}
+Правила: пиши по-русски, кратко и по делу, как для совещания. Опирайся ТОЛЬКО на переданные цифры, не выдумывай. tldr — 2-3 предложения главного (выполнение плана, прибыль, тренд). sections — 3-5 блоков по темам (Финансы и БДР, Продажи и воронка, Удержание и отток, Заполняемость и набор, Филиалы). В points — конкретика с числами и сравнением (мес/период назад), отмечай что просело/выросло. focus — 3-5 конкретных задач-приоритетов на ${isMonth ? "текущий месяц" : "текущую неделю"} с ответственными (управляющие филиалов), где уместно. Если по какому-то показателю данных нет — не упоминай его.
+Данные периода: ${JSON.stringify(metrics ?? {})}`;
+    try {
+      res.json(await generateJson(prompt));
+    } catch (e: any) {
+      res.status(502).json({ error: e?.message || "AI request failed" });
+    }
+  });
+
   // Owner-level analytics over the whole network.
   app.post("/api/gemini/insights", async (req, res) => {
     if (!genai) return res.status(503).json({ error: "GEMINI_API_KEY is not configured" });

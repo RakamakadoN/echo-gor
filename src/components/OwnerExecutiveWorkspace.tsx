@@ -1053,6 +1053,10 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
       </div>
 
       {dashTab === "today" && (<>
+      {/* ОТЧЁТЫ ДЛЯ ПЛАНЁРОК: итоги недели (баннер по понедельникам) и месяца */}
+      <PlanningReports rawStudents={rawStudents} rawPayments={rawPayments} rawGroups={rawGroups}
+        rawBranches={rawBranches} rawTeachers={rawTeachers} studentArchive={studentArchive} extras={extras} bdr={bdr} />
+
       {/* КРАТКИЙ ОТЧЁТ ИИ ПО ИТОГАМ НА СЕГОДНЯ */}
       <AiDailyBrief m={m} bdr={bdr} pendingExpenses={expenseReqs.length} pendingRefunds={refundReqs.length} />
 
@@ -1860,6 +1864,154 @@ function DailyManagerReport({ m, bdr, scopeLabel, periodLabel, onOpenList, onPay
 // ---------- Краткий отчёт ИИ по итогам на сегодня ----------
 // БДР и прогноз по темпу, сравнение с тем же днём прошлого месяца, отток и
 // удержание, заполненность и сколько записей на пробный нужно для заполнения.
+// ---------- Отчёты для планёрок (ТЗ 14.07) ----------
+// Итоги недели (баннер-напоминание по понедельникам) и итоги месяца по клику.
+// ИИ собирает деловой отчёт под совещание из того же движка, что дашборд.
+function PlanningReports({ rawStudents, rawPayments, rawGroups, rawBranches, rawTeachers, studentArchive, extras, bdr }: any) {
+  const [busy, setBusy] = useState<null | "week" | "month">(null);
+  const [report, setReport] = useState<{ kind: "week" | "month"; data: any } | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const now = new Date();
+  const isMonday = now.getDay() === 1;
+  // Метка «на этой неделе итоги уже открывали» — чтобы баннер не мозолил.
+  const weekKey = (() => { const d = new Date(now); const dow = (d.getDay() + 6) % 7; d.setDate(d.getDate() - dow); return `echogor:weekly-report:${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; })();
+  const [weekDone, setWeekDone] = useState<boolean>(() => { try { return !!localStorage.getItem(weekKey); } catch { return false; } });
+
+  const localMonth = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; })();
+
+  const collect = (mm: any) => ({
+    период: mm.ranges.cur.label,
+    выручка: mm.revenue.total, выручка_к_пред_периоду_pct: mm.revenue.momPct, выручка_год_назад_pct: mm.revenue.yoyPct,
+    средний_чек: mm.avgCheck.all, средний_чек_к_пред_pct: mm.avgCheck.momPct,
+    уникальных_учеников: mm.uniqueStudents.count, уникальных_к_пред_pct: mm.uniqueStudents.momPct,
+    активных_абонементов: mm.activeSubs.count,
+    удержание_pct: mm.retention.pct, удержание_к_пред_pct: mm.retention.momPct,
+    отток_ушло: mm.churn.left, отток_pct: mm.churn.pct,
+    новых_учеников: mm.newStudents.period,
+    воронка: mm.funnel.month,
+    продано_абонементов: mm.sales.soldSubs, уникальных_покупателей: mm.sales.uniqueBuyers,
+    заполненность_pct: mm.occupancy.pct, свободных_мест: mm.occupancy.freeSpots,
+    должники: mm.debtors.total,
+    БДР: bdr?.network ? { план: bdr.network.plan, факт: bdr.network.fact, процент: bdr.network.pct, ожидаемая_прибыль: bdr.network.expectedProfit, план_прибыли: bdr.network.plannedProfit } : null,
+    БДР_по_филиалам: (bdr?.byBranch || []).map((b: any) => ({ филиал: b.name, план: b.plan, факт: b.fact, процент: b.pct, ожидаемая_прибыль: b.expectedProfit })),
+    топ_филиал: mm.ratings?.branches?.byRevenue?.[0]?.name,
+    топ_педагог_удержание: mm.ratings?.teachers?.byRetention?.[0]?.name,
+    требуют_внимания: mm.attentionGroups,
+    точки_роста: mm.growthGroups,
+  });
+
+  const gen = async (kind: "week" | "month") => {
+    setBusy(kind); setErr(null); setReport(null);
+    try {
+      const filters: any = kind === "week" ? { period: "week" } : { period: "monthpick", customStart: localMonth };
+      const mm = computeOwnerDashboard(
+        { students: rawStudents || [], payments: rawPayments || [], groups: rawGroups || [], branches: rawBranches || [], teachers: rawTeachers || [], archive: studentArchive || [] },
+        filters, new Date(), extras
+      );
+      const res = await fetch("/api/gemini/period-report", {
+        method: "POST", headers: { "Content-Type": "application/json", "x-demo-role": "owner" },
+        body: JSON.stringify({ kind, metrics: collect(mm) }),
+      });
+      if (res.status === 503) { setErr("ИИ недоступен: на сервере не настроен ключ Gemini."); return; }
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Ошибка генерации");
+      setReport({ kind, data: await res.json() });
+      if (kind === "week") { try { localStorage.setItem(weekKey, "1"); } catch { /* no-op */ } setWeekDone(true); }
+    } catch (e: any) { setErr(e?.message || "Не удалось сформировать отчёт"); }
+    finally { setBusy(null); }
+  };
+
+  return (
+    <>
+      {/* Баннер-напоминание по понедельникам */}
+      {isMonday && !weekDone && (
+        <button onClick={() => gen("week")} disabled={busy !== null}
+          className="flex w-full items-center gap-3 rounded-[2rem] border border-[#C5A059]/40 bg-gradient-to-r from-[#C5A059]/15 to-transparent p-4 text-left transition hover:brightness-110 disabled:opacity-60">
+          <div className="rounded-2xl bg-[#C5A059] p-2.5 text-black"><CalendarClock className="h-5 w-5" /></div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-black text-white">Понедельник — время недельной планёрки</p>
+            <p className="mt-0.5 text-xs text-slate-400">Нажмите, чтобы ИИ собрал итоги прошедшей недели и задачи на текущую.</p>
+          </div>
+          <span className="shrink-0 rounded-xl bg-[#C5A059] px-3 py-2 text-xs font-black text-black">{busy === "week" ? "Готовлю…" : "Итоги недели ›"}</span>
+        </button>
+      )}
+
+      <section className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">Отчёты для планёрок</p>
+            <p className="mt-1 text-xs text-slate-500">ИИ соберёт готовый отчёт под совещание из данных сети — можно скопировать в планёрку.</p>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => gen("week")} disabled={busy !== null}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-2 text-xs font-bold text-slate-200 transition hover:border-[#C5A059]/40 hover:text-white disabled:opacity-50">
+              <CalendarClock className="h-3.5 w-3.5" /> {busy === "week" ? "Готовлю…" : "Итоги недели"}
+            </button>
+            <button onClick={() => gen("month")} disabled={busy !== null}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-[#C5A059] px-3.5 py-2 text-xs font-black text-black transition hover:brightness-110 disabled:opacity-50">
+              <FileText className="h-3.5 w-3.5" /> {busy === "month" ? "Готовлю…" : "Итоги месяца"}
+            </button>
+          </div>
+        </div>
+        {err && <p className="mt-3 text-xs text-rose-300">{err}</p>}
+      </section>
+
+      {report && <PlanningReportModal kind={report.kind} data={report.data} onClose={() => setReport(null)} />}
+    </>
+  );
+}
+
+function PlanningReportModal({ kind, data, onClose }: { kind: "week" | "month"; data: any; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const sections = Array.isArray(data?.sections) ? data.sections : [];
+  const focus = Array.isArray(data?.focus) ? data.focus : [];
+  const fullText = [
+    data?.title || (kind === "week" ? "Итоги недели" : "Итоги месяца"),
+    data?.tldr ? `\n${data.tldr}` : "",
+    ...sections.map((s: any) => `\n${s.title}\n` + (s.points || []).map((p: string) => `— ${p}`).join("\n")),
+    focus.length ? `\nЗадачи-приоритеты:\n` + focus.map((f: string) => `• ${f}`).join("\n") : "",
+  ].filter(Boolean).join("\n");
+  const copy = async () => { try { await navigator.clipboard.writeText(fullText); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { /* no-op */ } };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="my-6 w-full max-w-2xl rounded-[1.75rem] border border-white/10 bg-[#141414]" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-3 bg-gradient-to-r from-[#C5A059] to-[#d4b06a] px-5 py-4">
+          <div className="min-w-0">
+            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-black/70">{kind === "week" ? "Недельная планёрка" : "Месячная планёрка"}</p>
+            <h3 className="mt-0.5 text-lg font-black text-black">{data?.title || (kind === "week" ? "Итоги недели" : "Итоги месяца")}</h3>
+          </div>
+          <div className="flex shrink-0 gap-2">
+            <button onClick={copy} className="rounded-xl bg-black/20 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-black transition hover:bg-black/30">{copied ? "Скопировано ✓" : "Копировать"}</button>
+            <button onClick={onClose} className="rounded-xl bg-black/20 p-1.5 text-black transition hover:bg-black/30"><X className="h-4 w-4" /></button>
+          </div>
+        </div>
+        <div className="max-h-[70vh] overflow-auto p-5">
+          {data?.tldr && <p className="rounded-2xl border border-[#C5A059]/20 bg-[#C5A059]/[0.06] p-3.5 text-sm leading-relaxed text-slate-100">{data.tldr}</p>}
+          <div className="mt-4 space-y-4">
+            {sections.map((s: any, i: number) => (
+              <div key={i}>
+                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#C5A059]">{s.title}</p>
+                <ul className="mt-1.5 space-y-1.5">
+                  {(s.points || []).map((p: string, j: number) => <li key={j} className="flex gap-2 text-sm text-slate-200"><span className="text-[#C5A059]">•</span><span>{p}</span></li>)}
+                </ul>
+              </div>
+            ))}
+          </div>
+          {focus.length > 0 && (
+            <div className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.05] p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-emerald-300">Задачи-приоритеты{kind === "week" ? " на неделю" : " на месяц"}</p>
+              <ul className="mt-1.5 space-y-1.5">
+                {focus.map((f: string, i: number) => <li key={i} className="flex gap-2 text-sm text-slate-100"><span className="text-emerald-400">✓</span><span>{f}</span></li>)}
+              </ul>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AiDailyBrief({ m, bdr, pendingExpenses, pendingRefunds }: {
   m: any;
   bdr: BdrData | null;
