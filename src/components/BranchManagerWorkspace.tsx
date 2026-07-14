@@ -268,7 +268,7 @@ export function BranchManagerWorkspace({
             />
           )}
           {activeTab === "teachers" && <TeachersView teachers={branchTeachers} groups={branchGroups} students={branchStudents} />}
-          {activeTab === "standards" && <StaffStandardsView role="branch_manager" teachers={branchTeachers} />}
+          {activeTab === "standards" && <StaffStandardsView role="branch_manager" teachers={branchTeachers} groups={branchGroups} />}
           {activeTab === "groups" && (
             <GroupsView
               groups={branchGroups}

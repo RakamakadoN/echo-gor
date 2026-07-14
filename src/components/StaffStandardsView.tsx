@@ -3,7 +3,7 @@ import {
   ShieldCheck, Clock, CheckCircle2, AlertTriangle, XCircle, Camera, Coins,
   Loader2, RefreshCw, Check, X,
 } from "lucide-react";
-import type { Teacher } from "../types";
+import type { Teacher, Group } from "../types";
 
 type ArrivalRow = { teacherId: string; teacherName?: string; date: string; time?: string; late?: boolean; hasPhoto?: boolean };
 type Period = "today" | "week" | "month";
@@ -25,7 +25,10 @@ function periodRange(p: Period): { from: string; to: string } {
   return { from: iso(f), to };
 }
 
-export function StaffStandardsView({ role, teachers = [] }: { role: "owner" | "branch_manager"; teachers?: Teacher[] }) {
+export function StaffStandardsView({ role, teachers = [], groups = [] }: { role: "owner" | "branch_manager"; teachers?: Teacher[]; groups?: Group[] }) {
+  const weekdayToday = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"][almatyToday().getDay()];
+  const teacherHasLessonToday = (teacherId: string) =>
+    groups.some((g: any) => g?.teacherId === teacherId && Array.isArray(g?.days) && g.days.includes(weekdayToday));
   const [period, setPeriod] = useState<Period>("today");
   const [rows, setRows] = useState<ArrivalRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -76,7 +79,7 @@ export function StaffStandardsView({ role, teachers = [] }: { role: "owner" | "b
     for (const t of perTeacher) {
       if (period === "today") {
         const r = t.recs[0];
-        if (!r) noMark++;
+        if (!r) { if (teacherHasLessonToday(t.id)) noMark++; }
         else { r.late ? late++ : onTime++; if (!r.hasPhoto) noPhoto++; }
       } else {
         late += t.recs.filter((r) => r.late).length;
@@ -156,6 +159,7 @@ export function StaffStandardsView({ role, teachers = [] }: { role: "owner" | "b
               key={t.id}
               teacher={t}
               period={period}
+              expectedToday={teacherHasLessonToday(t.id)}
               charged={charged}
               onFine={(reason, amount, date) => setFineFor({ teacherId: t.id, teacherName: t.name, reason, amount, date })}
             />
@@ -181,9 +185,10 @@ function Stat({ label, value, tone, icon: Icon }: { label: string; value: number
   );
 }
 
-function TeacherStandardRow({ teacher, period, charged, onFine }: {
+function TeacherStandardRow({ teacher, period, expectedToday, charged, onFine }: {
   teacher: { id: string; name: string; recs: ArrivalRow[] };
   period: Period;
+  expectedToday?: boolean;
   charged: Record<string, boolean>;
   onFine: (reason: string, amount: number, date: string) => void;
 }) {
@@ -192,9 +197,10 @@ function TeacherStandardRow({ teacher, period, charged, onFine }: {
 
   if (period === "today") {
     const r = teacher.recs[0];
-    const status = !r ? "nomark" : r.late ? "late" : "ontime";
+    const status = !r ? (expectedToday ? "nomark" : "nolesson") : r.late ? "late" : "ontime";
     const badge = status === "ontime" ? { t: `Вовремя · ${r!.time}`, c: "bg-emerald-500/15 text-emerald-300" }
       : status === "late" ? { t: `Опоздание · ${r!.time}`, c: "bg-amber-500/15 text-amber-300" }
+      : status === "nolesson" ? { t: "Нет занятий", c: "bg-white/5 text-slate-400" }
       : { t: "Не отметился", c: "bg-rose-500/15 text-rose-300" };
     const lateKey = `${teacher.id}:${today}:Опоздание`;
     const photoKey = `${teacher.id}:${today}:Нет фото прихода`;
