@@ -138,6 +138,10 @@ import { getAvailableAchievements, getExecutiveSummary } from "./dataMock";
 // перехватчик fetch ниже (один раз при загрузке модуля). Так не нужно править
 // сотню мест, где формируются заголовки, и сессия работает на Vercel (serverless).
 const AUTH_TOKEN_KEY = "echogor:auth-token";
+// Демо-режим (эмуляция ролей без пароля, демо-фолбэк входа) — ТОЛЬКО в разработке.
+// В прод-сборке (import.meta.env.PROD) вход возможен исключительно по логину/паролю,
+// иначе рабочий стол открывался без авторизации, а сервер (строгий режим) отвечал 401.
+const DEMO_MODE = !import.meta.env.PROD;
 function setAuthToken(token: string | null) {
   try {
     if (token) window.localStorage.setItem(AUTH_TOKEN_KEY, token);
@@ -2651,7 +2655,13 @@ export default function App() {
       }
     }
 
-    // 3) Демо-фолбэк: без валидных данных — Владелец сети (для демонстрации CRM).
+    // 3) В ПРОДЕ демо-фолбэка нет: неверный вход остаётся на экране логина.
+    //    Без этого рабочий стол открывался без авторизации (и упирался в 401).
+    if (!DEMO_MODE) {
+      setDesktopLoginError("Неверный логин или пароль. Доступ выдаёт студия — номер телефона +7 и пароль.");
+      return;
+    }
+    // Демо-фолбэк (только разработка): без валидных данных — Владелец сети.
     setAuthToken(null);
     setActiveRole("owner");
     addAuditLog("Демо-вход CRM", loginRaw ? `Демо: ${loginRaw}` : "Владелец (по умолчанию)");
@@ -2891,6 +2901,7 @@ export default function App() {
             </form>
           </div>
 
+          {DEMO_MODE && (
           <button
             type="button"
             onClick={() => {
@@ -2904,6 +2915,7 @@ export default function App() {
             <Smartphone className="w-3.5 h-3.5 text-[#C5A059]" />
             <span>Запустить мобильный кабинет</span>
           </button>
+          )}
 
         </div>
       )}
@@ -3258,7 +3270,9 @@ export default function App() {
 
       {/* Top Header */}
       <header className="h-16 flex items-center justify-between px-4 md:px-6 border-b border-white/5 bg-[#121212] flex-shrink-0">
-        {/* Верхняя полоса: только «Эмуляция роли» (остальное убрано по ТЗ). */}
+        {/* Верхняя полоса «Эмуляция роли» — только в разработке. В проде вход
+            по паролю, переключение ролей без авторизации недопустимо. */}
+        {DEMO_MODE && (
         <div className="mx-auto flex min-w-0 items-center space-x-2 overflow-x-auto bg-white/5 p-1 rounded-xl border border-white/10 max-h-11">
           <span className="hidden lg:inline text-[10px] text-slate-400 font-semibold px-2 uppercase tracking-wide whitespace-nowrap">
             Эмуляция роли:
@@ -3288,6 +3302,7 @@ export default function App() {
             })}
           </div>
         </div>
+        )}
 
         {/* Мобильное меню (только на узких экранах) */}
         <div className="flex items-center gap-2 xl:hidden">
