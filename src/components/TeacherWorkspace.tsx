@@ -1141,15 +1141,18 @@ function GroupDetailsView({ groupId, groups, students, onBack, onNavigateToStude
                     <AttendanceSparkline attendance={stud.attendance} />
                   </div>
                 </div>
-                {/* Micro Attendance Control */}
+                {/* Micro Attendance Control — ярлыки согласованы с журналом (аудит #34):
+                    П=Был, О=Не был, Б=Болел (те же статусы, что в журнале). */}
                 <div className="flex bg-white/5 rounded-lg p-1 gap-1">
                   {([
-                    ["present", "П", "bg-emerald-500 text-white", "bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white"],
-                    ["absent", "О", "bg-rose-500 text-white", "bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white"],
-                    ["sick", "Б", "bg-amber-500 text-black", "bg-amber-500/10 text-amber-500 hover:bg-amber-500 hover:text-white"],
-                  ] as const).map(([st, ltr, activeCls, idleCls]) => (
+                    ["present", "П", "Был", "bg-emerald-500 text-white", "bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white"],
+                    ["absent", "О", "Не был", "bg-rose-500 text-white", "bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white"],
+                    ["sick", "Б", "Болел", "bg-amber-500 text-black", "bg-amber-500/10 text-amber-500 hover:bg-amber-500 hover:text-white"],
+                  ] as const).map(([st, ltr, tip, activeCls, idleCls]) => (
                     <button
                       key={st}
+                      title={tip}
+                      aria-label={tip}
                       onClick={() => markOne(stud.id, st)}
                       className={`w-8 h-8 rounded-md flex items-center justify-center transition-colors font-bold text-xs ${effectiveStatus(stud) === st ? activeCls : idleCls}`}
                     >
