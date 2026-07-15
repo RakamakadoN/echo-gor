@@ -1527,6 +1527,21 @@ export function registerMvpApi(app: express.Express) {
       }
     }
 
+    // Аудит #29: нормализация и базовая валидация телефона (храним цифры;
+    // 7XXXXXXXXXX / 8XXXXXXXXXX → +7). Некорректный (слишком короткий) — отклоняем.
+    const normPhone = (raw: any): string | null | undefined => {
+      const s = String(raw ?? "").trim();
+      if (!s) return null;
+      let d = s.replace(/\D/g, "");
+      if (d.length === 11 && (d[0] === "8" || d[0] === "7")) d = "7" + d.slice(1);
+      if (d.length < 10) return undefined; // сигнал «некорректно»
+      return "+" + d;
+    };
+    const phoneVal = normPhone(payload.phone);
+    if (phoneVal === undefined) return res.status(400).json({ error: "Телефон ученика указан некорректно (нужно не менее 10 цифр)" });
+    const parentPhoneVal = normPhone(payload.parentPhone);
+    if (parentPhoneVal === undefined) return res.status(400).json({ error: "Телефон родителя указан некорректно (нужно не менее 10 цифр)" });
+
     const inserted = await supabaseFetch<any[]>("students", "", {
       method: "POST",
       body: JSON.stringify({
@@ -1538,10 +1553,10 @@ export function registerMvpApi(app: express.Express) {
         last_name: lastName,
         gender: payload.gender || null,
         birthday: payload.birthday || null,
-        phone: payload.phone || null,
+        phone: phoneVal,
         teacher_id: payload.teacherId || null,
         parent_name: payload.parentName || null,
-        parent_phone: payload.parentPhone || null,
+        parent_phone: parentPhoneVal,
         status: payload.status || "lead",
         manual_status: payload.manualStatus || null,
         skill_level: payload.skillLevel || null,
