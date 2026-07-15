@@ -453,7 +453,7 @@ export function AiHubView({ roleHeader = "owner" }: Props) {
           </div>
           <div>
             <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#C5A059]">
-              AI HUB
+              AI-центр
             </p>
             <h2 className="text-xl font-black text-white">Команда ИИ-агентов</h2>
           </div>

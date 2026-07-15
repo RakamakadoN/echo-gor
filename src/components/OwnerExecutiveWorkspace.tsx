@@ -237,7 +237,7 @@ interface OwnerExecutiveWorkspaceProps {
 type OwnerTab = "dashboard" | "branches" | "students" | "teachers" | "payroll" | "journal" | "schedule" | "finance" | "planning" | "meetings" | "reports" | "performances" | "products" | "documents" | "marketing" | "events" | "feed" | "announcements" | "analytics" | "ai" | "aihub" | "settings";
 
 const ownerTabs: { id: OwnerTab; label: string; short: string; icon: React.ElementType }[] = [
-  { id: "dashboard", label: "Dashboard", short: "Главная", icon: Activity },
+  { id: "dashboard", label: "Главная", short: "Главная", icon: Activity },
   { id: "branches", label: "Филиалы", short: "Филиалы", icon: Building2 },
   { id: "students", label: "Ученики", short: "Ученики", icon: Users },
   { id: "teachers", label: "Преподаватели", short: "Педагоги", icon: GraduationCap },
@@ -252,7 +252,7 @@ const ownerTabs: { id: OwnerTab; label: string; short: string; icon: React.Eleme
   { id: "marketing", label: "Маркетинг", short: "Маркетинг", icon: Send },
   { id: "feed", label: "Афиша СНГ", short: "Афиша", icon: CalendarDays },
   { id: "announcements", label: "Объявления", short: "Связь", icon: Megaphone },
-  { id: "aihub", label: "AI HUB", short: "AI HUB", icon: Bot },
+  { id: "aihub", label: "AI-центр", short: "AI-центр", icon: Bot },
   { id: "settings", label: "Настройки сети", short: "Еще", icon: Settings }
 ];
 // Удалённые вкладки (документолог, аналитика, концерты, AI Assistant) — всё это

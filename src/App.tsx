@@ -176,11 +176,11 @@ if (typeof window !== "undefined" && !(window as any).__echoAuthFetchPatched) {
 export default function App() {
   // Roles list
   const roles = [
-    { id: "owner", name: "Владелец сети", icon: Shield, badge: "Network Owner" },
-    { id: "branch", name: "Управляющий", icon: Building2, badge: "Branch Manager" },
-    { id: "admin", name: "Администратор", icon: UserCheck, badge: "Registrar" },
-    { id: "teacher", name: "Преподаватель", icon: GraduationCap, badge: "Sifu/Ustaz" },
-    { id: "student", name: "Ученик", icon: Flame, badge: "Artist Way" },
+    { id: "owner", name: "Владелец сети", icon: Shield, badge: "Владелец" },
+    { id: "branch", name: "Управляющий", icon: Building2, badge: "Управляющий" },
+    { id: "admin", name: "Администратор", icon: UserCheck, badge: "Ресепшн" },
+    { id: "teacher", name: "Преподаватель", icon: GraduationCap, badge: "Педагог" },
+    { id: "student", name: "Ученик", icon: Flame, badge: "Ученик" },
   ];
 
   // Active role

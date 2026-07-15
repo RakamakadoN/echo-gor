@@ -133,7 +133,7 @@ type AdminTab =
 
 const tabs: { id: AdminTab; label: string; short: string; icon: React.ElementType }[] = [
   { id: "dashboard", label: "Смена", short: "Смена", icon: Activity },
-  { id: "visitors", label: "Посетители", short: "Ученики", icon: Users },
+  { id: "visitors", label: "Ученики", short: "Ученики", icon: Users },
   { id: "calendar", label: "Расписание", short: "Расписание", icon: CalendarDays },
   { id: "products", label: "Товары и мерч", short: "Товары", icon: ShoppingBag },
   { id: "echo", label: "Заявки ЭхоБаксов", short: "ЭхоБаксы", icon: Coins },
@@ -452,7 +452,7 @@ function DashboardView({ branches, groups, students, teachers, todayRevenue, mon
   const kpis = [
     { label: "Выручка сегодня", value: money(todayRevenue), detail: "касса филиалов", tone: "gold" },
     { label: "Выручка месяца", value: money(monthRevenue), detail: "абонементы и разовые", tone: "gold" },
-    { label: "Посетители", value: students.length, detail: "активная база", tone: "white" },
+    { label: "Ученики", value: students.length, detail: "активная база", tone: "white" },
     { label: "Посещаемость", value: `${attendanceRate}%`, detail: "по журналам", tone: "emerald" },
     { label: "Долги", value: money(debt), detail: "нужны счета", tone: "rose" },
     { label: "Продления", value: renewals.length, detail: "в ближайшие 7 дней", tone: "rose" },
@@ -490,7 +490,7 @@ function DashboardView({ branches, groups, students, teachers, todayRevenue, mon
       <div className="grid gap-4 xl:grid-cols-[1fr_0.9fr]">
         <Panel title="Операционные модули" kicker="Полный охват">
           <div className="grid gap-3 md:grid-cols-2">
-            <ModuleCard icon={Users} title="Посетители" text="Фильтры, карточка, родитель, статус, баланс, абонемент, посещения, импорт." />
+            <ModuleCard icon={Users} title="Ученики" text="Фильтры, карточка, родитель, статус, баланс, абонемент, посещения, импорт." />
             <ModuleCard icon={ClipboardList} title="Журнал" text="Филиал, группа, месяц, отметки посещаемости, загрузка справок." />
             <ModuleCard icon={CalendarDays} title="Расписание" text="События, преподаватель, пробное занятие, серия занятий, переносы." />
             <ModuleCard icon={Receipt} title="Счета" text="Массовое выставление счетов, SMS/email, скидки, итоговая стоимость." />
@@ -592,9 +592,9 @@ function VisitorsViewLegacy({ students, groups, branches, teachers, payments, se
   return (
     <div className="space-y-5">
       <SectionHeader
-        kicker="Посетители"
+        kicker="Ученики"
         title="CRM учеников и родителей"
-        text="Аналог раздела Посетители: фильтры, таблица, карточка, создание задач, импорт, статусы, платежные правила и рассылки."
+        text="Аналог раздела Ученики: фильтры, таблица, карточка, создание задач, импорт, статусы, платежные правила и рассылки."
         actions={["Импорт", "Создать задачу"]}
       />
       <div className="rounded-[2rem] border border-white/10 bg-[#111] p-4">
@@ -1492,7 +1492,7 @@ function BillingView({ students, groups, branches, payments, debt, renewals, onO
           <div className="rounded-[2rem] border border-white/10 bg-[#111] px-5 py-6 text-sm text-slate-400">Платежей пока нет.</div>
         ) : (
           <DataTable
-            headers={["Дата", "Посетитель", "Филиал", "Тип", "Способ", "Сумма"]}
+            headers={["Дата", "Ученик", "Филиал", "Тип", "Способ", "Сумма"]}
             rows={recentPayments.map((payment: Payment) => [
               payment.date,
               studentName(payment.studentId),

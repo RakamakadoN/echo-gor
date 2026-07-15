@@ -93,7 +93,7 @@ interface BranchManagerWorkspaceProps {
 type BranchTab = "dashboard" | "students" | "teachers" | "groups" | "schedule" | "journal" | "performances" | "planning" | "kpi" | "reconcile" | "payroll" | "products" | "storefront" | "quality" | "settings";
 
 const branchTabs: { id: BranchTab; label: string; short: string; icon: React.ElementType }[] = [
-  { id: "dashboard", label: "Dashboard", short: "Главная", icon: Activity },
+  { id: "dashboard", label: "Главная", short: "Главная", icon: Activity },
   { id: "students", label: "Ученики", short: "Ученики", icon: Users },
   { id: "teachers", label: "Преподаватели", short: "Педагоги", icon: GraduationCap },
   { id: "groups", label: "Группы", short: "Группы", icon: BookOpen },

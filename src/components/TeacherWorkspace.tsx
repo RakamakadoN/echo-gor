@@ -320,7 +320,7 @@ export function TeacherWorkspace({
           <NavItem icon={<CheckSquare className="w-5 h-5" />} label="Ученики" active={activeTab === 'students'} onClick={() => setActiveTab('students')} />
           <NavItem icon={<Star className="w-5 h-5" />} label="Спасибо" active={activeTab === 'feedback'} onClick={() => {setActiveTab('feedback'); setSelectedGroupId(null); setSelectedStudentId(null)}} />
           <NavItem icon={<Coins className="w-5 h-5" />} label="ЭхоБаксы" active={activeTab === 'shop'} onClick={() => {setActiveTab('shop'); setSelectedGroupId(null); setSelectedStudentId(null)}} />
-          <NavItem icon={<BrainCircuit className="w-5 h-5" />} label="Notebook" active={activeTab === 'more'} onClick={() => {setActiveTab('more'); setSelectedGroupId(null); setSelectedStudentId(null)}} />
+          <NavItem icon={<BrainCircuit className="w-5 h-5" />} label="Заметки" active={activeTab === 'more'} onClick={() => {setActiveTab('more'); setSelectedGroupId(null); setSelectedStudentId(null)}} />
         </div>
       </div>
 
