@@ -305,7 +305,7 @@ function TrialsListModal({ trials, onClose, onJournal }: { trials: TrialItem[]; 
                       <div className="truncate text-sm font-bold text-white">{t.studentName}</div>
                       <div className="text-[10px] text-slate-500">{t.time ? `${t.time} · ` : ""}{t.groupName || "—"}</div>
                     </div>
-                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${badge.cls}`}>{badge.text}</span>
+                    <span className={`shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-black ${badge.cls}`}>{badge.text}</span>
                     {wa && (
                       <a href={`https://wa.me/${wa}`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#25D366]/15 text-[#25D366]">
                         <Send className="h-4 w-4" />

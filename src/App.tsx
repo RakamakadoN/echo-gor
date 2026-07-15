@@ -3783,7 +3783,7 @@ export default function App() {
                   Общая база учеников
                 </span>
                 <div className="flex items-baseline space-x-2">
-                  <span className="text-2xl md:text-3xl font-bold text-white tracking-tight">
+                  <span className="text-2xl md:text-3xl font-bold text-white tracking-tight tabular-nums truncate">
                     {metricsSummary.activeStudentsTotal}
                   </span>
                 </div>
@@ -3793,8 +3793,8 @@ export default function App() {
                 <span className="text-[10px] text-slate-500 uppercase tracking-widest mb-1 font-bold">
                   Выручка сети (Месяц)
                 </span>
-                <div className="flex items-baseline space-x-2">
-                  <span className="text-2xl md:text-3xl font-bold text-[#C5A059] tracking-tight">
+                <div className="flex items-baseline flex-wrap gap-y-1 space-x-2 min-w-0">
+                  <span className="text-2xl md:text-3xl font-bold text-[#C5A059] tracking-tight tabular-nums">
                     {metricsSummary.thisMonthRevenue.toLocaleString()} ₸
                   </span>
                   <span className="text-xs text-green-400">Стабильно</span>
@@ -3805,8 +3805,8 @@ export default function App() {
                 <span className="text-[10px] text-slate-500 uppercase tracking-widest mb-1 font-bold">
                   Средняя посещаемость
                 </span>
-                <div className="flex items-baseline space-x-2">
-                  <span className="text-2xl md:text-3xl font-bold text-white tracking-tight">
+                <div className="flex items-baseline flex-wrap gap-y-1 space-x-2 min-w-0">
+                  <span className="text-2xl md:text-3xl font-bold text-white tracking-tight tabular-nums">
                     {metricsSummary.overallAttendanceRate}%
                   </span>
                   <span className="text-xs text-sky-400">Норма</span>
@@ -3817,8 +3817,8 @@ export default function App() {
                 <span className="text-[10px] text-slate-500 uppercase tracking-widest mb-1 font-bold">
                   Касса сегодня
                 </span>
-                <div className="flex items-baseline space-x-2">
-                  <span className="text-2xl md:text-3xl font-bold text-white tracking-tight">
+                <div className="flex items-baseline flex-wrap gap-y-1 space-x-2 min-w-0">
+                  <span className="text-2xl md:text-3xl font-bold text-white tracking-tight tabular-nums">
                     {metricsSummary.todayRevenue.toLocaleString()} ₸
                   </span>
                   <span className="text-xs text-[#C5A059]">Высокая</span>
@@ -4873,8 +4873,8 @@ export default function App() {
                             </span>
                           </div>
                           <div className="flex items-center justify-between gap-2 mt-1">
-                            <h3 className="text-base font-bold text-white flex items-center gap-2">
-                              <span 
+                            <h3 className="text-base font-bold text-white flex items-center gap-2 min-w-0 truncate">
+                              <span
                                 className={`w-2.5 h-2.5 rounded-full inline-block shrink-0 ${
                                   g.studentCount >= 4 ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
                                 }`}
@@ -4882,7 +4882,7 @@ export default function App() {
                               />
                               {g.name}
                             </h3>
-                            <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                            <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 whitespace-nowrap ${
                               g.studentCount >= 4 
                                 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
                                 : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
@@ -7382,13 +7382,13 @@ export default function App() {
                             { day: "Суббота", time: "12:00", subject: "Индивидуальный зачет по ритмике", room: "Малый залец", check: false, recruited: true },
                           ].map((sch, sIdx) => (
                             <div key={sIdx} className="bg-white/5 border border-white/5 p-3 rounded-xl flex items-center justify-between gap-3">
-                              <div className="space-y-1">
+                              <div className="space-y-1 min-w-0">
                                 <div className="flex items-center gap-1.5">
                                   <span className="text-[10px] font-black text-[#C5A059] uppercase tracking-normal">{sch.day}</span>
                                   <span className="text-[9px] text-slate-500 font-mono font-bold">({sch.time})</span>
                                 </div>
-                                <p className="text-xs font-bold text-white leading-tight flex items-center gap-1.5">
-                                  <span 
+                                <p className="text-xs font-bold text-white leading-tight flex items-center gap-1.5 min-w-0">
+                                  <span
                                     className={`w-2 h-2 rounded-full inline-block shrink-0 ${
                                       sch.recruited ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
                                     }`}
@@ -7396,9 +7396,9 @@ export default function App() {
                                   />
                                   {sch.subject}
                                 </p>
-                                <p className="text-[9px] text-slate-500 font-mono italic">🏢 {sch.room}</p>
+                                <p className="text-[9px] text-slate-500 font-mono italic truncate">🏢 {sch.room}</p>
                               </div>
-                              <span className={`text-[9px] uppercase font-black px-1.5 py-0.5 rounded ${
+                              <span className={`shrink-0 whitespace-nowrap text-[9px] uppercase font-black px-1.5 py-0.5 rounded ${
                                 sch.check ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-500/10 text-slate-400 border border-slate-500/20'
                               }`}>
                                 {sch.check ? "Проведено" : "Ожидает"}

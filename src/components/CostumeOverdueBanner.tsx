@@ -40,7 +40,7 @@ export function CostumeOverdueBanner({ role = "admin", onOpen }: { role?: string
       <ul className="mt-2 space-y-1">
         {overdue.slice(0, 6).map((r) => (
           <li key={r.id} className="flex items-center justify-between gap-2 text-xs">
-            <span className="truncate text-slate-200">
+            <span className="min-w-0 truncate text-slate-200">
               <span className="font-bold">{r.costumeName}</span> · {r.renterName}
             </span>
             <span className="shrink-0 font-bold text-rose-300">просрочка {daysLate(r.dueDate)} дн.</span>

@@ -126,7 +126,7 @@ export function TeacherEarningsDashboard({ teacherName, teachers = [] }: Props) 
             <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-[#C5A059]">
               <Wallet className="h-3.5 w-3.5" /> Прогноз ЗП · {month}
             </div>
-            <div className="mt-2 text-3xl font-black text-white md:text-4xl">{money(total)}</div>
+            <div className="mt-2 text-3xl font-black tabular-nums leading-tight text-white md:text-4xl">{money(total)}</div>
             <div className="mt-1 text-xs text-slate-400">
               к концу месяца, если сохраните темп · нажмите для детализации
             </div>
@@ -170,7 +170,7 @@ export function TeacherEarningsDashboard({ teacherName, teachers = [] }: Props) 
             <Target className="h-3.5 w-3.5 text-emerald-400" /> KPI
           </div>
           <div className="mt-2 flex items-baseline gap-1">
-            <span className="text-2xl font-black text-white">{kpiPct}</span>
+            <span className="text-2xl font-black tabular-nums text-white">{kpiPct}</span>
             <span className="text-xs text-slate-500">/ 100</span>
           </div>
           <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
@@ -183,7 +183,7 @@ export function TeacherEarningsDashboard({ teacherName, teachers = [] }: Props) 
           <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
             <AlertTriangle className="h-3.5 w-3.5 text-rose-400" /> Штрафы
           </div>
-          <div className={`mt-2 text-2xl font-black ${finesSum > 0 ? "text-rose-300" : "text-emerald-300"}`}>
+          <div className={`mt-2 text-2xl font-black tabular-nums leading-tight ${finesSum > 0 ? "text-rose-300" : "text-emerald-300"}`}>
             {finesSum > 0 ? money(finesSum) : "0 ₸"}
           </div>
           <div className="mt-2 text-[10px] leading-tight text-slate-500">
@@ -212,7 +212,7 @@ export function TeacherEarningsDashboard({ teacherName, teachers = [] }: Props) 
             <Trophy className={`h-5 w-5 ${isWinner ? "text-[#C5A059]" : "text-slate-400"}`} />
             <h3 className="text-sm font-black uppercase tracking-wider text-white">Гонка «Педагог месяца»</h3>
           </div>
-          <span className="rounded-full bg-[#C5A059]/15 px-2.5 py-1 text-[10px] font-black text-[#C5A059]">приз +{money(TN_TOM_BONUS)}</span>
+          <span className="shrink-0 whitespace-nowrap rounded-full bg-[#C5A059]/15 px-2.5 py-1 text-[10px] font-black text-[#C5A059]">приз +{money(TN_TOM_BONUS)}</span>
         </div>
 
         {isWinner ? (
@@ -302,9 +302,9 @@ function Chip({ label, tone }: { label: string; tone: "base" | "good" | "gold" |
 function KpiBar({ label, value, weight }: { label: string; value: number; weight: number }) {
   return (
     <div>
-      <div className="mb-1 flex items-center justify-between text-[11px]">
-        <span className="text-slate-300">{label}</span>
-        <span className="text-slate-500">{Math.round(value)} · вес {weight}%</span>
+      <div className="mb-1 flex items-center justify-between gap-2 text-[11px]">
+        <span className="min-w-0 truncate text-slate-300">{label}</span>
+        <span className="shrink-0 tabular-nums text-slate-500">{Math.round(value)} · вес {weight}%</span>
       </div>
       <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
         <div className="h-full rounded-full bg-emerald-400" style={{ width: `${Math.min(100, value)}%` }} />
@@ -322,7 +322,7 @@ function FineRow({ f, faded }: { f: { date: string; reason: string; sum: number;
           {f.date}{f.month ? ` · ${f.month}` : ""}{f.comment ? ` · ${f.comment}` : ""}
         </div>
       </div>
-      <div className="shrink-0 text-sm font-black text-rose-300">−{money(f.sum)}</div>
+      <div className="shrink-0 text-sm font-black tabular-nums text-rose-300">−{money(f.sum)}</div>
     </div>
   );
 }
@@ -393,9 +393,9 @@ function SalaryBreakdownModal({ model, onClose }: { model: any; onClose: () => v
               {finesSum > 0 && <LineItem label="Штрафы" value={`− ${money(finesSum)}`} tone="bad" />}
             </div>
 
-            <div className="flex items-center justify-between rounded-2xl bg-[#C5A059]/10 px-4 py-3">
-              <span className="text-sm font-black uppercase tracking-wider text-[#C5A059]">Итого к выплате</span>
-              <span className="text-xl font-black text-white">{money(total)}</span>
+            <div className="flex items-center justify-between gap-3 rounded-2xl bg-[#C5A059]/10 px-4 py-3">
+              <span className="min-w-0 text-sm font-black uppercase tracking-wider text-[#C5A059]">Итого к выплате</span>
+              <span className="shrink-0 text-xl font-black tabular-nums text-white">{money(total)}</span>
             </div>
 
             <p className="flex items-start gap-1.5 text-[11px] leading-relaxed text-slate-500">
@@ -417,9 +417,9 @@ function LineItem({ label, value, bold, tone }: { label: string; value: string; 
     : tone === "muted" ? "text-slate-500"
     : "text-white";
   return (
-    <div className="flex items-center justify-between px-1 text-xs">
-      <span className={bold ? "font-black text-white" : "text-slate-400"}>{label}</span>
-      <span className={`font-bold ${bold ? "text-white" : vcls}`}>{value}</span>
+    <div className="flex items-center justify-between gap-3 px-1 text-xs">
+      <span className={`min-w-0 ${bold ? "font-black text-white" : "text-slate-400"}`}>{label}</span>
+      <span className={`shrink-0 tabular-nums font-bold ${bold ? "text-white" : vcls}`}>{value}</span>
     </div>
   );
 }

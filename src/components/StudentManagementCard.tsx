@@ -1186,8 +1186,8 @@ function SectionHeader({
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-4 border-b border-slate-100 py-2.5 last:border-0">
-      <span className="text-sm text-slate-400">{label}</span>
-      <span className="text-sm font-semibold text-slate-700">{value}</span>
+      <span className="shrink-0 text-sm text-slate-400">{label}</span>
+      <span className="min-w-0 break-words text-sm font-semibold text-slate-700 sm:text-right">{value}</span>
     </div>
   );
 }
@@ -2124,9 +2124,9 @@ function SellSubscriptionPanel({
 
 function SellRow({ k, v, tone }: { k: string; v: string; tone?: "rose" }) {
   return (
-    <div className="flex items-center justify-between border-b border-violet-100/60 py-1 text-sm">
-      <span className="text-slate-500">{k}</span>
-      <span className={`font-bold ${tone === "rose" ? "text-rose-600" : "text-slate-800"}`}>{v}</span>
+    <div className="flex items-center justify-between gap-3 border-b border-violet-100/60 py-1 text-sm">
+      <span className="shrink-0 text-slate-500">{k}</span>
+      <span className={`min-w-0 break-words text-right font-bold ${tone === "rose" ? "text-rose-600" : "text-slate-800"}`}>{v}</span>
     </div>
   );
 }
@@ -2301,9 +2301,9 @@ function SubscriptionDetailModal({
 
 function DetailRow({ k, v, tone, last }: { k: string; v: string; tone?: "rose"; last?: boolean }) {
   return (
-    <div className={`flex items-center justify-between py-2 text-sm ${last ? "" : "border-b border-slate-200/70"}`}>
-      <span className="text-slate-500">{k}</span>
-      <span className={`font-bold ${tone === "rose" ? "text-rose-600" : "text-slate-800"}`}>{v}</span>
+    <div className={`flex items-center justify-between gap-3 py-2 text-sm ${last ? "" : "border-b border-slate-200/70"}`}>
+      <span className="shrink-0 text-slate-500">{k}</span>
+      <span className={`min-w-0 break-words text-right font-bold ${tone === "rose" ? "text-rose-600" : "text-slate-800"}`}>{v}</span>
     </div>
   );
 }
@@ -2519,13 +2519,13 @@ function SubscriptionsTab({
             onClick={() => onOpenSub?.(sub)}
             className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-white p-4 text-left shadow-sm transition hover:border-violet-200 hover:shadow-md"
           >
-            <div>
-              <p className="font-bold text-slate-800">{sub.name}</p>
-              <p className="mt-0.5 text-xs text-slate-400">
+            <div className="min-w-0">
+              <p className="truncate font-bold text-slate-800">{sub.name}</p>
+              <p className="mt-0.5 truncate text-xs text-slate-400">
                 до {sub.validUntil} · осталось {sub.lessonsLeft}/{sub.lessonsTotal} занятий
               </p>
             </div>
-            <div className="flex items-center gap-3 text-right">
+            <div className="flex shrink-0 items-center gap-3 text-right">
               <div>
                 <p className="font-black text-slate-800">{money(sub.price)}</p>
                 <span
@@ -2689,11 +2689,11 @@ function CommentsTab({ student }: { student: Student }) {
               key={note.id}
               className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm"
             >
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-bold text-slate-700">
+              <div className="flex items-center justify-between gap-3">
+                <p className="min-w-0 truncate text-sm font-bold text-slate-700">
                   {note.teacherName}
                 </p>
-                <span className="text-xs text-slate-400">{note.date}</span>
+                <span className="shrink-0 text-xs text-slate-400">{note.date}</span>
               </div>
               <p className="mt-1.5 text-sm text-slate-600">{note.content}</p>
             </div>

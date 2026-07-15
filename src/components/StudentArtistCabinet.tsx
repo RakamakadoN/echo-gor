@@ -133,7 +133,7 @@ function FifaCard({ student, level }: { student: Student; level: ReturnType<type
           <path d="M24 2 L44 9 V28 C44 42 34 50 24 54 C14 50 4 42 4 28 V9 Z" fill="#12161a" stroke="#BF9D5F" strokeWidth="2" />
           <path d="M24 16 L27 24 L35 22 L28 28 L31 37 L24 32 L17 37 L20 28 L13 22 L21 24 Z" fill="#BF9D5F" />
         </svg>
-        <span className="rounded-full bg-black/45 px-2.5 py-1 text-[11px] font-black text-[#F0D9A6] backdrop-blur">{level.icon} {level.name}</span>
+        <span className="min-w-0 truncate rounded-full bg-black/45 px-2.5 py-1 text-[11px] font-black text-[#F0D9A6] backdrop-blur">{level.icon} {level.name}</span>
       </div>
       <div className="absolute inset-x-0 top-[22%] flex justify-center">
         {student.photoUrl ? (
@@ -410,7 +410,7 @@ export function StudentArtistCabinet({ student, group, allStudents = [], groups 
             </div>
             <div className="mt-5 flex items-center gap-5">
               <div className="flex h-20 w-20 shrink-0 flex-col items-center justify-center rounded-3xl border border-[#C5A059]/40 bg-[#C5A059]/10">
-                <span className="text-3xl font-black text-[#C5A059]">{stickers}</span>
+                <span className="text-3xl font-black tabular-nums text-[#C5A059]">{stickers}</span>
                 <Sticker className="h-4 w-4 text-[#C5A059]/70" />
               </div>
               <div className="min-w-0 flex-1">
@@ -598,15 +598,15 @@ function EchoShop({ studentId, readOnly, accessLevel }: { studentId: string; rea
   return (
     <div className="space-y-5">
       {/* Кошелёк */}
-      <section className="flex items-center justify-between rounded-3xl border border-[#C5A059]/25 bg-gradient-to-br from-[#151515] to-black p-5">
-        <div>
+      <section className="flex items-center justify-between gap-3 rounded-3xl border border-[#C5A059]/25 bg-gradient-to-br from-[#151515] to-black p-5">
+        <div className="min-w-0">
           <p className="text-[10px] font-black uppercase tracking-[0.28em] text-[#C5A059]">Кошелёк ЭхоБаксов</p>
           <p className="mt-1 text-sm text-slate-400">Зарабатывай за дисциплину, победы и помощь — трать на награды.</p>
         </div>
-        <div className="text-right">
+        <div className="shrink-0 text-right">
           <div className="flex items-center justify-end gap-2 rounded-2xl border border-[#C5A059]/30 bg-black/40 px-5 py-3">
             <Coins className="h-7 w-7 text-[#C5A059]" />
-            <span className="text-3xl font-black text-white">{balance}</span>
+            <span className="text-3xl font-black tabular-nums text-white">{balance}</span>
             <span className="text-lg text-[#C5A059]">⭐</span>
           </div>
           {reserved > 0 && <p className="mt-1.5 text-[11px] text-amber-300/80">Свободно {available} ⭐ · в заявках {reserved} ⭐</p>}
