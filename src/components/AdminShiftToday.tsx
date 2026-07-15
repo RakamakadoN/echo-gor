@@ -15,6 +15,7 @@ import {
   PhoneCall,
   Play,
   Receipt,
+  RefreshCw,
   ShoppingBag,
   Shirt,
   Sparkles,
@@ -596,19 +597,30 @@ export function AdminShiftView({
 // требует подтверждения «деньги сошлись / не сошлись». Расхождение видят руководители.
 function CloseShiftModal({ onClose, onDone }: { onClose: () => void; onDone: (shift: ShiftStatus) => void }) {
   const [summary, setSummary] = useState<ShiftSummary | null>(null);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [mismatch, setMismatch] = useState(false);
   const [counted, setCounted] = useState("");
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
+  // Аудит #7: раньше при сбое загрузки сводки summary оставался null → вечный спиннер,
+  // и смену нельзя было закрыть. Теперь — явная ошибка и кнопка «Повторить».
+  const loadSummary = React.useCallback(() => {
+    setLoading(true);
+    setLoadErr(null);
     let alive = true;
     fetch("/api/mvp/admin/shift/summary", { headers: { "x-demo-role": "admin" } })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (alive && d) setSummary(d); })
-      .catch(() => {});
+      .then(async (r) => {
+        if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || "Сервер не отдал сводку"); }
+        return r.json();
+      })
+      .then((d) => { if (alive) { setSummary(d); setLoading(false); } })
+      .catch((e) => { if (alive) { setLoadErr(e?.message || "Нет связи с сервером"); setLoading(false); } });
     return () => { alive = false; };
   }, []);
+
+  useEffect(() => { const cancel = loadSummary(); return cancel; }, [loadSummary]);
 
   const methodLabels: Record<string, string> = { cash: "Наличные", kaspi: "Kaspi", card: "Карта", transfer: "Перевод" };
 
@@ -639,7 +651,17 @@ function CloseShiftModal({ onClose, onDone }: { onClose: () => void; onDone: (sh
           <button onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-white/5 hover:text-white"><X className="h-5 w-5" /></button>
         </div>
 
-        {!summary ? (
+        {loading ? (
+          <div className="flex items-center justify-center py-10 text-slate-400"><Loader2 className="h-6 w-6 animate-spin" /></div>
+        ) : loadErr ? (
+          <div className="flex flex-col items-center gap-3 py-8 text-center">
+            <p className="text-sm font-semibold text-rose-300">{loadErr}</p>
+            <p className="text-xs text-slate-500">Не удалось загрузить сводку кассы за смену.</p>
+            <button onClick={loadSummary} className="flex items-center gap-2 rounded-xl bg-white/10 px-4 py-2 text-sm font-bold text-white hover:bg-white/20">
+              <RefreshCw className="h-4 w-4" /> Повторить
+            </button>
+          </div>
+        ) : !summary ? (
           <div className="flex items-center justify-center py-10 text-slate-400"><Loader2 className="h-6 w-6 animate-spin" /></div>
         ) : (
           <>
