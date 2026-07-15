@@ -3384,14 +3384,16 @@ export default function App() {
                 </button>
               ))}
             </div>
-            <div className="mt-8 border-t border-white/5 pt-4">
-              <button
-                onClick={handleResetData}
-                className="w-full py-2 bg-[#8B0000]/20 text-[#FF4D4D] border border-[#8B0000]/45 rounded-xl text-xs font-bold"
-              >
-                Сбросить демо-данные
-              </button>
-            </div>
+            {import.meta.env.DEV && (
+              <div className="mt-8 border-t border-white/5 pt-4">
+                <button
+                  onClick={handleResetData}
+                  className="w-full py-2 bg-[#8B0000]/20 text-[#FF4D4D] border border-[#8B0000]/45 rounded-xl text-xs font-bold"
+                >
+                  Сбросить демо-данные (dev)
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -3531,56 +3533,39 @@ export default function App() {
               </nav>
             </div>
 
-            {/* Quick stats panel */}
-            <div className="p-3 bg-white/5 rounded-2xl border border-white/5">
-              <span className="text-[10px] text-slate-500 uppercase tracking-widest font-extrabold">
-                Филиалы сети
-              </span>
-              <div className="mt-2 space-y-1.5 text-xs text-slate-300">
-                {branches.map(b => (
-                  <div key={b.id} className="flex items-center justify-between">
-                    <span className="truncate pr-1">• {b.city}</span>
-                    <span className="text-[10px] text-slate-500 font-bold uppercase">{b.name.includes("Флагман") ? "Фл-н" : "Фил"}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
+            {/* Аудит #28: из кабинета ученика убраны служебные элементы — «Филиалы
+                сети» (внутренняя структура) и фейковый прогресс «Ранг 7 · 85%».
+                Реальный прогресс показывает сам кабинет (StudentArtistCabinet). */}
           </div>
 
-          <div className="px-4 pt-4 space-y-4">
-            {/* Gamified level bottom card */}
-            <div className="bg-gradient-to-br from-[#8B0000] to-[#510000] rounded-2xl p-4 shadow-xl border border-white/10">
-              <p className="text-[9px] text-white/70 uppercase tracking-widest font-bold mb-1">
-                Концепция: Путь Артиста
-              </p>
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-serif italic text-white">Легенда Школы</span>
-                <span className="text-[9px] bg-[#C5A059] text-black font-extrabold px-1.5 py-0.5 rounded uppercase">
-                  Ранг 7
-                </span>
-              </div>
-              <div className="w-full bg-black/40 h-1 rounded-full mt-2.5 overflow-hidden">
-                <div className="bg-[#C5A059] h-full w-[85%]"></div>
-              </div>
+          {import.meta.env.DEV && (
+            <div className="px-4 pt-4">
+              <button
+                onClick={handleResetData}
+                className="w-full py-2 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-colors rounded-xl text-[10px] font-bold uppercase tracking-wider"
+              >
+                Сбросить демо-данные (dev)
+              </button>
             </div>
-
-            {/* Demo recovery */}
-            <button
-              onClick={handleResetData}
-              className="w-full py-2 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-colors rounded-xl text-[10px] font-bold uppercase tracking-wider"
-            >
-              Сбросить демо-данные
-            </button>
-          </div>
+          )}
         </aside>
         )}
 
         {/* Main Workspace Area */}
         <main className={`flex-1 flex flex-col p-4 md:p-6 space-y-6 overflow-y-auto min-w-0 ${activeRole === 'teacher' || activeRole === 'branch' || activeRole === 'owner' || activeRole === 'admin' ? 'p-0 md:p-0 space-y-0' : ''}`}>
-          {/* Индикатор источника данных виден только при ошибке подключения. */}
+          {/* Индикатор загрузки данных (аудит #17: isLoading раньше нигде не
+              отображался → пользователь видел нули и принимал загрузку за потерю
+              данных). Тонкая полоска сверху, не мешает работе. */}
+          {isLoading && (
+            <div className="fixed inset-x-0 top-0 z-[90] h-0.5 animate-pulse bg-[#C5A059]/80" aria-hidden="true" />
+          )}
+
+          {/* Индикатор источника данных виден при ошибке подключения — на всех
+              экранах, включая мобильные (аудит #40: раньше был hidden md:block). */}
           {mvpDataError && (
-            <div className="fixed right-4 top-4 z-[80] hidden max-w-md rounded-2xl border border-rose-400/30 bg-black/70 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-rose-300 backdrop-blur-xl md:block">
-              Нет связи с базой • {mvpDataError.slice(0, 80)}
+            <div className="fixed left-1/2 top-3 z-[80] flex max-w-[92vw] -translate-x-1/2 items-center gap-2 rounded-2xl border border-rose-400/30 bg-black/80 px-3 py-2 text-[11px] font-bold text-rose-200 backdrop-blur-xl md:left-auto md:right-4 md:max-w-md md:translate-x-0">
+              <span className="shrink-0">Нет связи с базой</span>
+              <button onClick={() => loadMvpBootstrap(activeRole)} className="shrink-0 rounded-lg bg-rose-500/20 px-2 py-0.5 font-bold text-rose-100 hover:bg-rose-500/30">Повторить</button>
             </div>
           )}
 

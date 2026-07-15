@@ -513,7 +513,10 @@ function TeacherProfileView({ teacherName, groups, students, competitions }: any
       }
     };
 
-    startAutoRender();
+    // Аудит #48: авторендер бьёт по эндпоинту на каждом открытии профиля с
+    // захардкоженным entityId и поллингом 550мс. В проде это лишняя нагрузка на
+    // несуществующего «teach-aslan» — оставляем автосборку только в разработке.
+    if (import.meta.env.DEV) startAutoRender();
 
     return () => {
       cancelled = true;
@@ -582,15 +585,17 @@ function TeacherProfileView({ teacherName, groups, students, competitions }: any
                     : "ожидание"}
               </p>
             </div>
-            <a
-              href="http://localhost:3001/TeacherSpotlightTrailer"
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-xs font-black uppercase tracking-wider text-white transition hover:border-[#C5A059]/50"
-            >
-              <PlayCircle className="h-4 w-4" />
-              Preview
-            </a>
+            {import.meta.env.DEV && (
+              <a
+                href="http://localhost:3001/TeacherSpotlightTrailer"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-xs font-black uppercase tracking-wider text-white transition hover:border-[#C5A059]/50"
+              >
+                <PlayCircle className="h-4 w-4" />
+                Preview (dev)
+              </a>
+            )}
           </div>
         </div>
       </section>
