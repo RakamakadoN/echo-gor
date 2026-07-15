@@ -9537,6 +9537,16 @@ function PenaltyJournalModal({ penalties, teachers, months, month, onClose, onCh
 
 function ChargePenaltyModal({ teachers, busy, onClose, onSubmit }: any) {
   const [f, setF] = useState<any>({ teacherId: teachers[0]?.id || "", reason: PENALTY_REASONS[0], amount: "", period_month: new Date().toISOString().slice(0, 7), created_by: "Владелец", comment: "" });
+  // Причины штрафов — из настраиваемого справочника (settings_lists), с дефолтами.
+  const [reasons, setReasons] = useState<string[]>(PENALTY_REASONS);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/mvp/settings/lists?kind=penalty_reason", { headers: { "x-demo-role": "owner" } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { const items = (d?.items || []).map((x: any) => x.label || x.value || x).filter(Boolean); if (alive && items.length) setReasons(items); })
+      .catch(() => { /* останутся дефолты */ });
+    return () => { alive = false; };
+  }, []);
   const set = (k: string, v: any) => setF((s: any) => ({ ...s, [k]: v }));
   const submit = () => {
     const amount = Number(f.amount);
@@ -9555,7 +9565,7 @@ function ChargePenaltyModal({ teachers, busy, onClose, onSubmit }: any) {
             </select></label>
           <label className="flex flex-col gap-1 text-[11px] text-slate-400">Причина *
             <select value={f.reason} onChange={(e) => set("reason", e.target.value)} className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white">
-              {PENALTY_REASONS.map((r) => <option key={r} value={r} className="bg-black">{r}</option>)}
+              {reasons.map((r) => <option key={r} value={r} className="bg-black">{r}</option>)}
             </select></label>
           <ModalInput label="Сумма, ₸ *" type="number" value={f.amount} onChange={(v) => set("amount", v)} />
           <ModalInput label="Месяц (вычесть из ЗП)" type="month" value={f.period_month} onChange={(v) => set("period_month", v)} />

@@ -5426,12 +5426,14 @@ export function registerMvpApi(app: express.Express) {
   // ---------- НАСТРОЙКИ: СПРАВОЧНИКИ (settings_lists) ----------
   // Настраиваемые списки: типы выступлений, категории товаров, уровни групп.
   // Читают все рабочие роли (для выпадающих списков), правит только владелец.
-  const SETTINGS_KINDS = ["performance_type", "product_category", "group_level", "document_category"];
+  const SETTINGS_KINDS = ["performance_type", "product_category", "group_level", "document_category", "penalty_reason"];
   const SETTINGS_DEFAULTS: Record<string, string[]> = {
     performance_type: ["Базовый танец", "Танец с интерактивом", "Несколько номеров", "Индивидуальное выступление", "Другое"],
     product_category: ["Мерч", "Форма", "Аксессуары", "Сувениры"],
     group_level: ["Продолжающая группа", "Ансамбль", "Индивидуальные", "Мини-группа", "Другое"],
     document_category: ["Аренда", "Услуги — уборка", "Услуги — вывоз мусора", "Подрядчики / поставщики", "Прочее"],
+    // Аудит: причины штрафов теперь настраиваемый справочник (были захардкожены).
+    penalty_reason: ["Опоздание", "Незакрытый журнал", "Нет плана работы", "Нет фото прихода", "Нарушение дисциплины", "Другое"],
   };
   const mockSettings: any[] = [];
 
