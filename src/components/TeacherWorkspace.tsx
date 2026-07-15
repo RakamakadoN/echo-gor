@@ -5,7 +5,7 @@ import {
   Users, Calendar, CheckSquare, Trophy, Bell, BookOpen, User, 
   MessageSquare, BrainCircuit, PlayCircle, Plus, FileText, ChevronRight, 
   Search, Star, AlertCircle, ArrowUpRight, ArrowDownRight, MoreHorizontal,
-  Home, ClipboardList, Download, Coins
+  Home, ClipboardList, Download, Coins, X
 } from 'lucide-react';
 import { Group, Student, Competition, Announcement, Homework } from '../types';
 import StudentManagementCard from './StudentManagementCard';
@@ -94,6 +94,7 @@ export function TeacherWorkspace({
 }: TeacherWorkspaceProps) {
 
   const [activeTab, setActiveTab] = useState<'today' | 'profile' | 'groups' | 'students' | 'journal' | 'feedback' | 'shop' | 'more'>('today');
+  const [moreOpen, setMoreOpen] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
 
@@ -315,18 +316,51 @@ export function TeacherWorkspace({
         </div>
       </div>
 
-      {/* BOTTOM NAVIGATION (Responsive/Mobile-first) */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 bg-[#0A0A0A]/95 backdrop-blur-xl border-t border-white/10 pb-safe">
+      {/* BOTTOM NAVIGATION (Responsive/Mobile-first) — 4 основных + «Ещё» со шторкой.
+          Раньше было 7 пунктов в ряд: на телефоне тесно и подписи налезали. */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 bg-[#0A0A0A]/95 backdrop-blur-xl border-t border-white/10" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
         <div className="flex justify-around items-center p-2 max-w-2xl mx-auto">
-          <NavItem icon={<Home className="w-5 h-5" />} label="Сегодня" active={activeTab === 'today'} onClick={() => {setActiveTab('today'); setSelectedGroupId(null); setSelectedStudentId(null)}} />
-          <NavItem icon={<Users className="w-5 h-5" />} label="Группы" active={activeTab === 'groups' && !selectedGroupId} onClick={() => {setActiveTab('groups'); setSelectedGroupId(null); setSelectedStudentId(null)}} />
-          <NavItem icon={<ClipboardList className="w-5 h-5" />} label="Журнал" active={activeTab === 'journal'} onClick={() => {setActiveTab('journal'); setSelectedGroupId(null); setSelectedStudentId(null)}} />
-          <NavItem icon={<CheckSquare className="w-5 h-5" />} label="Ученики" active={activeTab === 'students'} onClick={() => setActiveTab('students')} />
-          <NavItem icon={<Star className="w-5 h-5" />} label="Спасибо" active={activeTab === 'feedback'} onClick={() => {setActiveTab('feedback'); setSelectedGroupId(null); setSelectedStudentId(null)}} />
-          <NavItem icon={<Coins className="w-5 h-5" />} label="ЭхоБаксы" active={activeTab === 'shop'} onClick={() => {setActiveTab('shop'); setSelectedGroupId(null); setSelectedStudentId(null)}} />
-          <NavItem icon={<BrainCircuit className="w-5 h-5" />} label="Заметки" active={activeTab === 'more'} onClick={() => {setActiveTab('more'); setSelectedGroupId(null); setSelectedStudentId(null)}} />
+          <NavItem icon={<Home className="w-5 h-5" />} label="Сегодня" active={activeTab === 'today'} onClick={() => {setActiveTab('today'); setMoreOpen(false); setSelectedGroupId(null); setSelectedStudentId(null)}} />
+          <NavItem icon={<ClipboardList className="w-5 h-5" />} label="Журнал" active={activeTab === 'journal'} onClick={() => {setActiveTab('journal'); setMoreOpen(false); setSelectedGroupId(null); setSelectedStudentId(null)}} />
+          <NavItem icon={<Users className="w-5 h-5" />} label="Группы" active={activeTab === 'groups' && !selectedGroupId} onClick={() => {setActiveTab('groups'); setMoreOpen(false); setSelectedGroupId(null); setSelectedStudentId(null)}} />
+          <NavItem icon={<CheckSquare className="w-5 h-5" />} label="Ученики" active={activeTab === 'students'} onClick={() => {setActiveTab('students'); setMoreOpen(false)}} />
+          <NavItem icon={<MoreHorizontal className="w-5 h-5" />} label="Ещё" active={moreOpen || ['feedback','shop','more','profile'].includes(activeTab)} onClick={() => setMoreOpen((v) => !v)} />
         </div>
       </div>
+
+      {/* Шторка «Ещё»: остальные разделы педагога */}
+      {moreOpen && (
+        <div className="fixed inset-0 z-[60] lg:hidden" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setMoreOpen(false)} />
+          <div className="absolute inset-x-0 bottom-0 max-h-[78vh] overflow-y-auto rounded-t-3xl border-t border-white/10 bg-[#0F0F0F] px-4 pt-3" style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}>
+            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/20" />
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#C5A059]">Ещё разделы</p>
+              <button onClick={() => setMoreOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/5 text-slate-400"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { id: 'feedback', label: 'Спасибо', Icon: Star },
+                { id: 'shop', label: 'ЭхоБаксы', Icon: Coins },
+                { id: 'more', label: 'Заметки', Icon: BrainCircuit },
+                { id: 'profile', label: 'Профиль', Icon: User },
+              ].map(({ id, label, Icon }) => {
+                const active = activeTab === id;
+                return (
+                  <button
+                    key={id}
+                    onClick={() => { setActiveTab(id as any); setMoreOpen(false); setSelectedGroupId(null); setSelectedStudentId(null); }}
+                    className={`flex min-h-[76px] flex-col items-center justify-center gap-1.5 rounded-2xl border px-2 py-3 text-center ${active ? "border-[#C5A059]/40 bg-[#C5A059]/10 text-[#C5A059]" : "border-white/5 bg-white/[0.03] text-slate-300 active:bg-white/10"}`}
+                  >
+                    <Icon className="h-5 w-5" />
+                    <span className="text-[10px] font-bold leading-tight">{label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* SHARED MODALS */}
       <AnimatePresence>
