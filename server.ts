@@ -19,6 +19,13 @@ registerMvpApi(app);
 registerGeminiApi(app);
 registerMagomedApi(app);
 
+// DEF-11 (P3): несуществующий /api/* должен отдавать 404 JSON, а не index.html.
+// Без этого фронт получал HTML на битый API-путь (SPA-fallback ловил и /api).
+// Регистрируем ПОСЛЕ всех реальных API-роутов и ДО SPA-обработчиков ниже.
+app.all('/api/*', (req, res) => {
+  res.status(404).json({ error: `Неизвестный API-метод: ${req.method} ${req.path}` });
+});
+
 // Configure client routing
 const isProduction = process.env.NODE_ENV === 'production';
 // 3000 по умолчанию; PORT из окружения — для параллельного запуска (worktrees).

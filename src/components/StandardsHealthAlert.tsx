@@ -33,7 +33,7 @@ export function StandardsHealthAlert({ role, teachers = [], groups = [], onOpen 
   const dev = useMemo(() => {
     const wd = weekdayShort();
     const hasLesson = (id: string) => groups.some((g: any) => g?.teacherId === id && Array.isArray(g?.days) && g.days.includes(wd));
-    const byId = new Map(arrivals.map((a) => [a.teacherId, a]));
+    const byId = new Map<string, any>(arrivals.map((a) => [a.teacherId, a]));
     const late: string[] = [], noMark: string[] = [], noPhoto: string[] = [];
     const roster = teachers.length ? teachers.map((t) => ({ id: t.id, name: t.name })) : arrivals.map((a) => ({ id: a.teacherId, name: a.teacherName || "Педагог" }));
     for (const t of roster) {

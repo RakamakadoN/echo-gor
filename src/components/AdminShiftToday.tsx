@@ -649,8 +649,8 @@ function CloseShiftModal({ onClose, onDone }: { onClose: () => void; onDone: (sh
               <Row label="Товары и мерч" v={summary.merch} />
               <Row label="Прокат костюмов" v={summary.costumes} />
               <div className="my-1 border-t border-white/10" />
-              {Object.entries(summary.byMethod).filter(([, v]) => v > 0).map(([k, v]) => (
-                <div key={k} className="flex justify-between text-xs text-slate-400"><span>{methodLabels[k] || k}</span><span>{money(v)}</span></div>
+              {Object.entries(summary.byMethod).filter(([, v]) => Number(v) > 0).map(([k, v]) => (
+                <div key={k} className="flex justify-between text-xs text-slate-400"><span>{methodLabels[k] || k}</span><span>{money(Number(v))}</span></div>
               ))}
               <div className="mt-1 flex justify-between border-t border-white/10 pt-2 text-base font-black text-[#C5A059]">
                 <span>Итого в СРМ</span><span>{money(total)}</span>

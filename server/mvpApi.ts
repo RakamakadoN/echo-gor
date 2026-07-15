@@ -351,6 +351,13 @@ async function ensureCategoryId(orgId: string, name: string, kind: "income" | "e
 // таймстампы (paid_at и т.п.) приходят из PostgREST в UTC — без сдвига ночная
 // оплата (00:00–05:00 по Астане) уезжала бы на «вчера».
 const KZ_DATE = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Almaty" });
+// Единый «сегодня» студии (Asia/Almaty). Раньше часть аналитики (computed_status,
+// воронка extras, journal/dashboard, snapshot) считала «сегодня/месяц» через
+// UTC (toISOString), из-за чего ночные операции 00:00–05:00 попадали в разные
+// сутки в разных отчётах. Теперь единый источник — Almaty.
+const almatyToday = () => KZ_DATE.format(new Date());               // YYYY-MM-DD
+const almatyDaysAgo = (n: number) => KZ_DATE.format(new Date(Date.now() - n * 86400000));
+const almatyMonth = () => almatyToday().slice(0, 7);                // YYYY-MM
 const toDate = (value?: string | null) => {
   if (!value) return KZ_DATE.format(new Date());
   if (!value.includes("T")) return value.slice(0, 10); // уже дата без времени
@@ -521,7 +528,7 @@ function deriveStudentStatus(row: any, subs: any[]): string {
   if (row.deletion_requested_at) return "trash";
   const manual = String(row.manual_status || "").trim();
   if (manual) return manual; // ручной статус приоритетнее авто
-  const today = new Date().toISOString().slice(0, 10);
+  const today = almatyToday(); // единый «сегодня» по Almaty (не UTC)
   const active = (subs || []).filter((x) => x.status === "active" && (!x.ends_on || String(x.ends_on).slice(0, 10) >= today));
   if (active.length) return "active";
   const everHadSub = (subs || []).some((x) => x.status !== "archived");
@@ -566,7 +573,7 @@ function mapDbStudent(row: any, attendanceByStudent: Map<string, Record<string, 
     // Ученик может заниматься в НЕСКОЛЬКИХ группах (ТЗ 2026-07-12): основная
     // группа + группы действующих абонементов. Первая — основная (studentGroupId).
     groupIds: (() => {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = almatyToday();
       const ids: string[] = row.group_id ? [row.group_id] : [];
       for (const sub of subsByStudent.get(row.id) || []) {
         if (sub.status === "active" && sub.group_id && (!sub.ends_on || sub.ends_on >= today) && !ids.includes(sub.group_id)) {
@@ -763,6 +770,8 @@ async function dbBootstrap(session: MvpSession) {
 
   const students = studentsRaw
     .filter((student) => {
+      // DEF-03 (P1): ученик видит в кабинете ТОЛЬКО свою карточку, не весь филиал.
+      if (session.role === "student") return student.id === session.studentId;
       if (isOwner) return true;
       if (session.role === "teacher") {
         const group = groupById.get(student.group_id);
@@ -944,6 +953,48 @@ function mapDbRecalc(row: any, studentName?: string) {
 }
 
 export function registerMvpApi(app: express.Express) {
+  // ── DEF-01 (P0): ни один необёрнутый async-хендлер не должен ронять процесс. ──
+  // Express 4 не ловит rejection из async (req,res)=>… — раньше ЛЮБАЯ ошибка БД
+  // (CHECK/enum/FK) в хендлере без обёртки ah() убивала весь сервер: одна битая
+  // запись = падение CRM для всех. Здесь ОДИН раз перехватываем app.get/post/…:
+  // каждый хендлер, вернувший промис, получает .catch → JSON-ответ вместо краша.
+  // Ошибки БД PostgREST (код 23xxx: CHECK/enum/FK/unique) отдаём как 400/409, а не 500.
+  const dbErrorToHttp = (raw: string): { status: number; error: string } => {
+    try {
+      const j = JSON.parse(raw);
+      const code = String(j.code || "");
+      const msg = String(j.message || raw);
+      if (code === "23505") return { status: 409, error: "Запись с такими данными уже существует." };
+      if (code === "23503") return { status: 400, error: "Ссылка на несуществующую запись (проверьте филиал/группу/ученика)." };
+      if (code === "23514") return { status: 400, error: "Недопустимое значение поля (нарушено бизнес-правило БД)." };
+      if (code === "22P02" || code === "22007") return { status: 400, error: "Некорректный формат данных." };
+      if (code.startsWith("23")) return { status: 400, error: msg };
+      return { status: 500, error: msg };
+    } catch { return { status: 500, error: raw || "Внутренняя ошибка сервера" }; }
+  };
+  const sendHandlerError = (error: any, req: express.Request, res: express.Response) => {
+    const raw = String(error?.message ?? error ?? "");
+    const mapped = raw.trim().startsWith("{") ? dbErrorToHttp(raw) : { status: 500, error: raw || "Внутренняя ошибка сервера" };
+    if (mapped.status >= 500) console.error("[mvpApi] Ошибка обработчика:", req.method, req.originalUrl, raw);
+    if (!res.headersSent) res.status(mapped.status).json({ error: mapped.error });
+  };
+  for (const method of ["get", "post", "put", "patch", "delete"] as const) {
+    const original = (app as any)[method].bind(app);
+    (app as any)[method] = (path: any, ...handlers: any[]) => {
+      const wrapped = handlers.map((h) =>
+        typeof h === "function"
+          ? function (req: express.Request, res: express.Response, next: express.NextFunction) {
+              try {
+                const out = h(req, res, next);
+                if (out && typeof out.catch === "function") out.catch((err: any) => sendHandlerError(err, req, res));
+              } catch (err) { sendHandlerError(err, req, res); }
+            }
+          : h
+      );
+      return original(path, ...wrapped);
+    };
+  }
+
   // Демо-филиал сессий должен указывать на реальный филиал (см. ensureDemoBranchBinding).
   app.use("/api/mvp", (_req, _res, next) => { ensureDemoBranchBinding().finally(next); });
 
@@ -970,6 +1021,29 @@ export function registerMvpApi(app: express.Express) {
     if (!hasAuthToken && !hasRole && !hasStudentToken) {
       return res.status(401).json({ error: "Не авторизовано: войдите в систему" });
     }
+    return next();
+  });
+
+  // ── DEF-02 (P1): ученик НЕ может ничего мутировать вне своего кабинета. ───────
+  // Раньше мутации проверяли только canSeeBranch() — ученик проходил для своего
+  // филиала и мог создавать/править/удалять ЧУЖИХ учеников и заводить тарифы.
+  // Теперь любой не-GET от роли student запрещён, кроме белого списка кабинета,
+  // и в разрешённых запросах studentId жёстко подменяется на свой (нельзя от чужого имени).
+  const STUDENT_WRITE_ALLOW = new Set([
+    "/shop/echo/orders",   // заявка на обмен ЭхоБаксов
+    "/shop/echo/purchase", // покупка за ЭхоБаксы
+    "/student-auth/set-password",
+  ]);
+  app.use("/api/mvp", (req, res, next) => {
+    if (req.method === "GET") return next();
+    let session: MvpSession;
+    try { session = getSession(req); } catch { return next(); }
+    if (session.role !== "student") return next();
+    if (!STUDENT_WRITE_ALLOW.has(req.path)) {
+      return res.status(403).json({ error: "Недоступно из кабинета ученика" });
+    }
+    // В разрешённых запросах — только от своего имени.
+    if (req.body && typeof req.body === "object" && session.studentId) req.body.studentId = session.studentId;
     return next();
   });
 
@@ -1022,13 +1096,17 @@ export function registerMvpApi(app: express.Express) {
   // автоматически — без этого ошибка Supabase подвешивала бы фронт (кнопка «Сохранение...»).
   const ah = (fn: (req: express.Request, res: express.Response) => Promise<unknown>) =>
     (req: express.Request, res: express.Response) => {
-      Promise.resolve(fn(req, res)).catch((error: any) => {
-        console.error("[mvpApi] Ошибка обработчика:", error?.message || error);
-        if (!res.headersSent) {
-          res.status(500).json({ error: error?.message || "Внутренняя ошибка сервера" });
-        }
-      });
+      // DEF-01/12: ошибки БД (CHECK/enum/FK) маппим в 400/409, а не в 500.
+      Promise.resolve(fn(req, res)).catch((error: any) => sendHandlerError(error, req, res));
     };
+
+  // DEF-04/09: единый ролевой гейт для мутаций. Возвращает session, если роль
+  // разрешена, иначе шлёт 403 и null (вызывающий делает `if (!s) return;`).
+  const requireRoles = (req: express.Request, res: express.Response, roles: MvpSession["role"][], msg = "Недостаточно прав"): MvpSession | null => {
+    const session = getSession(req);
+    if (!roles.includes(session.role)) { res.status(403).json({ error: msg }); return null; }
+    return session;
+  };
 
   app.get("/api/mvp/session/demo-users", (_req, res) => {
     res.json({ users: demoUsers });
@@ -1123,10 +1201,15 @@ export function registerMvpApi(app: express.Express) {
     if (!supabaseEnabled) return res.json({ snapshots: [], funnelToday: null, funnelYesterday: null });
     try {
       const orgFilter = `organization_id=eq.${session.organizationId}`;
-      const today = new Date().toISOString().slice(0, 10);
-      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-      const dayStart = (d: string) => `${d}T00:00:00`;
-      const dayEnd = (d: string) => `${d}T23:59:59`;
+      // «Сегодня/вчера» — по Almaty. Границы суток задаём с offset +05:00, чтобы
+      // сравнение с UTC-таймстампами occurred_at было корректным (ночные события
+      // не «уезжали» в соседний день).
+      const today = almatyToday();
+      const yesterday = almatyDaysAgo(1);
+      // Границы суток Almaty переводим в UTC-инстанты (…Z) — сравнение с UTC
+      // occurred_at корректно, и в query-строку не попадает «+» (ломался в 22007).
+      const dayStart = (d: string) => encodeURIComponent(new Date(`${d}T00:00:00+05:00`).toISOString());
+      const dayEnd = (d: string) => encodeURIComponent(new Date(`${d}T23:59:59+05:00`).toISOString());
       const [snapsRaw, evToday, evYest, invoicesRaw, futureSubs, studentsLite] = await Promise.all([
         supabaseFetch<any[]>("metrics_snapshots", `select=*&${orgFilter}&order=period_month.asc`),
         supabaseFetch<any[]>("student_status_events", `select=to_status,source&${orgFilter}&occurred_at=gte.${dayStart(today)}&occurred_at=lte.${dayEnd(today)}`),
@@ -1196,8 +1279,7 @@ export function registerMvpApi(app: express.Express) {
     if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
     try {
       const orgFilter = `organization_id=eq.${session.organizationId}`;
-      const now = new Date();
-      const monthPrefix = now.toISOString().slice(0, 7);
+      const monthPrefix = almatyMonth(); // месяц по Almaty (согласовано с KPI/BDR)
       const periodMonth = `${monthPrefix}-01`;
       const [branches, students, payments, subs] = await Promise.all([
         supabaseFetch<any[]>("branches", `select=id&${orgFilter}&status=neq.archived`),
@@ -1205,7 +1287,7 @@ export function registerMvpApi(app: express.Express) {
         supabaseFetch<any[]>("payments", `select=amount,branch_id,paid_at,status&${orgFilter}`),
         supabaseFetch<any[]>("student_subscriptions", `select=branch_id,status`)
       ]);
-      const paidThisMonth = payments.filter((p) => p.status === "paid" && String(p.paid_at || "").slice(0, 7) === monthPrefix);
+      const paidThisMonth = payments.filter((p) => p.status === "paid" && toDate(p.paid_at).slice(0, 7) === monthPrefix);
       const build = (branchId: string | null) => {
         const bs = branchId ? students.filter((s) => s.branch_id === branchId) : students;
         const bp = branchId ? paidThisMonth.filter((p) => p.branch_id === branchId) : paidThisMonth;
@@ -1222,7 +1304,7 @@ export function registerMvpApi(app: express.Express) {
           retention_rate: bs.length ? Math.round((activeStud / bs.length) * 100) : 0,
           attendance_rate: 0,
           new_students: bs.filter((s) => String(s.created_at || "").slice(0, 7) === monthPrefix).length,
-          payments_count: bp.length, computed_at: now.toISOString()
+          payments_count: bp.length, computed_at: new Date().toISOString()
         };
       };
       const rows = [build(null), ...branches.map((b) => build(b.id))];
@@ -1250,7 +1332,7 @@ export function registerMvpApi(app: express.Express) {
   app.get("/api/mvp/owner/bdr-progress", async (req, res) => {
     const session = getSession(req);
     if (session.role !== "owner") return res.status(403).json({ error: "Только владелец" });
-    const period = String(req.query.period || new Date().toISOString().slice(0, 7)); // YYYY-MM
+    const period = String(req.query.period || almatyMonth()); // YYYY-MM по Almaty
     if (!supabaseEnabled) return res.json({ period, network: null, byBranch: [] });
     try {
       const orgFilter = `organization_id=eq.${session.organizationId}`;
@@ -1261,7 +1343,8 @@ export function registerMvpApi(app: express.Express) {
         // Фактические расходы месяца из Бухгалтерии (для «факт. прибыли»).
         supabaseFetch<any[]>("finance_transactions", `select=amount,branch_id,operation_date,type,status&${orgFilter}&type=eq.expense&status=eq.actual`).catch(() => [] as any[]),
       ]);
-      const paid = payments.filter((p) => p.status === "paid" && String(p.paid_at || "").slice(0, 7) === period);
+      // Факт-выручка месяца — по Almaty (toDate), согласовано с KPI/snapshot.
+      const paid = payments.filter((p) => p.status === "paid" && toDate(p.paid_at).slice(0, 7) === period);
       const exp = (expenses || []).filter((e) => String(e.operation_date || "").slice(0, 7) === period);
       const factOf = (branchId: string | null) =>
         (branchId ? paid.filter((p) => p.branch_id === branchId) : paid).reduce((s, p) => s + Number(p.amount || 0), 0);
@@ -1497,7 +1580,7 @@ export function registerMvpApi(app: express.Express) {
         const oldGroup = cur?.group_id || null;
         const newGroup = payload.groupId || null;
         if (oldGroup && newGroup !== oldGroup) {
-          const today = new Date().toISOString().slice(0, 10);
+          const today = almatyToday();
           // Любой НЕ закончившийся активный абонемент группы блокирует перевод —
           // включая купленный на будущий месяц (starts_on в будущем).
           const activeInOld = await supabaseFetch<any[]>(
@@ -1518,7 +1601,7 @@ export function registerMvpApi(app: express.Express) {
         (typeof payload.manualStatus === "string" && /оплат|пробн|вводн/i.test(payload.manualStatus)) ||
         payload.status === "trial" || payload.status === "lead";
       if (wantsTrialPromise) {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = almatyToday();
         const startNextMonth = new Date(); startNextMonth.setDate(1); startNextMonth.setMonth(startNextMonth.getMonth() + 1);
         const nextMonthStr = startNextMonth.toISOString().slice(0, 10);
         const activeSubs = await supabaseFetch<any[]>(
@@ -1551,7 +1634,9 @@ export function registerMvpApi(app: express.Express) {
   // DELETE = заявка на удаление: ученик перемещается в корзину.
   // Окончательное удаление (archived) подтверждает только владелец через /confirm-delete.
   app.delete("/api/mvp/students/:id", async (req, res) => {
-    const session = getSession(req);
+    // DEF-09 (P2): удалять учеников (в корзину) может владелец/управляющий/админ,
+    // но НЕ педагог — иначе педагог сносит карточки в своём филиале.
+    const session = requireRoles(req, res, ["owner", "branch_manager", "admin"], "Удалять учеников может владелец, управляющий или администратор"); if (!session) return;
     if (!supabaseEnabled) {
       return res.status(503).json({ error: "Supabase is not configured" });
     }
@@ -1775,7 +1860,7 @@ export function registerMvpApi(app: express.Express) {
     const reason = (req.body && String(req.body.reason || "").trim()) || "";
     const comment = (req.body && String(req.body.comment || "").trim()) || "";
     // Дата ухода (месяц, когда реально перестал ходить). По умолчанию — сегодня.
-    const leftOn = (req.body && req.body.leftOn) ? String(req.body.leftOn).slice(0, 10) : new Date().toISOString().slice(0, 10);
+    const leftOn = (req.body && req.body.leftOn) ? String(req.body.leftOn).slice(0, 10) : almatyToday();
     if (!reason) return res.status(400).json({ error: "Укажите причину ухода ученика" });
     if (!comment) return res.status(400).json({ error: "Укажите комментарий" });
     const existing = await supabaseFetch<any[]>(
@@ -2017,7 +2102,7 @@ export function registerMvpApi(app: express.Express) {
       const lessonsTotal = Number(payload.lessonsTotal) > 0
         ? Math.round(Number(payload.lessonsTotal))
         : Number(plan.lessons_count) || 0;
-      const today = new Date().toISOString().slice(0, 10);
+      const today = almatyToday();
       const startsOn = payload.startsOn || today;
       let endsOn = payload.endsOn || startsOn;
       if (endsOn < startsOn) endsOn = startsOn;
@@ -2463,7 +2548,7 @@ export function registerMvpApi(app: express.Express) {
       }
       // Запись задним числом (дата в прошлом) — только с явным подтверждением (ТЗ).
       if (!Boolean((req.body || {}).confirm)) {
-        const todayIso = new Date().toISOString().slice(0, 10);
+        const todayIso = almatyToday();
         if (String(date).slice(0, 10) < todayIso) {
           return res.status(409).json({ error: `Дата пробного урока уже прошла (${String(date).slice(0, 10)}) — это запись задним числом. Записать всё равно?`, needsConfirm: true });
         }
@@ -2618,10 +2703,20 @@ export function registerMvpApi(app: express.Express) {
       }
     }
 
+    // DEF-06 (P2): посещение списывает урок с абонемента. Смотрим ПРЕДЫДУЩИЙ
+    // статус отметки, чтобы не списать дважды при повторном present и вернуть
+    // урок при смене present→отсутствие. Пробные (is_trial) абонемент не трогают.
+    const prevRows = await supabaseFetch<any[]>(
+      "attendance",
+      `select=status,is_trial&lesson_id=eq.${lessonId}&student_id=eq.${payload.studentId}&limit=1`
+    ).catch(() => [] as any[]);
+    const prevStatus = prevRows[0]?.status || null;
+    const newStatus = payload.status === "unmarked" ? "unknown" : payload.status;
+
     const rows = await upsertAttendanceRows([{
       lesson_id: lessonId,
       student_id: payload.studentId,
-      status: payload.status === "unmarked" ? "unknown" : payload.status,
+      status: newStatus,
       marked_by: session.userId.startsWith("demo-") ? null : session.userId,
       marked_at: new Date().toISOString(),
       comment: payload.comment || null,
@@ -2630,18 +2725,33 @@ export function registerMvpApi(app: express.Express) {
       trial_outcome: payload.trialOutcome || undefined,
     }]);
 
-    // If present, create a debit transaction (lesson write-off)
-    if (payload.status === "present") {
-        await supabaseFetch<any[]>("finance_transactions", "", {
-            method: "POST",
-            body: JSON.stringify({
-                organization_id: session.organizationId,
-                student_id: payload.studentId,
-                amount: 0, 
-                type: "debit",
-                description: `Списание за занятие ${payload.date || 'сегодня'}`
-            })
-        });
+    // Дельта списания: +present → −1 урок; present→не-present → +1 (возврат).
+    if (!payload.isTrial) {
+      const delta = (newStatus === "present" ? 1 : 0) - (prevStatus === "present" ? 1 : 0);
+      if (delta !== 0) {
+        try {
+          // Абонемент этого урока: явный subscriptionId, иначе активный ученика.
+          const subs = await supabaseFetch<any[]>(
+            "student_subscriptions",
+            `select=id,lessons_left,lessons_total&student_id=eq.${payload.studentId}&status=eq.active&order=starts_on.asc`
+          );
+          const sub = payload.subscriptionId
+            ? subs.find((s) => s.id === payload.subscriptionId) || subs[0]
+            : subs[0];
+          if (sub) {
+            const total = Number(sub.lessons_total) || 0;
+            const cur = Number(sub.lessons_left) || 0;
+            // delta=1 (посетил) → списываем урок (−1); delta=−1 (отмена) → возвращаем (+1).
+            const next = Math.max(0, Math.min(total || cur + 1, cur - delta));
+            if (next !== cur) {
+              await supabaseFetch("student_subscriptions", `id=eq.${sub.id}`, {
+                method: "PATCH", headers: { Prefer: "return=minimal" },
+                body: JSON.stringify({ lessons_left: next }),
+              });
+            }
+          }
+        } catch { /* списание урока не должно ронять отметку посещаемости */ }
+      }
     }
 
     res.json({ attendance: rows[0] });
@@ -3236,7 +3346,7 @@ export function registerMvpApi(app: express.Express) {
         return res.status(409).json({ error: `Нельзя архивировать: в группе ${activeStudents.length} действующих учеников. Сначала переведите их в другую группу.` });
       }
       // Нельзя архивировать группу с действующими (проданными) абонементами.
-      const today = new Date().toISOString().slice(0, 10);
+      const today = almatyToday();
       const activeSubs = await supabaseFetch<any[]>(
         "student_subscriptions",
         `select=id&group_id=eq.${req.params.id}&status=eq.active&or=(ends_on.is.null,ends_on.gte.${today})`
@@ -3534,7 +3644,7 @@ export function registerMvpApi(app: express.Express) {
 
   // ===== Справочник: абонементы (subscription_plans) =====
   app.post("/api/mvp/subscription-plans", async (req, res) => {
-    const session = getSession(req);
+    const session = requireRoles(req, res, ["owner"], "Тарифы настраивает только владелец"); if (!session) return;
     const payload = req.body || {};
     if (!payload.name || !String(payload.name).trim()) return res.status(400).json({ error: "name is required" });
     if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
@@ -3560,7 +3670,7 @@ export function registerMvpApi(app: express.Express) {
   });
 
   app.patch("/api/mvp/subscription-plans/:id", async (req, res) => {
-    const session = getSession(req);
+    const session = requireRoles(req, res, ["owner"], "Тарифы настраивает только владелец"); if (!session) return;
     const payload = req.body || {};
     if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
     const updates: Record<string, unknown> = {};
@@ -3583,7 +3693,7 @@ export function registerMvpApi(app: express.Express) {
   });
 
   app.delete("/api/mvp/subscription-plans/:id", async (req, res) => {
-    const session = getSession(req);
+    const session = requireRoles(req, res, ["owner"], "Тарифы настраивает только владелец"); if (!session) return;
     if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
     const scope = `id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`;
     try {
@@ -3615,6 +3725,7 @@ export function registerMvpApi(app: express.Express) {
   });
 
   app.post("/api/mvp/lead-sources", async (req, res) => {
+    if (!requireRoles(req, res, ["owner"], "Справочник источников ведёт только владелец")) return;
     const payload = req.body || {};
     if (!payload.name || !String(payload.name).trim()) return res.status(400).json({ error: "name is required" });
     if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
@@ -3630,6 +3741,7 @@ export function registerMvpApi(app: express.Express) {
   });
 
   app.patch("/api/mvp/lead-sources/:id", async (req, res) => {
+    if (!requireRoles(req, res, ["owner"], "Справочник источников ведёт только владелец")) return;
     const payload = req.body || {};
     if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
     const updates: Record<string, unknown> = {};
@@ -3646,6 +3758,7 @@ export function registerMvpApi(app: express.Express) {
   });
 
   app.delete("/api/mvp/lead-sources/:id", async (req, res) => {
+    if (!requireRoles(req, res, ["owner"], "Справочник источников ведёт только владелец")) return;
     if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
     try {
       // FK в базе — ON DELETE SET NULL: без этой проверки источник удалился бы
@@ -3684,8 +3797,12 @@ export function registerMvpApi(app: express.Express) {
   // attendance/bulk — отметить всю группу за дату
   // ============================================================
 
+  // DEF-10 (P2): демо-сессии сотрудников имеют фиксированные UUID (…1001–1004),
+  // которых НЕТ в таблице users → FK author_id падал (заметки/ДЗ не сохранялись).
+  // Отдаём null для любого демо-идентификатора: и "demo-…", и демо-UUID сотрудников.
+  const demoUserIdSet = new Set(demoUsers.map((u) => u.userId));
   const authorId = (session: MvpSession) =>
-    session.userId.startsWith("demo-") ? null : session.userId;
+    (session.userId.startsWith("demo-") || demoUserIdSet.has(session.userId)) ? null : session.userId;
 
   // --- Заметки преподавателя по ученику ---
   app.get("/api/mvp/notes", async (req, res) => {
@@ -3895,7 +4012,7 @@ export function registerMvpApi(app: express.Express) {
       // в этой группе (мульти-группы, ТЗ 2026-07-12).
       let studentIds: string[] = Array.isArray(payload.studentIds) ? payload.studentIds : [];
       if (studentIds.length === 0) {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = almatyToday();
         const [studs, subStuds] = await Promise.all([
           supabaseFetch<any[]>("students", `select=id&group_id=eq.${payload.groupId}`),
           supabaseFetch<any[]>("student_subscriptions", `select=student_id&group_id=eq.${payload.groupId}&status=eq.active&or=(ends_on.is.null,ends_on.gte.${today})`).catch(() => [] as any[]),
@@ -4115,7 +4232,7 @@ export function registerMvpApi(app: express.Express) {
           account_id: p.accountId || null,
           category_id: p.categoryId || null,
           amount, type, status,
-          operation_date: p.date || new Date().toISOString().slice(0, 10),
+          operation_date: p.date || almatyToday(),
           counterparty: p.counterparty || null,
           description: p.description || null,
         }),
@@ -4392,7 +4509,7 @@ export function registerMvpApi(app: express.Express) {
           organization_id: session.organizationId, branch_id: tax.branch_id,
           account_id: p.accountId || tax.account_id || null, category_id: tax.category_id || null,
           amount, type: "expense", status: "actual",
-          operation_date: p.date || new Date().toISOString().slice(0, 10),
+          operation_date: p.date || almatyToday(),
           description: `Налог: ${tax.name}`,
         }),
       });
@@ -4430,7 +4547,7 @@ export function registerMvpApi(app: express.Express) {
     const p = req.body || {};
     const amount = Number(p.amount);
     if (!amount || amount <= 0) return res.status(400).json({ error: "Укажите сумму расхода" });
-    const period = String(p.periodMonth || new Date().toISOString().slice(0, 7));
+    const period = String(p.periodMonth || almatyMonth());
     try {
       const inserted = await supabaseFetch<any[]>("marketing_spend", "", {
         method: "POST",
@@ -4561,7 +4678,7 @@ export function registerMvpApi(app: express.Express) {
           amount: reqRow.amount,
           type: "expense",
           status: "actual",
-          operation_date: p.date || new Date().toISOString().slice(0, 10),
+          operation_date: p.date || almatyToday(),
           description: reqRow.description ? `Заявка: ${reqRow.description}` : "Одобренная заявка на расход",
         }),
       });
@@ -4681,7 +4798,7 @@ export function registerMvpApi(app: express.Express) {
           amount: reqRow.amount,
           type: "expense",
           status: "actual",
-          operation_date: p.date || new Date().toISOString().slice(0, 10),
+          operation_date: p.date || almatyToday(),
           counterparty: reqRow.student_name || null,
           description: `Возврат средств${reqRow.student_name ? `: ${reqRow.student_name}` : ""}${reqRow.reason ? ` — ${reqRow.reason}` : ""}`,
         }),
@@ -4985,7 +5102,7 @@ export function registerMvpApi(app: express.Express) {
   const inRange = (d: string, r: { start: string; end: string }) => d >= r.start && d <= r.end;
   const pctDelta = (cur: number, base: number): number | null =>
     base > 0 ? Math.round(((cur - base) / base) * 1000) / 10 : null;
-  const todayStr = () => isoDay(new Date());
+  const todayStr = () => almatyToday(); // «сегодня» по Almaty (не серверная TZ/UTC)
 
   // ---- Mock-хранилища (когда Supabase не настроен — раздел всё равно работает) ----
   const uid = () => (globalThis.crypto?.randomUUID?.() || `id-${Math.random().toString(36).slice(2)}`);
@@ -5234,9 +5351,22 @@ export function registerMvpApi(app: express.Express) {
       const rec = mockPerformances.find((x) => x.id === req.params.id);
       if (!rec) return res.status(404).json({ error: "Выступление не найдено" });
       rec.payments = rec.payments || [];
+      // DEF-07 (P2): нельзя внести больше стоимости выступления (переплата запрещена).
+      const paidSoFar = rec.payments.reduce((s: number, x: any) => s + (Number(x.amount) || 0), 0);
+      const rest = Math.max(0, (Number(rec.price) || 0) - paidSoFar);
+      if (amount > rest) return res.status(400).json({ error: `Остаток к оплате — ${rest.toLocaleString("ru-RU")} ₸. Переплата запрещена.` });
       rec.payments.push({ id: uid(), amount, paidDate: p.date || todayStr(), method: p.method || "cash", comment: p.comment || null });
       return res.status(201).json({ performance: perfOut(rec, rec.payments) });
     }
+    // DEF-07 (P2): проверка переплаты по фактическим данным.
+    const [perfRow, paysNow] = await Promise.all([
+      supabaseFetch<any[]>("performances", `select=price&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`),
+      supabaseFetch<any[]>("performance_payments", `select=amount&performance_id=eq.${req.params.id}`),
+    ]);
+    if (!perfRow[0]) return res.status(404).json({ error: "Выступление не найдено" });
+    const paidSoFar = paysNow.reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const rest = Math.max(0, (Number(perfRow[0].price) || 0) - paidSoFar);
+    if (amount > rest) return res.status(400).json({ error: `Остаток к оплате — ${rest.toLocaleString("ru-RU")} ₸. Переплата запрещена.` });
     await supabaseFetch("performance_payments", "", {
       method: "POST",
       body: JSON.stringify({ organization_id: session.organizationId, performance_id: req.params.id, amount, paid_date: p.date || todayStr(), method: p.method || "cash", comment: p.comment || null }),
@@ -6019,8 +6149,11 @@ export function registerMvpApi(app: express.Express) {
     }
     if (!prod) return res.status(404).json({ error: "Товар не найден" });
     if (!prod.active || prod.echoPrice <= 0) return res.status(400).json({ error: "Товар недоступен для покупки за ЭхоБаксы" });
+    // DEF-14 (P3): списываем цену × количество, а не одну цену независимо от qty.
+    const qty = Math.max(1, Math.floor(Number(b.qty) || 1));
+    const cost = prod.echoPrice * qty;
     try {
-      const { balance, tx } = await applyEcho(session, studentId, -prod.echoPrice, "purchase", `Покупка: ${prod.name}`, productId);
+      const { balance, tx } = await applyEcho(session, studentId, -cost, "purchase", `Покупка: ${prod.name}${qty > 1 ? ` ×${qty}` : ""}`, productId);
       res.json({ balance, transaction: tx, productName: prod.name });
     } catch (e: any) {
       if (e?.message === "INSUFFICIENT") return res.status(400).json({ error: "Недостаточно ЭхоБаксов для покупки" });
@@ -6393,6 +6526,13 @@ export function registerMvpApi(app: express.Express) {
     }
     const prodRows = await supabaseFetch<any[]>("products", `select=*&id=eq.${p.productId}&organization_id=eq.${session.organizationId}`);
     const prod = prodRows[0];
+    if (!prod) return res.status(404).json({ error: "Товар не найден" });
+    // DEF-05 (P2): нельзя продать больше, чем есть на складе — иначе остаток
+    // и стоимость запасов уходят в минус. Приход оформляют через «Поступление».
+    const balance = await productStock(session, p.productId);
+    if (qty > balance) {
+      return res.status(400).json({ error: `На складе только ${balance} шт «${prod.name}» — продать ${qty} нельзя. Оформите поступление.` });
+    }
     const amount = Number(p.amount) || qty * (Number(prod?.sale_price) || 0);
     const inserted = await supabaseFetch<any[]>("product_sales", "", {
       method: "POST",
@@ -6596,7 +6736,7 @@ export function registerMvpApi(app: express.Express) {
     if (session.role !== "owner") return res.status(403).json({ error: "Доступно только владельцу" });
     if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
     const tid = req.params.id; const p = req.body || {};
-    const period = String(p.periodMonth || new Date().toISOString().slice(0, 7));
+    const period = String(p.periodMonth || almatyMonth());
     const body = {
       organization_id: session.organizationId, teacher_id: tid, period_month: period,
       retention: Number(p.retention) || 0, funnel: Number(p.funnel) || 0,
@@ -6880,7 +7020,7 @@ export function registerMvpApi(app: express.Express) {
   app.get("/api/mvp/journal/dashboard", ah(async (req, res) => {
     const session = getSession(req);
     const q = req.query as Record<string, string>;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = almatyToday(); // «сегодня» по Almaty (согласовано с KPI)
     const from = q.from || today;
     const to = q.to || from;
     if (!supabaseEnabled) return res.json(emptyJournalDashboard(from, to));
@@ -7440,7 +7580,7 @@ export function registerMvpApi(app: express.Express) {
     const summary = {
       total: out.length,
       openTasks: out.reduce((s, m) => s + m.openItems, 0),
-      thisMonth: out.filter((m) => (m.date || "").slice(0, 7) === new Date().toISOString().slice(0, 7)).length,
+      thisMonth: out.filter((m) => (m.date || "").slice(0, 7) === almatyMonth()).length,
     };
     res.json({ meetings: out, summary });
   }));
@@ -7471,7 +7611,7 @@ export function registerMvpApi(app: express.Express) {
       organization_id: session.organizationId,
       branch_id: session.role === "branch_manager" ? (session.dbBranchId || null) : (b.branchId || null),
       title: String(b.title).trim(),
-      meeting_date: b.date || new Date().toISOString().slice(0, 10),
+      meeting_date: b.date || almatyToday(),
       participants,
       agenda: (b.agenda || "").trim() || null,
       summary: (b.summary || "").trim() || null,
@@ -7883,7 +8023,7 @@ export function registerMvpApi(app: express.Express) {
   app.get("/api/mvp/planning/overview", ah(async (req, res) => {
     const session = getSession(req);
     if (session.role !== "owner") return res.status(403).json({ error: "Раздел «Планирование» доступен только владельцу" });
-    const period = String(req.query.period || new Date().toISOString().slice(0, 7));
+    const period = String(req.query.period || almatyMonth());
     const branchId = req.query.branch && req.query.branch !== "all" ? String(req.query.branch) : null;
     const base = buildPlanningOverview(session, period, branchId);
     const detailed = await buildDetailedPlan(session, period, branchId);
@@ -7895,7 +8035,7 @@ export function registerMvpApi(app: express.Express) {
     const session = getSession(req);
     if (session.role !== "owner") return res.status(403).json({ error: "Раздел «Планирование» доступен только владельцу" });
     const b = req.body || {};
-    const period = String(b.period || new Date().toISOString().slice(0, 7));
+    const period = String(b.period || almatyMonth());
     const key = `${session.organizationId}:${period}`;
     const base = planningStore[key] || planningDefaults(period);
     const store: PlanBudgetStore = {
@@ -7942,7 +8082,7 @@ export function registerMvpApi(app: express.Express) {
     if (session.role !== "owner") return res.status(403).json({ error: "Раздел «Планирование» доступен только владельцу" });
     const b = req.body || {};
     const row = {
-      date: String(b.date || new Date().toISOString().slice(0, 10)),
+      date: String(b.date || almatyToday()),
       revenue: Number(b.revenue) || 0,
       trials: Number(b.trials) || 0,
       sales: Number(b.sales) || 0,
@@ -7990,7 +8130,7 @@ export function registerMvpApi(app: express.Express) {
       teacherName: b.teacherName || "Преподаватель",
       reason: String(b.reason),
       amount,
-      period_month: String(b.period_month || new Date().toISOString().slice(0, 7)),
+      period_month: String(b.period_month || almatyMonth()),
       created_by: b.created_by === "Управляющий" ? "Управляющий" : "Владелец",
       comment: b.comment || null,
       created_at: new Date().toISOString(),
@@ -8063,7 +8203,10 @@ export function registerMvpApi(app: express.Express) {
     const time = minsToHHMM(nowMin);
     const expected = Number(b.expectedStart);    // начало занятия из расписания
     const late = Number.isFinite(expected) ? nowMin > expected + 5 : Boolean(b.late);
-    const photo = typeof b.photo === "string" ? b.photo : null;
+    // DEF-13 (P3): приход подтверждается ТОЛЬКО фото (как смена админа) — иначе
+    // «отметился» без доказательства присутствия. Жёсткое правило, не только UI.
+    const photo = typeof b.photo === "string" && b.photo.trim() ? b.photo : null;
+    if (!photo) return res.status(400).json({ error: "Требуется фото для подтверждения прихода" });
     const teacherName = session.fullName || "Педагог";
     arrivalStore[arrivalKey(session.organizationId, date, session.userId)] = { time, late, photo, date, teacherId: session.userId, teacherName };
     if (supabaseEnabled) {
@@ -8359,6 +8502,13 @@ export function registerMvpApi(app: express.Express) {
     const b = req.body || {};
     if (!String(b.renterName || "").trim()) return res.status(400).json({ error: "Укажите, кто берёт костюм" });
     const costume = costumes.find((c) => c.id === b.costumeId);
+    // DEF-08 (P2): нельзя выдать уже выданный костюм — сначала оформите возврат.
+    if (b.costumeId) {
+      const active = costumeRentals.find((r) => r.costumeId === b.costumeId && r.status === "active");
+      if (active || costume?.status === "rented") {
+        return res.status(409).json({ error: `Костюм «${costume?.name || "—"}» сейчас на руках (${active?.renterName || "выдан"}). Сначала оформите возврат.` });
+      }
+    }
     const rec: RentalRec = {
       id: uid(), organizationId: session.organizationId, branchId: session.dbBranchId || null,
       costumeId: b.costumeId || null, costumeName: costume?.name || b.costumeName || "Костюм",

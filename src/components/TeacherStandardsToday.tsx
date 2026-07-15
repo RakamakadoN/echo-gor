@@ -93,7 +93,7 @@ export function TeacherStandardsToday({
   const { todayBirthdays, upcoming } = useMemo(() => {
     const today = almatyToday();
     const todayKey = `${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
-    const groupName = (s: Student) => groups.find((g) => g.id === s.groupId)?.name;
+    const groupName = (s: Student) => groups.find((g) => s.groupIds?.includes(g.id))?.name;
     const todayBirthdays: BirthdayItem[] = [];
     const upcoming: BirthdayItem[] = [];
     for (const s of students) {
