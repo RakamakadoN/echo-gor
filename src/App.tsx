@@ -1826,9 +1826,12 @@ export default function App() {
   ) => {
     if (mvpDataMode !== "supabase") {
       for (const m of marks) await toggleAttendance(m.studentId, m.date, m.status, { isTrial: m.isTrial });
-      return;
+      return { failed: [] as { studentId: string; date: string }[] };
     }
-    const failed: string[] = [];
+    const failedNames: string[] = [];
+    // Аудит #24: возвращаем ключи неудачных отметок, чтобы журнал НЕ терял их из
+    // редактора (раньше pending очищался целиком, несохранённые ячейки исчезали).
+    const failed: { studentId: string; date: string }[] = [];
     for (const m of marks) {
       try {
         const response = await fetch("/api/mvp/attendance", {
@@ -1844,12 +1847,14 @@ export default function App() {
         if (!response.ok) throw new Error(await response.text());
       } catch {
         const name = students.find((s) => s.id === m.studentId)?.name || m.studentId;
-        failed.push(`${name} · ${m.date}`);
+        failedNames.push(`${name} · ${m.date}`);
+        failed.push({ studentId: m.studentId, date: m.date });
       }
     }
     await loadMvpBootstrap(activeRole);
-    if (failed.length) notifyError(`Не сохранились отметки: ${failed.join(", ")}`);
+    if (failedNames.length) notifyError(`Не сохранились отметки: ${failedNames.join(", ")}. Они остались в редакторе — повторите.`);
     else toast.success(`Отметки сохранены (${marks.length})`);
+    return { failed };
   };
 
   // ============================================================
