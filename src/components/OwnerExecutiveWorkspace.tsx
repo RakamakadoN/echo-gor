@@ -644,13 +644,15 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
 
   useEffect(() => {
     let alive = true;
-    const period = new Date().toISOString().slice(0, 7);
+    // Аудит #13: БДР теперь следует за выбранным месяцем (monthValue), а не всегда
+    // за текущим — раньше при выборе прошлого месяца показывался БДР за этот месяц.
+    const period = monthValue || localToday.slice(0, 7);
     fetch(`/api/mvp/owner/bdr-progress?period=${period}`, { headers: { "x-demo-role": "owner" } })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (alive && d) setBdr(d); })
       .catch(() => {});
     return () => { alive = false; };
-  }, []);
+  }, [monthValue, localToday]);
 
   // Одобрить / отклонить заявку (расход или возврат) прямо с дашборда.
   const decideRequest = async (kind: "expense" | "refund", id: string, action: "approve" | "reject") => {
