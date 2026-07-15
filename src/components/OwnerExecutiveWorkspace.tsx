@@ -237,6 +237,17 @@ interface OwnerExecutiveWorkspaceProps {
 
 type OwnerTab = "dashboard" | "branches" | "students" | "teachers" | "payroll" | "journal" | "schedule" | "finance" | "planning" | "meetings" | "reports" | "performances" | "products" | "documents" | "marketing" | "events" | "feed" | "announcements" | "analytics" | "ai" | "aihub" | "settings";
 
+// Аудит #37: смысловая группировка 17 разделов в сайдбаре (заголовки секций).
+// Считается по id в рендере — не трогает механику переупорядочивания разделов.
+const TAB_GROUP: Record<string, string> = {
+  dashboard: "Обзор",
+  branches: "Люди", students: "Люди", teachers: "Люди",
+  journal: "Учебный процесс", schedule: "Учебный процесс", performances: "Учебный процесс",
+  finance: "Деньги", planning: "Деньги", products: "Деньги", reports: "Деньги",
+  meetings: "Коммуникации", marketing: "Коммуникации", feed: "Коммуникации", announcements: "Коммуникации", aihub: "Коммуникации",
+  settings: "Система",
+};
+
 const ownerTabs: { id: OwnerTab; label: string; short: string; icon: React.ElementType }[] = [
   { id: "dashboard", label: "Главная", short: "Главная", icon: Activity },
   { id: "branches", label: "Филиалы", short: "Филиалы", icon: Building2 },
@@ -416,14 +427,23 @@ export function OwnerExecutiveWorkspace({
           </div>
           {/* Навигация (референс .nav) — прокручиваемая */}
           <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
-            {sectionSettings.visibleTabs.map((tab) => (
-              <OwnerNavButton
-                key={tab.id}
-                tab={tab}
-                active={activeTab === tab.id}
-                onClick={() => setActiveTab(tab.id as OwnerTab)}
-              />
-            ))}
+            {sectionSettings.visibleTabs.map((tab, i, arr) => {
+              // Заголовок секции — когда группа сменилась относительно предыдущего пункта.
+              const group = TAB_GROUP[tab.id] || "";
+              const prevGroup = i > 0 ? (TAB_GROUP[arr[i - 1].id] || "") : "";
+              return (
+                <React.Fragment key={tab.id}>
+                  {group && group !== prevGroup && (
+                    <p className="px-3 pb-1 pt-3 text-[10px] font-black uppercase tracking-wider text-slate-600 first:pt-0">{group}</p>
+                  )}
+                  <OwnerNavButton
+                    tab={tab}
+                    active={activeTab === tab.id}
+                    onClick={() => setActiveTab(tab.id as OwnerTab)}
+                  />
+                </React.Fragment>
+              );
+            })}
           </nav>
         </aside>
 
