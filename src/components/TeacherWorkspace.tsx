@@ -1197,13 +1197,32 @@ function StudentDetailsView({ studentId, students, groups = [], onBack, homework
            {/* Timeline / Analytics */}
            <div className="bg-white/5 border border-white/10 rounded-3xl p-5">
              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">История посещений</h3>
-             <div className="h-32 flex items-end gap-1 mb-2">
-                {/* Mock chart bars */}
-                {[...Array(14)].map((_, i) => (
-                  <div key={i} className={`flex-1 rounded-t-sm ${Math.random() > 0.2 ? 'bg-emerald-500/40' : 'bg-rose-500/40'}`} style={{ height: `${50 + Math.random() * 50}%` }} />
-                ))}
-             </div>
-             <p className="text-[10px] text-slate-500 uppercase">Последние 14 занятий (85% посещаемость)</p>
+             {(() => {
+                // Реальная история из отметок ученика (аудит #15: раньше здесь был
+                // график из Math.random и подпись «85%» независимо от данных).
+                const recs = (Object.values(student.attendance || {}) as any[])
+                  .filter((a) => a && a.status && a.status !== "unmarked")
+                  .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+                  .slice(-14);
+                if (recs.length === 0) {
+                  return <div className="h-32 flex items-center justify-center text-[11px] text-slate-500 uppercase tracking-wider">Отметок пока нет</div>;
+                }
+                const present = recs.filter((a) => a.status === "present").length;
+                const rate = Math.round((present / recs.length) * 100);
+                return (
+                  <>
+                    <div className="h-32 flex items-end gap-1 mb-2">
+                      {recs.map((a, i) => {
+                        const st = a.status;
+                        const color = st === "present" ? "bg-emerald-500/50" : st === "sick" ? "bg-amber-500/50" : "bg-rose-500/50";
+                        const height = st === "present" ? 100 : st === "sick" ? 60 : 35;
+                        return <div key={i} title={`${a.date}: ${st === "present" ? "был" : st === "sick" ? "болел" : "не был"}`} className={`flex-1 rounded-t-sm ${color}`} style={{ height: `${height}%` }} />;
+                      })}
+                    </div>
+                    <p className="text-[10px] text-slate-500 uppercase">Последние {recs.length} занятий ({rate}% посещаемость)</p>
+                  </>
+                );
+             })()}
            </div>
 
            <div className="bg-white/5 border border-white/10 rounded-3xl p-5 space-y-4">
