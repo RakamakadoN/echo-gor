@@ -149,16 +149,20 @@ export function AdminShiftView({
   const [closeOpen, setCloseOpen] = useState(false);
 
   useEffect(() => {
+    // Локальный кэш — мгновенно; серверные галочки перекроют ниже (аудит #31).
     setTicks(loadTicks(branchId));
   }, [branchId]);
 
-  // Подтянуть статус смены на сегодня.
+  // Подтянуть статус смены на сегодня (вместе с чек-листом с сервера).
   useEffect(() => {
     let alive = true;
     fetch("/api/mvp/admin/shift/today", { headers: { "x-demo-role": "admin" } })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        if (alive && d) setShift(d.shift ?? null);
+        if (alive && d) {
+          setShift(d.shift ?? null);
+          if (d.shift?.checklist && typeof d.shift.checklist === "object") setTicks(d.shift.checklist);
+        }
       })
       .catch(() => {});
     return () => {
@@ -169,11 +173,13 @@ export function AdminShiftView({
   const toggleTick = (key: string) => {
     setTicks((prev) => {
       const next = { ...prev, [key]: !prev[key] };
-      try {
-        window.localStorage.setItem(ticksKey(branchId), JSON.stringify(next));
-      } catch {
-        /* ignore quota */
-      }
+      // Локальный кэш — офлайн-резерв; основное хранение на сервере (руководство видит).
+      try { window.localStorage.setItem(ticksKey(branchId), JSON.stringify(next)); } catch { /* ignore quota */ }
+      fetch("/api/mvp/admin/shift", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-demo-role": "admin" },
+        body: JSON.stringify({ action: "tick", item: key, value: next[key] }),
+      }).catch(() => { /* офлайн — останется локальный кэш */ });
       return next;
     });
   };

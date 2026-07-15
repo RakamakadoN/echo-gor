@@ -8328,6 +8328,7 @@ export function registerMvpApi(app: express.Express) {
     hallPhotos: { time: string; hall: string | null; photo: string }[];
     expectedCash?: number; countedCash?: number | null; cashDiff?: number | null;
     cashStatus?: string | null; cashReason?: string | null; cashClosedBy?: string | null;
+    checklist?: Record<string, boolean>;   // ручные галочки смены (аудит #31)
   };
   const adminShiftStore: Record<string, AdminShiftRec> = {};
   const adminShiftKey = (session: MvpSession, date: string) =>
@@ -8340,7 +8341,36 @@ export function registerMvpApi(app: express.Express) {
       expectedCash: s.expectedCash ?? null, countedCash: s.countedCash ?? null,
       cashDiff: s.cashDiff ?? null, cashStatus: s.cashStatus ?? null,
       cashReason: s.cashReason ?? null, cashClosedBy: s.cashClosedBy ?? null,
+      checklist: s.checklist || {},
     };
+
+  // Подтянуть смену из admin_shifts, если в памяти её нет (serverless: разные
+  // инстансы/после рестарта). Best-effort — при ошибке остаёмся на памяти.
+  const hydrateAdminShift = async (session: MvpSession, date: string): Promise<AdminShiftRec | undefined> => {
+    const key = adminShiftKey(session, date);
+    if (adminShiftStore[key]) return adminShiftStore[key];
+    if (!supabaseEnabled) return undefined;
+    try {
+      const rows = await supabaseFetch<any[]>(
+        "admin_shifts",
+        `select=*&organization_id=eq.${session.organizationId}&shift_date=eq.${date}` +
+        (session.dbBranchId ? `&branch_id=eq.${session.dbBranchId}` : "") + "&limit=1"
+      );
+      const r = rows[0];
+      if (!r) return undefined;
+      const rec: AdminShiftRec = {
+        date, openedAt: r.opened_at || undefined, openPhoto: r.open_photo || null,
+        closedAt: r.closed_at || undefined, closePhoto: r.close_photo || null,
+        hallPhotos: Array.isArray(r.hall_photos) ? r.hall_photos : [],
+        expectedCash: r.expected_cash ?? undefined, countedCash: r.counted_cash ?? null,
+        cashDiff: r.cash_diff ?? null, cashStatus: r.cash_status ?? null,
+        cashReason: r.cash_reason ?? null, cashClosedBy: r.cash_closed_by ?? null,
+        checklist: (r.checklist && typeof r.checklist === "object") ? r.checklist : {},
+      };
+      adminShiftStore[key] = rec;
+      return rec;
+    } catch { return undefined; }
+  };
 
   // Деньги смены за сегодня: абонементы + мерч + прокат, с разбивкой по способам оплаты.
   const shiftMoneyToday = async (session: MvpSession, date: string) => {
@@ -8370,7 +8400,8 @@ export function registerMvpApi(app: express.Express) {
   app.get("/api/mvp/admin/shift/today", ah(async (req, res) => {
     const session = getSession(req);
     const date = KZ_DATE.format(new Date());
-    res.json({ shift: adminShiftOut(adminShiftStore[adminShiftKey(session, date)]) });
+    const rec = await hydrateAdminShift(session, date);
+    res.json({ shift: adminShiftOut(rec) });
   }));
 
   // Сводка денег смены (для окна закрытия/сверки): абонементы + мерч + прокат.
@@ -8427,8 +8458,14 @@ export function registerMvpApi(app: express.Express) {
     // Приход и чистоту залов подтверждаем ТОЛЬКО при наличии фото (жёсткое правило, не только UI).
     if ((action === "open" || action === "hall") && !photo)
       return res.status(400).json({ error: "Требуется фото для подтверждения" });
-    const cur: AdminShiftRec = adminShiftStore[key] || { date, hallPhotos: [] };
-    if (action === "open") { cur.openedAt = time; cur.openPhoto = photo; cur.closedAt = undefined; cur.closePhoto = undefined; }
+    const cur: AdminShiftRec = (await hydrateAdminShift(session, date)) || adminShiftStore[key] || { date, hallPhotos: [] };
+    if (action === "tick") {
+      // Ручная галочка чек-листа смены (аудит #31): хранится на сервере, не в localStorage.
+      const item = String(b.item || "").slice(0, 64);
+      if (!item) return res.status(400).json({ error: "Не указан пункт чек-листа" });
+      cur.checklist = { ...(cur.checklist || {}), [item]: Boolean(b.value) };
+    }
+    else if (action === "open") { cur.openedAt = time; cur.openPhoto = photo; cur.closedAt = undefined; cur.closePhoto = undefined; }
     else if (action === "hall") { cur.hallPhotos.push({ time, hall: typeof b.hall === "string" ? b.hall : null, photo: photo! }); }
     else if (action === "close") {
       // Сверка кассы: ожидаемая сумма считается на сервере (не доверяем клиенту).
@@ -8460,6 +8497,7 @@ export function registerMvpApi(app: express.Express) {
             expected_cash: cur.expectedCash ?? null, counted_cash: cur.countedCash ?? null,
             cash_diff: cur.cashDiff ?? null, cash_status: cur.cashStatus ?? null,
             cash_reason: cur.cashReason ?? null, cash_closed_by: cur.cashClosedBy ?? null,
+            checklist: cur.checklist || {},
           }),
         });
       } catch { /* mock */ }
