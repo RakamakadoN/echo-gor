@@ -11,6 +11,7 @@ import {
   ChevronDown,
   ChevronUp,
   CheckCircle,
+  Download,
   ClipboardList,
   Coins,
   Crown,
@@ -1529,6 +1530,25 @@ function ChangeCell({ value }: { value: number | null }) {
 
 // Универсальное окно детализации с цветным градиентным заголовком.
 function RiskTableModal({ data, onClose }: { data: DetailModalData; onClose: () => void }) {
+  // Аудит #42: экспорт любого списка дашборда в CSV (Excel открывает напрямую).
+  const exportCsv = () => {
+    const cellText = (c: any): string => {
+      if (c === null || c === undefined) return "";
+      if (typeof c === "string" || typeof c === "number") return String(c);
+      if (typeof c === "object" && "props" in c && typeof c.props?.children === "string") return c.props.children;
+      return "";
+    };
+    const esc = (s: string) => /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    const lines = [data.columns.map(esc).join(";"), ...data.rows.map((r) => r.map((c) => esc(cellText(c))).join(";"))];
+    const csv = "﻿" + lines.join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    const safeTitle = String(data.title || "список").replace(/[^\wа-яА-ЯёЁ]+/g, "_").slice(0, 40);
+    a.download = `${safeTitle}_${new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Almaty" }).format(new Date())}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" onClick={onClose}>
       <div className="flex max-h-[86vh] w-full max-w-2xl flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#141414] shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -1538,7 +1558,15 @@ function RiskTableModal({ data, onClose }: { data: DetailModalData; onClose: () 
             <h3 className="truncate text-lg font-black text-white drop-shadow-sm">{data.title}</h3>
             {data.subtitle && <p className="mt-0.5 text-xs font-bold text-white/90">{data.subtitle}</p>}
           </div>
-          <button onClick={onClose} className="shrink-0 rounded-xl bg-black/20 p-1.5 text-white transition hover:bg-black/40"><X className="h-4 w-4" /></button>
+          <div className="flex shrink-0 items-center gap-2">
+            {data.rows.length > 0 && (
+              <button onClick={exportCsv} title="Скачать список в CSV (Excel)"
+                className="flex items-center gap-1.5 rounded-xl bg-black/20 px-2.5 py-1.5 text-xs font-bold text-white transition hover:bg-black/40">
+                <Download className="h-3.5 w-3.5" /> CSV
+              </button>
+            )}
+            <button onClick={onClose} className="rounded-xl bg-black/20 p-1.5 text-white transition hover:bg-black/40"><X className="h-4 w-4" /></button>
+          </div>
         </div>
         {/* Тело */}
         <div className="overflow-auto p-5">
