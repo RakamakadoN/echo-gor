@@ -933,7 +933,9 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
   const openRetention = () => openInfo("Удержание (мес→мес)", [
     ["Удержание", m.retention.pct === null ? "—" : `${m.retention.pct}%`],
     ["Активны / всего", `${m.retention.activeStudents} / ${m.retention.totalStudents}`],
-    ["Отток", m.retention.pct === null ? "—" : `${100 - m.retention.pct}%`],
+    // Аудит #21: это НЕ отток (ушедшие), а доля без активного абонемента —
+    // «отток за месяц» считается отдельно (churn.left/pct). Разные метрики.
+    ["Без активного абонемента", m.retention.pct === null ? "—" : `${100 - m.retention.pct}%`],
     ["К пред. месяцу", <DeltaBadge pct={m.retention.momPct} />],
     ["Год к году", <DeltaBadge pct={m.retention.yoyPct} />],
   ], "Удержание — доля учеников с активным абонементом.");
@@ -1433,7 +1435,8 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
           ]} />
           <AnalysisBlock title="Удержание" lines={[
             `Удержание: ${m.retention.pct === null ? "—" : m.retention.pct + "%"}`,
-            `Отток: ${m.retention.pct === null ? "—" : (100 - m.retention.pct) + "%"}`,
+            `Без активного абонемента: ${m.retention.pct === null ? "—" : (100 - m.retention.pct) + "%"}`,
+            `Отток за месяц (ушли): ${m.churn.left}${m.churn.pct !== null ? ` (${m.churn.pct}%)` : ""}`,
             `Активны: ${m.retention.activeStudents} из ${m.retention.totalStudents}`
           ]} />
           <AnalysisBlock title="Заполняемость" lines={[
