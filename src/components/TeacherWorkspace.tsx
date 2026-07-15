@@ -65,7 +65,10 @@ export function TeacherWorkspace({
   competitions,
   announcements,
   addAuditLog,
-  teacherName = "Аслан Плиев",
+  // Нейтральный дефолт (аудит #5): раньше был «Аслан Плиев» — из-за этого ЛЮБОЙ
+  // педагог видел ЗП/KPI Аслана (совпадение с сид-данными). Теперь имя приходит
+  // из реальной сессии, а неизвестное имя → расчёт по живым метрикам, не чужой сид.
+  teacherName = "Педагог",
   scheduleItems = [],
   scheduleLoading = false,
   onLoadSchedule,

@@ -3592,6 +3592,7 @@ export default function App() {
                competitions={competitions}
                announcements={announcements}
                addAuditLog={addAuditLog}
+               teacherName={currentUserName || "Педагог"}
                scheduleItems={scheduleItems}
                scheduleLoading={scheduleLoading}
                onLoadSchedule={loadSchedule}
