@@ -188,7 +188,7 @@ const subCoversNow = (s: Subscription, now: Date): boolean => {
 };
 
 /** Есть ли у ученика действующий сейчас абонемент. */
-export const hasCoveringSubscription = (student: Student, now: Date = new Date()): boolean =>
+export const hasCoveringSubscription = (student: { id?: string; subscriptions?: Student["subscriptions"] }, now: Date = new Date()): boolean =>
   (student.subscriptions || []).some((s) => subCoversNow(s, now));
 
 /** «Новый ученик» = текущий месяц — его ПЕРВЫЙ месяц занятий: самый ранний

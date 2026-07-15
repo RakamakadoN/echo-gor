@@ -105,7 +105,7 @@ export function useOwnerSectionSettings(baseTabs: BaseTab[]): OwnerSectionSettin
   const resolvedTabs = useMemo<ResolvedTab[]>(() => {
     return baseTabs
       .map((tab, index) => {
-        const s = map[tab.id] || {};
+        const s: Partial<SectionSetting> = map[tab.id] || {};
         return {
           ...tab,
           effectiveLabel: (s.label && s.label.trim()) || tab.label,

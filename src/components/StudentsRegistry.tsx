@@ -1126,7 +1126,7 @@ export default function StudentsRegistry({
                       colOn("branch") && "Филиал", colOn("group") && "Группа", colOn("skill") && "Уровень", colOn("source") && "Источник",
                       colOn("duration") && "Продолжительность", colOn("subEnd") && "Окончание",
                       colOn("debt") && "Долг", colOn("ltv") && "LTV-сегмент", colOn("status") && "Статус", "Действия",
-                    ].filter((v) => v !== false).map((label, idx) => (
+                    ].filter((v): v is string => typeof v === "string").map((label, idx) => (
                       <th key={idx} className={`px-3.5 py-3 text-[11px] font-bold uppercase ${idx === 0 ? "w-10" : ""}`} style={{ letterSpacing: "0.55px", color: CLR.muted }}>{label}</th>
                     ))}
                   </tr>

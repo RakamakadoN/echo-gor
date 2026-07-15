@@ -274,6 +274,7 @@ export interface Student {
   photoUrl: string;
   branchId: string;
   groupIds: string[]; // Updated for multiple groups
+  groupId?: string | null; // основная группа (сервер отдаёт из group_id) — для быстрых ссылок
   teacherId: string;
   guardians?: Guardian[]; // Updated for separate guardian entity
   parentName: string; // Keep for legacy/simple compatibility

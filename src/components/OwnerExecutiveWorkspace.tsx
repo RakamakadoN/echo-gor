@@ -166,11 +166,13 @@ interface OwnerExecutiveWorkspaceProps {
   onCreateBranch?: (data: { name: string; city: string; address?: string; phone?: string }) => Promise<boolean>;
   onUpdateBranch?: (id: string, data: { name?: string; city?: string; address?: string; phone?: string }) => Promise<boolean>;
   onDeleteBranch?: (id: string) => Promise<boolean>;
-  onCreateStudent?: (data: StudentInput) => Promise<string | boolean | null>;
+  onCreateStudent?: (data: StudentInput) => Promise<string | boolean | null | { archivedId: string; message: string }>;
   onUpdateStudent?: (id: string, data: StudentInput) => Promise<boolean>;
   onDeleteStudent?: (id: string) => Promise<boolean>;
   onOpenPayment?: (student: Student) => void;
   onSellSubscription?: (payload: SellSubscriptionInput) => Promise<boolean> | boolean;
+  onSellSubscriptionBatch?: (items: SellSubscriptionInput[]) => Promise<any> | any;
+  onDeleteTrial?: (studentId: string, date: string) => Promise<any> | any;
   subscriptionPlans?: SubscriptionPlan[];
   studentTrash?: TrashStudent[];
   onRestoreStudent?: (id: string) => Promise<boolean>;
@@ -3354,11 +3356,13 @@ function StudentsNetworkView({ students, branches, groups, teachers, onCreateStu
   branches: Branch[];
   groups: Group[];
   teachers: Teacher[];
-  onCreateStudent?: (data: StudentInput) => Promise<string | boolean | null>;
+  onCreateStudent?: (data: StudentInput) => Promise<string | boolean | null | { archivedId: string; message: string }>;
   onUpdateStudent?: (id: string, data: StudentInput) => Promise<boolean>;
   onDeleteStudent?: (id: string) => Promise<boolean>;
   onOpenPayment?: (student: Student) => void;
   onSellSubscription?: (payload: SellSubscriptionInput) => Promise<boolean> | boolean;
+  onSellSubscriptionBatch?: (items: SellSubscriptionInput[]) => Promise<any> | any;
+  onDeleteTrial?: (studentId: string, date: string) => Promise<any> | any;
   subscriptionPlans?: SubscriptionPlan[];
   studentTrash?: TrashStudent[];
   onRestoreStudent?: (id: string) => Promise<boolean>;
@@ -9412,7 +9416,7 @@ function PenaltyJournalModal({ penalties, teachers, months, month, onClose, onCh
     }));
   }, [penalties]);
 
-  const teacherNames = useMemo(() => Array.from(new Set(all.map((r) => r.teacherName))), [all]);
+  const teacherNames = useMemo<string[]>(() => (Array.from(new Set(all.map((r: any) => String(r.teacherName || "")))).filter(Boolean) as string[]), [all]);
   const filtered = all.filter((r) => (!fMonth || r.month === fMonth) && (!fTeacher || r.teacherName === fTeacher));
   const total = filtered.reduce((s, r) => s + (r.amount || 0), 0);
 
@@ -11309,7 +11313,7 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
     setSaving(true);
     const ok = await onCreateGroup?.({ ...groupForm, ageFrom: groupForm.ageFrom ? Number(groupForm.ageFrom) : undefined, ageTo: groupForm.ageTo ? Number(groupForm.ageTo) : undefined });
     setSaving(false);
-    if (ok) { setGroupForm({ name: "", branchId: "", teacherId: "", hallId: "", ageFrom: "", ageTo: "", level: "Начинающие", scheduleDays: "", scheduleTime: "", startDate: "", endDate: "" }); setActiveForm(null); }
+    if (ok) { setGroupForm({ name: "", branchId: "", teacherId: "", hallId: "", ageFrom: "", ageTo: "", level: "Начинающие", scheduleDays: "", scheduleTime: "", startDate: "", endDate: "", format: "group" }); setActiveForm(null); }
   };
 
   const inputCls = "rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white w-full";

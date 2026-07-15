@@ -88,7 +88,7 @@ interface AdminEduErpWorkspaceProps {
   onUpdateLesson?: (id: string, data: any) => Promise<boolean>;
   onDeleteLesson?: (id: string) => Promise<boolean>;
   onToggleAttendance?: (studentId: string, date: string, status: "present" | "absent" | "sick") => void;
-  onCreateStudent?: (data: any) => Promise<string | boolean | null>;
+  onCreateStudent?: (data: any) => Promise<string | boolean | null | { archivedId: string; message: string }>;
   onUpdateStudent?: (id: string, data: any) => Promise<boolean>;
   onDeleteStudent?: (id: string) => Promise<boolean>;
   onArchiveStudent?: (id: string, reason: string, comment: string) => Promise<boolean | void> | void;
@@ -102,12 +102,14 @@ interface AdminEduErpWorkspaceProps {
   onCreateAnnouncement?: (data: { title: string; content: string; audience: AnnouncementAudience; isImportant: boolean }) => void;
   onOpenPayment?: (student: Student) => void;
   onSellSubscription?: (payload: SellSubscriptionInput) => Promise<boolean> | boolean;
+  onSellSubscriptionBatch?: (items: SellSubscriptionInput[]) => Promise<any> | any;
   tasks?: AdminTask[];
   subscriptionPlans?: SubscriptionPlan[];
   leadSources?: LeadSource[];
   onCreateTask?: (data: any) => Promise<boolean>;
   onUpdateTask?: (id: string, data: any) => Promise<boolean>;
   onDeleteTask?: (id: string) => Promise<boolean>;
+  onDeleteTrial?: (studentId: string, date: string) => Promise<any> | any;
   onCreatePlan?: (data: any) => Promise<boolean>;
   onUpdatePlan?: (id: string, data: any) => Promise<boolean>;
   onDeletePlan?: (id: string) => Promise<boolean>;
