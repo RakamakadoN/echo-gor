@@ -12,6 +12,7 @@ import {
   GraduationCap,
   HeartHandshake,
   Megaphone,
+  Menu,
   MessageSquare,
   Plus,
   Search,
@@ -154,6 +155,9 @@ export function BranchManagerWorkspace({
   onDeleteGroupPermanent,
 }: BranchManagerWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<BranchTab>("dashboard");
+  const [moreOpen, setMoreOpen] = useState(false);
+  // Первые 4 вкладки — в нижней панели, остальные (KPI, сверки, зарплаты, БДР…) — в шторке «Ещё».
+  const primaryTabs = branchTabs.slice(0, 4);
   // Сворачивание бокового меню — раздел открывается на всю ширину.
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [studentSearch, setStudentSearch] = useState("");
@@ -437,11 +441,48 @@ export function BranchManagerWorkspace({
         </main>
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-white/10 bg-[#080808]/95 px-2 py-2 backdrop-blur-xl lg:hidden">
-        {branchTabs.slice(0, 5).map((tab) => (
-          <MobileNavButton key={tab.id} tab={tab} active={activeTab === tab.id} onClick={() => setActiveTab(tab.id)} />
+      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-white/10 bg-[#080808]/95 px-2 pt-2 backdrop-blur-xl lg:hidden" style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}>
+        {primaryTabs.map((tab) => (
+          <MobileNavButton key={tab.id} tab={tab} active={activeTab === tab.id} onClick={() => { setActiveTab(tab.id); setMoreOpen(false); }} />
         ))}
+        <button
+          onClick={() => setMoreOpen((v) => !v)}
+          className={`flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-2xl py-2 text-[9px] font-black uppercase ${moreOpen || !primaryTabs.some((t) => t.id === activeTab) ? "text-[#C5A059]" : "text-slate-500"}`}
+        >
+          <Menu className="h-5 w-5" />
+          <span className="max-w-full truncate px-1">Ещё</span>
+        </button>
       </nav>
+
+      {/* Шторка «Ещё»: все разделы филиала с телефона (иначе KPI/сверки/зарплаты недоступны) */}
+      {moreOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setMoreOpen(false)} />
+          <div className="absolute inset-x-0 bottom-0 max-h-[78vh] overflow-y-auto rounded-t-3xl border-t border-white/10 bg-[#0F0F0F] px-4 pt-3" style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}>
+            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/20" />
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#C5A059]">Все разделы</p>
+              <button onClick={() => setMoreOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/5 text-slate-400"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {branchTabs.map((tab) => {
+                const Icon = tab.icon;
+                const active = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => { setActiveTab(tab.id); setMoreOpen(false); }}
+                    className={`flex min-h-[76px] flex-col items-center justify-center gap-1.5 rounded-2xl border px-2 py-3 text-center ${active ? "border-[#C5A059]/40 bg-[#C5A059]/10 text-[#C5A059]" : "border-white/5 bg-white/[0.03] text-slate-300 active:bg-white/10"}`}
+                  >
+                    <Icon className="h-5 w-5" />
+                    <span className="text-[10px] font-bold leading-tight">{tab.short}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
