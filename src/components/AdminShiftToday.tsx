@@ -24,7 +24,7 @@ import {
   WalletCards,
   X,
 } from "lucide-react";
-import type { Announcement, Branch, Group, Payment, Student, Teacher, AdminTask } from "../types";
+import type { Announcement, Branch, Group, Payment, Student, Teacher, AdminTask, Hall } from "../types";
 import { CostumeOverdueBanner } from "./CostumeOverdueBanner";
 import { toast } from "../toast";
 
@@ -122,6 +122,7 @@ type Props = {
   monthRevenue: number;
   debt: number;
   renewals: Student[];
+  halls?: Hall[];
   onNavigate?: (tab: string) => void;
 };
 
@@ -138,6 +139,7 @@ export function AdminShiftView({
   monthRevenue,
   debt,
   renewals,
+  halls = [],
   onNavigate,
 }: Props) {
   const branchName = branch?.name || branches[0]?.name || "филиал";
@@ -186,7 +188,13 @@ export function AdminShiftView({
 
   const shiftOpen = Boolean(shift?.openedAt) && !shift?.closedAt;
   const shiftClosed = Boolean(shift?.closedAt);
-  const hallsDone = (shift?.hallPhotos?.length || 0) > 0;
+  // Аудит #26: контроль по КАЖДОМУ залу филиала, а не «одно фото = все залы».
+  const branchHalls = (halls || []).filter((h: any) => (h.branchId === branchId || !h.branchId) && String(h.status || "active") === "active");
+  const photographedHalls = new Set((shift?.hallPhotos || []).map((h) => (h.hall || "").trim()).filter(Boolean));
+  const hallsExpected = branchHalls.length;
+  const hallsDone = hallsExpected > 0
+    ? branchHalls.every((h: any) => photographedHalls.has(String(h.name || "").trim()))
+    : (shift?.hallPhotos?.length || 0) > 0; // фолбэк: если залы не заведены — как раньше
 
   // Заявки ЭхоБаксов, ожидающие обработки.
   const [echoPending, setEchoPending] = useState<number | null>(null);
@@ -254,12 +262,12 @@ export function AdminShiftView({
   );
 
   // Отправить фото-действие смены на бэкенд. Возвращает true при успехе.
-  const submitPhoto = async (action: "open" | "hall", photo: string): Promise<boolean> => {
+  const submitPhoto = async (action: "open" | "hall", photo: string, hall?: string): Promise<boolean> => {
     if (!photo) return false; // страховка: без фото не подтверждаем
     const res = await fetch("/api/mvp/admin/shift", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-demo-role": "admin" },
-      body: JSON.stringify({ action, photo, time: almatyTimeStr() }),
+      body: JSON.stringify({ action, photo, hall: hall || null, time: almatyTimeStr() }),
     });
     if (!res.ok) { const e = await res.json().catch(() => ({})); toast.error(e.error || "Не удалось сохранить"); return false; }
     const d = await res.json();
@@ -293,11 +301,13 @@ export function AdminShiftView({
       icon: Sparkles,
       tone: hallsDone ? "emerald" : "sky",
       title: "Проверить залы",
-      sub: hallsDone ? `${shift?.hallPhotos.length} фото загружено` : "фото чистых залов",
-      badge: shift?.hallPhotos.length || undefined,
+      sub: hallsExpected > 0
+        ? (hallsDone ? `Все залы проверены (${hallsExpected})` : `Проверено ${photographedHalls.size}/${hallsExpected} залов`)
+        : (hallsDone ? `${shift?.hallPhotos.length} фото загружено` : "фото чистых залов"),
+      badge: (hallsExpected > 0 ? photographedHalls.size : shift?.hallPhotos.length) || undefined,
       done: hallsDone,
       action: "Фото",
-      onClick: () => setPhotoModal({ action: "hall", title: "Фото зала", hint: "Сфотографируйте чистый и готовый зал" }),
+      onClick: () => setPhotoModal({ action: "hall", title: "Фото зала", hint: hallsExpected > 0 ? "Выберите зал и сфотографируйте его чистым и готовым" : "Сфотографируйте чистый и готовый зал" }),
     },
     {
       key: "merch",
@@ -581,9 +591,10 @@ export function AdminShiftView({
         <PhotoCaptureModal
           title={photoModal.title}
           hint={photoModal.hint}
+          hallOptions={photoModal.action === "hall" && branchHalls.length > 0 ? branchHalls.map((h: any) => String(h.name || "").trim()).filter(Boolean) : undefined}
           onClose={() => setPhotoModal(null)}
-          onSubmit={async (photo) => {
-            const ok = await submitPhoto(photoModal.action, photo);
+          onSubmit={async (photo, hall) => {
+            const ok = await submitPhoto(photoModal.action, photo, hall);
             if (ok) setPhotoModal(null); // при ошибке модалка остаётся — можно переснять и повторить
           }}
         />
@@ -744,14 +755,17 @@ export function PhotoCaptureModal({
   hint,
   onClose,
   onSubmit,
+  hallOptions,
 }: {
   title: string;
   hint: string;
   onClose: () => void;
-  onSubmit: (photo: string) => Promise<void>;
+  onSubmit: (photo: string, hall?: string) => Promise<void>;
+  hallOptions?: string[];   // если задан — выбор зала обязателен (аудит #26)
 }) {
   const [photo, setPhoto] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [hall, setHall] = useState<string>(hallOptions?.[0] || "");
   const inputRef = useRef<HTMLInputElement>(null);
 
   async function pick(e: React.ChangeEvent<HTMLInputElement>) {
@@ -767,11 +781,12 @@ export function PhotoCaptureModal({
     }
   }
 
+  const needHall = Array.isArray(hallOptions) && hallOptions.length > 0;
   async function submit() {
-    if (!photo) return;
+    if (!photo || (needHall && !hall)) return;
     setBusy(true);
     try {
-      await onSubmit(photo);
+      await onSubmit(photo, needHall ? hall : undefined);
     } finally {
       setBusy(false);
     }
@@ -792,6 +807,16 @@ export function PhotoCaptureModal({
           </button>
         </div>
         <p className="mb-4 text-xs text-slate-400">{hint}</p>
+
+        {needHall && (
+          <label className="mb-4 block">
+            <span className="mb-1 block text-[11px] font-bold uppercase tracking-wider text-slate-500">Какой зал</span>
+            <select value={hall} onChange={(e) => setHall(e.target.value)}
+              className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm font-bold text-white outline-none focus:border-[#C5A059]/50">
+              {hallOptions!.map((h) => <option key={h} value={h}>{h}</option>)}
+            </select>
+          </label>
+        )}
 
         <input ref={inputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={pick} />
 
