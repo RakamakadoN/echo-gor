@@ -59,13 +59,20 @@ type ReactionSummary = { total: number; byKey: Record<string, number>; byGroup: 
 // - CompetitionsView
 // - AINotebook
 
+// «Сегодня» по Алматы (аудит #22): raw toISOString давал UTC-дату — до 05:00
+// по Алматы это вчера, отметки/касса «уезжали» на прошлый день.
+const almatyToday = () => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Almaty" }).format(new Date());
+
 export function TeacherWorkspace({
   groups,
   students,
   competitions,
   announcements,
   addAuditLog,
-  teacherName = "Аслан Плиев",
+  // Нейтральный дефолт (аудит #5): раньше был «Аслан Плиев» — из-за этого ЛЮБОЙ
+  // педагог видел ЗП/KPI Аслана (совпадение с сид-данными). Теперь имя приходит
+  // из реальной сессии, а неизвестное имя → расчёт по живым метрикам, не чужой сид.
+  teacherName = "Педагог",
   scheduleItems = [],
   scheduleLoading = false,
   onLoadSchedule,
@@ -107,7 +114,7 @@ export function TeacherWorkspace({
 
   // Load real schedule on mount
   useEffect(() => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = almatyToday();
     const weekAhead = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
     if (onLoadSchedule) onLoadSchedule({ from: today, to: weekAhead });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -317,7 +324,7 @@ export function TeacherWorkspace({
           <NavItem icon={<CheckSquare className="w-5 h-5" />} label="Ученики" active={activeTab === 'students'} onClick={() => setActiveTab('students')} />
           <NavItem icon={<Star className="w-5 h-5" />} label="Спасибо" active={activeTab === 'feedback'} onClick={() => {setActiveTab('feedback'); setSelectedGroupId(null); setSelectedStudentId(null)}} />
           <NavItem icon={<Coins className="w-5 h-5" />} label="ЭхоБаксы" active={activeTab === 'shop'} onClick={() => {setActiveTab('shop'); setSelectedGroupId(null); setSelectedStudentId(null)}} />
-          <NavItem icon={<BrainCircuit className="w-5 h-5" />} label="Notebook" active={activeTab === 'more'} onClick={() => {setActiveTab('more'); setSelectedGroupId(null); setSelectedStudentId(null)}} />
+          <NavItem icon={<BrainCircuit className="w-5 h-5" />} label="Заметки" active={activeTab === 'more'} onClick={() => {setActiveTab('more'); setSelectedGroupId(null); setSelectedStudentId(null)}} />
         </div>
       </div>
 
@@ -510,7 +517,10 @@ function TeacherProfileView({ teacherName, groups, students, competitions }: any
       }
     };
 
-    startAutoRender();
+    // Аудит #48: авторендер бьёт по эндпоинту на каждом открытии профиля с
+    // захардкоженным entityId и поллингом 550мс. В проде это лишняя нагрузка на
+    // несуществующего «teach-aslan» — оставляем автосборку только в разработке.
+    if (import.meta.env.DEV) startAutoRender();
 
     return () => {
       cancelled = true;
@@ -579,15 +589,17 @@ function TeacherProfileView({ teacherName, groups, students, competitions }: any
                     : "ожидание"}
               </p>
             </div>
-            <a
-              href="http://localhost:3001/TeacherSpotlightTrailer"
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-xs font-black uppercase tracking-wider text-white transition hover:border-[#C5A059]/50"
-            >
-              <PlayCircle className="h-4 w-4" />
-              Preview
-            </a>
+            {import.meta.env.DEV && (
+              <a
+                href="http://localhost:3001/TeacherSpotlightTrailer"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-xs font-black uppercase tracking-wider text-white transition hover:border-[#C5A059]/50"
+              >
+                <PlayCircle className="h-4 w-4" />
+                Preview (dev)
+              </a>
+            )}
           </div>
         </div>
       </section>
@@ -674,8 +686,10 @@ function groupEngagementRate(group: Group, students: Student[]): number {
 }
 
 function SafeFeedbackView({ groups, students, onSubmitReaction, onLoadReactions, flash }: any) {
+  // Аудит #32: старт с 0, а не с фейковых defaultCount — показываем реальные
+  // числа из базы (или ноль/пусто), чтобы вовлечённость не была выдуманной.
   const [counts, setCounts] = useState<Record<string, number>>(() =>
-    Object.fromEntries(SAFE_REACTIONS.map((r) => [r.key, r.defaultCount]))
+    Object.fromEntries(SAFE_REACTIONS.map((r) => [r.key, 0]))
   );
   const [isLive, setIsLive] = useState(false);
   const [sending, setSending] = useState<string | null>(null);
@@ -771,27 +785,19 @@ function SafeFeedbackView({ groups, students, onSubmitReaction, onLoadReactions,
           </div>
 
           <div className="rounded-[2rem] border border-indigo-500/20 bg-indigo-500/10 p-5">
-            <h2 className="text-sm font-bold uppercase tracking-wider text-white">Экран ученика после занятия</h2>
-            <p className="mt-2 text-xs text-slate-400">“Как прошло занятие?” — нажмите, чтобы записать реакцию.</p>
-            {groups.length > 0 && (
-              <select
-                value={selectedGroupId}
-                onChange={(e) => setSelectedGroupId(e.target.value)}
-                className="mt-3 w-full rounded-xl border border-indigo-500/20 bg-black/40 px-3 py-2 text-xs text-white outline-none focus:border-indigo-400"
-              >
-                {groups.map((g: Group) => <option key={g.id} value={g.id}>{g.name}</option>)}
-              </select>
-            )}
+            <h2 className="text-sm font-bold uppercase tracking-wider text-white">Как это видит ученик</h2>
+            {/* Аудит #32: превью экрана ученика — БЕЗ отправки. Реакции ставит только
+                сам ученик со своего входа, иначе педагог мог бы накручивать себе. */}
+            <p className="mt-2 text-xs text-slate-400">“Как прошло занятие?” — ученик выбирает реакцию со своего входа. Здесь только предпросмотр.</p>
             <div className="mt-3 grid gap-2">
               {SAFE_REACTIONS.map((r) => (
-                <button
+                <div
                   key={r.key}
-                  disabled={sending === r.key}
-                  onClick={() => sendReaction(r.key)}
-                  className="rounded-xl border border-indigo-500/15 bg-black/25 px-3 py-2 text-left text-xs font-bold text-indigo-100 transition hover:bg-indigo-500/15 active:scale-[0.98] disabled:opacity-50"
+                  aria-disabled="true"
+                  className="cursor-default rounded-xl border border-indigo-500/15 bg-black/25 px-3 py-2 text-left text-xs font-bold text-indigo-100/80"
                 >
-                  {sending === r.key ? "Записываем…" : r.label}
-                </button>
+                  {r.label}
+                </div>
               ))}
             </div>
           </div>
@@ -1059,7 +1065,7 @@ function QuickAction({ icon, label, color, onClick }: { icon: React.ReactNode, l
 function GroupDetailsView({ groupId, groups, students, onBack, onNavigateToStudent, onToggleAttendance, onBulkAttendance, onOpenHomework, flash }: any) {
   const group = groups.find((g: any) => g.id === groupId);
   const groupStudents = students.filter((s: any) => s.groupIds?.includes(groupId));
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = almatyToday();
   const [marking, setMarking] = useState(false);
   const [perStudent, setPerStudent] = useState<Record<string, "present" | "absent" | "sick">>({});
 
@@ -1076,8 +1082,27 @@ function GroupDetailsView({ groupId, groups, students, onBack, onNavigateToStude
   };
 
   const markOne = async (studentId: string, status: "present" | "absent" | "sick") => {
+    // Аудит #25: оптимистично красим, но при ошибке сети откатываем — иначе
+    // кнопка «отмечено», а сервер не знает. Успех/сбой берём из результата.
+    const prevVal = perStudent[studentId];
     setPerStudent((prev) => ({ ...prev, [studentId]: status }));
-    await onToggleAttendance?.(studentId, todayStr, status);
+    const ok = await onToggleAttendance?.(studentId, todayStr, status);
+    if (ok === false) {
+      setPerStudent((prev) => {
+        const next = { ...prev };
+        if (prevVal === undefined) delete next[studentId]; else next[studentId] = prevVal;
+        return next;
+      });
+      flash?.("Не сохранилось — проверьте связь и повторите");
+    }
+  };
+
+  // Эффективный статус кнопки: локальная отметка ИЛИ уже сохранённая за сегодня
+  // (аудит #25: раньше сохранённые отметки не подсвечивались после возврата).
+  const effectiveStatus = (stud: any): string | undefined => {
+    if (perStudent[stud.id]) return perStudent[stud.id];
+    const saved = stud.attendance?.[todayStr]?.status;
+    return saved && saved !== "unmarked" && saved !== "unknown" ? saved : undefined;
   };
 
   return (
@@ -1116,17 +1141,20 @@ function GroupDetailsView({ groupId, groups, students, onBack, onNavigateToStude
                     <AttendanceSparkline attendance={stud.attendance} />
                   </div>
                 </div>
-                {/* Micro Attendance Control */}
+                {/* Micro Attendance Control — ярлыки согласованы с журналом (аудит #34):
+                    П=Был, О=Не был, Б=Болел (те же статусы, что в журнале). */}
                 <div className="flex bg-white/5 rounded-lg p-1 gap-1">
                   {([
-                    ["present", "П", "bg-emerald-500 text-white", "bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white"],
-                    ["absent", "О", "bg-rose-500 text-white", "bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white"],
-                    ["sick", "Б", "bg-amber-500 text-black", "bg-amber-500/10 text-amber-500 hover:bg-amber-500 hover:text-white"],
-                  ] as const).map(([st, ltr, activeCls, idleCls]) => (
+                    ["present", "П", "Был", "bg-emerald-500 text-white", "bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white"],
+                    ["absent", "О", "Не был", "bg-rose-500 text-white", "bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white"],
+                    ["sick", "Б", "Болел", "bg-amber-500 text-black", "bg-amber-500/10 text-amber-500 hover:bg-amber-500 hover:text-white"],
+                  ] as const).map(([st, ltr, tip, activeCls, idleCls]) => (
                     <button
                       key={st}
+                      title={tip}
+                      aria-label={tip}
                       onClick={() => markOne(stud.id, st)}
-                      className={`w-8 h-8 rounded-md flex items-center justify-center transition-colors font-bold text-xs ${perStudent[stud.id] === st ? activeCls : idleCls}`}
+                      className={`w-8 h-8 rounded-md flex items-center justify-center transition-colors font-bold text-xs ${effectiveStatus(stud) === st ? activeCls : idleCls}`}
                     >
                       {ltr}
                     </button>
@@ -1197,13 +1225,32 @@ function StudentDetailsView({ studentId, students, groups = [], onBack, homework
            {/* Timeline / Analytics */}
            <div className="bg-white/5 border border-white/10 rounded-3xl p-5">
              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">История посещений</h3>
-             <div className="h-32 flex items-end gap-1 mb-2">
-                {/* Mock chart bars */}
-                {[...Array(14)].map((_, i) => (
-                  <div key={i} className={`flex-1 rounded-t-sm ${Math.random() > 0.2 ? 'bg-emerald-500/40' : 'bg-rose-500/40'}`} style={{ height: `${50 + Math.random() * 50}%` }} />
-                ))}
-             </div>
-             <p className="text-[10px] text-slate-500 uppercase">Последние 14 занятий (85% посещаемость)</p>
+             {(() => {
+                // Реальная история из отметок ученика (аудит #15: раньше здесь был
+                // график из Math.random и подпись «85%» независимо от данных).
+                const recs = (Object.values(student.attendance || {}) as any[])
+                  .filter((a) => a && a.status && a.status !== "unmarked")
+                  .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+                  .slice(-14);
+                if (recs.length === 0) {
+                  return <div className="h-32 flex items-center justify-center text-[11px] text-slate-500 uppercase tracking-wider">Отметок пока нет</div>;
+                }
+                const present = recs.filter((a) => a.status === "present").length;
+                const rate = Math.round((present / recs.length) * 100);
+                return (
+                  <>
+                    <div className="h-32 flex items-end gap-1 mb-2">
+                      {recs.map((a, i) => {
+                        const st = a.status;
+                        const color = st === "present" ? "bg-emerald-500/50" : st === "sick" ? "bg-amber-500/50" : "bg-rose-500/50";
+                        const height = st === "present" ? 100 : st === "sick" ? 60 : 35;
+                        return <div key={i} title={`${a.date}: ${st === "present" ? "был" : st === "sick" ? "болел" : "не был"}`} className={`flex-1 rounded-t-sm ${color}`} style={{ height: `${height}%` }} />;
+                      })}
+                    </div>
+                    <p className="text-[10px] text-slate-500 uppercase">Последние {recs.length} занятий ({rate}% посещаемость)</p>
+                  </>
+                );
+             })()}
            </div>
 
            <div className="bg-white/5 border border-white/10 rounded-3xl p-5 space-y-4">
@@ -1510,7 +1557,7 @@ function TeacherJournalView({ groups, students, onToggleAttendance }: {
   students: Student[];
   onToggleAttendance?: (studentId: string, date: string, status: "present" | "absent" | "sick") => void;
 }) {
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = almatyToday();
   const [selectedGroupId, setSelectedGroupId] = useState<string>(groups[0]?.id || "");
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
   const [saving, setSaving] = useState<string | null>(null);

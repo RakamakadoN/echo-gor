@@ -88,7 +88,7 @@ interface AdminEduErpWorkspaceProps {
   onUpdateLesson?: (id: string, data: any) => Promise<boolean>;
   onDeleteLesson?: (id: string) => Promise<boolean>;
   onToggleAttendance?: (studentId: string, date: string, status: "present" | "absent" | "sick") => void;
-  onCreateStudent?: (data: any) => Promise<string | boolean | null>;
+  onCreateStudent?: (data: any) => Promise<string | boolean | null | { archivedId: string; message: string }>;
   onUpdateStudent?: (id: string, data: any) => Promise<boolean>;
   onDeleteStudent?: (id: string) => Promise<boolean>;
   onArchiveStudent?: (id: string, reason: string, comment: string) => Promise<boolean | void> | void;
@@ -102,12 +102,14 @@ interface AdminEduErpWorkspaceProps {
   onCreateAnnouncement?: (data: { title: string; content: string; audience: AnnouncementAudience; isImportant: boolean }) => void;
   onOpenPayment?: (student: Student) => void;
   onSellSubscription?: (payload: SellSubscriptionInput) => Promise<boolean> | boolean;
+  onSellSubscriptionBatch?: (items: SellSubscriptionInput[]) => Promise<any> | any;
   tasks?: AdminTask[];
   subscriptionPlans?: SubscriptionPlan[];
   leadSources?: LeadSource[];
   onCreateTask?: (data: any) => Promise<boolean>;
   onUpdateTask?: (id: string, data: any) => Promise<boolean>;
   onDeleteTask?: (id: string) => Promise<boolean>;
+  onDeleteTrial?: (studentId: string, date: string) => Promise<any> | any;
   onCreatePlan?: (data: any) => Promise<boolean>;
   onUpdatePlan?: (id: string, data: any) => Promise<boolean>;
   onDeletePlan?: (id: string) => Promise<boolean>;
@@ -131,13 +133,17 @@ type AdminTab =
 
 const tabs: { id: AdminTab; label: string; short: string; icon: React.ElementType }[] = [
   { id: "dashboard", label: "Смена", short: "Смена", icon: Activity },
-  { id: "visitors", label: "Посетители", short: "Ученики", icon: Users },
+  { id: "visitors", label: "Ученики", short: "Ученики", icon: Users },
   { id: "calendar", label: "Расписание", short: "Расписание", icon: CalendarDays },
   { id: "products", label: "Товары и мерч", short: "Товары", icon: ShoppingBag },
   { id: "echo", label: "Заявки ЭхоБаксов", short: "ЭхоБаксы", icon: Coins },
   { id: "prokat", label: "Прокат костюмов", short: "Прокат", icon: Shirt },
   { id: "reports", label: "Сверка продаж", short: "Сверка", icon: BarChart3 }
 ];
+
+// «Сегодня» по Алматы (аудит #22): raw toISOString давал UTC-дату — до 05:00
+// по Алматы это вчера (касса за смену, отметки «уезжали» на прошлый день).
+const almatyToday = () => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Almaty" }).format(new Date());
 
 export function AdminEduErpWorkspace({
   branches,
@@ -211,7 +217,7 @@ export function AdminEduErpWorkspace({
     });
   }, [branchFilter, search, students]);
 
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = almatyToday();
   const monthPrefix = todayStr.slice(0, 7);
   const monthRevenue = payments
     .filter((payment) => (payment.date || "").startsWith(monthPrefix))
@@ -450,7 +456,7 @@ function DashboardView({ branches, groups, students, teachers, todayRevenue, mon
   const kpis = [
     { label: "Выручка сегодня", value: money(todayRevenue), detail: "касса филиалов", tone: "gold" },
     { label: "Выручка месяца", value: money(monthRevenue), detail: "абонементы и разовые", tone: "gold" },
-    { label: "Посетители", value: students.length, detail: "активная база", tone: "white" },
+    { label: "Ученики", value: students.length, detail: "активная база", tone: "white" },
     { label: "Посещаемость", value: `${attendanceRate}%`, detail: "по журналам", tone: "emerald" },
     { label: "Долги", value: money(debt), detail: "нужны счета", tone: "rose" },
     { label: "Продления", value: renewals.length, detail: "в ближайшие 7 дней", tone: "rose" },
@@ -488,7 +494,7 @@ function DashboardView({ branches, groups, students, teachers, todayRevenue, mon
       <div className="grid gap-4 xl:grid-cols-[1fr_0.9fr]">
         <Panel title="Операционные модули" kicker="Полный охват">
           <div className="grid gap-3 md:grid-cols-2">
-            <ModuleCard icon={Users} title="Посетители" text="Фильтры, карточка, родитель, статус, баланс, абонемент, посещения, импорт." />
+            <ModuleCard icon={Users} title="Ученики" text="Фильтры, карточка, родитель, статус, баланс, абонемент, посещения, импорт." />
             <ModuleCard icon={ClipboardList} title="Журнал" text="Филиал, группа, месяц, отметки посещаемости, загрузка справок." />
             <ModuleCard icon={CalendarDays} title="Расписание" text="События, преподаватель, пробное занятие, серия занятий, переносы." />
             <ModuleCard icon={Receipt} title="Счета" text="Массовое выставление счетов, SMS/email, скидки, итоговая стоимость." />
@@ -590,9 +596,9 @@ function VisitorsViewLegacy({ students, groups, branches, teachers, payments, se
   return (
     <div className="space-y-5">
       <SectionHeader
-        kicker="Посетители"
+        kicker="Ученики"
         title="CRM учеников и родителей"
-        text="Аналог раздела Посетители: фильтры, таблица, карточка, создание задач, импорт, статусы, платежные правила и рассылки."
+        text="Аналог раздела Ученики: фильтры, таблица, карточка, создание задач, импорт, статусы, платежные правила и рассылки."
         actions={["Импорт", "Создать задачу"]}
       />
       <div className="rounded-[2rem] border border-white/10 bg-[#111] p-4">
@@ -996,7 +1002,7 @@ function StudentDetailPanel({ student, group, branch, teacher, payments, onEdit,
 }
 
 function JournalView({ groups, students, branches, onToggleAttendance }: any) {
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = almatyToday();
   const [selectedGroupId, setSelectedGroupId] = useState<string>(groups[0]?.id || "");
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
   const [saving, setSaving] = useState<string | null>(null); // studentId being saved
@@ -1166,7 +1172,7 @@ function JournalView({ groups, students, branches, onToggleAttendance }: any) {
 }
 
 function CalendarView({ groups, teachers, branches, halls, scheduleItems, scheduleLoading, onLoadSchedule, onCreateLesson, onUpdateLesson, onDeleteLesson, onCreateGroup, onUpdateGroup, onDeleteGroup, archivedGroups = [], onRestoreGroup, onDeleteGroupPermanent }: any) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = almatyToday();
   const weekAhead = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
 
   const [lessonForm, setLessonForm] = useState({ groupId: "", teacherId: "", hallId: "", date: "", startTime: "", endTime: "", reason: "", topic: "" });
@@ -1490,7 +1496,7 @@ function BillingView({ students, groups, branches, payments, debt, renewals, onO
           <div className="rounded-[2rem] border border-white/10 bg-[#111] px-5 py-6 text-sm text-slate-400">Платежей пока нет.</div>
         ) : (
           <DataTable
-            headers={["Дата", "Посетитель", "Филиал", "Тип", "Способ", "Сумма"]}
+            headers={["Дата", "Ученик", "Филиал", "Тип", "Способ", "Сумма"]}
             rows={recentPayments.map((payment: Payment) => [
               payment.date,
               studentName(payment.studentId),
@@ -1599,7 +1605,7 @@ function ReportsView({ branches, groups, students, payments, teachers, todayReve
   const runExport = (title: string, build: () => { headers: string[]; rows: (string | number)[][] }) => {
     const { headers, rows } = build();
     if (!rows.length) { notify(`${title}: нет данных для выгрузки`); return; }
-    const stamp = new Date().toISOString().slice(0, 10);
+    const stamp = almatyToday();
     exportCsv(`${title.replace(/[^\wа-яА-Я]+/g, "_")}_${stamp}.csv`, headers, rows);
     notify(`${title}: выгружено строк — ${rows.length}`);
   };

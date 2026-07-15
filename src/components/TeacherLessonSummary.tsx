@@ -70,10 +70,25 @@ export function TeacherLessonSummary({ groupName, groupLevel, studentCount, onCl
     }
   }
 
-  function save() {
-    const key = `echo-lesson-summary:${groupName || "—"}:${new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Almaty" }).format(new Date())}`;
-    try { localStorage.setItem(key, JSON.stringify({ text, result })); } catch {}
-    setSaved(true); setTimeout(() => setSaved(false), 1500);
+  const [saveNote, setSaveNote] = useState("");
+  async function save() {
+    const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Almaty" }).format(new Date());
+    const payload = JSON.stringify({ text, result });
+    const key = `echo-lesson-summary:${groupName || "—"}:${today}`;
+    try { localStorage.setItem(key, payload); } catch {}
+    // Основное хранение — на сервере (аудит #16), localStorage лишь офлайн-резерв.
+    setSaveNote("");
+    try {
+      const res = await fetch("/api/mvp/teacher/lesson-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-demo-role": "teacher" },
+        body: JSON.stringify({ kind: "summary", groupName: groupName || "", date: today, content: payload }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setSaved(true); setTimeout(() => setSaved(false), 1500);
+    } catch {
+      setSaveNote("Не удалось сохранить на сервере — итоги сохранены локально. Повторите при связи.");
+    }
   }
 
   return (
@@ -134,6 +149,7 @@ export function TeacherLessonSummary({ groupName, groupLevel, studentCount, onCl
               <button onClick={save} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#C5A059] px-4 py-3 text-sm font-black text-black transition hover:brightness-105">
                 {saved ? <Check className="h-4 w-4" /> : <Save className="h-4 w-4" />} {saved ? "Сохранено" : "Сохранить итоги"}
               </button>
+              {saveNote && <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">{saveNote}</p>}
             </div>
           )}
         </div>

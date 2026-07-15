@@ -38,7 +38,7 @@ interface Props {
   canEdit?: boolean;                 // можно ли проставлять/корректировать отметки
   onToggleAttendance?: (studentId: string, date: string, status: AttendanceStatus, opts?: { absenceReason?: AbsenceReason | null; isTrial?: boolean }) => void | Promise<unknown>;
   /** Пакетное сохранение отметок одним заходом (одна перезагрузка данных вместо N). */
-  onBatchAttendance?: (marks: { studentId: string; date: string; status: AttendanceStatus; isTrial?: boolean }[]) => Promise<unknown>;
+  onBatchAttendance?: (marks: { studentId: string; date: string; status: AttendanceStatus; isTrial?: boolean }[]) => Promise<{ failed?: { studentId: string; date: string }[] } | void>;
   onBulkAttendance?: (groupId: string, date: string, status: AttendanceStatus) => Promise<number> | void;
   onCreateTask?: (payload: { studentId: string; studentName: string; title: string }) => void;
   journal: JournalApi;
@@ -202,10 +202,21 @@ export default function AttendanceJournalView(props: Props) {
         const st = students.find((s) => s.id === studentId);
         return { studentId, date, status, isTrial: st?.status === "trial" ? true : undefined };
       });
-      if (onBatchAttendance) await onBatchAttendance(marks);
-      else if (onToggleAttendance) for (const m of marks) await onToggleAttendance(m.studentId, m.date, m.status, { isTrial: m.isTrial });
-      setPending({});
-      setEditing(false);
+      let failed: { studentId: string; date: string }[] = [];
+      if (onBatchAttendance) {
+        const r = await onBatchAttendance(marks);
+        failed = (r && Array.isArray(r.failed)) ? r.failed : [];
+      } else if (onToggleAttendance) {
+        for (const m of marks) { const ok = await onToggleAttendance(m.studentId, m.date, m.status, { isTrial: m.isTrial }); if (ok === false) failed.push({ studentId: m.studentId, date: m.date }); }
+      }
+      // Оставляем в редакторе ТОЛЬКО неудавшиеся отметки (аудит #24), успешные снимаем.
+      if (failed.length) {
+        const failedKeys = new Set(failed.map((f) => `${f.studentId}|${f.date}`));
+        setPending((prev) => Object.fromEntries(Object.entries(prev).filter(([k]) => failedKeys.has(k))));
+      } else {
+        setPending({});
+        setEditing(false);
+      }
     } finally { setSavingAll(false); refreshDash(); }
   };
 

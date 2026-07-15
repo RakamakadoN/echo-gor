@@ -15,6 +15,7 @@ import {
   PhoneCall,
   Play,
   Receipt,
+  RefreshCw,
   ShoppingBag,
   Shirt,
   Sparkles,
@@ -23,7 +24,7 @@ import {
   WalletCards,
   X,
 } from "lucide-react";
-import type { Announcement, Branch, Group, Payment, Student, Teacher, AdminTask } from "../types";
+import type { Announcement, Branch, Group, Payment, Student, Teacher, AdminTask, Hall } from "../types";
 import { CostumeOverdueBanner } from "./CostumeOverdueBanner";
 import { toast } from "../toast";
 
@@ -121,6 +122,7 @@ type Props = {
   monthRevenue: number;
   debt: number;
   renewals: Student[];
+  halls?: Hall[];
   onNavigate?: (tab: string) => void;
 };
 
@@ -137,6 +139,7 @@ export function AdminShiftView({
   monthRevenue,
   debt,
   renewals,
+  halls = [],
   onNavigate,
 }: Props) {
   const branchName = branch?.name || branches[0]?.name || "филиал";
@@ -148,16 +151,20 @@ export function AdminShiftView({
   const [closeOpen, setCloseOpen] = useState(false);
 
   useEffect(() => {
+    // Локальный кэш — мгновенно; серверные галочки перекроют ниже (аудит #31).
     setTicks(loadTicks(branchId));
   }, [branchId]);
 
-  // Подтянуть статус смены на сегодня.
+  // Подтянуть статус смены на сегодня (вместе с чек-листом с сервера).
   useEffect(() => {
     let alive = true;
     fetch("/api/mvp/admin/shift/today", { headers: { "x-demo-role": "admin" } })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        if (alive && d) setShift(d.shift ?? null);
+        if (alive && d) {
+          setShift(d.shift ?? null);
+          if (d.shift?.checklist && typeof d.shift.checklist === "object") setTicks(d.shift.checklist);
+        }
       })
       .catch(() => {});
     return () => {
@@ -168,18 +175,26 @@ export function AdminShiftView({
   const toggleTick = (key: string) => {
     setTicks((prev) => {
       const next = { ...prev, [key]: !prev[key] };
-      try {
-        window.localStorage.setItem(ticksKey(branchId), JSON.stringify(next));
-      } catch {
-        /* ignore quota */
-      }
+      // Локальный кэш — офлайн-резерв; основное хранение на сервере (руководство видит).
+      try { window.localStorage.setItem(ticksKey(branchId), JSON.stringify(next)); } catch { /* ignore quota */ }
+      fetch("/api/mvp/admin/shift", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-demo-role": "admin" },
+        body: JSON.stringify({ action: "tick", item: key, value: next[key] }),
+      }).catch(() => { /* офлайн — останется локальный кэш */ });
       return next;
     });
   };
 
   const shiftOpen = Boolean(shift?.openedAt) && !shift?.closedAt;
   const shiftClosed = Boolean(shift?.closedAt);
-  const hallsDone = (shift?.hallPhotos?.length || 0) > 0;
+  // Аудит #26: контроль по КАЖДОМУ залу филиала, а не «одно фото = все залы».
+  const branchHalls = (halls || []).filter((h: any) => (h.branchId === branchId || !h.branchId) && String(h.status || "active") === "active");
+  const photographedHalls = new Set((shift?.hallPhotos || []).map((h) => (h.hall || "").trim()).filter(Boolean));
+  const hallsExpected = branchHalls.length;
+  const hallsDone = hallsExpected > 0
+    ? branchHalls.every((h: any) => photographedHalls.has(String(h.name || "").trim()))
+    : (shift?.hallPhotos?.length || 0) > 0; // фолбэк: если залы не заведены — как раньше
 
   // Заявки ЭхоБаксов, ожидающие обработки.
   const [echoPending, setEchoPending] = useState<number | null>(null);
@@ -247,12 +262,12 @@ export function AdminShiftView({
   );
 
   // Отправить фото-действие смены на бэкенд. Возвращает true при успехе.
-  const submitPhoto = async (action: "open" | "hall", photo: string): Promise<boolean> => {
+  const submitPhoto = async (action: "open" | "hall", photo: string, hall?: string): Promise<boolean> => {
     if (!photo) return false; // страховка: без фото не подтверждаем
     const res = await fetch("/api/mvp/admin/shift", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-demo-role": "admin" },
-      body: JSON.stringify({ action, photo, time: almatyTimeStr() }),
+      body: JSON.stringify({ action, photo, hall: hall || null, time: almatyTimeStr() }),
     });
     if (!res.ok) { const e = await res.json().catch(() => ({})); toast.error(e.error || "Не удалось сохранить"); return false; }
     const d = await res.json();
@@ -286,11 +301,13 @@ export function AdminShiftView({
       icon: Sparkles,
       tone: hallsDone ? "emerald" : "sky",
       title: "Проверить залы",
-      sub: hallsDone ? `${shift?.hallPhotos.length} фото загружено` : "фото чистых залов",
-      badge: shift?.hallPhotos.length || undefined,
+      sub: hallsExpected > 0
+        ? (hallsDone ? `Все залы проверены (${hallsExpected})` : `Проверено ${photographedHalls.size}/${hallsExpected} залов`)
+        : (hallsDone ? `${shift?.hallPhotos.length} фото загружено` : "фото чистых залов"),
+      badge: (hallsExpected > 0 ? photographedHalls.size : shift?.hallPhotos.length) || undefined,
       done: hallsDone,
       action: "Фото",
-      onClick: () => setPhotoModal({ action: "hall", title: "Фото зала", hint: "Сфотографируйте чистый и готовый зал" }),
+      onClick: () => setPhotoModal({ action: "hall", title: "Фото зала", hint: hallsExpected > 0 ? "Выберите зал и сфотографируйте его чистым и готовым" : "Сфотографируйте чистый и готовый зал" }),
     },
     {
       key: "merch",
@@ -574,9 +591,10 @@ export function AdminShiftView({
         <PhotoCaptureModal
           title={photoModal.title}
           hint={photoModal.hint}
+          hallOptions={photoModal.action === "hall" && branchHalls.length > 0 ? branchHalls.map((h: any) => String(h.name || "").trim()).filter(Boolean) : undefined}
           onClose={() => setPhotoModal(null)}
-          onSubmit={async (photo) => {
-            const ok = await submitPhoto(photoModal.action, photo);
+          onSubmit={async (photo, hall) => {
+            const ok = await submitPhoto(photoModal.action, photo, hall);
             if (ok) setPhotoModal(null); // при ошибке модалка остаётся — можно переснять и повторить
           }}
         />
@@ -596,29 +614,49 @@ export function AdminShiftView({
 // требует подтверждения «деньги сошлись / не сошлись». Расхождение видят руководители.
 function CloseShiftModal({ onClose, onDone }: { onClose: () => void; onDone: (shift: ShiftStatus) => void }) {
   const [summary, setSummary] = useState<ShiftSummary | null>(null);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [mismatch, setMismatch] = useState(false);
   const [counted, setCounted] = useState("");
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
+  // Аудит #6: фото ухода при закрытии смены (как приход).
+  const [closePhoto, setClosePhoto] = useState<string | null>(null);
+  const closeInputRef = useRef<HTMLInputElement>(null);
+  async function pickClosePhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try { setClosePhoto(await compressImage(file)); } catch { /* ignore */ }
+  }
 
-  useEffect(() => {
+  // Аудит #7: раньше при сбое загрузки сводки summary оставался null → вечный спиннер,
+  // и смену нельзя было закрыть. Теперь — явная ошибка и кнопка «Повторить».
+  const loadSummary = React.useCallback(() => {
+    setLoading(true);
+    setLoadErr(null);
     let alive = true;
     fetch("/api/mvp/admin/shift/summary", { headers: { "x-demo-role": "admin" } })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (alive && d) setSummary(d); })
-      .catch(() => {});
+      .then(async (r) => {
+        if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || "Сервер не отдал сводку"); }
+        return r.json();
+      })
+      .then((d) => { if (alive) { setSummary(d); setLoading(false); } })
+      .catch((e) => { if (alive) { setLoadErr(e?.message || "Нет связи с сервером"); setLoading(false); } });
     return () => { alive = false; };
   }, []);
+
+  useEffect(() => { const cancel = loadSummary(); return cancel; }, [loadSummary]);
 
   const methodLabels: Record<string, string> = { cash: "Наличные", kaspi: "Kaspi", card: "Карта", transfer: "Перевод" };
 
   async function submit(matched: boolean) {
+    if (!closePhoto) { toast.error("Сделайте фото ухода, чтобы закрыть смену"); return; }
     setBusy(true);
     try {
       const res = await fetch("/api/mvp/admin/shift", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-demo-role": "admin" },
-        body: JSON.stringify({ action: "close", matched, countedCash: counted === "" ? null : Number(counted), cashReason: reason || null }),
+        body: JSON.stringify({ action: "close", matched, photo: closePhoto, countedCash: counted === "" ? null : Number(counted), cashReason: reason || null }),
       });
       if (res.ok) { const d = await res.json(); toast.success(matched ? "Смена закрыта · деньги сошлись" : "Смена закрыта · расхождение передано руководителю"); onDone(d.shift ?? null); }
       else { const e = await res.json().catch(() => ({})); toast.error(e.error || "Не удалось закрыть смену"); }
@@ -639,7 +677,17 @@ function CloseShiftModal({ onClose, onDone }: { onClose: () => void; onDone: (sh
           <button onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-white/5 hover:text-white"><X className="h-5 w-5" /></button>
         </div>
 
-        {!summary ? (
+        {loading ? (
+          <div className="flex items-center justify-center py-10 text-slate-400"><Loader2 className="h-6 w-6 animate-spin" /></div>
+        ) : loadErr ? (
+          <div className="flex flex-col items-center gap-3 py-8 text-center">
+            <p className="text-sm font-semibold text-rose-300">{loadErr}</p>
+            <p className="text-xs text-slate-500">Не удалось загрузить сводку кассы за смену.</p>
+            <button onClick={loadSummary} className="flex items-center gap-2 rounded-xl bg-white/10 px-4 py-2 text-sm font-bold text-white hover:bg-white/20">
+              <RefreshCw className="h-4 w-4" /> Повторить
+            </button>
+          </div>
+        ) : !summary ? (
           <div className="flex items-center justify-center py-10 text-slate-400"><Loader2 className="h-6 w-6 animate-spin" /></div>
         ) : (
           <>
@@ -656,6 +704,21 @@ function CloseShiftModal({ onClose, onDone }: { onClose: () => void; onDone: (sh
                 <span>Итого в СРМ</span><span>{money(total)}</span>
               </div>
             </div>
+
+            {/* Фото ухода (аудит #6) — обязательно для закрытия смены. */}
+            <input ref={closeInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={pickClosePhoto} />
+            {closePhoto ? (
+              <div className="relative mt-4">
+                <img src={closePhoto} alt="фото ухода" className="max-h-40 w-full rounded-2xl border border-white/10 object-cover" />
+                <button onClick={() => closeInputRef.current?.click()} className="absolute bottom-2 right-2 rounded-xl bg-black/70 px-3 py-1.5 text-xs font-bold text-white hover:bg-black/90">Переснять</button>
+              </div>
+            ) : (
+              <button onClick={() => closeInputRef.current?.click()}
+                className="mt-4 flex h-24 w-full flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-white/15 text-slate-400 hover:border-[#C5A059]/40 hover:text-slate-200">
+                <Camera className="h-6 w-6" />
+                <span className="text-xs font-bold">Фото ухода с рабочего места</span>
+              </button>
+            )}
 
             {!mismatch ? (
               <div className="mt-4 space-y-2">
@@ -716,14 +779,17 @@ export function PhotoCaptureModal({
   hint,
   onClose,
   onSubmit,
+  hallOptions,
 }: {
   title: string;
   hint: string;
   onClose: () => void;
-  onSubmit: (photo: string) => Promise<void>;
+  onSubmit: (photo: string, hall?: string) => Promise<void>;
+  hallOptions?: string[];   // если задан — выбор зала обязателен (аудит #26)
 }) {
   const [photo, setPhoto] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [hall, setHall] = useState<string>(hallOptions?.[0] || "");
   const inputRef = useRef<HTMLInputElement>(null);
 
   async function pick(e: React.ChangeEvent<HTMLInputElement>) {
@@ -739,11 +805,12 @@ export function PhotoCaptureModal({
     }
   }
 
+  const needHall = Array.isArray(hallOptions) && hallOptions.length > 0;
   async function submit() {
-    if (!photo) return;
+    if (!photo || (needHall && !hall)) return;
     setBusy(true);
     try {
-      await onSubmit(photo);
+      await onSubmit(photo, needHall ? hall : undefined);
     } finally {
       setBusy(false);
     }
@@ -764,6 +831,16 @@ export function PhotoCaptureModal({
           </button>
         </div>
         <p className="mb-4 text-xs text-slate-400">{hint}</p>
+
+        {needHall && (
+          <label className="mb-4 block">
+            <span className="mb-1 block text-[11px] font-bold uppercase tracking-wider text-slate-500">Какой зал</span>
+            <select value={hall} onChange={(e) => setHall(e.target.value)}
+              className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm font-bold text-white outline-none focus:border-[#C5A059]/50">
+              {hallOptions!.map((h) => <option key={h} value={h}>{h}</option>)}
+            </select>
+          </label>
+        )}
 
         <input ref={inputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={pick} />
 

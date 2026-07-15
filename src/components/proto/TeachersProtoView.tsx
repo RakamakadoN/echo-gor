@@ -181,7 +181,7 @@ function kpiTotal(c: any): number {
 function monthData(t: any, mn: string): any {
   return t.byMonth[mn];
 }
-function salary(t: any, m: any, mn: string, winnerId: number): any {
+function salary(t: any, m: any, mn: string, winnerId: string): any {
   if (!m) return null;
   const c = t.cat;
   const newSum = m.newCnt * RATES.new[c];

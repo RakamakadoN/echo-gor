@@ -176,15 +176,20 @@ if (typeof window !== "undefined" && !(window as any).__echoAuthFetchPatched) {
 export default function App() {
   // Roles list
   const roles = [
-    { id: "owner", name: "Владелец сети", icon: Shield, badge: "Network Owner" },
-    { id: "branch", name: "Управляющий", icon: Building2, badge: "Branch Manager" },
-    { id: "admin", name: "Администратор", icon: UserCheck, badge: "Registrar" },
-    { id: "teacher", name: "Преподаватель", icon: GraduationCap, badge: "Sifu/Ustaz" },
-    { id: "student", name: "Ученик", icon: Flame, badge: "Artist Way" },
+    { id: "owner", name: "Владелец сети", icon: Shield, badge: "Владелец" },
+    { id: "branch", name: "Управляющий", icon: Building2, badge: "Управляющий" },
+    { id: "admin", name: "Администратор", icon: UserCheck, badge: "Ресепшн" },
+    { id: "teacher", name: "Преподаватель", icon: GraduationCap, badge: "Педагог" },
+    { id: "student", name: "Ученик", icon: Flame, badge: "Ученик" },
   ];
 
   // Active role
   const [activeRole, setActiveRole] = useState<string>("owner");
+  // Имя реально вошедшего сотрудника (из ответа /auth/login). Используется в шапке
+  // и в журнале действий — раньше там был захардкожен чужой email (аудит #27).
+  const [currentUserName, setCurrentUserName] = useState<string>(() => {
+    try { return window.localStorage.getItem("echogor:user-name") || ""; } catch { return ""; }
+  });
   // Тема одна — дневная (остальные убраны, выбора темы нет).
   const [themeMode, setThemeMode] = useState<"dark" | "day" | "iman">("day");
   const [isThemeMenuOpen, setIsThemeMenuOpen] = useState<boolean>(false);
@@ -426,7 +431,7 @@ export default function App() {
       id: `log-${Date.now()}`,
       organizationId: branches[0]?.id || "unknown", // Fallback if no branches exist
       timestamp: new Date().toISOString(),
-      userEmail: "diyaz.duos@gmail.com",
+      userEmail: currentUserName || roles.find((r) => r.id === activeRole)?.name || "Пользователь",
       userRole: roles.find((r) => r.id === activeRole)?.name || activeRole,
       action,
       details,
@@ -456,7 +461,14 @@ export default function App() {
     return "owner";
   };
 
+  // Есть ли активная сессия (токен). И сотрудник, и ученик кладут токен в
+  // localStorage (см. setAuthToken/applyStudentAuth) → одна проверка на всех.
+  const hasApiSession = () => DEMO_MODE || Boolean(window.localStorage.getItem(AUTH_TOKEN_KEY));
+
   const loadMvpBootstrap = async (roleId = activeRole) => {
+    // До входа (нет токена) в проде НЕ дёргаем API — иначе 401 выставлял бы баннер
+    // «нет связи» ещё на экране логина, и он «прилипал» после входа.
+    if (!hasApiSession()) { setIsLoading(false); return; }
     setIsLoading(true);
     try {
       const response = await fetch("/api/mvp/bootstrap", {
@@ -539,6 +551,7 @@ export default function App() {
     setShowStudentLogin(false);
     setStudentCodeInput("");
     setStudentLoginError(null);
+    setMvpDataError(null); // сбросить ошибку, накопленную до входа
     setIsPlayingPromo(false);
   };
 
@@ -1301,6 +1314,7 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (!hasApiSession()) return; // до входа не грузим (иначе 401 → баннер)
     if (activeRole === "owner") loadStudentTrash();
     if (["owner", "branch_manager", "admin"].includes(activeRole)) { loadStudentArchive(); loadArchivedGroups(); }
     // Общий конфиг статусов организации — в кэш, затем перерисовка.
@@ -1772,9 +1786,10 @@ export default function App() {
         });
         if (!response.ok) throw new Error(await response.text());
         await loadMvpBootstrap(activeRole);
-        return;
+        return true; // успех — клиент может подтвердить отметку (аудит #25)
       } catch (error: any) {
         notifyError(error.message || "Не удалось отметить посещаемость в Supabase");
+        return false; // сбой — клиент откатит оптимистичную отметку
       }
     }
 
@@ -1801,6 +1816,7 @@ export default function App() {
       "Контроль посещаемости",
       `Выставлен статус ${status} для ${students.find((std) => std.id === studId)?.name} на дату ${date}`
     );
+    return true; // локальный (mock) режим — отметка применена
   };
 
   // Пакетное сохранение отметок журнала (кнопка «Сохранить» в журнале):
@@ -1810,9 +1826,12 @@ export default function App() {
   ) => {
     if (mvpDataMode !== "supabase") {
       for (const m of marks) await toggleAttendance(m.studentId, m.date, m.status, { isTrial: m.isTrial });
-      return;
+      return { failed: [] as { studentId: string; date: string }[] };
     }
-    const failed: string[] = [];
+    const failedNames: string[] = [];
+    // Аудит #24: возвращаем ключи неудачных отметок, чтобы журнал НЕ терял их из
+    // редактора (раньше pending очищался целиком, несохранённые ячейки исчезали).
+    const failed: { studentId: string; date: string }[] = [];
     for (const m of marks) {
       try {
         const response = await fetch("/api/mvp/attendance", {
@@ -1828,12 +1847,14 @@ export default function App() {
         if (!response.ok) throw new Error(await response.text());
       } catch {
         const name = students.find((s) => s.id === m.studentId)?.name || m.studentId;
-        failed.push(`${name} · ${m.date}`);
+        failedNames.push(`${name} · ${m.date}`);
+        failed.push({ studentId: m.studentId, date: m.date });
       }
     }
     await loadMvpBootstrap(activeRole);
-    if (failed.length) notifyError(`Не сохранились отметки: ${failed.join(", ")}`);
+    if (failedNames.length) notifyError(`Не сохранились отметки: ${failedNames.join(", ")}. Они остались в редакторе — повторите.`);
     else toast.success(`Отметки сохранены (${marks.length})`);
+    return { failed };
   };
 
   // ============================================================
@@ -2638,10 +2659,19 @@ export default function App() {
         const data = await resp.json().catch(() => ({}));
         if (resp.ok && data?.token) {
           setAuthToken(data.token);
+          setCurrentUserName(data.fullName || loginRaw);
+          try { window.localStorage.setItem("echogor:user-name", data.fullName || loginRaw); } catch { /* приватный режим */ }
           const role = serverRoleToClient(data.role);
           setActiveRole(role);
           setActiveHotspot(null);
+          setMvpDataError(null); // сбросить ошибку, накопленную до входа
           addAuditLog("Вход сотрудника", `${data.fullName || loginRaw} · роль: ${data.role}`);
+          // Явно грузим данные под токеном: setActiveRole может НЕ изменить роль
+          // (вход владельцем при дефолте "owner") → эффект перезагрузки не сработает.
+          loadMvpBootstrap(role);
+          if (role === "owner") loadStudentTrash();
+          if (["owner", "branch_manager", "admin"].includes(role)) { loadStudentArchive(); loadArchivedGroups(); }
+          fetchStatusConfig(getMvpRoleHeader(role)).then(() => setStatusCfgVersion((v) => v + 1));
           startLoginVideo("desktop");
           return;
         }
@@ -2873,7 +2903,9 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => {
-                    alert("Доступ выдаёт студия при добавлении ученика/сотрудника: номер телефона +7 и пароль. Забыли пароль — обратитесь к администратору.");
+                    // Инлайн-подсказка вместо системного alert (аудит #38): сброс пароля
+                    // выдаёт студия, отдельного самостоятельного сценария нет.
+                    setDesktopLoginError("Доступ и сброс пароля выдаёт студия: обратитесь к администратору. Для входа — номер телефона +7 и пароль.");
                   }}
                   className="text-sm font-semibold text-[#C5A059] transition hover:text-[#d8b877]"
                 >
@@ -3357,14 +3389,16 @@ export default function App() {
                 </button>
               ))}
             </div>
-            <div className="mt-8 border-t border-white/5 pt-4">
-              <button
-                onClick={handleResetData}
-                className="w-full py-2 bg-[#8B0000]/20 text-[#FF4D4D] border border-[#8B0000]/45 rounded-xl text-xs font-bold"
-              >
-                Сбросить демо-данные
-              </button>
-            </div>
+            {import.meta.env.DEV && (
+              <div className="mt-8 border-t border-white/5 pt-4">
+                <button
+                  onClick={handleResetData}
+                  className="w-full py-2 bg-[#8B0000]/20 text-[#FF4D4D] border border-[#8B0000]/45 rounded-xl text-xs font-bold"
+                >
+                  Сбросить демо-данные (dev)
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -3504,56 +3538,39 @@ export default function App() {
               </nav>
             </div>
 
-            {/* Quick stats panel */}
-            <div className="p-3 bg-white/5 rounded-2xl border border-white/5">
-              <span className="text-[10px] text-slate-500 uppercase tracking-widest font-extrabold">
-                Филиалы сети
-              </span>
-              <div className="mt-2 space-y-1.5 text-xs text-slate-300">
-                {branches.map(b => (
-                  <div key={b.id} className="flex items-center justify-between">
-                    <span className="truncate pr-1">• {b.city}</span>
-                    <span className="text-[10px] text-slate-500 font-bold uppercase">{b.name.includes("Флагман") ? "Фл-н" : "Фил"}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
+            {/* Аудит #28: из кабинета ученика убраны служебные элементы — «Филиалы
+                сети» (внутренняя структура) и фейковый прогресс «Ранг 7 · 85%».
+                Реальный прогресс показывает сам кабинет (StudentArtistCabinet). */}
           </div>
 
-          <div className="px-4 pt-4 space-y-4">
-            {/* Gamified level bottom card */}
-            <div className="bg-gradient-to-br from-[#8B0000] to-[#510000] rounded-2xl p-4 shadow-xl border border-white/10">
-              <p className="text-[9px] text-white/70 uppercase tracking-widest font-bold mb-1">
-                Концепция: Путь Артиста
-              </p>
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-serif italic text-white">Легенда Школы</span>
-                <span className="text-[9px] bg-[#C5A059] text-black font-extrabold px-1.5 py-0.5 rounded uppercase">
-                  Ранг 7
-                </span>
-              </div>
-              <div className="w-full bg-black/40 h-1 rounded-full mt-2.5 overflow-hidden">
-                <div className="bg-[#C5A059] h-full w-[85%]"></div>
-              </div>
+          {import.meta.env.DEV && (
+            <div className="px-4 pt-4">
+              <button
+                onClick={handleResetData}
+                className="w-full py-2 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-colors rounded-xl text-[10px] font-bold uppercase tracking-wider"
+              >
+                Сбросить демо-данные (dev)
+              </button>
             </div>
-
-            {/* Demo recovery */}
-            <button
-              onClick={handleResetData}
-              className="w-full py-2 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-colors rounded-xl text-[10px] font-bold uppercase tracking-wider"
-            >
-              Сбросить демо-данные
-            </button>
-          </div>
+          )}
         </aside>
         )}
 
         {/* Main Workspace Area */}
         <main className={`flex-1 flex flex-col p-4 md:p-6 space-y-6 overflow-y-auto min-w-0 ${activeRole === 'teacher' || activeRole === 'branch' || activeRole === 'owner' || activeRole === 'admin' ? 'p-0 md:p-0 space-y-0' : ''}`}>
-          {/* Индикатор источника данных виден только при ошибке подключения. */}
+          {/* Индикатор загрузки данных (аудит #17: isLoading раньше нигде не
+              отображался → пользователь видел нули и принимал загрузку за потерю
+              данных). Тонкая полоска сверху, не мешает работе. */}
+          {isLoading && (
+            <div className="fixed inset-x-0 top-0 z-[90] h-0.5 animate-pulse bg-[#C5A059]/80" aria-hidden="true" />
+          )}
+
+          {/* Индикатор источника данных виден при ошибке подключения — на всех
+              экранах, включая мобильные (аудит #40: раньше был hidden md:block). */}
           {mvpDataError && (
-            <div className="fixed right-4 top-4 z-[80] hidden max-w-md rounded-2xl border border-rose-400/30 bg-black/70 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-rose-300 backdrop-blur-xl md:block">
-              Нет связи с базой • {mvpDataError.slice(0, 80)}
+            <div className="fixed left-1/2 top-3 z-[80] flex max-w-[92vw] -translate-x-1/2 items-center gap-2 rounded-2xl border border-rose-400/30 bg-black/80 px-3 py-2 text-[11px] font-bold text-rose-200 backdrop-blur-xl md:left-auto md:right-4 md:max-w-md md:translate-x-0">
+              <span className="shrink-0">Нет связи с базой</span>
+              <button onClick={() => loadMvpBootstrap(activeRole)} className="shrink-0 rounded-lg bg-rose-500/20 px-2 py-0.5 font-bold text-rose-100 hover:bg-rose-500/30">Повторить</button>
             </div>
           )}
 
@@ -3567,6 +3584,7 @@ export default function App() {
                competitions={competitions}
                announcements={announcements}
                addAuditLog={addAuditLog}
+               teacherName={currentUserName || "Педагог"}
                scheduleItems={scheduleItems}
                scheduleLoading={scheduleLoading}
                onLoadSchedule={loadSchedule}
@@ -3812,7 +3830,6 @@ export default function App() {
                   <span className="text-2xl md:text-3xl font-bold text-[#C5A059] tracking-tight tabular-nums">
                     {metricsSummary.thisMonthRevenue.toLocaleString()} ₸
                   </span>
-                  <span className="text-xs text-green-400">Стабильно</span>
                 </div>
               </div>
 
@@ -3824,7 +3841,12 @@ export default function App() {
                   <span className="text-2xl md:text-3xl font-bold text-white tracking-tight tabular-nums">
                     {metricsSummary.overallAttendanceRate}%
                   </span>
-                  <span className="text-xs text-sky-400">Норма</span>
+                  {(() => {
+                    // Оценка вычисляется из реального показателя (аудит #33), а не захардкожена.
+                    const r = metricsSummary.overallAttendanceRate;
+                    const [txt, cls] = r >= 85 ? ["Высокая", "text-green-400"] : r >= 70 ? ["Норма", "text-sky-400"] : ["Низкая", "text-rose-400"];
+                    return <span className={`text-xs ${cls}`}>{txt}</span>;
+                  })()}
                 </div>
               </div>
 
@@ -3836,7 +3858,6 @@ export default function App() {
                   <span className="text-2xl md:text-3xl font-bold text-white tracking-tight tabular-nums">
                     {metricsSummary.todayRevenue.toLocaleString()} ₸
                   </span>
-                  <span className="text-xs text-[#C5A059]">Высокая</span>
                 </div>
               </div>
             </div>

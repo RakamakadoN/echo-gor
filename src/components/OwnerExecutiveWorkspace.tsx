@@ -11,6 +11,7 @@ import {
   ChevronDown,
   ChevronUp,
   CheckCircle,
+  Download,
   ClipboardList,
   Coins,
   Crown,
@@ -166,11 +167,13 @@ interface OwnerExecutiveWorkspaceProps {
   onCreateBranch?: (data: { name: string; city: string; address?: string; phone?: string }) => Promise<boolean>;
   onUpdateBranch?: (id: string, data: { name?: string; city?: string; address?: string; phone?: string }) => Promise<boolean>;
   onDeleteBranch?: (id: string) => Promise<boolean>;
-  onCreateStudent?: (data: StudentInput) => Promise<string | boolean | null>;
+  onCreateStudent?: (data: StudentInput) => Promise<string | boolean | null | { archivedId: string; message: string }>;
   onUpdateStudent?: (id: string, data: StudentInput) => Promise<boolean>;
   onDeleteStudent?: (id: string) => Promise<boolean>;
   onOpenPayment?: (student: Student) => void;
   onSellSubscription?: (payload: SellSubscriptionInput) => Promise<boolean> | boolean;
+  onSellSubscriptionBatch?: (items: SellSubscriptionInput[]) => Promise<any> | any;
+  onDeleteTrial?: (studentId: string, date: string) => Promise<any> | any;
   subscriptionPlans?: SubscriptionPlan[];
   studentTrash?: TrashStudent[];
   onRestoreStudent?: (id: string) => Promise<boolean>;
@@ -234,8 +237,19 @@ interface OwnerExecutiveWorkspaceProps {
 
 type OwnerTab = "dashboard" | "branches" | "students" | "teachers" | "payroll" | "journal" | "schedule" | "finance" | "planning" | "meetings" | "reports" | "performances" | "products" | "documents" | "marketing" | "events" | "feed" | "announcements" | "analytics" | "ai" | "aihub" | "settings";
 
+// Аудит #37: смысловая группировка 17 разделов в сайдбаре (заголовки секций).
+// Считается по id в рендере — не трогает механику переупорядочивания разделов.
+const TAB_GROUP: Record<string, string> = {
+  dashboard: "Обзор",
+  branches: "Люди", students: "Люди", teachers: "Люди",
+  journal: "Учебный процесс", schedule: "Учебный процесс", performances: "Учебный процесс",
+  finance: "Деньги", planning: "Деньги", products: "Деньги", reports: "Деньги",
+  meetings: "Коммуникации", marketing: "Коммуникации", feed: "Коммуникации", announcements: "Коммуникации", aihub: "Коммуникации",
+  settings: "Система",
+};
+
 const ownerTabs: { id: OwnerTab; label: string; short: string; icon: React.ElementType }[] = [
-  { id: "dashboard", label: "Dashboard", short: "Главная", icon: Activity },
+  { id: "dashboard", label: "Главная", short: "Главная", icon: Activity },
   { id: "branches", label: "Филиалы", short: "Филиалы", icon: Building2 },
   { id: "students", label: "Ученики", short: "Ученики", icon: Users },
   { id: "teachers", label: "Преподаватели", short: "Педагоги", icon: GraduationCap },
@@ -250,7 +264,7 @@ const ownerTabs: { id: OwnerTab; label: string; short: string; icon: React.Eleme
   { id: "marketing", label: "Маркетинг", short: "Маркетинг", icon: Send },
   { id: "feed", label: "Афиша СНГ", short: "Афиша", icon: CalendarDays },
   { id: "announcements", label: "Объявления", short: "Связь", icon: Megaphone },
-  { id: "aihub", label: "AI HUB", short: "AI HUB", icon: Bot },
+  { id: "aihub", label: "AI-центр", short: "AI-центр", icon: Bot },
   { id: "settings", label: "Настройки сети", short: "Еще", icon: Settings }
 ];
 // Удалённые вкладки (документолог, аналитика, концерты, AI Assistant) — всё это
@@ -413,14 +427,23 @@ export function OwnerExecutiveWorkspace({
           </div>
           {/* Навигация (референс .nav) — прокручиваемая */}
           <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
-            {sectionSettings.visibleTabs.map((tab) => (
-              <OwnerNavButton
-                key={tab.id}
-                tab={tab}
-                active={activeTab === tab.id}
-                onClick={() => setActiveTab(tab.id as OwnerTab)}
-              />
-            ))}
+            {sectionSettings.visibleTabs.map((tab, i, arr) => {
+              // Заголовок секции — когда группа сменилась относительно предыдущего пункта.
+              const group = TAB_GROUP[tab.id] || "";
+              const prevGroup = i > 0 ? (TAB_GROUP[arr[i - 1].id] || "") : "";
+              return (
+                <React.Fragment key={tab.id}>
+                  {group && group !== prevGroup && (
+                    <p className="px-3 pb-1 pt-3 text-[10px] font-black uppercase tracking-wider text-slate-600 first:pt-0">{group}</p>
+                  )}
+                  <OwnerNavButton
+                    tab={tab}
+                    active={activeTab === tab.id}
+                    onClick={() => setActiveTab(tab.id as OwnerTab)}
+                  />
+                </React.Fragment>
+              );
+            })}
           </nav>
         </aside>
 
@@ -642,13 +665,15 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
 
   useEffect(() => {
     let alive = true;
-    const period = new Date().toISOString().slice(0, 7);
+    // Аудит #13: БДР теперь следует за выбранным месяцем (monthValue), а не всегда
+    // за текущим — раньше при выборе прошлого месяца показывался БДР за этот месяц.
+    const period = monthValue || localToday.slice(0, 7);
     fetch(`/api/mvp/owner/bdr-progress?period=${period}`, { headers: { "x-demo-role": "owner" } })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (alive && d) setBdr(d); })
       .catch(() => {});
     return () => { alive = false; };
-  }, []);
+  }, [monthValue, localToday]);
 
   // Одобрить / отклонить заявку (расход или возврат) прямо с дашборда.
   const decideRequest = async (kind: "expense" | "refund", id: string, action: "approve" | "reject") => {
@@ -928,7 +953,9 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
   const openRetention = () => openInfo("Удержание (мес→мес)", [
     ["Удержание", m.retention.pct === null ? "—" : `${m.retention.pct}%`],
     ["Активны / всего", `${m.retention.activeStudents} / ${m.retention.totalStudents}`],
-    ["Отток", m.retention.pct === null ? "—" : `${100 - m.retention.pct}%`],
+    // Аудит #21: это НЕ отток (ушедшие), а доля без активного абонемента —
+    // «отток за месяц» считается отдельно (churn.left/pct). Разные метрики.
+    ["Без активного абонемента", m.retention.pct === null ? "—" : `${100 - m.retention.pct}%`],
     ["К пред. месяцу", <DeltaBadge pct={m.retention.momPct} />],
     ["Год к году", <DeltaBadge pct={m.retention.yoyPct} />],
   ], "Удержание — доля учеников с активным абонементом.");
@@ -1428,7 +1455,8 @@ function OwnerDashboard({ rawBranches, rawStudents, rawGroups, rawTeachers, rawP
           ]} />
           <AnalysisBlock title="Удержание" lines={[
             `Удержание: ${m.retention.pct === null ? "—" : m.retention.pct + "%"}`,
-            `Отток: ${m.retention.pct === null ? "—" : (100 - m.retention.pct) + "%"}`,
+            `Без активного абонемента: ${m.retention.pct === null ? "—" : (100 - m.retention.pct) + "%"}`,
+            `Отток за месяц (ушли): ${m.churn.left}${m.churn.pct !== null ? ` (${m.churn.pct}%)` : ""}`,
             `Активны: ${m.retention.activeStudents} из ${m.retention.totalStudents}`
           ]} />
           <AnalysisBlock title="Заполняемость" lines={[
@@ -1525,6 +1553,25 @@ function ChangeCell({ value }: { value: number | null }) {
 
 // Универсальное окно детализации с цветным градиентным заголовком.
 function RiskTableModal({ data, onClose }: { data: DetailModalData; onClose: () => void }) {
+  // Аудит #42: экспорт любого списка дашборда в CSV (Excel открывает напрямую).
+  const exportCsv = () => {
+    const cellText = (c: any): string => {
+      if (c === null || c === undefined) return "";
+      if (typeof c === "string" || typeof c === "number") return String(c);
+      if (typeof c === "object" && "props" in c && typeof c.props?.children === "string") return c.props.children;
+      return "";
+    };
+    const esc = (s: string) => /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    const lines = [data.columns.map(esc).join(";"), ...data.rows.map((r) => r.map((c) => esc(cellText(c))).join(";"))];
+    const csv = "﻿" + lines.join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    const safeTitle = String(data.title || "список").replace(/[^\wа-яА-ЯёЁ]+/g, "_").slice(0, 40);
+    a.download = `${safeTitle}_${new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Almaty" }).format(new Date())}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" onClick={onClose}>
       <div className="flex max-h-[86vh] w-full max-w-2xl flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#141414] shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -1534,7 +1581,15 @@ function RiskTableModal({ data, onClose }: { data: DetailModalData; onClose: () 
             <h3 className="truncate text-lg font-black text-white drop-shadow-sm">{data.title}</h3>
             {data.subtitle && <p className="mt-0.5 text-xs font-bold text-white/90">{data.subtitle}</p>}
           </div>
-          <button onClick={onClose} className="shrink-0 rounded-xl bg-black/20 p-1.5 text-white transition hover:bg-black/40"><X className="h-4 w-4" /></button>
+          <div className="flex shrink-0 items-center gap-2">
+            {data.rows.length > 0 && (
+              <button onClick={exportCsv} title="Скачать список в CSV (Excel)"
+                className="flex items-center gap-1.5 rounded-xl bg-black/20 px-2.5 py-1.5 text-xs font-bold text-white transition hover:bg-black/40">
+                <Download className="h-3.5 w-3.5" /> CSV
+              </button>
+            )}
+            <button onClick={onClose} className="rounded-xl bg-black/20 p-1.5 text-white transition hover:bg-black/40"><X className="h-4 w-4" /></button>
+          </div>
         </div>
         {/* Тело */}
         <div className="overflow-auto p-5">
@@ -3354,11 +3409,13 @@ function StudentsNetworkView({ students, branches, groups, teachers, onCreateStu
   branches: Branch[];
   groups: Group[];
   teachers: Teacher[];
-  onCreateStudent?: (data: StudentInput) => Promise<string | boolean | null>;
+  onCreateStudent?: (data: StudentInput) => Promise<string | boolean | null | { archivedId: string; message: string }>;
   onUpdateStudent?: (id: string, data: StudentInput) => Promise<boolean>;
   onDeleteStudent?: (id: string) => Promise<boolean>;
   onOpenPayment?: (student: Student) => void;
   onSellSubscription?: (payload: SellSubscriptionInput) => Promise<boolean> | boolean;
+  onSellSubscriptionBatch?: (items: SellSubscriptionInput[]) => Promise<any> | any;
+  onDeleteTrial?: (studentId: string, date: string) => Promise<any> | any;
   subscriptionPlans?: SubscriptionPlan[];
   studentTrash?: TrashStudent[];
   onRestoreStudent?: (id: string) => Promise<boolean>;
@@ -9412,7 +9469,7 @@ function PenaltyJournalModal({ penalties, teachers, months, month, onClose, onCh
     }));
   }, [penalties]);
 
-  const teacherNames = useMemo(() => Array.from(new Set(all.map((r) => r.teacherName))), [all]);
+  const teacherNames = useMemo<string[]>(() => (Array.from(new Set(all.map((r: any) => String(r.teacherName || "")))).filter(Boolean) as string[]), [all]);
   const filtered = all.filter((r) => (!fMonth || r.month === fMonth) && (!fTeacher || r.teacherName === fTeacher));
   const total = filtered.reduce((s, r) => s + (r.amount || 0), 0);
 
@@ -9480,6 +9537,16 @@ function PenaltyJournalModal({ penalties, teachers, months, month, onClose, onCh
 
 function ChargePenaltyModal({ teachers, busy, onClose, onSubmit }: any) {
   const [f, setF] = useState<any>({ teacherId: teachers[0]?.id || "", reason: PENALTY_REASONS[0], amount: "", period_month: new Date().toISOString().slice(0, 7), created_by: "Владелец", comment: "" });
+  // Причины штрафов — из настраиваемого справочника (settings_lists), с дефолтами.
+  const [reasons, setReasons] = useState<string[]>(PENALTY_REASONS);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/mvp/settings/lists?kind=penalty_reason", { headers: { "x-demo-role": "owner" } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { const items = (d?.items || []).map((x: any) => x.label || x.value || x).filter(Boolean); if (alive && items.length) setReasons(items); })
+      .catch(() => { /* останутся дефолты */ });
+    return () => { alive = false; };
+  }, []);
   const set = (k: string, v: any) => setF((s: any) => ({ ...s, [k]: v }));
   const submit = () => {
     const amount = Number(f.amount);
@@ -9498,7 +9565,7 @@ function ChargePenaltyModal({ teachers, busy, onClose, onSubmit }: any) {
             </select></label>
           <label className="flex flex-col gap-1 text-[11px] text-slate-400">Причина *
             <select value={f.reason} onChange={(e) => set("reason", e.target.value)} className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white">
-              {PENALTY_REASONS.map((r) => <option key={r} value={r} className="bg-black">{r}</option>)}
+              {reasons.map((r) => <option key={r} value={r} className="bg-black">{r}</option>)}
             </select></label>
           <ModalInput label="Сумма, ₸ *" type="number" value={f.amount} onChange={(v) => set("amount", v)} />
           <ModalInput label="Месяц (вычесть из ЗП)" type="month" value={f.period_month} onChange={(v) => set("period_month", v)} />
@@ -11309,7 +11376,7 @@ function OwnerScheduleView({ branches, groups, teachers, halls, scheduleItems, s
     setSaving(true);
     const ok = await onCreateGroup?.({ ...groupForm, ageFrom: groupForm.ageFrom ? Number(groupForm.ageFrom) : undefined, ageTo: groupForm.ageTo ? Number(groupForm.ageTo) : undefined });
     setSaving(false);
-    if (ok) { setGroupForm({ name: "", branchId: "", teacherId: "", hallId: "", ageFrom: "", ageTo: "", level: "Начинающие", scheduleDays: "", scheduleTime: "", startDate: "", endDate: "" }); setActiveForm(null); }
+    if (ok) { setGroupForm({ name: "", branchId: "", teacherId: "", hallId: "", ageFrom: "", ageTo: "", level: "Начинающие", scheduleDays: "", scheduleTime: "", startDate: "", endDate: "", format: "group" }); setActiveForm(null); }
   };
 
   const inputCls = "rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white w-full";

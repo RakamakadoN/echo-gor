@@ -343,6 +343,7 @@ function ArrivalCheckModal({ expectedStart, onClose, onDone }: {
 }) {
   const [photo, setPhoto] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const now = almatyToday();
@@ -363,6 +364,7 @@ function ArrivalCheckModal({ expectedStart, onClose, onDone }: {
 
   async function submit() {
     setBusy(true);
+    setErr(null);
     try {
       // Время и «опоздание» считает СЕРВЕР — отправляем только начало занятия и фото.
       const res = await fetch("/api/mvp/teachers/arrival", {
@@ -370,10 +372,17 @@ function ArrivalCheckModal({ expectedStart, onClose, onDone }: {
         headers: { "Content-Type": "application/json", "x-demo-role": "teacher" },
         body: JSON.stringify({ expectedStart, photo }),
       });
-      const data = res.ok ? await res.json().catch(() => null) : null;
+      if (!res.ok) {
+        // Аудит #8: НЕ засчитываем приход локально при ошибке сервера — иначе педагог
+        // уверен, что отметился, а сервер не знает → штраф «не отметился».
+        const msg = await res.json().catch(() => null);
+        setErr(msg?.error || "Сервер не принял отметку. Попробуйте ещё раз.");
+        return;
+      }
+      const data = await res.json().catch(() => null);
       onDone(data?.arrival ? { time: data.arrival.time, late: data.arrival.late } : { time: nowStr, late });
     } catch {
-      onDone({ time: nowStr, late });
+      setErr("Нет связи с сервером — приход не сохранён. Проверьте интернет и повторите.");
     } finally {
       setBusy(false);
     }
@@ -435,6 +444,9 @@ function ArrivalCheckModal({ expectedStart, onClose, onDone }: {
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
             Подтвердить приход в {nowStr}
           </button>
+          {err && (
+            <p className="mt-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-center text-xs font-semibold text-rose-200">{err}</p>
+          )}
           <p className="mt-2 text-center text-[10px] text-slate-500">Фото увидит руководство. Приход вовремя = без штрафа.</p>
         </div>
       </div>

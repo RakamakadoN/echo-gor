@@ -101,11 +101,15 @@ export function TeacherEarningsDashboard({ teacherName, teachers = [] }: Props) 
   // Чек-лист «дойти до конца месяца с высокой ЗП» — состояние из данных, где возможно.
   const noLate = !monthFines.some((f) => /опоздан/i.test(f.reason));
   const journalsOk = !monthFines.some((f) => /журнал/i.test(f.reason));
+  // Аудит #43: пункт больше не «скоро» — подтверждение прихода с фото уже работает
+  // (карточка «Стандарты работы сегодня»). Считаем выполненным при отсутствии
+  // штрафов за неотмеченный приход в этом месяце.
+  const arrivalsOk = !monthFines.some((f) => /приход|отмет/i.test(f.reason));
   const checklist = [
     { label: "Закрывать журнал каждый день", done: journalsOk, hint: "штраф 3 000–5 000 ₸ за незакрытый журнал" },
     { label: "Без опозданий на занятия", done: noLate, hint: "штраф 2 000 ₸ за опоздание" },
     { label: "Удержать учеников (отток ≤ 2)", done: model.retActive, hint: `бонус +${Math.round(TN_RET_BONUS[cat] * 100)}% к базе` },
-    { label: "Загружать фото прихода", done: false, hint: "скоро в кабинете · штраф за отсутствие" },
+    { label: "Отмечать приход с фото", done: arrivalsOk, hint: "во вкладке «Сегодня» · штраф за отсутствие отметки" },
     { label: "Провести все занятия месяца", done: !!m, hint: "влияет на стандарты и KPI" },
   ];
 

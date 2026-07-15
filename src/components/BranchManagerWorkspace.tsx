@@ -65,7 +65,7 @@ interface BranchManagerWorkspaceProps {
   onCreateLesson?: (data: any) => Promise<boolean>;
   onUpdateLesson?: (id: string, data: any) => Promise<boolean>;
   onDeleteLesson?: (id: string) => Promise<boolean>;
-  onCreateStudent?: (data: any) => Promise<string | boolean | null>;
+  onCreateStudent?: (data: any) => Promise<string | boolean | null | { archivedId: string; message: string }>;
   onUpdateStudent?: (id: string, data: any) => Promise<boolean>;
   onDeleteStudent?: (id: string) => Promise<boolean>;
   onArchiveStudent?: (id: string, reason: string, comment: string) => Promise<boolean | void> | void;
@@ -80,6 +80,8 @@ interface BranchManagerWorkspaceProps {
   onCreateAnnouncement?: (data: { title: string; content: string; audience: AnnouncementAudience; isImportant: boolean }) => void;
   onOpenPayment?: (student: Student) => void;
   onSellSubscription?: (payload: SellSubscriptionInput) => Promise<boolean> | boolean;
+  onSellSubscriptionBatch?: (items: SellSubscriptionInput[]) => Promise<any> | any;
+  onDeleteTrial?: (studentId: string, date: string) => Promise<any> | any;
   subscriptionPlans?: SubscriptionPlan[];
   onToggleAttendance?: (studentId: string, date: string, status: "present" | "absent" | "sick") => void;
   onBulkAttendance?: any;
@@ -91,7 +93,7 @@ interface BranchManagerWorkspaceProps {
 type BranchTab = "dashboard" | "students" | "teachers" | "groups" | "schedule" | "journal" | "performances" | "planning" | "kpi" | "reconcile" | "payroll" | "products" | "storefront" | "quality" | "settings";
 
 const branchTabs: { id: BranchTab; label: string; short: string; icon: React.ElementType }[] = [
-  { id: "dashboard", label: "Dashboard", short: "Главная", icon: Activity },
+  { id: "dashboard", label: "Главная", short: "Главная", icon: Activity },
   { id: "students", label: "Ученики", short: "Ученики", icon: Users },
   { id: "teachers", label: "Преподаватели", short: "Педагоги", icon: GraduationCap },
   { id: "groups", label: "Группы", short: "Группы", icon: BookOpen },
@@ -780,7 +782,7 @@ function StudentsView({ students, groups, teachers = [], branches = [], branchId
   teachers?: Teacher[];
   branches?: Branch[];
   branchId: string;
-  onCreateStudent?: (data: any) => Promise<string | boolean | null>;
+  onCreateStudent?: (data: any) => Promise<string | boolean | null | { archivedId: string; message: string }>;
   onUpdateStudent?: (id: string, data: any) => Promise<boolean>;
   onDeleteStudent?: (id: string) => Promise<boolean>;
   onArchiveStudent?: (id: string, reason: string, comment: string) => Promise<boolean | void> | void;
@@ -790,6 +792,8 @@ function StudentsView({ students, groups, teachers = [], branches = [], branchId
   studentArchive?: any[];
   onOpenPayment?: (student: Student) => void;
   onSellSubscription?: (payload: SellSubscriptionInput) => Promise<boolean> | boolean;
+  onSellSubscriptionBatch?: (items: SellSubscriptionInput[]) => Promise<any> | any;
+  onDeleteTrial?: (studentId: string, date: string) => Promise<any> | any;
   plans?: SubscriptionPlan[];
   waitlist?: WaitlistEntry[];
   onAddToWaitlist?: (payload: { studentId: string; branchId?: string | null; groupId?: string | null; comment?: string | null }) => Promise<boolean>;

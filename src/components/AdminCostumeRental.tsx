@@ -182,7 +182,9 @@ function IssueModal({ costume, options, onClose, onDone }: { costume: Costume | 
   const [selectedId, setSelectedId] = useState(costume?.id || "");
   const picked = costume || options.find((c) => c.id === selectedId) || null;
   const [renter, setRenter] = useState("");
-  const [due, setDue] = useState("");
+  // Аудит #30: срок возврата обязателен и по умолчанию +14 дней — иначе прокат
+  // «без срока» никогда не становился просроченным и выпадал из контроля.
+  const [due, setDue] = useState(() => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Almaty" }).format(new Date(Date.now() + 14 * 86400000)));
   const [fee, setFee] = useState(String(costume?.fee || ""));
   useEffect(() => { if (!costume && picked) setFee(String(picked.fee || "")); }, [selectedId]);
   const [method, setMethod] = useState("cash");
@@ -196,11 +198,12 @@ function IssueModal({ costume, options, onClose, onDone }: { costume: Costume | 
   async function pickId(f: File) { setBusy(true); try { setIdPhoto(await compressImage(f)); } finally { setBusy(false); } }
   async function issue() {
     if (!renter.trim() || !picked) return;
+    if (!due) { toast.error("Укажите срок возврата — без него прокат нельзя проконтролировать"); return; }
     setBusy(true);
     try {
       const res = await fetch("/api/mvp/costumes/issue", {
         method: "POST", headers: JHDR,
-        body: JSON.stringify({ costumeId: picked.id, renterName: renter, dueDate: due || null, fee: Number(fee) || 0, method, issuePhoto: photo, idPhoto, idNote, notes }),
+        body: JSON.stringify({ costumeId: picked.id, renterName: renter, dueDate: due, fee: Number(fee) || 0, method, issuePhoto: photo, idPhoto, idNote, notes }),
       });
       if (res.ok) { toast.success(`Костюм выдан: ${picked.name} → ${renter}`); onDone(); }
       else { const e = await res.json().catch(() => ({})); toast.error(e.error || "Не удалось выдать костюм"); }
@@ -222,7 +225,7 @@ function IssueModal({ costume, options, onClose, onDone }: { costume: Costume | 
         )}
         <div><label className={labelCls}>Кто берёт</label><input className={inputCls} value={renter} onChange={(e) => setRenter(e.target.value)} placeholder="Имя ученика / клиента" /></div>
         <div className="grid grid-cols-2 gap-2">
-          <div><label className={labelCls}>Вернуть до</label><input className={inputCls} type="date" value={due} onChange={(e) => setDue(e.target.value)} /></div>
+          <div><label className={labelCls}>Вернуть до *</label><input className={inputCls} type="date" min={almatyToday()} value={due} onChange={(e) => setDue(e.target.value)} required /></div>
           <div><label className={labelCls}>Плата за прокат ₸</label><input className={inputCls} type="number" value={fee} onChange={(e) => setFee(e.target.value)} /></div>
         </div>
         {Number(fee) > 0 && (

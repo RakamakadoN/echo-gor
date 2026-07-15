@@ -1527,6 +1527,21 @@ export function registerMvpApi(app: express.Express) {
       }
     }
 
+    // Аудит #29: нормализация и базовая валидация телефона (храним цифры;
+    // 7XXXXXXXXXX / 8XXXXXXXXXX → +7). Некорректный (слишком короткий) — отклоняем.
+    const normPhone = (raw: any): string | null | undefined => {
+      const s = String(raw ?? "").trim();
+      if (!s) return null;
+      let d = s.replace(/\D/g, "");
+      if (d.length === 11 && (d[0] === "8" || d[0] === "7")) d = "7" + d.slice(1);
+      if (d.length < 10) return undefined; // сигнал «некорректно»
+      return "+" + d;
+    };
+    const phoneVal = normPhone(payload.phone);
+    if (phoneVal === undefined) return res.status(400).json({ error: "Телефон ученика указан некорректно (нужно не менее 10 цифр)" });
+    const parentPhoneVal = normPhone(payload.parentPhone);
+    if (parentPhoneVal === undefined) return res.status(400).json({ error: "Телефон родителя указан некорректно (нужно не менее 10 цифр)" });
+
     const inserted = await supabaseFetch<any[]>("students", "", {
       method: "POST",
       body: JSON.stringify({
@@ -1538,10 +1553,10 @@ export function registerMvpApi(app: express.Express) {
         last_name: lastName,
         gender: payload.gender || null,
         birthday: payload.birthday || null,
-        phone: payload.phone || null,
+        phone: phoneVal,
         teacher_id: payload.teacherId || null,
         parent_name: payload.parentName || null,
-        parent_phone: payload.parentPhone || null,
+        parent_phone: parentPhoneVal,
         status: payload.status || "lead",
         manual_status: payload.manualStatus || null,
         skill_level: payload.skillLevel || null,
@@ -2209,63 +2224,45 @@ export function registerMvpApi(app: express.Express) {
         }
       }
 
-      const insertedSub = await supabaseFetch<any[]>("student_subscriptions", "", {
-        method: "POST",
-        body: JSON.stringify({
-          student_id: studentId,
-          plan_id: planId,
-          branch_id: branchId,
-          group_id: payload.groupId || null,
-          kind: payload.kind === "individual" ? "individual" : "group",
-          starts_on: startsOn,
-          ends_on: endsOn,
-          lessons_total: lessonsTotal,
-          lessons_left: lessonsTotal,
-          price: finalPrice,
-          amount_paid: paid ? amountPaid : null,
-          sold_on: soldOn,
-          discount_amount: discountAmount + recalc,
-          status: paid ? "active" : "inactive",
-          sold_by_name: session.fullName || session.role
-        })
-      });
-
       // Платёж и проводка ДДС — на фактически ВНЕСЁННУЮ сумму (может быть меньше
       // стоимости; недоплата = долг, считается по amount_paid в bootstrap).
       const debtLeft = Math.max(0, finalPrice - amountPaid);
-      let payment = null;
-      if (paid && amountPaid > 0) {
-        const payComment = payload.description || `Абонемент: ${plan.name}`;
-        const insertedPayment = await supabaseFetch<any[]>("payments", "", {
-          method: "POST",
-          body: JSON.stringify({
-            organization_id: session.organizationId,
-            branch_id: branchId,
-            student_id: studentId,
-            amount: amountPaid,
-            method: payload.method || "kaspi",
-            status: "paid",
-            comment: debtLeft > 0 ? `${payComment} (частично, долг ${Math.round(debtLeft)} тг)` : payComment,
-            created_by: session.userId.startsWith("demo-") ? null : session.userId,
-            sold_by_name: session.fullName || session.role
-          })
-        });
-        payment = mapDbPayment(insertedPayment[0]);
-        await supabaseFetch<any[]>("finance_transactions", "", {
-          method: "POST",
-          body: JSON.stringify({
-            organization_id: session.organizationId,
-            branch_id: branchId,
-            student_id: studentId,
-            payment_id: insertedPayment[0].id,
-            amount: amountPaid,
-            type: "income",
-            category: "tuition",
-            category_id: await ensureIncomeCategoryId(session.organizationId),
-            description: payload.description || `Абонемент: ${plan.name}`
-          })
-        });
-      }
+      const willPay = paid && amountPaid > 0;
+      const baseComment = payload.description || `Абонемент: ${plan.name}`;
+      const payComment = debtLeft > 0 ? `${baseComment} (частично, долг ${Math.round(debtLeft)} тг)` : baseComment;
+
+      // Аудит #11: абонемент + платёж + проводка ДДС — ОДНОЙ БД-транзакцией через
+      // RPC create_subscription_sale_tx. Раньше это были 3 отдельных REST-вызова,
+      // и сбой между ними оставлял «проданный» абонемент без денег.
+      const saleRes = await supabaseFetch<any>("rpc/create_subscription_sale_tx", "", {
+        method: "POST",
+        headers: { Prefer: "return=representation" },
+        body: JSON.stringify({
+          p_org: session.organizationId,
+          p_branch: branchId,
+          p_student: studentId,
+          p_plan: planId,
+          p_group: payload.groupId || null,
+          p_kind: payload.kind === "individual" ? "individual" : "group",
+          p_starts: startsOn,
+          p_ends: endsOn,
+          p_lessons: lessonsTotal,
+          p_price: finalPrice,
+          p_amount_paid: amountPaid,
+          p_sold_on: soldOn,
+          p_discount: discountAmount + recalc,
+          p_status: paid ? "active" : "inactive",
+          p_sold_by: session.fullName || session.role,
+          p_created_by: session.userId.startsWith("demo-") ? null : session.userId,
+          p_paid: paid,
+          p_method: payload.method || "kaspi",
+          p_pay_comment: payComment,
+          p_income_category: willPay ? await ensureIncomeCategoryId(session.organizationId) : null,
+          p_description: baseComment,
+        })
+      });
+      const insertedSub = [saleRes?.subscription].filter(Boolean);
+      const payment = saleRes?.payment ? mapDbPayment(saleRes.payment) : null;
 
       // ТЗ «Лист ожидания»: при продаже абонемента ученик автоматически уходит из
       // листа ожидания (история сохраняется через removed_at/removed_reason).
@@ -2679,6 +2676,14 @@ export function registerMvpApi(app: express.Express) {
     }
     if (!supabaseEnabled) {
       return res.status(503).json({ error: "Supabase is not configured" });
+    }
+
+    // Изоляция кабинета педагога (аудит #4): педагог отмечает посещаемость ТОЛЬКО
+    // ученикам своих групп — иначе можно было бы править чужой журнал в своём филиале
+    // (в т.ч. передав чужой lessonId напрямую). Та же логика скоупа, что у ЭхоБаксов.
+    const attScope = await teacherStudentScope(session);
+    if (attScope && !attScope.has(payload.studentId)) {
+      return res.status(403).json({ error: "Отмечать посещаемость можно только ученикам своих групп" });
     }
 
     let lessonId = payload.lessonId;
@@ -5421,12 +5426,14 @@ export function registerMvpApi(app: express.Express) {
   // ---------- НАСТРОЙКИ: СПРАВОЧНИКИ (settings_lists) ----------
   // Настраиваемые списки: типы выступлений, категории товаров, уровни групп.
   // Читают все рабочие роли (для выпадающих списков), правит только владелец.
-  const SETTINGS_KINDS = ["performance_type", "product_category", "group_level", "document_category"];
+  const SETTINGS_KINDS = ["performance_type", "product_category", "group_level", "document_category", "penalty_reason"];
   const SETTINGS_DEFAULTS: Record<string, string[]> = {
     performance_type: ["Базовый танец", "Танец с интерактивом", "Несколько номеров", "Индивидуальное выступление", "Другое"],
     product_category: ["Мерч", "Форма", "Аксессуары", "Сувениры"],
     group_level: ["Продолжающая группа", "Ансамбль", "Индивидуальные", "Мини-группа", "Другое"],
     document_category: ["Аренда", "Услуги — уборка", "Услуги — вывоз мусора", "Подрядчики / поставщики", "Прочее"],
+    // Аудит: причины штрафов теперь настраиваемый справочник (были захардкожены).
+    penalty_reason: ["Опоздание", "Незакрытый журнал", "Нет плана работы", "Нет фото прихода", "Нарушение дисциплины", "Другое"],
   };
   const mockSettings: any[] = [];
 
@@ -6061,14 +6068,31 @@ export function registerMvpApi(app: express.Express) {
       mockEchoTx.unshift(tx);
       return { balance: next, tx: echoTxOut(tx) };
     }
-    const st = await supabaseFetch<any[]>("students", `select=id,echo_balance&id=eq.${studentId}&organization_id=eq.${session.organizationId}&limit=1`);
-    if (!st[0]) throw new Error("NOT_FOUND");
-    const cur = Number(st[0].echo_balance) || 0;
-    const next = cur + amount;
-    if (next < 0) throw new Error("INSUFFICIENT");
-    await supabaseFetch("students", `id=eq.${studentId}&organization_id=eq.${session.organizationId}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ echo_balance: next }) });
-    const ins = await supabaseFetch<any[]>("echo_transactions", "", { method: "POST", body: JSON.stringify({ organization_id: session.organizationId, student_id: studentId, amount, kind, reason, product_id: productId, balance_after: next, created_by: session.fullName || null }) });
-    return { balance: next, tx: ins[0] ? echoTxOut(ins[0]) : null };
+    // Атомарность через optimistic concurrency (compare-and-swap): PATCH с условием
+    // echo_balance=<прочитанное>. Если параллельная операция уже изменила баланс,
+    // PATCH затронет 0 строк — перечитываем и повторяем (защита от гонки/двойного
+    // списания, TOCTOU). REST не даёт SELECT ... FOR UPDATE, поэтому CAS + retry.
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const st = await supabaseFetch<any[]>("students", `select=id,echo_balance&id=eq.${studentId}&organization_id=eq.${session.organizationId}&limit=1`);
+      if (!st[0]) throw new Error("NOT_FOUND");
+      const rawBal = st[0].echo_balance;
+      const cur = Number(rawBal) || 0;
+      const next = cur + amount;
+      if (next < 0) throw new Error("INSUFFICIENT");
+      // Условие CAS: точное совпадение прочитанного значения (учитываем NULL как «ещё не задан»).
+      const casFilter = (rawBal === null || rawBal === undefined) ? "echo_balance=is.null" : `echo_balance=eq.${cur}`;
+      const updated = await supabaseFetch<any[]>(
+        "students",
+        `id=eq.${studentId}&organization_id=eq.${session.organizationId}&${casFilter}`,
+        { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify({ echo_balance: next }) }
+      );
+      if (updated.length > 0) {
+        const ins = await supabaseFetch<any[]>("echo_transactions", "", { method: "POST", body: JSON.stringify({ organization_id: session.organizationId, student_id: studentId, amount, kind, reason, product_id: productId, balance_after: next, created_by: session.fullName || null }) });
+        return { balance: next, tx: ins[0] ? echoTxOut(ins[0]) : null };
+      }
+      // 0 строк → баланс изменился параллельно между чтением и записью, пробуем снова.
+    }
+    throw new Error("CONFLICT");
   };
 
   // Каталог магазина ЭхоБаксов: активные товары с ценой в ЭхоБаксах.
@@ -6134,18 +6158,27 @@ export function registerMvpApi(app: express.Express) {
     const b = req.body || {};
     const studentId = String(b.studentId || "");
     const amount = Math.trunc(Number(b.amount) || 0);
+    const reason = String(b.reason || "").trim();
     if (!studentId) return res.status(400).json({ error: "Не указан ученик" });
     if (!amount) return res.status(400).json({ error: "Укажите количество ЭхоБаксов (со знаком минус — списание)" });
+    // Защита от опечаток и злоупотреблений: лимит на одну ручную операцию.
+    const ECHO_GRANT_LIMIT = 5000;
+    if (Math.abs(amount) > ECHO_GRANT_LIMIT) {
+      return res.status(400).json({ error: `Слишком крупная операция: не больше ${ECHO_GRANT_LIMIT} ЭхоБаксов за раз. Проверьте сумму (лишний ноль?).` });
+    }
+    // Причина обязательна — чтобы начисления/списания были прозрачны в истории.
+    if (!reason) return res.status(400).json({ error: "Укажите причину начисления или списания" });
     const grantScope = await teacherStudentScope(session);
     if (grantScope && !grantScope.has(studentId)) {
       return res.status(403).json({ error: "Начислять ЭхоБаксы можно только ученикам своих групп" });
     }
     try {
-      const { balance, tx } = await applyEcho(session, studentId, amount, "grant", (b.reason || "").toString().trim() || null, null);
+      const { balance, tx } = await applyEcho(session, studentId, amount, "grant", reason, null);
       res.json({ balance, transaction: tx });
     } catch (e: any) {
       if (e?.message === "INSUFFICIENT") return res.status(400).json({ error: "Недостаточно баланса для списания" });
       if (e?.message === "NOT_FOUND") return res.status(404).json({ error: "Ученик не найден" });
+      if (e?.message === "CONFLICT") return res.status(409).json({ error: "Баланс только что изменился в другой операции. Повторите." });
       throw e;
     }
   }));
@@ -6181,6 +6214,7 @@ export function registerMvpApi(app: express.Express) {
     } catch (e: any) {
       if (e?.message === "INSUFFICIENT") return res.status(400).json({ error: "Недостаточно ЭхоБаксов для покупки" });
       if (e?.message === "NOT_FOUND") return res.status(404).json({ error: "Ученик не найден" });
+      if (e?.message === "CONFLICT") return res.status(409).json({ error: "Баланс только что изменился в другой операции. Повторите." });
       throw e;
     }
   }));
@@ -6345,6 +6379,7 @@ export function registerMvpApi(app: express.Express) {
     } catch (e: any) {
       if (e?.message === "INSUFFICIENT") return res.status(400).json({ error: "У ученика недостаточно ЭхоБаксов" });
       if (e?.message === "NOT_FOUND") return res.status(404).json({ error: "Ученик не найден" });
+      if (e?.message === "CONFLICT") return res.status(409).json({ error: "Баланс только что изменился в другой операции. Повторите." });
       throw e;
     }
     // Списание со склада (расход, без выручки).
@@ -8216,6 +8251,57 @@ export function registerMvpApi(app: express.Express) {
   }));
 
   // Отметить приход (фото). ВРЕМЯ и ОПОЗДАНИЕ считает сервер. Один приход в день.
+  // ── Планы/итоги уроков (аудит #16): серверное хранение вместо localStorage. ──
+  // Ключ: организация + педагог (из сессии) + группа + дата + вид. upsert по нему.
+  const LESSON_PLAN_KINDS = new Set(["lesson", "open", "summary"]);
+  app.get("/api/mvp/teacher/lesson-plan", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) return res.json({ content: "" });
+    const q = req.query as any;
+    const kind = String(q.kind || "lesson");
+    const groupName = String(q.groupName || "");
+    const date = String(q.date || almatyToday());
+    if (!LESSON_PLAN_KINDS.has(kind)) return res.status(400).json({ error: "Неизвестный вид плана" });
+    const rows = await supabaseFetch<any[]>(
+      "lesson_plans",
+      `select=content&organization_id=eq.${session.organizationId}&teacher_id=eq.${session.userId}` +
+      `&group_name=eq.${encodeURIComponent(groupName)}&lesson_date=eq.${date}&kind=eq.${kind}&limit=1`
+    ).catch(() => [] as any[]);
+    res.json({ content: rows[0]?.content || "" });
+  }));
+
+  app.post("/api/mvp/teacher/lesson-plan", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "teacher" && session.role !== "owner" && session.role !== "branch_manager")
+      return res.status(403).json({ error: "Недоступно" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "База не подключена" });
+    const b = req.body || {};
+    const kind = String(b.kind || "lesson");
+    const groupName = String(b.groupName || "");
+    const date = String(b.date || almatyToday());
+    const content = String(b.content ?? "");
+    if (!LESSON_PLAN_KINDS.has(kind)) return res.status(400).json({ error: "Неизвестный вид плана" });
+    // upsert по уникальному ключу (on_conflict).
+    await supabaseFetch(
+      "lesson_plans",
+      "on_conflict=organization_id,teacher_id,group_name,lesson_date,kind",
+      {
+        method: "POST",
+        headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify({
+          organization_id: session.organizationId,
+          teacher_id: session.userId,
+          group_name: groupName,
+          lesson_date: date,
+          kind,
+          content,
+          updated_at: new Date().toISOString(),
+        }),
+      }
+    );
+    res.json({ ok: true });
+  }));
+
   app.post("/api/mvp/teachers/arrival", ah(async (req, res) => {
     const session = getSession(req);
     if (session.role !== "teacher" && session.role !== "owner" && session.role !== "branch_manager" && session.role !== "admin")
@@ -8259,6 +8345,7 @@ export function registerMvpApi(app: express.Express) {
     hallPhotos: { time: string; hall: string | null; photo: string }[];
     expectedCash?: number; countedCash?: number | null; cashDiff?: number | null;
     cashStatus?: string | null; cashReason?: string | null; cashClosedBy?: string | null;
+    checklist?: Record<string, boolean>;   // ручные галочки смены (аудит #31)
   };
   const adminShiftStore: Record<string, AdminShiftRec> = {};
   const adminShiftKey = (session: MvpSession, date: string) =>
@@ -8271,7 +8358,36 @@ export function registerMvpApi(app: express.Express) {
       expectedCash: s.expectedCash ?? null, countedCash: s.countedCash ?? null,
       cashDiff: s.cashDiff ?? null, cashStatus: s.cashStatus ?? null,
       cashReason: s.cashReason ?? null, cashClosedBy: s.cashClosedBy ?? null,
+      checklist: s.checklist || {},
     };
+
+  // Подтянуть смену из admin_shifts, если в памяти её нет (serverless: разные
+  // инстансы/после рестарта). Best-effort — при ошибке остаёмся на памяти.
+  const hydrateAdminShift = async (session: MvpSession, date: string): Promise<AdminShiftRec | undefined> => {
+    const key = adminShiftKey(session, date);
+    if (adminShiftStore[key]) return adminShiftStore[key];
+    if (!supabaseEnabled) return undefined;
+    try {
+      const rows = await supabaseFetch<any[]>(
+        "admin_shifts",
+        `select=*&organization_id=eq.${session.organizationId}&shift_date=eq.${date}` +
+        (session.dbBranchId ? `&branch_id=eq.${session.dbBranchId}` : "") + "&limit=1"
+      );
+      const r = rows[0];
+      if (!r) return undefined;
+      const rec: AdminShiftRec = {
+        date, openedAt: r.opened_at || undefined, openPhoto: r.open_photo || null,
+        closedAt: r.closed_at || undefined, closePhoto: r.close_photo || null,
+        hallPhotos: Array.isArray(r.hall_photos) ? r.hall_photos : [],
+        expectedCash: r.expected_cash ?? undefined, countedCash: r.counted_cash ?? null,
+        cashDiff: r.cash_diff ?? null, cashStatus: r.cash_status ?? null,
+        cashReason: r.cash_reason ?? null, cashClosedBy: r.cash_closed_by ?? null,
+        checklist: (r.checklist && typeof r.checklist === "object") ? r.checklist : {},
+      };
+      adminShiftStore[key] = rec;
+      return rec;
+    } catch { return undefined; }
+  };
 
   // Деньги смены за сегодня: абонементы + мерч + прокат, с разбивкой по способам оплаты.
   const shiftMoneyToday = async (session: MvpSession, date: string) => {
@@ -8301,7 +8417,8 @@ export function registerMvpApi(app: express.Express) {
   app.get("/api/mvp/admin/shift/today", ah(async (req, res) => {
     const session = getSession(req);
     const date = KZ_DATE.format(new Date());
-    res.json({ shift: adminShiftOut(adminShiftStore[adminShiftKey(session, date)]) });
+    const rec = await hydrateAdminShift(session, date);
+    res.json({ shift: adminShiftOut(rec) });
   }));
 
   // Сводка денег смены (для окна закрытия/сверки): абонементы + мерч + прокат.
@@ -8358,15 +8475,24 @@ export function registerMvpApi(app: express.Express) {
     // Приход и чистоту залов подтверждаем ТОЛЬКО при наличии фото (жёсткое правило, не только UI).
     if ((action === "open" || action === "hall") && !photo)
       return res.status(400).json({ error: "Требуется фото для подтверждения" });
-    const cur: AdminShiftRec = adminShiftStore[key] || { date, hallPhotos: [] };
-    if (action === "open") { cur.openedAt = time; cur.openPhoto = photo; cur.closedAt = undefined; cur.closePhoto = undefined; }
+    const cur: AdminShiftRec = (await hydrateAdminShift(session, date)) || adminShiftStore[key] || { date, hallPhotos: [] };
+    if (action === "tick") {
+      // Ручная галочка чек-листа смены (аудит #31): хранится на сервере, не в localStorage.
+      const item = String(b.item || "").slice(0, 64);
+      if (!item) return res.status(400).json({ error: "Не указан пункт чек-листа" });
+      cur.checklist = { ...(cur.checklist || {}), [item]: Boolean(b.value) };
+    }
+    else if (action === "open") { cur.openedAt = time; cur.openPhoto = photo; cur.closedAt = undefined; cur.closePhoto = undefined; }
     else if (action === "hall") { cur.hallPhotos.push({ time, hall: typeof b.hall === "string" ? b.hall : null, photo: photo! }); }
     else if (action === "close") {
+      // Аудит #6: закрытие смены требует фото ухода (как приход) — контроль присутствия.
+      if (!photo) return res.status(400).json({ error: "Требуется фото для закрытия смены (уход с рабочего места)" });
       // Сверка кассы: ожидаемая сумма считается на сервере (не доверяем клиенту).
       const money = await shiftMoneyToday(session, date);
       const matched = b.matched !== false; // по умолчанию «сошлось»
       const counted = b.countedCash != null && b.countedCash !== "" ? Number(b.countedCash) : (matched ? money.total : null);
       cur.closedAt = time;
+      cur.closePhoto = photo;
       cur.expectedCash = money.total;
       cur.countedCash = counted;
       cur.cashDiff = counted != null ? Math.round((counted - money.total) * 100) / 100 : null;
@@ -8391,6 +8517,7 @@ export function registerMvpApi(app: express.Express) {
             expected_cash: cur.expectedCash ?? null, counted_cash: cur.countedCash ?? null,
             cash_diff: cur.cashDiff ?? null, cash_status: cur.cashStatus ?? null,
             cash_reason: cur.cashReason ?? null, cash_closed_by: cur.cashClosedBy ?? null,
+            checklist: cur.checklist || {},
           }),
         });
       } catch { /* mock */ }
