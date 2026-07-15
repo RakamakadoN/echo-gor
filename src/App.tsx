@@ -185,6 +185,11 @@ export default function App() {
 
   // Active role
   const [activeRole, setActiveRole] = useState<string>("owner");
+  // Имя реально вошедшего сотрудника (из ответа /auth/login). Используется в шапке
+  // и в журнале действий — раньше там был захардкожен чужой email (аудит #27).
+  const [currentUserName, setCurrentUserName] = useState<string>(() => {
+    try { return window.localStorage.getItem("echogor:user-name") || ""; } catch { return ""; }
+  });
   // Тема одна — дневная (остальные убраны, выбора темы нет).
   const [themeMode, setThemeMode] = useState<"dark" | "day" | "iman">("day");
   const [isThemeMenuOpen, setIsThemeMenuOpen] = useState<boolean>(false);
@@ -426,7 +431,7 @@ export default function App() {
       id: `log-${Date.now()}`,
       organizationId: branches[0]?.id || "unknown", // Fallback if no branches exist
       timestamp: new Date().toISOString(),
-      userEmail: "diyaz.duos@gmail.com",
+      userEmail: currentUserName || roles.find((r) => r.id === activeRole)?.name || "Пользователь",
       userRole: roles.find((r) => r.id === activeRole)?.name || activeRole,
       action,
       details,
@@ -2647,6 +2652,8 @@ export default function App() {
         const data = await resp.json().catch(() => ({}));
         if (resp.ok && data?.token) {
           setAuthToken(data.token);
+          setCurrentUserName(data.fullName || loginRaw);
+          try { window.localStorage.setItem("echogor:user-name", data.fullName || loginRaw); } catch { /* приватный режим */ }
           const role = serverRoleToClient(data.role);
           setActiveRole(role);
           setActiveHotspot(null);

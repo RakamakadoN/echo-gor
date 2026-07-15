@@ -6061,14 +6061,31 @@ export function registerMvpApi(app: express.Express) {
       mockEchoTx.unshift(tx);
       return { balance: next, tx: echoTxOut(tx) };
     }
-    const st = await supabaseFetch<any[]>("students", `select=id,echo_balance&id=eq.${studentId}&organization_id=eq.${session.organizationId}&limit=1`);
-    if (!st[0]) throw new Error("NOT_FOUND");
-    const cur = Number(st[0].echo_balance) || 0;
-    const next = cur + amount;
-    if (next < 0) throw new Error("INSUFFICIENT");
-    await supabaseFetch("students", `id=eq.${studentId}&organization_id=eq.${session.organizationId}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ echo_balance: next }) });
-    const ins = await supabaseFetch<any[]>("echo_transactions", "", { method: "POST", body: JSON.stringify({ organization_id: session.organizationId, student_id: studentId, amount, kind, reason, product_id: productId, balance_after: next, created_by: session.fullName || null }) });
-    return { balance: next, tx: ins[0] ? echoTxOut(ins[0]) : null };
+    // Атомарность через optimistic concurrency (compare-and-swap): PATCH с условием
+    // echo_balance=<прочитанное>. Если параллельная операция уже изменила баланс,
+    // PATCH затронет 0 строк — перечитываем и повторяем (защита от гонки/двойного
+    // списания, TOCTOU). REST не даёт SELECT ... FOR UPDATE, поэтому CAS + retry.
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const st = await supabaseFetch<any[]>("students", `select=id,echo_balance&id=eq.${studentId}&organization_id=eq.${session.organizationId}&limit=1`);
+      if (!st[0]) throw new Error("NOT_FOUND");
+      const rawBal = st[0].echo_balance;
+      const cur = Number(rawBal) || 0;
+      const next = cur + amount;
+      if (next < 0) throw new Error("INSUFFICIENT");
+      // Условие CAS: точное совпадение прочитанного значения (учитываем NULL как «ещё не задан»).
+      const casFilter = (rawBal === null || rawBal === undefined) ? "echo_balance=is.null" : `echo_balance=eq.${cur}`;
+      const updated = await supabaseFetch<any[]>(
+        "students",
+        `id=eq.${studentId}&organization_id=eq.${session.organizationId}&${casFilter}`,
+        { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify({ echo_balance: next }) }
+      );
+      if (updated.length > 0) {
+        const ins = await supabaseFetch<any[]>("echo_transactions", "", { method: "POST", body: JSON.stringify({ organization_id: session.organizationId, student_id: studentId, amount, kind, reason, product_id: productId, balance_after: next, created_by: session.fullName || null }) });
+        return { balance: next, tx: ins[0] ? echoTxOut(ins[0]) : null };
+      }
+      // 0 строк → баланс изменился параллельно между чтением и записью, пробуем снова.
+    }
+    throw new Error("CONFLICT");
   };
 
   // Каталог магазина ЭхоБаксов: активные товары с ценой в ЭхоБаксах.
@@ -6134,18 +6151,27 @@ export function registerMvpApi(app: express.Express) {
     const b = req.body || {};
     const studentId = String(b.studentId || "");
     const amount = Math.trunc(Number(b.amount) || 0);
+    const reason = String(b.reason || "").trim();
     if (!studentId) return res.status(400).json({ error: "Не указан ученик" });
     if (!amount) return res.status(400).json({ error: "Укажите количество ЭхоБаксов (со знаком минус — списание)" });
+    // Защита от опечаток и злоупотреблений: лимит на одну ручную операцию.
+    const ECHO_GRANT_LIMIT = 5000;
+    if (Math.abs(amount) > ECHO_GRANT_LIMIT) {
+      return res.status(400).json({ error: `Слишком крупная операция: не больше ${ECHO_GRANT_LIMIT} ЭхоБаксов за раз. Проверьте сумму (лишний ноль?).` });
+    }
+    // Причина обязательна — чтобы начисления/списания были прозрачны в истории.
+    if (!reason) return res.status(400).json({ error: "Укажите причину начисления или списания" });
     const grantScope = await teacherStudentScope(session);
     if (grantScope && !grantScope.has(studentId)) {
       return res.status(403).json({ error: "Начислять ЭхоБаксы можно только ученикам своих групп" });
     }
     try {
-      const { balance, tx } = await applyEcho(session, studentId, amount, "grant", (b.reason || "").toString().trim() || null, null);
+      const { balance, tx } = await applyEcho(session, studentId, amount, "grant", reason, null);
       res.json({ balance, transaction: tx });
     } catch (e: any) {
       if (e?.message === "INSUFFICIENT") return res.status(400).json({ error: "Недостаточно баланса для списания" });
       if (e?.message === "NOT_FOUND") return res.status(404).json({ error: "Ученик не найден" });
+      if (e?.message === "CONFLICT") return res.status(409).json({ error: "Баланс только что изменился в другой операции. Повторите." });
       throw e;
     }
   }));
@@ -6181,6 +6207,7 @@ export function registerMvpApi(app: express.Express) {
     } catch (e: any) {
       if (e?.message === "INSUFFICIENT") return res.status(400).json({ error: "Недостаточно ЭхоБаксов для покупки" });
       if (e?.message === "NOT_FOUND") return res.status(404).json({ error: "Ученик не найден" });
+      if (e?.message === "CONFLICT") return res.status(409).json({ error: "Баланс только что изменился в другой операции. Повторите." });
       throw e;
     }
   }));
@@ -6345,6 +6372,7 @@ export function registerMvpApi(app: express.Express) {
     } catch (e: any) {
       if (e?.message === "INSUFFICIENT") return res.status(400).json({ error: "У ученика недостаточно ЭхоБаксов" });
       if (e?.message === "NOT_FOUND") return res.status(404).json({ error: "Ученик не найден" });
+      if (e?.message === "CONFLICT") return res.status(409).json({ error: "Баланс только что изменился в другой операции. Повторите." });
       throw e;
     }
     // Списание со склада (расход, без выручки).
