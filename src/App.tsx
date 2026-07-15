@@ -456,7 +456,14 @@ export default function App() {
     return "owner";
   };
 
+  // Есть ли активная сессия (токен). И сотрудник, и ученик кладут токен в
+  // localStorage (см. setAuthToken/applyStudentAuth) → одна проверка на всех.
+  const hasApiSession = () => DEMO_MODE || Boolean(window.localStorage.getItem(AUTH_TOKEN_KEY));
+
   const loadMvpBootstrap = async (roleId = activeRole) => {
+    // До входа (нет токена) в проде НЕ дёргаем API — иначе 401 выставлял бы баннер
+    // «нет связи» ещё на экране логина, и он «прилипал» после входа.
+    if (!hasApiSession()) { setIsLoading(false); return; }
     setIsLoading(true);
     try {
       const response = await fetch("/api/mvp/bootstrap", {
@@ -539,6 +546,7 @@ export default function App() {
     setShowStudentLogin(false);
     setStudentCodeInput("");
     setStudentLoginError(null);
+    setMvpDataError(null); // сбросить ошибку, накопленную до входа
     setIsPlayingPromo(false);
   };
 
@@ -1301,6 +1309,7 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (!hasApiSession()) return; // до входа не грузим (иначе 401 → баннер)
     if (activeRole === "owner") loadStudentTrash();
     if (["owner", "branch_manager", "admin"].includes(activeRole)) { loadStudentArchive(); loadArchivedGroups(); }
     // Общий конфиг статусов организации — в кэш, затем перерисовка.
@@ -2641,7 +2650,14 @@ export default function App() {
           const role = serverRoleToClient(data.role);
           setActiveRole(role);
           setActiveHotspot(null);
+          setMvpDataError(null); // сбросить ошибку, накопленную до входа
           addAuditLog("Вход сотрудника", `${data.fullName || loginRaw} · роль: ${data.role}`);
+          // Явно грузим данные под токеном: setActiveRole может НЕ изменить роль
+          // (вход владельцем при дефолте "owner") → эффект перезагрузки не сработает.
+          loadMvpBootstrap(role);
+          if (role === "owner") loadStudentTrash();
+          if (["owner", "branch_manager", "admin"].includes(role)) { loadStudentArchive(); loadArchivedGroups(); }
+          fetchStatusConfig(getMvpRoleHeader(role)).then(() => setStatusCfgVersion((v) => v + 1));
           startLoginVideo("desktop");
           return;
         }
