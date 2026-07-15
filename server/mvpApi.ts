@@ -66,6 +66,15 @@ const STUDENT_STANDARD_PASSWORD = "12345";
 // getSession остаётся синхронным. Секрет — из окружения (в проде задать AUTH_SECRET).
 const AUTH_SECRET = process.env.AUTH_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || "echo-gor-dev-secret-change-me";
 
+// Демо-вход по заголовку роли (x-demo-role) — только для локальной разработки.
+// В ПРОДЕ (NODE_ENV=production) он отключён: попасть в систему можно ТОЛЬКО по
+// настоящему логину/паролю (миграция 046, /auth/login → подписанный токен).
+// Явный тумблер ALLOW_DEMO_ROLES (true/false) перекрывает авто-режим по NODE_ENV.
+const DEMO_ROLES_ENABLED =
+  process.env.ALLOW_DEMO_ROLES === "true" ? true :
+  process.env.ALLOW_DEMO_ROLES === "false" ? false :
+  process.env.NODE_ENV !== "production";
+
 // scrypt-хэш пароля: формат "scrypt$<salt hex>$<hash hex>". Чистый stdlib —
 // без нативных зависимостей (важно для сборки на Vercel).
 function hashPassword(plain: string): string {
@@ -236,6 +245,12 @@ function getSession(req: express.Request): MvpSession {
         accessLevel: rec.level,
       };
     }
+  }
+  // 3) Демо-вход по роли — ТОЛЬКО в разработке. В проде (DEMO_ROLES_ENABLED=false)
+  //    сюда попадаем лишь на неверном/пустом токене → возвращаем «анонима» без прав
+  //    (все ролевые проверки его отклонят). Реальный вход — только /auth/login.
+  if (!DEMO_ROLES_ENABLED) {
+    return { userId: "anonymous", organizationId: orgId, role: "student", branchId: null, dbBranchId: null, fullName: "", studentId: undefined };
   }
   const roleHeader = String(req.headers["x-demo-role"] || "owner");
   const userHeader = String(req.headers["x-demo-user-id"] || "");
@@ -998,30 +1013,29 @@ export function registerMvpApi(app: express.Express) {
   // Демо-филиал сессий должен указывать на реальный филиал (см. ensureDemoBranchBinding).
   app.use("/api/mvp", (_req, _res, next) => { ensureDemoBranchBinding().finally(next); });
 
-  // ── Безопасность: запрос обязан объявить, кто он. ──────────────────────────
-  // Раньше запрос БЕЗ каких-либо заголовков идентификации по умолчанию получал
-  // роль owner (см. getSession) — аноним становился владельцем сети.
-  // Теперь: нет x-demo-role и нет x-student-token → 401. Публичные исключения —
-  // только эндпоинты входа (список демо-пользователей, демо-логин, вход ученика).
-  // Это НЕ настоящая аутентификация (заголовку по-прежнему верим — блокер №1
-  // аудита закрывается полноценным auth), но убирает самый грубый провал:
-  // «пустой» запрос больше не владелец.
+  // ── Безопасность: запрос обязан доказать, кто он. ──────────────────────────
+  // ПРОД (DEMO_ROLES_ENABLED=false): пускаем ТОЛЬКО по валидному токену —
+  // подпись x-auth-token (вход по логину/паролю) или известный x-student-token.
+  // Просто заголовок роли (x-demo-role) больше НЕ авторизует — блокер №1 закрыт.
+  // РАЗРАБОТКА: дополнительно принимаем x-demo-role для удобства локальных тестов.
+  // Публичные пути — только сами эндпоинты входа.
   const PUBLIC_MVP_PATHS = new Set([
-    "/session/demo-users",
-    "/session/demo-login",
     "/student-auth",
     "/student-auth/set-password", // первый вход ученика: создание своего пароля
     "/auth/login",                // настоящий вход сотрудника (логин + пароль)
+    // демо-эндпоинты доступны только в разработке (добавляются ниже)
+    ...(DEMO_ROLES_ENABLED ? ["/session/demo-users", "/session/demo-login"] : []),
   ]);
   app.use("/api/mvp", (req, res, next) => {
     if (PUBLIC_MVP_PATHS.has(req.path)) return next();
-    const hasAuthToken = Boolean(req.headers["x-auth-token"]);
-    const hasRole = Boolean(req.headers["x-demo-role"]);
-    const hasStudentToken = Boolean(req.headers["x-student-token"]);
-    if (!hasAuthToken && !hasRole && !hasStudentToken) {
-      return res.status(401).json({ error: "Не авторизовано: войдите в систему" });
-    }
-    return next();
+    const authToken = String(req.headers["x-auth-token"] || "");
+    const studentToken = String(req.headers["x-student-token"] || "");
+    const validAuth = authToken ? Boolean(verifyAuthToken(authToken)) : false;
+    const validStudent = studentToken ? studentAccessTokens.has(studentToken) : false;
+    if (validAuth || validStudent) return next();
+    // В разработке разрешаем демо-вход по роли; в проде — нет.
+    if (DEMO_ROLES_ENABLED && req.headers["x-demo-role"]) return next();
+    return res.status(401).json({ error: "Не авторизовано: войдите по логину и паролю" });
   });
 
   // ── DEF-02 (P1): ученик НЕ может ничего мутировать вне своего кабинета. ───────
@@ -1036,6 +1050,7 @@ export function registerMvpApi(app: express.Express) {
   ]);
   app.use("/api/mvp", (req, res, next) => {
     if (req.method === "GET") return next();
+    if (PUBLIC_MVP_PATHS.has(req.path)) return next(); // вход/регистрация — не трогаем
     let session: MvpSession;
     try { session = getSession(req); } catch { return next(); }
     if (session.role !== "student") return next();
@@ -1132,8 +1147,16 @@ export function registerMvpApi(app: express.Express) {
       return res.status(503).json({ error: "База не подключена — используйте демо-вход по роли" });
     }
     const digits = login.replace(/\D/g, "");
-    const ors = [`login.eq.${login}`, `email.eq.${login}`];
+    const ors: string[] = [];
+    // login/email в or() добавляем только без символов, ломающих синтаксис PostgREST
+    // ( «(», «)», «,» ); значение кодируем (иначе «+» декодируется в пробел).
+    // Телефоны со скобками/плюсом ловятся ниже по цифрам — это надёжный путь.
+    if (!/[(),]/.test(login)) {
+      const enc = encodeURIComponent(login);
+      ors.push(`login.eq.${enc}`, `email.eq.${enc}`);
+    }
     if (digits.length >= 5) ors.push(`phone.like.*${digits.slice(-7)}*`);
+    if (ors.length === 0) return res.status(401).json({ error: "Неверный логин или пароль" });
     const rows = await supabaseFetch<any[]>(
       "users",
       `select=id,role,full_name,branch_id,branch_ids,status,phone,email,login,password_hash&organization_id=eq.${orgId}&or=(${ors.join(",")})&limit=20`
