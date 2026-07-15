@@ -2681,6 +2681,14 @@ export function registerMvpApi(app: express.Express) {
       return res.status(503).json({ error: "Supabase is not configured" });
     }
 
+    // Изоляция кабинета педагога (аудит #4): педагог отмечает посещаемость ТОЛЬКО
+    // ученикам своих групп — иначе можно было бы править чужой журнал в своём филиале
+    // (в т.ч. передав чужой lessonId напрямую). Та же логика скоупа, что у ЭхоБаксов.
+    const attScope = await teacherStudentScope(session);
+    if (attScope && !attScope.has(payload.studentId)) {
+      return res.status(403).json({ error: "Отмечать посещаемость можно только ученикам своих групп" });
+    }
+
     let lessonId = payload.lessonId;
     if (!lessonId) {
       const studentsRaw = await supabaseFetch<any[]>("students", `select=*&id=eq.${payload.studentId}`);
