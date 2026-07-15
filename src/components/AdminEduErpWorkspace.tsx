@@ -141,6 +141,10 @@ const tabs: { id: AdminTab; label: string; short: string; icon: React.ElementTyp
   { id: "reports", label: "Сверка продаж", short: "Сверка", icon: BarChart3 }
 ];
 
+// «Сегодня» по Алматы (аудит #22): raw toISOString давал UTC-дату — до 05:00
+// по Алматы это вчера (касса за смену, отметки «уезжали» на прошлый день).
+const almatyToday = () => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Almaty" }).format(new Date());
+
 export function AdminEduErpWorkspace({
   branches,
   groups,
@@ -213,7 +217,7 @@ export function AdminEduErpWorkspace({
     });
   }, [branchFilter, search, students]);
 
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = almatyToday();
   const monthPrefix = todayStr.slice(0, 7);
   const monthRevenue = payments
     .filter((payment) => (payment.date || "").startsWith(monthPrefix))
@@ -998,7 +1002,7 @@ function StudentDetailPanel({ student, group, branch, teacher, payments, onEdit,
 }
 
 function JournalView({ groups, students, branches, onToggleAttendance }: any) {
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = almatyToday();
   const [selectedGroupId, setSelectedGroupId] = useState<string>(groups[0]?.id || "");
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
   const [saving, setSaving] = useState<string | null>(null); // studentId being saved
@@ -1168,7 +1172,7 @@ function JournalView({ groups, students, branches, onToggleAttendance }: any) {
 }
 
 function CalendarView({ groups, teachers, branches, halls, scheduleItems, scheduleLoading, onLoadSchedule, onCreateLesson, onUpdateLesson, onDeleteLesson, onCreateGroup, onUpdateGroup, onDeleteGroup, archivedGroups = [], onRestoreGroup, onDeleteGroupPermanent }: any) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = almatyToday();
   const weekAhead = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
 
   const [lessonForm, setLessonForm] = useState({ groupId: "", teacherId: "", hallId: "", date: "", startTime: "", endTime: "", reason: "", topic: "" });
@@ -1601,7 +1605,7 @@ function ReportsView({ branches, groups, students, payments, teachers, todayReve
   const runExport = (title: string, build: () => { headers: string[]; rows: (string | number)[][] }) => {
     const { headers, rows } = build();
     if (!rows.length) { notify(`${title}: нет данных для выгрузки`); return; }
-    const stamp = new Date().toISOString().slice(0, 10);
+    const stamp = almatyToday();
     exportCsv(`${title.replace(/[^\wа-яА-Я]+/g, "_")}_${stamp}.csv`, headers, rows);
     notify(`${title}: выгружено строк — ${rows.length}`);
   };

@@ -59,6 +59,10 @@ type ReactionSummary = { total: number; byKey: Record<string, number>; byGroup: 
 // - CompetitionsView
 // - AINotebook
 
+// «Сегодня» по Алматы (аудит #22): raw toISOString давал UTC-дату — до 05:00
+// по Алматы это вчера, отметки/касса «уезжали» на прошлый день.
+const almatyToday = () => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Almaty" }).format(new Date());
+
 export function TeacherWorkspace({
   groups,
   students,
@@ -110,7 +114,7 @@ export function TeacherWorkspace({
 
   // Load real schedule on mount
   useEffect(() => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = almatyToday();
     const weekAhead = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
     if (onLoadSchedule) onLoadSchedule({ from: today, to: weekAhead });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1067,7 +1071,7 @@ function QuickAction({ icon, label, color, onClick }: { icon: React.ReactNode, l
 function GroupDetailsView({ groupId, groups, students, onBack, onNavigateToStudent, onToggleAttendance, onBulkAttendance, onOpenHomework, flash }: any) {
   const group = groups.find((g: any) => g.id === groupId);
   const groupStudents = students.filter((s: any) => s.groupIds?.includes(groupId));
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = almatyToday();
   const [marking, setMarking] = useState(false);
   const [perStudent, setPerStudent] = useState<Record<string, "present" | "absent" | "sick">>({});
 
@@ -1556,7 +1560,7 @@ function TeacherJournalView({ groups, students, onToggleAttendance }: {
   students: Student[];
   onToggleAttendance?: (studentId: string, date: string, status: "present" | "absent" | "sick") => void;
 }) {
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = almatyToday();
   const [selectedGroupId, setSelectedGroupId] = useState<string>(groups[0]?.id || "");
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
   const [saving, setSaving] = useState<string | null>(null);
