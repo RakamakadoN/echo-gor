@@ -1,12 +1,12 @@
-import React from "react";
+import { Component, type ReactNode, type ErrorInfo } from "react";
 
 // Корневой перехватчик рантайм-ошибок. Без него любая необработанная ошибка в
 // дереве компонентов роняла всё приложение в белый экран без объяснения (аудит #47).
 // Здесь показываем спокойный экран «что-то пошло не так» с кнопкой перезагрузки.
-type Props = { children: React.ReactNode };
+type Props = { children: ReactNode };
 type State = { hasError: boolean; message: string };
 
-export class ErrorBoundary extends React.Component<Props, State> {
+export class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
     super(props);
     this.state = { hasError: false, message: "" };
@@ -17,7 +17,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
     return { hasError: true, message };
   }
 
-  componentDidCatch(error: unknown, info: unknown) {
+  componentDidCatch(error: unknown, info: ErrorInfo) {
     // Логируем в консоль для диагностики; сюда же можно подключить внешний трекер.
     console.error("[ErrorBoundary] Необработанная ошибка интерфейса:", error, info);
   }
