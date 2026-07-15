@@ -8468,11 +8468,14 @@ export function registerMvpApi(app: express.Express) {
     else if (action === "open") { cur.openedAt = time; cur.openPhoto = photo; cur.closedAt = undefined; cur.closePhoto = undefined; }
     else if (action === "hall") { cur.hallPhotos.push({ time, hall: typeof b.hall === "string" ? b.hall : null, photo: photo! }); }
     else if (action === "close") {
+      // Аудит #6: закрытие смены требует фото ухода (как приход) — контроль присутствия.
+      if (!photo) return res.status(400).json({ error: "Требуется фото для закрытия смены (уход с рабочего места)" });
       // Сверка кассы: ожидаемая сумма считается на сервере (не доверяем клиенту).
       const money = await shiftMoneyToday(session, date);
       const matched = b.matched !== false; // по умолчанию «сошлось»
       const counted = b.countedCash != null && b.countedCash !== "" ? Number(b.countedCash) : (matched ? money.total : null);
       cur.closedAt = time;
+      cur.closePhoto = photo;
       cur.expectedCash = money.total;
       cur.countedCash = counted;
       cur.cashDiff = counted != null ? Math.round((counted - money.total) * 100) / 100 : null;

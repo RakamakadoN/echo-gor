@@ -620,6 +620,14 @@ function CloseShiftModal({ onClose, onDone }: { onClose: () => void; onDone: (sh
   const [counted, setCounted] = useState("");
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
+  // Аудит #6: фото ухода при закрытии смены (как приход).
+  const [closePhoto, setClosePhoto] = useState<string | null>(null);
+  const closeInputRef = useRef<HTMLInputElement>(null);
+  async function pickClosePhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try { setClosePhoto(await compressImage(file)); } catch { /* ignore */ }
+  }
 
   // Аудит #7: раньше при сбое загрузки сводки summary оставался null → вечный спиннер,
   // и смену нельзя было закрыть. Теперь — явная ошибка и кнопка «Повторить».
@@ -642,12 +650,13 @@ function CloseShiftModal({ onClose, onDone }: { onClose: () => void; onDone: (sh
   const methodLabels: Record<string, string> = { cash: "Наличные", kaspi: "Kaspi", card: "Карта", transfer: "Перевод" };
 
   async function submit(matched: boolean) {
+    if (!closePhoto) { toast.error("Сделайте фото ухода, чтобы закрыть смену"); return; }
     setBusy(true);
     try {
       const res = await fetch("/api/mvp/admin/shift", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-demo-role": "admin" },
-        body: JSON.stringify({ action: "close", matched, countedCash: counted === "" ? null : Number(counted), cashReason: reason || null }),
+        body: JSON.stringify({ action: "close", matched, photo: closePhoto, countedCash: counted === "" ? null : Number(counted), cashReason: reason || null }),
       });
       if (res.ok) { const d = await res.json(); toast.success(matched ? "Смена закрыта · деньги сошлись" : "Смена закрыта · расхождение передано руководителю"); onDone(d.shift ?? null); }
       else { const e = await res.json().catch(() => ({})); toast.error(e.error || "Не удалось закрыть смену"); }
@@ -695,6 +704,21 @@ function CloseShiftModal({ onClose, onDone }: { onClose: () => void; onDone: (sh
                 <span>Итого в СРМ</span><span>{money(total)}</span>
               </div>
             </div>
+
+            {/* Фото ухода (аудит #6) — обязательно для закрытия смены. */}
+            <input ref={closeInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={pickClosePhoto} />
+            {closePhoto ? (
+              <div className="relative mt-4">
+                <img src={closePhoto} alt="фото ухода" className="max-h-40 w-full rounded-2xl border border-white/10 object-cover" />
+                <button onClick={() => closeInputRef.current?.click()} className="absolute bottom-2 right-2 rounded-xl bg-black/70 px-3 py-1.5 text-xs font-bold text-white hover:bg-black/90">Переснять</button>
+              </div>
+            ) : (
+              <button onClick={() => closeInputRef.current?.click()}
+                className="mt-4 flex h-24 w-full flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-white/15 text-slate-400 hover:border-[#C5A059]/40 hover:text-slate-200">
+                <Camera className="h-6 w-6" />
+                <span className="text-xs font-bold">Фото ухода с рабочего места</span>
+              </button>
+            )}
 
             {!mismatch ? (
               <div className="mt-4 space-y-2">
