@@ -8661,6 +8661,8 @@ function NetworkSettingsView({ branches, teachers, subscriptionPlans = [], onCre
             <SettingsListEditor kind="performance_type" title="Типы выступлений" />
             <SettingsListEditor kind="product_category" title="Категории товаров" />
             <SettingsListEditor kind="group_level" title="Уровни групп" />
+            <SettingsListEditor kind="penalty_reason" title="Причины штрафов" />
+            <SettingsListEditor kind="document_category" title="Категории документов" />
           </div>
           <div className="mt-4 rounded-2xl border border-white/5 bg-black/30 p-4 text-xs text-slate-500">
             <p className="font-bold text-slate-300">Настройки, живущие в своих разделах (по контексту):</p>
