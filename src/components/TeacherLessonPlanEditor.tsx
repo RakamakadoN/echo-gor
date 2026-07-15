@@ -37,9 +37,26 @@ export function TeacherLessonPlanEditor({ kind, groupName, groupLevel, studentCo
   const [note, setNote] = useState("");
   const areaRef = useRef<HTMLTextAreaElement>(null);
 
+  // Серверный вид плана: 'open' → "open", обычный → "lesson" (аудит #16).
+  const serverKind = isOpen ? "open" : "lesson";
+  const today = almatyDate();
+
   useEffect(() => {
+    // Сначала показываем локальный черновик (мгновенно), затем подтягиваем серверную версию.
     try { const s = localStorage.getItem(storageKey); if (s) setText(s); } catch { /* ignore */ }
-  }, [storageKey]);
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch(`/api/mvp/teacher/lesson-plan?kind=${serverKind}&groupName=${encodeURIComponent(groupName || "")}&date=${today}`, {
+          headers: { "x-demo-role": "teacher" },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (alive && typeof data?.content === "string" && data.content) setText(data.content);
+      } catch { /* офлайн — остаётся локальный черновик */ }
+    })();
+    return () => { alive = false; };
+  }, [storageKey, serverKind, groupName, today]);
 
   async function callAi(mode: "assist" | "organize") {
     setBusy(mode);
@@ -72,10 +89,22 @@ export function TeacherLessonPlanEditor({ kind, groupName, groupLevel, studentCo
     }
   }
 
-  function save() {
+  async function save() {
+    // Локальная копия — как офлайн-резерв; основное хранение на сервере (аудит #16).
     try { localStorage.setItem(storageKey, text); } catch { /* ignore */ }
-    setSaved(true);
-    setTimeout(() => setSaved(false), 1500);
+    try {
+      const res = await fetch("/api/mvp/teacher/lesson-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-demo-role": "teacher" },
+        body: JSON.stringify({ kind: serverKind, groupName: groupName || "", date: today, content: text }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
+    } catch {
+      // Не сохранилось на сервере — честно предупреждаем (черновик остался локально).
+      setNote("Не удалось сохранить на сервере — черновик сохранён локально. Повторите при связи.");
+    }
   }
 
   const Icon = isOpen ? Presentation : CalendarClock;

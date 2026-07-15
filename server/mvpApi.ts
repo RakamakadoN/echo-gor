@@ -8234,6 +8234,57 @@ export function registerMvpApi(app: express.Express) {
   }));
 
   // Отметить приход (фото). ВРЕМЯ и ОПОЗДАНИЕ считает сервер. Один приход в день.
+  // ── Планы/итоги уроков (аудит #16): серверное хранение вместо localStorage. ──
+  // Ключ: организация + педагог (из сессии) + группа + дата + вид. upsert по нему.
+  const LESSON_PLAN_KINDS = new Set(["lesson", "open", "summary"]);
+  app.get("/api/mvp/teacher/lesson-plan", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!supabaseEnabled) return res.json({ content: "" });
+    const q = req.query as any;
+    const kind = String(q.kind || "lesson");
+    const groupName = String(q.groupName || "");
+    const date = String(q.date || almatyToday());
+    if (!LESSON_PLAN_KINDS.has(kind)) return res.status(400).json({ error: "Неизвестный вид плана" });
+    const rows = await supabaseFetch<any[]>(
+      "lesson_plans",
+      `select=content&organization_id=eq.${session.organizationId}&teacher_id=eq.${session.userId}` +
+      `&group_name=eq.${encodeURIComponent(groupName)}&lesson_date=eq.${date}&kind=eq.${kind}&limit=1`
+    ).catch(() => [] as any[]);
+    res.json({ content: rows[0]?.content || "" });
+  }));
+
+  app.post("/api/mvp/teacher/lesson-plan", ah(async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "teacher" && session.role !== "owner" && session.role !== "branch_manager")
+      return res.status(403).json({ error: "Недоступно" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "База не подключена" });
+    const b = req.body || {};
+    const kind = String(b.kind || "lesson");
+    const groupName = String(b.groupName || "");
+    const date = String(b.date || almatyToday());
+    const content = String(b.content ?? "");
+    if (!LESSON_PLAN_KINDS.has(kind)) return res.status(400).json({ error: "Неизвестный вид плана" });
+    // upsert по уникальному ключу (on_conflict).
+    await supabaseFetch(
+      "lesson_plans",
+      "on_conflict=organization_id,teacher_id,group_name,lesson_date,kind",
+      {
+        method: "POST",
+        headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify({
+          organization_id: session.organizationId,
+          teacher_id: session.userId,
+          group_name: groupName,
+          lesson_date: date,
+          kind,
+          content,
+          updated_at: new Date().toISOString(),
+        }),
+      }
+    );
+    res.json({ ok: true });
+  }));
+
   app.post("/api/mvp/teachers/arrival", ah(async (req, res) => {
     const session = getSession(req);
     if (session.role !== "teacher" && session.role !== "owner" && session.role !== "branch_manager" && session.role !== "admin")
