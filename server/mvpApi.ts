@@ -2209,63 +2209,45 @@ export function registerMvpApi(app: express.Express) {
         }
       }
 
-      const insertedSub = await supabaseFetch<any[]>("student_subscriptions", "", {
-        method: "POST",
-        body: JSON.stringify({
-          student_id: studentId,
-          plan_id: planId,
-          branch_id: branchId,
-          group_id: payload.groupId || null,
-          kind: payload.kind === "individual" ? "individual" : "group",
-          starts_on: startsOn,
-          ends_on: endsOn,
-          lessons_total: lessonsTotal,
-          lessons_left: lessonsTotal,
-          price: finalPrice,
-          amount_paid: paid ? amountPaid : null,
-          sold_on: soldOn,
-          discount_amount: discountAmount + recalc,
-          status: paid ? "active" : "inactive",
-          sold_by_name: session.fullName || session.role
-        })
-      });
-
       // Платёж и проводка ДДС — на фактически ВНЕСЁННУЮ сумму (может быть меньше
       // стоимости; недоплата = долг, считается по amount_paid в bootstrap).
       const debtLeft = Math.max(0, finalPrice - amountPaid);
-      let payment = null;
-      if (paid && amountPaid > 0) {
-        const payComment = payload.description || `Абонемент: ${plan.name}`;
-        const insertedPayment = await supabaseFetch<any[]>("payments", "", {
-          method: "POST",
-          body: JSON.stringify({
-            organization_id: session.organizationId,
-            branch_id: branchId,
-            student_id: studentId,
-            amount: amountPaid,
-            method: payload.method || "kaspi",
-            status: "paid",
-            comment: debtLeft > 0 ? `${payComment} (частично, долг ${Math.round(debtLeft)} тг)` : payComment,
-            created_by: session.userId.startsWith("demo-") ? null : session.userId,
-            sold_by_name: session.fullName || session.role
-          })
-        });
-        payment = mapDbPayment(insertedPayment[0]);
-        await supabaseFetch<any[]>("finance_transactions", "", {
-          method: "POST",
-          body: JSON.stringify({
-            organization_id: session.organizationId,
-            branch_id: branchId,
-            student_id: studentId,
-            payment_id: insertedPayment[0].id,
-            amount: amountPaid,
-            type: "income",
-            category: "tuition",
-            category_id: await ensureIncomeCategoryId(session.organizationId),
-            description: payload.description || `Абонемент: ${plan.name}`
-          })
-        });
-      }
+      const willPay = paid && amountPaid > 0;
+      const baseComment = payload.description || `Абонемент: ${plan.name}`;
+      const payComment = debtLeft > 0 ? `${baseComment} (частично, долг ${Math.round(debtLeft)} тг)` : baseComment;
+
+      // Аудит #11: абонемент + платёж + проводка ДДС — ОДНОЙ БД-транзакцией через
+      // RPC create_subscription_sale_tx. Раньше это были 3 отдельных REST-вызова,
+      // и сбой между ними оставлял «проданный» абонемент без денег.
+      const saleRes = await supabaseFetch<any>("rpc/create_subscription_sale_tx", "", {
+        method: "POST",
+        headers: { Prefer: "return=representation" },
+        body: JSON.stringify({
+          p_org: session.organizationId,
+          p_branch: branchId,
+          p_student: studentId,
+          p_plan: planId,
+          p_group: payload.groupId || null,
+          p_kind: payload.kind === "individual" ? "individual" : "group",
+          p_starts: startsOn,
+          p_ends: endsOn,
+          p_lessons: lessonsTotal,
+          p_price: finalPrice,
+          p_amount_paid: amountPaid,
+          p_sold_on: soldOn,
+          p_discount: discountAmount + recalc,
+          p_status: paid ? "active" : "inactive",
+          p_sold_by: session.fullName || session.role,
+          p_created_by: session.userId.startsWith("demo-") ? null : session.userId,
+          p_paid: paid,
+          p_method: payload.method || "kaspi",
+          p_pay_comment: payComment,
+          p_income_category: willPay ? await ensureIncomeCategoryId(session.organizationId) : null,
+          p_description: baseComment,
+        })
+      });
+      const insertedSub = [saleRes?.subscription].filter(Boolean);
+      const payment = saleRes?.payment ? mapDbPayment(saleRes.payment) : null;
 
       // ТЗ «Лист ожидания»: при продаже абонемента ученик автоматически уходит из
       // листа ожидания (история сохраняется через removed_at/removed_reason).
