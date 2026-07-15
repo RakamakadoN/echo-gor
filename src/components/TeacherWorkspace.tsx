@@ -686,8 +686,10 @@ function groupEngagementRate(group: Group, students: Student[]): number {
 }
 
 function SafeFeedbackView({ groups, students, onSubmitReaction, onLoadReactions, flash }: any) {
+  // Аудит #32: старт с 0, а не с фейковых defaultCount — показываем реальные
+  // числа из базы (или ноль/пусто), чтобы вовлечённость не была выдуманной.
   const [counts, setCounts] = useState<Record<string, number>>(() =>
-    Object.fromEntries(SAFE_REACTIONS.map((r) => [r.key, r.defaultCount]))
+    Object.fromEntries(SAFE_REACTIONS.map((r) => [r.key, 0]))
   );
   const [isLive, setIsLive] = useState(false);
   const [sending, setSending] = useState<string | null>(null);
@@ -783,27 +785,19 @@ function SafeFeedbackView({ groups, students, onSubmitReaction, onLoadReactions,
           </div>
 
           <div className="rounded-[2rem] border border-indigo-500/20 bg-indigo-500/10 p-5">
-            <h2 className="text-sm font-bold uppercase tracking-wider text-white">Экран ученика после занятия</h2>
-            <p className="mt-2 text-xs text-slate-400">“Как прошло занятие?” — нажмите, чтобы записать реакцию.</p>
-            {groups.length > 0 && (
-              <select
-                value={selectedGroupId}
-                onChange={(e) => setSelectedGroupId(e.target.value)}
-                className="mt-3 w-full rounded-xl border border-indigo-500/20 bg-black/40 px-3 py-2 text-xs text-white outline-none focus:border-indigo-400"
-              >
-                {groups.map((g: Group) => <option key={g.id} value={g.id}>{g.name}</option>)}
-              </select>
-            )}
+            <h2 className="text-sm font-bold uppercase tracking-wider text-white">Как это видит ученик</h2>
+            {/* Аудит #32: превью экрана ученика — БЕЗ отправки. Реакции ставит только
+                сам ученик со своего входа, иначе педагог мог бы накручивать себе. */}
+            <p className="mt-2 text-xs text-slate-400">“Как прошло занятие?” — ученик выбирает реакцию со своего входа. Здесь только предпросмотр.</p>
             <div className="mt-3 grid gap-2">
               {SAFE_REACTIONS.map((r) => (
-                <button
+                <div
                   key={r.key}
-                  disabled={sending === r.key}
-                  onClick={() => sendReaction(r.key)}
-                  className="rounded-xl border border-indigo-500/15 bg-black/25 px-3 py-2 text-left text-xs font-bold text-indigo-100 transition hover:bg-indigo-500/15 active:scale-[0.98] disabled:opacity-50"
+                  aria-disabled="true"
+                  className="cursor-default rounded-xl border border-indigo-500/15 bg-black/25 px-3 py-2 text-left text-xs font-bold text-indigo-100/80"
                 >
-                  {sending === r.key ? "Записываем…" : r.label}
-                </button>
+                  {r.label}
+                </div>
               ))}
             </div>
           </div>
