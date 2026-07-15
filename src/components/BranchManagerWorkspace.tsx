@@ -544,7 +544,7 @@ function DashboardView({ scopeName, scopeCount = 1, perBranch = [], branchParam 
       </section>
 
       {/* Зарплата в этом месяце — сразу видно при входе */}
-      <section className="relative overflow-hidden rounded-[2rem] border border-emerald-500/25 bg-gradient-to-br from-emerald-500/[0.12] to-[#0d1512] p-5">
+      <section className="relative overflow-hidden rounded-[2rem] border border-emerald-500/25 bg-[#161616] p-5">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -552,7 +552,7 @@ function DashboardView({ scopeName, scopeCount = 1, perBranch = [], branchParam 
               <p className="text-[10px] font-black uppercase tracking-[0.24em] text-emerald-400">Моя зарплата в этом месяце</p>
             </div>
             <div className="mt-1 flex flex-wrap items-end gap-x-3 gap-y-1">
-              <span className="text-4xl font-black text-white">{formatMoney(salEarned)}</span>
+              <span className="text-4xl font-black tabular-nums text-white">{formatMoney(salEarned)}</span>
               <span className="mb-1 text-sm text-slate-400">потенциал — <b className="text-emerald-400">{formatMoney(salPotential)}</b></span>
             </div>
             <p className="mt-1 text-xs text-slate-500">оклад {formatMoney(salBase)} + бонус {formatMoney(salCurrentBonus)} · план БДР {donePct}%</p>
@@ -990,11 +990,11 @@ function GroupsView({ groups, teachers, students, halls = [], branchId, onCreate
           return (
             <article key={group.id} className="rounded-[2rem] border border-white/10 bg-[#121212] p-5">
               <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h3 className="font-black text-white">{group.name}</h3>
+                <div className="min-w-0">
+                  <h3 className="truncate font-black text-white">{group.name}</h3>
                   <p className="mt-1 text-xs text-slate-400">{group.ageGroup} • {group.level}</p>
                 </div>
-                <span className="rounded-full bg-[#C5A059]/10 px-3 py-1 text-[10px] font-black uppercase text-[#C5A059]">{group.studentCount} уч.</span>
+                <span className="shrink-0 rounded-full bg-[#C5A059]/10 px-3 py-1 text-[10px] font-black uppercase text-[#C5A059]">{group.studentCount} уч.</span>
               </div>
               <p className="mt-4 text-sm text-slate-300">{group.scheduleText}</p>
               <p className="mt-1 text-xs text-slate-500">{teacher?.name || "Преподаватель не назначен"}</p>
@@ -1114,14 +1114,14 @@ function ExpenseRequestCard() {
             const Icon = st.icon;
             return (
               <div key={r.id} className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-[#161616] p-3">
-                <div>
-                  <p className="text-sm font-bold text-white">{formatMoney(r.amount)}{r.description ? ` · ${r.description}` : ""}</p>
-                  <p className="text-[11px] text-slate-500">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-bold text-white">{formatMoney(r.amount)}{r.description ? ` · ${r.description}` : ""}</p>
+                  <p className="truncate text-[11px] text-slate-500">
                     {new Date(r.createdAt).toLocaleDateString("ru-RU")}
                     {r.status === "rejected" && r.decisionComment ? ` · причина: ${r.decisionComment}` : ""}
                   </p>
                 </div>
-                <span className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-bold ${st.cls}`}>
+                <span className={`inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-bold ${st.cls}`}>
                   <Icon className="h-3.5 w-3.5" /> {st.label}
                 </span>
               </div>
@@ -1203,18 +1203,18 @@ function RefundRequestCard({ students }: { students: Student[] }) {
             const Icon = st.icon;
             return (
               <div key={r.id} className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-[#161616] p-3">
-                <div>
-                  <p className="text-sm font-bold text-white">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-bold text-white">
                     {formatMoney(r.amount)}
                     {r.studentName ? ` · ${r.studentName}` : ""}
                     {r.reason ? ` · ${r.reason}` : ""}
                   </p>
-                  <p className="text-[11px] text-slate-500">
+                  <p className="truncate text-[11px] text-slate-500">
                     {new Date(r.createdAt).toLocaleDateString("ru-RU")}
                     {r.status === "rejected" && r.decisionComment ? ` · причина: ${r.decisionComment}` : ""}
                   </p>
                 </div>
-                <span className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-bold ${st.cls}`}>
+                <span className={`inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-bold ${st.cls}`}>
                   <Icon className="h-3.5 w-3.5" /> {st.label}
                 </span>
               </div>
@@ -1568,13 +1568,13 @@ function ManagerKpiView({ branchParam, scopeName }: { branchParam: string; scope
 
       {/* Геймификация: потенциальная зарплата + стрик */}
       <div className="grid gap-4 xl:grid-cols-[1.4fr_0.6fr]">
-        <section className="relative overflow-hidden rounded-[2rem] border border-emerald-500/25 bg-gradient-to-br from-emerald-500/[0.12] to-[#0d1512] p-5 md:p-6">
+        <section className="relative overflow-hidden rounded-[2rem] border border-emerald-500/25 bg-[#161616] p-5 md:p-6">
           <div className="flex items-center gap-2">
             <WalletCards className="h-4 w-4 text-emerald-400" />
             <p className="text-[10px] font-black uppercase tracking-[0.24em] text-emerald-400">Моя зарплата в этом месяце</p>
           </div>
           <div className="mt-2 flex flex-wrap items-end gap-x-4 gap-y-1">
-            <span className="text-4xl font-black text-white md:text-5xl">{formatMoney(earnedNow)}</span>
+            <span className="text-4xl font-black tabular-nums text-white md:text-5xl">{formatMoney(earnedNow)}</span>
             <span className="mb-1 text-sm text-slate-400">потенциал при 110% плана — <b className="text-emerald-400">{formatMoney(potentialSalary)}</b></span>
           </div>
           <div className="mt-1 text-xs text-slate-500">оклад {formatMoney(BASE_SALARY)} + бонус {formatMoney(currentBonus)} за уровень плана</div>
@@ -1923,7 +1923,7 @@ function KpiCard({ label, value, detail, tone = "white" }: any) {
   return (
     <section className="rounded-3xl border border-white/10 bg-[#161616] p-4">
       <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{label}</p>
-      <p className={`mt-2 text-2xl font-black ${color}`}>{value}</p>
+      <p className={`mt-2 text-2xl font-black tabular-nums ${color}`}>{value}</p>
       <p className="mt-1 text-xs text-slate-500">{detail}</p>
     </section>
   );
@@ -1933,7 +1933,7 @@ function SmallMetric({ label, value }: { label: string; value: React.ReactNode }
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3">
       <p className="text-[9px] font-black uppercase tracking-wider text-slate-500">{label}</p>
-      <p className="mt-1 text-xl font-black text-white">{value}</p>
+      <p className="mt-1 text-xl font-black tabular-nums text-white">{value}</p>
     </div>
   );
 }

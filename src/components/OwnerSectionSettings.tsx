@@ -225,21 +225,21 @@ export function SectionSettingsDrawer({
       <aside className="relative z-10 flex h-full w-full max-w-[420px] flex-col border-l border-white/10 bg-[#0F0F0F] shadow-2xl">
         {/* Шапка */}
         <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             <div
-              className="flex h-10 w-10 items-center justify-center rounded-xl"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
               style={{ background: `${tab.accent}1A`, color: tab.accent }}
             >
               {Icon ? <Icon className="h-5 w-5" /> : <Settings className="h-5 w-5" />}
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Настройка раздела</p>
-              <h3 className="text-base font-black text-white">{tab.effectiveLabel}</h3>
+              <h3 className="truncate text-base font-black text-white">{tab.effectiveLabel}</h3>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-slate-400 hover:text-white"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-slate-400 hover:text-white"
           >
             <X className="h-4 w-4" />
           </button>

@@ -746,14 +746,15 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
           <div className="card">
             <h3>Сверка CRM ↔ фактические поступления</h3>
             {RECON.length ? (
+              <div style={{ overflowX: "auto" }}>
               <table>
                 <thead>
                   <tr>
                     <th>Направление</th>
-                    <th className="r">В CRM</th>
-                    <th className="r">Факт</th>
-                    <th className="r">Расхожд.</th>
-                    <th className="r">Статус</th>
+                    <th className="r tabular-nums">В CRM</th>
+                    <th className="r tabular-nums">Факт</th>
+                    <th className="r tabular-nums">Расхожд.</th>
+                    <th className="r tabular-nums">Статус</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -763,10 +764,10 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
                     return (
                       <tr key={i}>
                         <td>{r.dir}</td>
-                        <td className="r">{money(r.crm)}</td>
-                        <td className="r">{money(r.fact)}</td>
-                        <td className="r" style={{ color: ok ? "var(--muted)" : "var(--red)" }}>{ok ? "0 ₸" : money(diff)}</td>
-                        <td className="r">
+                        <td className="r tabular-nums">{money(r.crm)}</td>
+                        <td className="r tabular-nums">{money(r.fact)}</td>
+                        <td className="r tabular-nums" style={{ color: ok ? "var(--muted)" : "var(--red)" }}>{ok ? "0 ₸" : money(diff)}</td>
+                        <td className="r tabular-nums">
                           <span className={"badge " + (ok ? "b-green" : "b-red")}>{ok ? "Сошлось" : "Расхождение"}</span>
                         </td>
                       </tr>
@@ -774,6 +775,7 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
                   })}
                 </tbody>
               </table>
+              </div>
             ) : (
               <Empty>Сверка CRM ↔ факт появится, когда будет источник данных</Empty>
             )}
@@ -869,6 +871,7 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
               <span>Расходы: <b className="out">−{money(opsData.outSum)}</b></span>
               <span>Сальдо: <b>{money(opsData.inSum - opsData.retSum - opsData.outSum)}</b></span>
             </div>
+            <div style={{ overflowX: "auto" }}>
             <table>
               <thead>
                 <tr>
@@ -877,8 +880,8 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
                   <th>Тип / категория</th>
                   <th>Счёт</th>
                   <th>Филиал</th>
-                  <th className="r">Сумма</th>
-                  <th className="r">Статус</th>
+                  <th className="r tabular-nums">Сумма</th>
+                  <th className="r tabular-nums">Статус</th>
                 </tr>
               </thead>
               <tbody>
@@ -893,8 +896,8 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
                           <td>Расход · {o.cat}</td>
                           <td>{o.acc}</td>
                           <td>{o.branch}</td>
-                          <td className="r" style={{ color: "var(--red)", fontWeight: 700 }}>− {money(o.sum)}</td>
-                          <td className="r"><span className={"badge " + sb}>{o.status}</span></td>
+                          <td className="r tabular-nums" style={{ color: "var(--red)", fontWeight: 700 }}>− {money(o.sum)}</td>
+                          <td className="r tabular-nums"><span className={"badge " + sb}>{o.status}</span></td>
                         </tr>
                       );
                     } else if (o.kind === "ret") {
@@ -905,8 +908,8 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
                           <td>Возврат · {o.student || "—"}</td>
                           <td>{o.acc}</td>
                           <td>{o.branch}</td>
-                          <td className="r" style={{ color: "var(--blue-ink)", fontWeight: 700 }}>− {money(o.sum)}</td>
-                          <td className="r"><span className="badge b-blue">Возврат</span></td>
+                          <td className="r tabular-nums" style={{ color: "var(--blue-ink)", fontWeight: 700 }}>− {money(o.sum)}</td>
+                          <td className="r tabular-nums"><span className="badge b-blue">Возврат</span></td>
                         </tr>
                       );
                     }
@@ -917,8 +920,8 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
                         <td>Доход · {o.dir}</td>
                         <td>{o.acc}</td>
                         <td>{o.branch}</td>
-                        <td className="r" style={{ color: "var(--green)", fontWeight: 700 }}>+ {money(o.sum)}</td>
-                        <td className="r"><span className="badge b-green">Поступило</span></td>
+                        <td className="r tabular-nums" style={{ color: "var(--green)", fontWeight: 700 }}>+ {money(o.sum)}</td>
+                        <td className="r tabular-nums"><span className="badge b-green">Поступило</span></td>
                       </tr>
                     );
                   })
@@ -929,6 +932,7 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
                 )}
               </tbody>
             </table>
+            </div>
           </div>
         )}
 
@@ -939,6 +943,7 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
               Заявки от управляющих
               <button className="btn-sm" onClick={openReq}>+ Создать заявку</button>
             </h3>
+            <div style={{ overflowX: "auto" }}>
             <table>
               <thead>
                 <tr>
@@ -948,9 +953,9 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
                   <th>Категория</th>
                   <th>Ученик / группа</th>
                   <th>Причина</th>
-                  <th className="r">Сумма</th>
-                  <th className="r">Статус</th>
-                  <th className="r">Действие</th>
+                  <th className="r tabular-nums">Сумма</th>
+                  <th className="r tabular-nums">Статус</th>
+                  <th className="r tabular-nums">Действие</th>
                 </tr>
               </thead>
               <tbody>
@@ -979,9 +984,9 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
                           )}
                         </td>
                         <td>{r.reason}</td>
-                        <td className="r">{money(r.sum)}</td>
-                        <td className="r"><span className={"badge " + (reqStatusBadge[r.status] || "b-gray")}>{r.status}</span></td>
-                        <td className="r">
+                        <td className="r tabular-nums">{money(r.sum)}</td>
+                        <td className="r tabular-nums"><span className={"badge " + (reqStatusBadge[r.status] || "b-gray")}>{r.status}</span></td>
+                        <td className="r tabular-nums">
                           {r.status === "на рассмотрении" ? (
                             <button className="btn-sm" onClick={() => openReview(idx)}>Рассмотреть</button>
                           ) : (
@@ -998,6 +1003,7 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
                 )}
               </tbody>
             </table>
+            </div>
             <p className="hint">
               Управляющий создаёт заявку → владелец одобряет/отклоняет. При одобрении расход/возврат сразу проводится как фактическая операция.
             </p>
@@ -1009,15 +1015,15 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
           <>
             <div className="card">
               <h3>Сравнение с предыдущим месяцем</h3>
-              <div>
+              <div style={{ overflowX: "auto" }}>
                 {momPrev ? (
                   <table>
                     <thead>
                       <tr>
                         <th>Показатель</th>
-                        <th className="r">{period}</th>
-                        <th className="r">{momPrevM}</th>
-                        <th className="r">Δ</th>
+                        <th className="r tabular-nums">{period}</th>
+                        <th className="r tabular-nums">{momPrevM}</th>
+                        <th className="r tabular-nums">Δ</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1034,9 +1040,9 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
                         return (
                           <tr key={i}>
                             <td>{label}</td>
-                            <td className="r">{money(c)}</td>
-                            <td className="r">{p !== null ? money(p) : "—"}</td>
-                            <td className="r" style={{ color }}>{dl !== null ? arrow + " " + money(Math.abs(dl)) : "—"}</td>
+                            <td className="r tabular-nums">{money(c)}</td>
+                            <td className="r tabular-nums">{p !== null ? money(p) : "—"}</td>
+                            <td className="r tabular-nums" style={{ color }}>{dl !== null ? arrow + " " + money(Math.abs(dl)) : "—"}</td>
                           </tr>
                         );
                       })}
@@ -1201,16 +1207,17 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
             <h3>
               Налоги · реестр <button className="btn-sm" onClick={openTax}>+ Добавить налог</button>
             </h3>
+            <div style={{ overflowX: "auto" }}>
             <table>
               <thead>
                 <tr>
                   <th>Налог</th>
                   <th>База</th>
-                  <th className="r">Ставка / сумма</th>
+                  <th className="r tabular-nums">Ставка / сумма</th>
                   <th>Периодичность</th>
                   <th>Статья · счёт</th>
-                  <th className="r">Статус</th>
-                  <th className="r">Действие</th>
+                  <th className="r tabular-nums">Статус</th>
+                  <th className="r tabular-nums">Действие</th>
                 </tr>
               </thead>
               <tbody>
@@ -1219,7 +1226,7 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
                     <tr key={t.id}>
                       <td><b>{t.name}</b>{t.comment ? <><br /><span style={{ color: "var(--muted)", fontSize: 12 }}>{t.comment}</span></> : null}</td>
                       <td>{baseTypeRu(t.baseType)}</td>
-                      <td className="r" style={{ fontWeight: 700 }}>
+                      <td className="r tabular-nums" style={{ fontWeight: 700 }}>
                         {t.baseType === "fixed" ? money(Number(t.fixedAmount) || 0) : (Number(t.rate) || 0) + "%"}
                       </td>
                       <td>{taxPeriodRu(t.period)}</td>
@@ -1228,8 +1235,8 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
                         <br />
                         <span style={{ color: "var(--muted)", fontSize: 12 }}>{accById(t.accountId)}</span>
                       </td>
-                      <td className="r"><span className="badge b-green">Активен</span></td>
-                      <td className="r">
+                      <td className="r tabular-nums"><span className="badge b-green">Активен</span></td>
+                      <td className="r tabular-nums">
                         <span style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                           <button className="btn-sm" onClick={() => payTax(t)}>Оплатить</button>
                           <button className="set-del" onClick={() => delTax(t)}>Удалить</button>
@@ -1244,6 +1251,7 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
                 )}
               </tbody>
             </table>
+            </div>
             <div className="ops-summary">
               <span>Налогов в реестре: <b>{taxList.length}</b></span>
             </div>
@@ -1257,6 +1265,7 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
             <h3>
               История операций <span style={{ fontWeight: 600, fontSize: 13, color: "var(--muted)" }}>последние записи</span>
             </h3>
+            <div style={{ overflowX: "auto" }}>
             <table>
               <thead>
                 <tr>
@@ -1283,6 +1292,7 @@ export function AccountingProtoView({ branches = [] }: { branches?: Branch[] }) 
                 )}
               </tbody>
             </table>
+            </div>
           </div>
         )}
       </div>

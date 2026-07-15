@@ -4106,12 +4106,12 @@ function TeacherCard({ teacher, metric, branchName, students, groups, payments, 
         {teacherGroups.length === 0 && <p className="mt-3 text-sm text-slate-500">У педагога пока нет групп.</p>}
         <div className="mt-3 grid gap-2 md:grid-cols-2">
           {teacherGroups.map((g) => (
-            <div key={g.id} className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
-              <div>
-                <p className="text-sm font-bold text-white">{g.name}</p>
-                <p className="text-[11px] text-slate-500">{g.ageGroup} · {g.scheduleText || "по расписанию"}</p>
+            <div key={g.id} className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-bold text-white">{g.name}</p>
+                <p className="truncate text-[11px] text-slate-500">{g.ageGroup} · {g.scheduleText || "по расписанию"}</p>
               </div>
-              <span className="text-xs text-slate-300">{g.studentCount}{g.capacity ? ` / ${g.capacity}` : ""} уч.</span>
+              <span className="shrink-0 text-xs text-slate-300">{g.studentCount}{g.capacity ? ` / ${g.capacity}` : ""} уч.</span>
             </div>
           ))}
         </div>
@@ -4146,12 +4146,12 @@ function TeacherCard({ teacher, metric, branchName, students, groups, payments, 
         )}
         <div className="mt-3 space-y-2">
           {payouts.map((p) => (
-            <div key={p.id} className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
-              <div>
+            <div key={p.id} className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+              <div className="min-w-0">
                 <p className="text-sm font-bold text-white">{money(p.amount)} <span className={`ml-2 rounded-md px-1.5 py-0.5 text-[10px] font-bold ${p.status === "paid" ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-400/15 text-amber-300"}`}>{p.status === "paid" ? "Выплачено" : "Запланировано"}</span></p>
-                <p className="text-[11px] text-slate-500">{p.periodStart} — {p.periodEnd}{p.comment ? ` · ${p.comment}` : ""}</p>
+                <p className="truncate text-[11px] text-slate-500">{p.periodStart} — {p.periodEnd}{p.comment ? ` · ${p.comment}` : ""}</p>
               </div>
-              <button onClick={() => delPayout(p.id)} className="rounded-lg p-1 text-slate-500 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button>
+              <button onClick={() => delPayout(p.id)} className="shrink-0 rounded-lg p-1 text-slate-500 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button>
             </div>
           ))}
         </div>
@@ -5291,16 +5291,16 @@ function AcctCalendarTab({ data }: { data: AcctOverview }) {
           <div className="mt-4 space-y-2">
             {calendar.map((c) => (
               <div key={c.id} className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-[#161616] p-3">
-                <div className="flex items-center gap-3">
-                  <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${c.type === "income" ? "bg-emerald-500/15 text-emerald-400" : "bg-rose-500/15 text-rose-400"}`}>
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${c.type === "income" ? "bg-emerald-500/15 text-emerald-400" : "bg-rose-500/15 text-rose-400"}`}>
                     {c.type === "income" ? <ArrowUpRight className="h-4 w-4" /> : <ArrowDownRight className="h-4 w-4" />}
                   </div>
-                  <div>
-                    <p className="text-sm font-bold text-white">{c.category}{c.counterparty ? ` · ${c.counterparty}` : ""}</p>
-                    <p className="text-[11px] text-slate-500">{new Date(c.date).toLocaleDateString("ru-RU")} · {c.account}{c.description ? ` · ${c.description}` : ""}</p>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold text-white">{c.category}{c.counterparty ? ` · ${c.counterparty}` : ""}</p>
+                    <p className="truncate text-[11px] text-slate-500">{new Date(c.date).toLocaleDateString("ru-RU")} · {c.account}{c.description ? ` · ${c.description}` : ""}</p>
                   </div>
                 </div>
-                <p className={`text-sm font-black ${c.type === "income" ? "text-emerald-400" : "text-rose-400"}`}>{c.type === "income" ? "+" : "−"}{money(c.amount)}</p>
+                <p className={`shrink-0 text-sm font-black ${c.type === "income" ? "text-emerald-400" : "text-rose-400"}`}>{c.type === "income" ? "+" : "−"}{money(c.amount)}</p>
               </div>
             ))}
           </div>
@@ -6853,12 +6853,12 @@ export function EchoGrantPanel({ role }: { role: string }) {
           <p className="py-16 text-center text-sm text-slate-500">Выберите ученика слева, чтобы начислить или списать ЭхоБаксы.</p>
         ) : (
           <>
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-black text-white">{sel.name}</h3>
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="truncate text-lg font-black text-white">{sel.name}</h3>
                 <p className="text-xs text-slate-500">Баланс кошелька</p>
               </div>
-              <p className="text-3xl font-black text-[#C5A059]">{wallet?.balance ?? sel.balance} ⭐</p>
+              <p className="shrink-0 text-3xl font-black text-[#C5A059] tabular-nums">{wallet?.balance ?? sel.balance} ⭐</p>
             </div>
             {err && <p className="mt-3 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-300">{err}</p>}
             {ok && <p className="mt-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">{ok}</p>}
@@ -9314,7 +9314,7 @@ function SalaryCalcModal({ teachers, metricFor, penalties, months, month, effect
           {/* Итоговое число */}
           <div className="mt-5 rounded-[1.5rem] border border-[#C5A059]/30 bg-[#C5A059]/12 px-6 py-7 text-center">
             <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">ЗП к начислению · {mo.toUpperCase()}</p>
-            <p className="mt-2 text-5xl font-black text-white">{sal ? tg(sal.total) : "—"}</p>
+            <p className="mt-2 text-5xl font-black text-white tabular-nums break-words leading-tight">{sal ? tg(sal.total) : "—"}</p>
             <p className="mt-2 text-sm text-slate-500">{teacher?.name} · {tnCatName(cat)}</p>
           </div>
 
@@ -9446,7 +9446,7 @@ function PenaltyJournalModal({ penalties, teachers, months, month, onClose, onCh
 
           {/* Сумма по фильтру */}
           <div className="mt-5 rounded-[1.5rem] border border-white/10 bg-[#121212] px-6 py-7 text-center">
-            <p className="text-4xl font-black text-white">{tg(total)}</p>
+            <p className="text-4xl font-black text-white tabular-nums break-words leading-tight">{tg(total)}</p>
             <p className="mt-2 text-sm text-slate-500">Сумма штрафов по фильтру · {filtered.length} шт.</p>
           </div>
 

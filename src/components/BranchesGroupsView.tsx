@@ -883,11 +883,11 @@ function GroupsTab({ groupData, canManage, rawBranches, teachers, halls, student
           <Modal title={`Ученики · ${gd.g.name}`} subtitle={`${gd.inGroup.length} учеников`} onClose={() => setStudentsOf(null)}>
             <div className="overflow-hidden rounded-2xl border border-white/10">
               {gd.inGroup.map((s: Student) => (
-                <div key={s.id} className="flex items-center justify-between border-b border-white/5 px-4 py-2.5 text-sm">
-                  <div><p className="font-bold text-white">{s.name}</p><p className="text-xs text-slate-500">{s.parentName} · {s.parentPhone || "—"}</p></div>
+                <div key={s.id} className="flex items-center justify-between gap-2 border-b border-white/5 px-4 py-2.5 text-sm">
+                  <div className="min-w-0"><p className="truncate font-bold text-white">{s.name}</p><p className="truncate text-xs text-slate-500">{s.parentName} · {s.parentPhone || "—"}</p></div>
                   {hasActiveSub(s)
-                    ? <span className="rounded-lg bg-emerald-500/15 px-2 py-1 text-xs font-bold text-emerald-400">активен</span>
-                    : <span className="rounded-lg bg-rose-500/15 px-2 py-1 text-xs font-bold text-rose-400">нет абон.</span>}
+                    ? <span className="shrink-0 rounded-lg bg-emerald-500/15 px-2 py-1 text-xs font-bold text-emerald-400">активен</span>
+                    : <span className="shrink-0 rounded-lg bg-rose-500/15 px-2 py-1 text-xs font-bold text-rose-400">нет абон.</span>}
                 </div>
               ))}
               {gd.inGroup.length === 0 && <p className="px-4 py-6 text-center text-sm text-slate-500">В группе пока нет учеников.</p>}

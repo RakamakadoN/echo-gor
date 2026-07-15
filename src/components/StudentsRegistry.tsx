@@ -884,7 +884,7 @@ export default function StudentsRegistry({
                 <div className="mb-2 inline-flex h-9 w-9 items-center justify-center rounded-[10px]" style={{ background: ic.bg, color: ic.color }}>
                   <k.icon className="h-[18px] w-[18px]" />
                 </div>
-                <p className="text-[28px] font-extrabold leading-none" style={{ color: CLR.strong }}>{k.value}</p>
+                <p className="text-[28px] font-extrabold leading-none tabular-nums" style={{ color: CLR.strong }}>{k.value}</p>
                 <p className="mt-1.5 text-[11px] font-semibold uppercase" style={{ letterSpacing: "0.55px", color: CLR.muted }}>{kLabel}</p>
               </div>
             );
@@ -912,7 +912,7 @@ export default function StudentsRegistry({
                   <st.icon className="h-[18px] w-[18px]" style={{ color: fc.icon_c }} />
                   <span className="text-[11px] font-bold" style={{ color: CLR.muted }}>{i + 1}</span>
                 </div>
-                <p className="mt-1.5 text-[26px] font-extrabold leading-none" style={{ color: fc.val }}>{ids.length}</p>
+                <p className="mt-1.5 text-[26px] font-extrabold leading-none tabular-nums" style={{ color: fc.val }}>{ids.length}</p>
                 <p className="mt-1 text-[12px] font-semibold leading-tight" style={{ color: CLR.text }}>{fLabel}</p>
                 {st.hint && <p className="mt-1 text-[11px] font-semibold" style={{ color: fc.hint_c }}>{st.hint}</p>}
               </button>

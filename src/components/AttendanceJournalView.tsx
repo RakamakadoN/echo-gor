@@ -104,7 +104,7 @@ function MetricCard({ icon: Icon, tone, value, label, active, onClick }: any) {
     >
       <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${tone}`}><Icon className="h-5 w-5" /></span>
       <span className="min-w-0">
-        <span className="block text-xl font-black leading-none text-white">{value}</span>
+        <span className="block text-xl font-black leading-none text-white tabular-nums">{value}</span>
         <span className="mt-1 block truncate text-[11px] font-semibold text-slate-400">{label}</span>
       </span>
     </button>
@@ -300,8 +300,8 @@ export default function AttendanceJournalView(props: Props) {
       {!expanded && detail && dash && (
         <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
           <div className="mb-2 flex items-center justify-between">
-            <h4 className="text-sm font-bold text-white">{({ visited: "Посетили занятия", unpaid: "Посещают без оплаты", trialNotBought: "Были на ПУ и не купили", trialBought: "Купили после ПУ" } as any)[detail]} — {detailList().length}</h4>
-            <button onClick={() => setDetail(null)} className="text-slate-500 hover:text-white"><X className="h-4 w-4" /></button>
+            <h4 className="min-w-0 truncate text-sm font-bold text-white">{({ visited: "Посетили занятия", unpaid: "Посещают без оплаты", trialNotBought: "Были на ПУ и не купили", trialBought: "Купили после ПУ" } as any)[detail]} — {detailList().length}</h4>
+            <button onClick={() => setDetail(null)} className="shrink-0 text-slate-500 hover:text-white"><X className="h-4 w-4" /></button>
           </div>
           {detailList().length === 0 ? <p className="text-xs text-slate-500">Список пуст.</p> : (
             <div className="flex flex-wrap gap-2">
@@ -528,12 +528,12 @@ function CellMenu({ state, student, onClose, onMark }: any) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
       <div className="w-full max-w-xs rounded-2xl border border-white/10 bg-[#11121A] p-4" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-3 flex items-center justify-between">
-          <div>
-            <p className="text-sm font-bold text-white">{student?.name}</p>
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-bold text-white">{student?.name}</p>
             <p className="text-[11px] text-slate-500">{new Date(state.date).toLocaleDateString("ru-RU")}{isTrial ? " · пробный урок" : ""}</p>
           </div>
-          <button onClick={onClose} className="text-slate-500 hover:text-white"><X className="h-4 w-4" /></button>
+          <button onClick={onClose} className="shrink-0 text-slate-500 hover:text-white"><X className="h-4 w-4" /></button>
         </div>
         <div className="grid grid-cols-2 gap-2">
           <StatusBtn icon={CheckCircle2} label="Был" tone="bg-emerald-500/15 text-emerald-300" onClick={() => onMark(state.studentId, state.date, "present")} />
@@ -703,9 +703,9 @@ function Modal({ title, children, onClose }: { title: string; children: React.Re
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
       <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-white/10 bg-[#11121A] p-5" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-base font-black text-white">{title}</h3>
-          <button onClick={onClose} className="text-slate-500 hover:text-white"><X className="h-5 w-5" /></button>
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <h3 className="min-w-0 truncate text-base font-black text-white">{title}</h3>
+          <button onClick={onClose} className="shrink-0 text-slate-500 hover:text-white"><X className="h-5 w-5" /></button>
         </div>
         {children}
       </div>

@@ -49,16 +49,16 @@ export function ArchiveReasonModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="rounded-2xl bg-rose-500/15 p-2.5 text-rose-400">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="shrink-0 rounded-2xl bg-rose-500/15 p-2.5 text-rose-400">
               <Archive className="h-5 w-5" />
             </div>
-            <div>
-              <h3 className="text-lg font-black text-white">{title}</h3>
-              {subtitle && <p className="text-xs text-slate-500">{subtitle}</p>}
+            <div className="min-w-0">
+              <h3 className="truncate text-lg font-black text-white">{title}</h3>
+              {subtitle && <p className="truncate text-xs text-slate-500">{subtitle}</p>}
             </div>
           </div>
-          <button onClick={onCancel} className="rounded-lg p-1 text-slate-400 hover:text-white">
+          <button onClick={onCancel} className="shrink-0 rounded-lg p-1 text-slate-400 hover:text-white">
             <X className="h-5 w-5" />
           </button>
         </div>

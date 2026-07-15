@@ -388,7 +388,7 @@ export function AdminShiftView({
 
           <div className="rounded-3xl border border-[#C5A059]/25 bg-black/40 p-5">
             <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-500">Касса смены</p>
-            <p className="mt-1 text-3xl font-black text-[#C5A059]">{money(todayRevenue)}</p>
+            <p className="mt-1 text-3xl font-black tabular-nums text-[#C5A059]">{money(todayRevenue)}</p>
             {!shiftOpen && !shiftClosed && (
               <button
                 onClick={() => setPhotoModal({ action: "open", title: "Открыть смену", hint: "Сделайте фото на рабочем месте — приход на смену" })}

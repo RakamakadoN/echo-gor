@@ -742,7 +742,7 @@ export function TeachersProtoView({ teachers: teachersProp = [], branches = [], 
       rows = list.map((t) => {
         const m = monthData(t, mn); const c = kpiComponents(m); const k = kpiTotal(c); const w = KPI_WEIGHTS;
         const subId = "kpi" + t.id;
-        const part = (label: string, val: number, wt: number, i: number) => (<tr key={i}><td>{label}</td><td className="r">{val}</td><td className="r">{wt}%</td><td className="r"><b>{((val * wt) / 100).toFixed(1)}</b></td></tr>);
+        const part = (label: string, val: number, wt: number, i: number) => (<tr key={i}><td>{label}</td><td className="r tabular-nums">{val}</td><td className="r tabular-nums">{wt}%</td><td className="r tabular-nums"><b>{((val * wt) / 100).toFixed(1)}</b></td></tr>);
         return (
           <div key={t.id}>
             <div className="drow" onClick={() => toggleSub(subId)}>
@@ -751,13 +751,13 @@ export function TeachersProtoView({ teachers: teachersProp = [], branches = [], 
             </div>
             {openSubs[subId] ? (
               <div style={{ padding: "0 0 10px 0" }}>
-                <table className="sal-table"><thead><tr><th>Компонент</th><th className="r">Балл</th><th className="r">Вес</th><th className="r">Вклад</th></tr></thead>
+                <table className="sal-table"><thead><tr><th>Компонент</th><th className="r tabular-nums">Балл</th><th className="r tabular-nums">Вес</th><th className="r tabular-nums">Вклад</th></tr></thead>
                   <tbody>
                     {part("Удержание из мес. в мес.", c.ret, w.ret, 0)}
                     {part("Воронка ПУ (приход → покупка)", c.funnel, w.funnel, 1)}
                     {part("Отзывы родителей", c.reviews, w.reviews, 2)}
                     {part("Выполнение стандартов", c.standards, w.standards, 3)}
-                    <tr style={{ background: "var(--gold-soft)" }}><td><b>Итоговый KPI</b></td><td className="r" /><td className="r" /><td className="r"><b>{k}/100</b></td></tr>
+                    <tr style={{ background: "var(--gold-soft)" }}><td><b>Итоговый KPI</b></td><td className="r tabular-nums" /><td className="r tabular-nums" /><td className="r tabular-nums"><b>{k}/100</b></td></tr>
                   </tbody>
                 </table>
               </div>
