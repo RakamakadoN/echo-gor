@@ -1079,8 +1079,27 @@ function GroupDetailsView({ groupId, groups, students, onBack, onNavigateToStude
   };
 
   const markOne = async (studentId: string, status: "present" | "absent" | "sick") => {
+    // Аудит #25: оптимистично красим, но при ошибке сети откатываем — иначе
+    // кнопка «отмечено», а сервер не знает. Успех/сбой берём из результата.
+    const prevVal = perStudent[studentId];
     setPerStudent((prev) => ({ ...prev, [studentId]: status }));
-    await onToggleAttendance?.(studentId, todayStr, status);
+    const ok = await onToggleAttendance?.(studentId, todayStr, status);
+    if (ok === false) {
+      setPerStudent((prev) => {
+        const next = { ...prev };
+        if (prevVal === undefined) delete next[studentId]; else next[studentId] = prevVal;
+        return next;
+      });
+      flash?.("Не сохранилось — проверьте связь и повторите");
+    }
+  };
+
+  // Эффективный статус кнопки: локальная отметка ИЛИ уже сохранённая за сегодня
+  // (аудит #25: раньше сохранённые отметки не подсвечивались после возврата).
+  const effectiveStatus = (stud: any): string | undefined => {
+    if (perStudent[stud.id]) return perStudent[stud.id];
+    const saved = stud.attendance?.[todayStr]?.status;
+    return saved && saved !== "unmarked" && saved !== "unknown" ? saved : undefined;
   };
 
   return (
@@ -1129,7 +1148,7 @@ function GroupDetailsView({ groupId, groups, students, onBack, onNavigateToStude
                     <button
                       key={st}
                       onClick={() => markOne(stud.id, st)}
-                      className={`w-8 h-8 rounded-md flex items-center justify-center transition-colors font-bold text-xs ${perStudent[stud.id] === st ? activeCls : idleCls}`}
+                      className={`w-8 h-8 rounded-md flex items-center justify-center transition-colors font-bold text-xs ${effectiveStatus(stud) === st ? activeCls : idleCls}`}
                     >
                       {ltr}
                     </button>

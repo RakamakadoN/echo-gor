@@ -1786,9 +1786,10 @@ export default function App() {
         });
         if (!response.ok) throw new Error(await response.text());
         await loadMvpBootstrap(activeRole);
-        return;
+        return true; // успех — клиент может подтвердить отметку (аудит #25)
       } catch (error: any) {
         notifyError(error.message || "Не удалось отметить посещаемость в Supabase");
+        return false; // сбой — клиент откатит оптимистичную отметку
       }
     }
 
@@ -1815,6 +1816,7 @@ export default function App() {
       "Контроль посещаемости",
       `Выставлен статус ${status} для ${students.find((std) => std.id === studId)?.name} на дату ${date}`
     );
+    return true; // локальный (mock) режим — отметка применена
   };
 
   // Пакетное сохранение отметок журнала (кнопка «Сохранить» в журнале):
@@ -3838,7 +3840,6 @@ export default function App() {
                   <span className="text-2xl md:text-3xl font-bold text-[#C5A059] tracking-tight tabular-nums">
                     {metricsSummary.thisMonthRevenue.toLocaleString()} ₸
                   </span>
-                  <span className="text-xs text-green-400">Стабильно</span>
                 </div>
               </div>
 
@@ -3850,7 +3851,12 @@ export default function App() {
                   <span className="text-2xl md:text-3xl font-bold text-white tracking-tight tabular-nums">
                     {metricsSummary.overallAttendanceRate}%
                   </span>
-                  <span className="text-xs text-sky-400">Норма</span>
+                  {(() => {
+                    // Оценка вычисляется из реального показателя (аудит #33), а не захардкожена.
+                    const r = metricsSummary.overallAttendanceRate;
+                    const [txt, cls] = r >= 85 ? ["Высокая", "text-green-400"] : r >= 70 ? ["Норма", "text-sky-400"] : ["Низкая", "text-rose-400"];
+                    return <span className={`text-xs ${cls}`}>{txt}</span>;
+                  })()}
                 </div>
               </div>
 
@@ -3862,7 +3868,6 @@ export default function App() {
                   <span className="text-2xl md:text-3xl font-bold text-white tracking-tight tabular-nums">
                     {metricsSummary.todayRevenue.toLocaleString()} ₸
                   </span>
-                  <span className="text-xs text-[#C5A059]">Высокая</span>
                 </div>
               </div>
             </div>
