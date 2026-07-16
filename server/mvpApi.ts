@@ -4,6 +4,7 @@ import {
   apipayConfigured,
   apipayWebhookConfigured,
   apipayCreateInvoice,
+  apipayCancelInvoice,
   apipaySimulateStatus,
   apipayVerifySignature,
   normalizeKaspiPhone,
@@ -5288,6 +5289,45 @@ export function registerMvpApi(app: express.Express) {
       students.map((s) => [s.id, [s.last_name, s.first_name].filter(Boolean).join(" ")])
     );
     res.json({ invoices: rows.map((r) => ({ ...r, student_name: name[r.student_id] || "—" })) });
+  });
+
+  // Ученики для формы «Выставить счёт» (лёгкий список: имя, телефон, филиал).
+  app.get("/api/mvp/apipay/students", async (req, res) => {
+    const session = getSession(req);
+    if (session.role === "student") return res.status(403).json({ error: "Недоступно из кабинета ученика" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const rows = await supabaseFetch<any[]>(
+      "students",
+      `select=id,last_name,first_name,phone,parent_phone,branch_id&organization_id=eq.${session.organizationId}&archived_at=is.null&order=last_name.asc&limit=1000`
+    );
+    res.json({
+      students: rows.map((s) => ({
+        id: s.id,
+        branchId: s.branch_id,
+        name: [s.last_name, s.first_name].filter(Boolean).join(" ") || "Ученик",
+        phone: normalizeKaspiPhone(s.phone || s.parent_phone || "") || null,
+      })),
+    });
+  });
+
+  // Отмена неоплаченного счёта (в ApiPay и у нас).
+  app.post("/api/mvp/apipay/invoice/:id/cancel", async (req, res) => {
+    const session = getSession(req);
+    if (session.role === "student") return res.status(403).json({ error: "Недоступно из кабинета ученика" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const row = (await supabaseFetch<any[]>(
+      "apipay_invoices",
+      `select=id,apipay_invoice_id,status&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`
+    ))[0];
+    if (!row) return res.status(404).json({ error: "Счёт не найден" });
+    if (row.status === "paid") return res.status(400).json({ error: "Счёт уже оплачен — используйте возврат" });
+    if (row.apipay_invoice_id) await apipayCancelInvoice(row.apipay_invoice_id);
+    await supabaseFetch("apipay_invoices", `id=eq.${row.id}`, {
+      method: "PATCH",
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({ status: "cancelled", updated_at: new Date().toISOString() }),
+    });
+    res.json({ ok: true });
   });
 
   // Песочница ApiPay: эмулировать смену статуса (paid и т.п.) — вебхук придёт как настоящий.
