@@ -111,6 +111,16 @@ const branchTabs: { id: BranchTab; label: string; short: string; icon: React.Ele
   { id: "settings", label: "Настройки филиала", short: "Еще", icon: Settings }
 ];
 
+// Группировка десктоп-сайдбара по смысловым разделам (как в кабинете владельца).
+const BRANCH_TAB_GROUP: Record<string, string> = {
+  dashboard: "Обзор",
+  students: "Люди", teachers: "Люди", groups: "Люди",
+  schedule: "Учебный процесс", journal: "Учебный процесс", performances: "Учебный процесс",
+  planning: "Финансы", kpi: "Финансы", reconcile: "Финансы", payroll: "Финансы",
+  products: "Продажи", storefront: "Продажи",
+  quality: "Система", settings: "Система",
+};
+
 export function BranchManagerWorkspace({
   branchId = "branch-magas",
   branches,
@@ -324,9 +334,25 @@ export function BranchManagerWorkspace({
             <BranchScopeSelector branches={myBranches} scopeId={scopeId} onChange={setScopeId} />
           </div>
           <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
-            {branchTabs.map((tab) => (
-              <NavButton key={tab.id} tab={tab} active={activeTab === tab.id} onClick={() => setActiveTab(tab.id)} />
-            ))}
+            {(() => {
+              // Раскладываем вкладки по группам-бакетам: заголовок секции — ровно один раз,
+              // порядок групп по первому появлению (как в сайдбаре владельца).
+              const order: string[] = [];
+              const byGroup = new Map<string, typeof branchTabs>();
+              branchTabs.forEach((tab) => {
+                const g = BRANCH_TAB_GROUP[tab.id] || "";
+                if (!byGroup.has(g)) { byGroup.set(g, []); order.push(g); }
+                byGroup.get(g)!.push(tab);
+              });
+              return order.map((g) => (
+                <React.Fragment key={g || "_ungrouped"}>
+                  {g && <p className="px-3 pb-1 pt-3 text-[10px] font-black uppercase tracking-wider text-slate-600 first:pt-0">{g}</p>}
+                  {byGroup.get(g)!.map((tab) => (
+                    <NavButton key={tab.id} tab={tab} active={activeTab === tab.id} onClick={() => setActiveTab(tab.id)} />
+                  ))}
+                </React.Fragment>
+              ));
+            })()}
           </nav>
         </aside>
 

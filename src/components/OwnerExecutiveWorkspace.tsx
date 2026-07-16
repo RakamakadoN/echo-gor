@@ -429,23 +429,33 @@ export function OwnerExecutiveWorkspace({
           </div>
           {/* Навигация (референс .nav) — прокручиваемая */}
           <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
-            {sectionSettings.visibleTabs.map((tab, i, arr) => {
-              // Заголовок секции — когда группа сменилась относительно предыдущего пункта.
-              const group = TAB_GROUP[tab.id] || "";
-              const prevGroup = i > 0 ? (TAB_GROUP[arr[i - 1].id] || "") : "";
-              return (
-                <React.Fragment key={tab.id}>
-                  {group && group !== prevGroup && (
-                    <p className="px-3 pb-1 pt-3 text-[10px] font-black uppercase tracking-wider text-slate-600 first:pt-0">{group}</p>
-                  )}
-                  <OwnerNavButton
-                    tab={tab}
-                    active={activeTab === tab.id}
-                    onClick={() => setActiveTab(tab.id as OwnerTab)}
-                  />
+            {(() => {
+              // Раскладываем вкладки по группам (бакетам): заголовок секции печатается
+              // РОВНО ОДИН РАЗ. Порядок групп — по первому появлению их вкладок,
+              // внутри группы — пользовательский порядок (section-settings умеет
+              // переупорядочивать, поэтому старый «заголовок по смене соседа» повторял
+              // заголовки, когда вкладки одной группы шли не подряд).
+              const order: string[] = [];
+              const byGroup = new Map<string, typeof sectionSettings.visibleTabs>();
+              sectionSettings.visibleTabs.forEach((tab) => {
+                const g = TAB_GROUP[tab.id] || "";
+                if (!byGroup.has(g)) { byGroup.set(g, []); order.push(g); }
+                byGroup.get(g)!.push(tab);
+              });
+              return order.map((g) => (
+                <React.Fragment key={g || "_ungrouped"}>
+                  {g && <p className="px-3 pb-1 pt-3 text-[10px] font-black uppercase tracking-wider text-slate-600 first:pt-0">{g}</p>}
+                  {byGroup.get(g)!.map((tab) => (
+                    <OwnerNavButton
+                      key={tab.id}
+                      tab={tab}
+                      active={activeTab === tab.id}
+                      onClick={() => setActiveTab(tab.id as OwnerTab)}
+                    />
+                  ))}
                 </React.Fragment>
-              );
-            })}
+              ));
+            })()}
           </nav>
         </aside>
 
