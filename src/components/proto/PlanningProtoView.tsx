@@ -8,8 +8,6 @@ import "./planning-proto.css";
    Разделы без источника показывают заглушку «Данных пока нет».
    ============================================================ */
 const MONTHS_RU = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
-const H = { "x-demo-role": "owner" } as const;
-const HJ = { "Content-Type": "application/json", "x-demo-role": "owner" } as const;
 
 /* ---------- заглушка ---------- */
 const Empty = ({ children }: { children?: any }) => (
@@ -28,7 +26,18 @@ type Overview = {
   levels: { level: string; plan: number; fact: number; deviation: number; done: number }[];
   funnel: { neededSales: number; trials: number; signups: number; leads: number };
   motivation: { level: string; threshold: number; bonus: string }[];
-  daily: { date: string; revenue: number; trials: number; sales: number; comment: string; author: string }[];
+  daily: { id?: string; date: string; revenue: number; trials: number; sales: number; comment: string; author: string }[];
+  dailyAuto?: { date: string; revenue: number; sales: number }[];
+  lifecycle?: {
+    status: "draft" | "pending" | "active" | "closed";
+    version: number;
+    submittedAt?: string | null; submittedBy?: string | null;
+    approvedAt?: string | null; approvedBy?: string | null;
+    revisionReason?: string | null;
+    history?: { version: number; action: string; by: string; at: string; reason?: string; plannedRevenue?: number; plannedExpense?: number }[];
+    closedAt?: string; closedBy?: string;
+    bonus?: { donePct: number; level: string | null; bonus: string | null };
+  };
   detailed: {
     branchName: string; branches: { id: string; name: string }[]; groupsCount: number; studentsCount: number; fillPct: number;
     revenue: number; expense: number; profit: number; margin: number;
@@ -99,6 +108,17 @@ function expVal(e: LocalExp) {
   return +(e.val || 0);
 }
 
+const STATUS_RU: Record<string, string> = { draft: "черновик", pending: "на утверждении", active: "утверждён", closed: "месяц закрыт" };
+const HIST_RU: Record<string, string> = {
+  created: "План создан",
+  edited: "Черновик изменён",
+  submitted: "Отправлен на утверждение",
+  approved: "Утверждён владельцем",
+  revision_submitted: "Корректировка отправлена владельцу",
+  revised_approved: "Корректировка утверждена",
+  closed: "Месяц закрыт (снапшот)",
+};
+
 const TABS = [
   { id: "plan", label: "План БДР" },
   { id: "fact", label: "Факт БДР" },
@@ -111,8 +131,13 @@ const TABS = [
 /* ============================================================
    Компонент
    ============================================================ */
-export function PlanningProtoView({ branches = [] }: { branches?: Branch[] }) {
+export function PlanningProtoView({ branches = [], role = "owner" }: { branches?: Branch[]; role?: "owner" | "branch_manager" }) {
   const now = new Date();
+  // Заголовки с реальной ролью пользователя: сервер пускает owner и branch_manager,
+  // подмена «все ходят как owner» больше не нужна.
+  const H = useMemo(() => ({ "x-demo-role": role } as const), [role]);
+  const HJ = useMemo(() => ({ "Content-Type": "application/json", "x-demo-role": role } as const), [role]);
+  const canEditMotivation = role === "owner";
   const [tab, setTab] = useState("plan");
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
@@ -237,15 +262,49 @@ export function PlanningProtoView({ branches = [] }: { branches?: Branch[] }) {
         expenseLines: expenses.map((e) => ({ category: e.name, planned: expVal(e), mode: e.mode })),
       };
       const res = await fetch("/api/mvp/planning/budget", { method: "POST", headers: HJ, body: JSON.stringify(body) });
-      if (res.ok) {
-        const base = await res.json();
-        setOv((prev) => ({ ...prev, ...base, detailed: prev.detailed }));
-      }
+      const data = await res.json().catch(() => null);
+      if (res.ok && data) setOv((prev) => ({ ...prev, ...data, detailed: prev.detailed }));
+      else if (data?.error) setRecoMsg(`⚠ ${data.error}`);
     } catch { /* игнорируем сетевую ошибку, локальные формы сохранены */ }
     finally { setSaving(false); }
-  }, [period, branchId, ov.source, groups, expenses]);
+  }, [HJ, period, branchId, ov.source, groups, expenses]);
 
   function pickSource(key: string) { saveBudget(key); }
+
+  /* ---------- жизненный цикл плана ---------- */
+  const lc = ov.lifecycle;
+  const lcStatus = lc?.status || "draft";
+  const lifecycleCall = useCallback(async (action: "submit" | "approve" | "close") => {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/mvp/planning/${action}`, {
+        method: "POST", headers: HJ,
+        body: JSON.stringify({ period, branchId: branchId === "all" ? null : branchId }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data) setOv((prev) => ({ ...prev, ...data, detailed: prev.detailed }));
+      else if (data?.error) setRecoMsg(`⚠ ${data.error}`);
+    } catch { /* сеть недоступна */ }
+    finally { setSaving(false); }
+  }, [HJ, period, branchId]);
+
+  const requestRevision = useCallback(async () => {
+    const reason = window.prompt("Причина корректировки (обязательно, сохранится в истории плана):", "");
+    if (!reason || reason.trim().length < 5) return;
+    setSaving(true);
+    try {
+      const body: any = { period, branchId: branchId === "all" ? null : branchId, reason: reason.trim() };
+      if (groups.length) {
+        body.revenueLines = groups.map((g) => ({ direction: g.name, planned: gPlan(g), mode: g.manualPlan > 0 ? "manual" : "auto" }));
+        body.expenseLines = expenses.map((e) => ({ category: e.name, planned: expVal(e), mode: e.mode }));
+      }
+      const res = await fetch("/api/mvp/planning/revise", { method: "POST", headers: HJ, body: JSON.stringify(body) });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data) setOv((prev) => ({ ...prev, ...data, detailed: prev.detailed }));
+      else if (data?.error) setRecoMsg(`⚠ ${data.error}`);
+    } catch { /* сеть недоступна */ }
+    finally { setSaving(false); }
+  }, [HJ, period, branchId, groups, expenses]);
 
   /* ---------- воронка ---------- */
   const needNew = parseNum(funnelNeed || 20);
@@ -308,13 +367,21 @@ export function PlanningProtoView({ branches = [] }: { branches?: Branch[] }) {
     try {
       const res = await fetch("/api/mvp/planning/daily", {
         method: "POST", headers: HJ,
-        body: JSON.stringify({ date: dDate, revenue: rev, trials: parseNum(dTrials), sales: parseNum(dSales), comment: dComment.trim(), author: "Управляющий" }),
+        // Автора проставляет сервер из сессии; отчёт привязан к выбранному филиалу.
+        body: JSON.stringify({ date: dDate, revenue: rev, trials: parseNum(dTrials), sales: parseNum(dSales), comment: dComment.trim(), branchId: branchId === "all" ? null : branchId }),
       });
       if (res.ok) {
         const r = await res.json();
         setOv((prev) => ({ ...prev, daily: r.daily || prev.daily }));
         setDRevenue(""); setDTrials(""); setDSales(""); setDComment("");
       }
+    } catch { /* сеть недоступна */ }
+  }
+  async function delDaily(id?: string) {
+    if (!id) return;
+    try {
+      const res = await fetch(`/api/mvp/planning/daily/${encodeURIComponent(id)}`, { method: "DELETE", headers: H });
+      if (res.ok) setOv((prev) => ({ ...prev, daily: (prev.daily || []).filter((d) => d.id !== id) }));
     } catch { /* сеть недоступна */ }
   }
 
@@ -365,9 +432,30 @@ export function PlanningProtoView({ branches = [] }: { branches?: Branch[] }) {
             {[2024, 2025, 2026, 2027, 2028].map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
           <span className="bdr-status" style={{ background: "var(--gold-bg)", color: "var(--gold-c)" }}>
-            БДР · {!loaded ? "загрузка…" : ov.mode === "db" ? "актуально" : "демо-режим"}
+            БДР · {!loaded ? "загрузка…" : `${STATUS_RU[lcStatus] || lcStatus}${lcStatus === "active" || lcStatus === "closed" ? ` · v${lc?.version || 1}` : ""}${ov.mode === "mock" ? " · демо" : ""}`}
           </span>
-          <button className="btn btn-brand" disabled={saving || !hasGroups} onClick={() => saveBudget()}>{saving ? "Сохранение…" : "+ Создать БДР"}</button>
+          {loaded && lcStatus === "draft" && (
+            <>
+              <button className="btn btn-brand" disabled={saving || !hasGroups} onClick={() => saveBudget()}>{saving ? "Сохранение…" : "Сохранить черновик"}</button>
+              <button className="btn btn-secondary" disabled={saving} onClick={() => lifecycleCall("submit")}>На утверждение</button>
+            </>
+          )}
+          {loaded && lcStatus === "pending" && (role === "owner" ? (
+            <button className="btn btn-brand" disabled={saving} onClick={() => lifecycleCall("approve")}>{saving ? "…" : "Утвердить план"}</button>
+          ) : (
+            <>
+              <button className="btn btn-secondary" disabled={saving || !hasGroups} onClick={() => saveBudget()}>Сохранить черновик</button>
+              <span className="bdr-status" style={{ background: "var(--gold-bg)", color: "var(--gold-c)" }}>ждёт владельца{lc?.submittedBy ? ` · ${lc.submittedBy}` : ""}</span>
+            </>
+          ))}
+          {loaded && lcStatus === "active" && (
+            <button className="btn btn-brand" disabled={saving} onClick={requestRevision} title="План утверждён и зафиксирован — изменения через корректировку с причиной">{saving ? "…" : "Корректировка…"}</button>
+          )}
+          {loaded && lcStatus === "closed" && (
+            <span className="bdr-status" style={{ background: "var(--ok-bg, rgba(127,176,137,.15))", color: "var(--green, #7FB089)" }}>
+              🔒 зафиксирован{lc?.bonus?.level ? ` · уровень ${lc.bonus.level}` : ""}
+            </span>
+          )}
           <button className="btn btn-secondary" onClick={() => load()}>Обновить</button>
         </div>
       </div>
@@ -623,6 +711,24 @@ export function PlanningProtoView({ branches = [] }: { branches?: Branch[] }) {
           <div className="kpi"><div className="kpi-top"><div className="kpi-ic green">✓</div></div><div className="kpi-val" style={{ color: "var(--green)" }}>{fmt(planProfit)}</div><div className="kpi-lbl">Плановая прибыль</div></div>
           <div className="kpi"><div className="kpi-top"><div className="kpi-ic blue">%</div></div><div className="kpi-val">{planMargin}%</div><div className="kpi-lbl">Рентабельность</div></div>
         </div>
+
+        {/* История версий плана */}
+        {(lc?.history?.length || 0) > 0 && (
+          <>
+            <div className="slabel" style={{ marginTop: 20 }}>История плана · версии и решения</div>
+            <div className="tree-card" style={{ padding: 12 }}>
+              {[...(lc?.history || [])].reverse().slice(0, 8).map((h, i) => (
+                <div key={i} className="task-item" style={{ cursor: "default" }}>
+                  <div className="task-text">
+                    <b>{HIST_RU[h.action] || h.action}</b> · v{h.version} · {String(h.at || "").slice(0, 16).replace("T", " ")} · {h.by}
+                    {h.reason ? <span style={{ color: "var(--text2)" }}> — «{h.reason}»</span> : null}
+                    {typeof h.plannedRevenue === "number" ? <span style={{ color: "var(--text2)", fontSize: 11 }}> · план {fmt(h.plannedRevenue)} ₸</span> : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
       {/* ============ ФАКТ БДР ============ */}
@@ -763,6 +869,15 @@ export function PlanningProtoView({ branches = [] }: { branches?: Branch[] }) {
 
         <div className="slabel" style={{ marginTop: 18 }}>История ежедневных отчётов</div>
         <div className="tree-card" style={{ padding: 14 }}>
+          {(() => {
+            const t = (ov.dailyAuto || []).find((a) => a.date === todayStr);
+            return t ? (
+              <div style={{ marginBottom: 10, fontSize: 12.5, color: "var(--text2)" }}>
+                Автофакт из платежей CRM за сегодня: <b style={{ color: "var(--heading)" }}>{fmt(t.revenue)} ₸</b> · продаж {t.sales}.
+                Отчёт дополняет цифры комментарием и пробными — выручку система сверит с платежами.
+              </div>
+            ) : null;
+          })()}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
             <input className="inline-input" style={{ width: 130 }} type="date" value={dDate} onChange={(e) => setDDate(e.target.value)} />
             <input className="inline-input" style={{ width: 110 }} placeholder="Выручка ₸" value={dRevenue} onChange={(e) => setDRevenue(e.target.value)} />
@@ -772,12 +887,21 @@ export function PlanningProtoView({ branches = [] }: { branches?: Branch[] }) {
             <button className="btn btn-brand" style={{ padding: "7px 12px", fontSize: 12 }} onClick={addDaily}>+ Добавить</button>
           </div>
           {(ov.daily || []).length === 0 ? <Empty /> : (ov.daily || []).map((d, i) => (
-            <div key={i} className="task-item" style={{ cursor: "default" }}>
+            <div key={d.id || i} className="task-item" style={{ cursor: "default" }}>
               <div className="task-text">
                 <b>{d.date}</b> · {fmt(d.revenue)} ₸ · пробных {d.trials} · продаж {d.sales}
                 {d.comment ? <span style={{ color: "var(--text2)" }}> — {d.comment}</span> : null}
                 <span style={{ color: "var(--text2)", fontSize: 11 }}> · {d.author}</span>
+                {(() => {
+                  const auto = (ov.dailyAuto || []).find((a) => a.date === d.date);
+                  return auto && Math.abs(auto.revenue - d.revenue) > Math.max(1000, auto.revenue * 0.1)
+                    ? <span style={{ color: "var(--red)", fontSize: 11, fontWeight: 700 }}> · ⚠ по платежам {fmt(auto.revenue)} ₸</span>
+                    : null;
+                })()}
               </div>
+              {d.id && (
+                <span title="Удалить отчёт" style={{ cursor: "pointer", color: "var(--text2)", fontWeight: 700, padding: "0 6px" }} onClick={() => delDaily(d.id)}>✕</span>
+              )}
             </div>
           ))}
         </div>
@@ -822,15 +946,21 @@ export function PlanningProtoView({ branches = [] }: { branches?: Branch[] }) {
                 {motRows.map((s, i) => (
                   <div key={i} className={"ladder-step" + (i === motStep ? " current" : i < motStep ? " reached" : "")} onClick={() => setMotStep(i)}>
                     <div className="ladder-pct">
-                      <input className="ladder-input" style={{ width: 54, textAlign: "center" }} value={s.threshold} onClick={(e) => e.stopPropagation()} onChange={(e) => setMotThreshold(i, e.target.value)} />%
+                      <input className="ladder-input" style={{ width: 54, textAlign: "center" }} value={s.threshold} disabled={!canEditMotivation} onClick={(e) => e.stopPropagation()} onChange={(e) => setMotThreshold(i, e.target.value)} />%
                     </div>
-                    <input className="ladder-input" value={s.bonus} onClick={(e) => e.stopPropagation()} onChange={(e) => setMotBonus(i, e.target.value)} />
+                    <input className="ladder-input" value={s.bonus} disabled={!canEditMotivation} onClick={(e) => e.stopPropagation()} onChange={(e) => setMotBonus(i, e.target.value)} />
                   </div>
                 ))}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 12 }}>
-                <button className="btn btn-brand" style={{ padding: "7px 14px", fontSize: 12 }} disabled={saving} onClick={saveMotivation}>{saving ? "Сохранение…" : "Сохранить лестницу"}</button>
-                <div style={{ fontSize: 11.5, color: "var(--text2)" }}>Порог (%) и бонус редактируются. Кликните на ступень, чтобы выбрать текущий уровень.</div>
+                {canEditMotivation ? (
+                  <>
+                    <button className="btn btn-brand" style={{ padding: "7px 14px", fontSize: 12 }} disabled={saving} onClick={saveMotivation}>{saving ? "Сохранение…" : "Сохранить лестницу"}</button>
+                    <div style={{ fontSize: 11.5, color: "var(--text2)" }}>Порог (%) и бонус редактируются. Кликните на ступень, чтобы выбрать текущий уровень.</div>
+                  </>
+                ) : (
+                  <div style={{ fontSize: 11.5, color: "var(--text2)" }}>Пороги и бонусы настраивает владелец — управляющему лестница доступна для просмотра.</div>
+                )}
               </div>
             </>
           )}

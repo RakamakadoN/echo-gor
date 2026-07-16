@@ -456,7 +456,7 @@ export function BranchManagerWorkspace({
             />
           )}
           {activeTab === "performances" && <PerformancesView />}
-          {activeTab === "planning" && <React.Suspense fallback={<div className="flex items-center justify-center py-24 text-sm font-semibold text-slate-500">Загрузка раздела…</div>}><PlanningProtoView branches={scopeBranches} /></React.Suspense>}
+          {activeTab === "planning" && <React.Suspense fallback={<div className="flex items-center justify-center py-24 text-sm font-semibold text-slate-500">Загрузка раздела…</div>}><PlanningProtoView branches={scopeBranches} role="branch_manager" /></React.Suspense>}
           {activeTab === "kpi" && <ManagerKpiView branchParam={isAllScope ? "all" : (branch?.id || "all")} scopeName={scopeName} />}
           {activeTab === "reconcile" && <ReconciliationsView branches={scopeBranches} />}
           {activeTab === "payroll" && <PayrollView teachers={branchTeachers} students={branchStudents} groups={branchGroups} payments={branchPayments} role="branch_manager" />}
@@ -524,7 +524,7 @@ function DashboardView({ scopeName, scopeCount = 1, perBranch = [], branchParam 
   const period = useMemo(() => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Almaty", year: "numeric", month: "2-digit" }).format(new Date()), []);
   useEffect(() => {
     let alive = true;
-    fetch(`/api/mvp/planning/overview?period=${period}&branch=${encodeURIComponent(branchParam)}`, { headers: { "x-demo-role": "owner" } })
+    fetch(`/api/mvp/planning/overview?period=${period}&branch=${encodeURIComponent(branchParam)}`, { headers: { "x-demo-role": "branch_manager" } })
       .then((r) => r.ok ? r.json() : null)
       .then((d) => { if (alive && d) setBdr({ donePct: d.fact?.donePct || 0, plannedRevenue: d.plan?.plannedRevenue || 0, factRevenue: d.fact?.revenue || 0 }); })
       .catch(() => {});
@@ -1578,8 +1578,8 @@ function ManagerKpiView({ branchParam, scopeName }: { branchParam: string; scope
   useEffect(() => {
     let alive = true;
     setLoading(true); setError(null);
-    // overview — owner-only на бэке; управляющему БДР доступен через owner-заголовок (как в PlanningProtoView).
-    fetch(`/api/mvp/planning/overview?period=${period}&branch=${encodeURIComponent(branchParam)}`, { headers: { "x-demo-role": "owner" } })
+    // overview открыт для branch_manager на бэке — ходим со своей ролью.
+    fetch(`/api/mvp/planning/overview?period=${period}&branch=${encodeURIComponent(branchParam)}`, { headers: { "x-demo-role": "branch_manager" } })
       .then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
       .then((d) => { if (alive) setOv(d); })
       .catch(() => { if (alive) setError("Не удалось загрузить данные БДР"); })
