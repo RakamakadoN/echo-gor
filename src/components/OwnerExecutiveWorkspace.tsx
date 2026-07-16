@@ -91,11 +91,13 @@ import GroupScheduleFields from "./GroupScheduleFields";
 import { ArchiveReasonModal } from "./ArchiveReasonModal";
 import AttendanceJournalView from "./AttendanceJournalView";
 import { BranchesGroupsView } from "./BranchesGroupsView";
-import AiHubView from "./AiHubView";
-import TeachersProtoView from "./proto/TeachersProtoView";
-import AccountingProtoView from "./proto/AccountingProtoView";
-import PlanningProtoView from "./proto/PlanningProtoView";
-import ReportsProtoView from "./proto/ReportsProtoView";
+// Тяжёлые вкладки владельца грузятся лениво — только при первом открытии,
+// чтобы не раздувать основной чанк OwnerExecutiveWorkspace (перф-оптимизация).
+const AiHubView = React.lazy(() => import("./AiHubView"));
+const TeachersProtoView = React.lazy(() => import("./proto/TeachersProtoView"));
+const AccountingProtoView = React.lazy(() => import("./proto/AccountingProtoView"));
+const PlanningProtoView = React.lazy(() => import("./proto/PlanningProtoView"));
+const ReportsProtoView = React.lazy(() => import("./proto/ReportsProtoView"));
 import { useOwnerSectionSettings, SectionSettingsDrawer, SectionGearButton, type ResolvedTab } from "./OwnerSectionSettings";
 import { CostumeOverdueBanner } from "./CostumeOverdueBanner";
 import { CostumeCatalogSettings } from "./CostumeCatalogSettings";
@@ -487,6 +489,7 @@ export function OwnerExecutiveWorkspace({
           {/* key=activeTab → контейнер перемонтируется при смене вкладки и
               заново проигрывает мягкую анимацию появления (см. .owner-tab-view). */}
           <div key={`${activeTab}-${entered ? "in" : "wait"}`} className="owner-tab-view">
+          <React.Suspense fallback={<div className="flex items-center justify-center py-24 text-sm font-semibold text-slate-500">Загрузка раздела…</div>}>
           {activeTab === "dashboard" && <div className="mb-4"><CostumeOverdueBanner role="owner" /></div>}
           {activeTab === "dashboard" && (
             <OwnerDashboard
@@ -558,6 +561,7 @@ export function OwnerExecutiveWorkspace({
           {activeTab === "aihub" && <AiHubView roleHeader="owner" />}
           {activeTab === "marketing" && <MarketingView studentArchive={studentArchive} branches={branches} groups={groups} teachers={teachers} />}
           {activeTab === "settings" && <NetworkSettingsView branches={branches} teachers={teachers} subscriptionPlans={subscriptionPlans} onCreatePlan={onCreatePlan} onUpdatePlan={onUpdatePlan} onDeletePlan={onDeletePlan} />}
+          </React.Suspense>
           </div>
         </main>
       </div>
