@@ -38,7 +38,7 @@ import { GroupsTable, GroupsArchivePanel } from "./GroupListAndArchive";
 import GroupScheduleFields from "./GroupScheduleFields";
 import AttendanceJournalView from "./AttendanceJournalView";
 import { PayrollView, ProductsView, PerformancesView } from "./OwnerExecutiveWorkspace";
-import PlanningProtoView from "./proto/PlanningProtoView";
+const PlanningProtoView = React.lazy(() => import("./proto/PlanningProtoView"));
 import { getTrialInfo, isLeft } from "../studentSegments";
 import { computeOwnerDashboard } from "../ownerDashboardAnalytics";
 import { CostumeOverdueBanner } from "./CostumeOverdueBanner";
@@ -430,7 +430,7 @@ export function BranchManagerWorkspace({
             />
           )}
           {activeTab === "performances" && <PerformancesView />}
-          {activeTab === "planning" && <PlanningProtoView branches={scopeBranches} />}
+          {activeTab === "planning" && <React.Suspense fallback={<div className="flex items-center justify-center py-24 text-sm font-semibold text-slate-500">Загрузка раздела…</div>}><PlanningProtoView branches={scopeBranches} /></React.Suspense>}
           {activeTab === "kpi" && <ManagerKpiView branchParam={isAllScope ? "all" : (branch?.id || "all")} scopeName={scopeName} />}
           {activeTab === "reconcile" && <ReconciliationsView branches={scopeBranches} />}
           {activeTab === "payroll" && <PayrollView teachers={branchTeachers} students={branchStudents} groups={branchGroups} payments={branchPayments} role="branch_manager" />}
