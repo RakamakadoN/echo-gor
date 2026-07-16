@@ -256,7 +256,11 @@ function getSession(req: express.Request): MvpSession {
   const userHeader = String(req.headers["x-demo-user-id"] || "");
   const byUser = demoUsers.find((user) => user.userId === userHeader);
   if (byUser) return byUser;
-  return demoUsers.find((user) => user.role === roleHeader) || demoUsers[0];
+  const byRole = demoUsers.find((user) => user.role === roleHeader);
+  if (byRole) return byRole;
+  // Неизвестная демо-роль НЕ должна превращаться во владельца (demoUsers[0]):
+  // возвращаем анонима без прав — все ролевые проверки его отклонят.
+  return { userId: "anonymous", organizationId: orgId, role: "student", branchId: null, dbBranchId: null, fullName: "", studentId: undefined };
 }
 
 function canSeeBranch(session: MvpSession, branchId?: string | null) {
@@ -7822,9 +7826,9 @@ export function registerMvpApi(app: express.Express) {
   ];
 
   const dailyDefaults = () => [
-    { date: "2026-06-28", revenue: 540_000, trials: 4, sales: 3, comment: "Сильный день, добор в Ансамбль", author: "Магомед (управляющий)" },
-    { date: "2026-06-27", revenue: 410_000, trials: 6, sales: 2, comment: "Много пробных, конверсия низкая", author: "Магомед (управляющий)" },
-    { date: "2026-06-26", revenue: 620_000, trials: 3, sales: 5, comment: "Продлили 5 абонементов", author: "Фатима (админ)" },
+    { id: "demo-1", date: "2026-06-28", revenue: 540_000, trials: 4, sales: 3, comment: "Сильный день, добор в Ансамбль", author: "Магомед (управляющий)" },
+    { id: "demo-2", date: "2026-06-27", revenue: 410_000, trials: 6, sales: 2, comment: "Много пробных, конверсия низкая", author: "Магомед (управляющий)" },
+    { id: "demo-3", date: "2026-06-26", revenue: 620_000, trials: 3, sales: 5, comment: "Продлили 5 абонементов", author: "Фатима (админ)" },
   ];
 
   // Факт по направлениям (демо). В supabase-режиме перекрывается реальными данными.
@@ -7910,18 +7914,19 @@ export function registerMvpApi(app: express.Express) {
   };
 
   // Собрать детальный план из реальных данных (supabase) с откатом на демо.
-  const buildDetailedPlan = async (session: MvpSession, period: string, _branchId: string | null) => {
+  // branchId задан — считаем только его группы; null — вся организация.
+  const buildDetailedPlan = async (session: MvpSession, period: string, branchId: string | null) => {
     const mock = planDetailedMock();
     let rooms = mock.rooms;
     let expenses = mock.expenses;
     let branchName = "Астана 203";
-    const branches = [{ id: "astana203", name: "Астана 203" }];
+    let branches = [{ id: "astana203", name: "Астана 203" }];
 
     if (supabaseEnabled) {
       try {
         const orgFilter = `organization_id=eq.${session.organizationId}`;
         const monthStart = `${period}-01`;
-        const [branchesRaw, hallsRaw, groupsRaw, usersRaw, studentsRaw, subsRaw, compRaw] = await Promise.all([
+        const [branchesRaw, hallsRaw, groupsAll, usersRaw, studentsRaw, subsRaw, compRaw] = await Promise.all([
           supabaseFetch<any[]>("branches", `select=*&${orgFilter}&status=neq.archived`),
           supabaseFetch<any[]>("halls", `select=*`).catch(() => [] as any[]),
           supabaseFetch<any[]>("groups", `select=*&${orgFilter}`).catch(() => [] as any[]),
@@ -7930,9 +7935,18 @@ export function registerMvpApi(app: express.Express) {
           supabaseFetch<any[]>("student_subscriptions", `select=*`).catch(() => [] as any[]),
           supabaseFetch<any[]>("teacher_compensation", `select=*&${orgFilter}`).catch(() => [] as any[]),
         ]);
+        const groupsRaw = branchId
+          ? (groupsAll || []).filter((g: any) => g.branch_id === branchId)
+          : (groupsAll || []);
         if (Array.isArray(groupsRaw) && groupsRaw.length) {
-          const branch = (branchesRaw || [])[0];
-          if (branch) { branchName = branch.name; branches[0] = { id: branch.id, name: branch.name }; }
+          const branch = branchId
+            ? (branchesRaw || []).find((b: any) => b.id === branchId) || null
+            : (branchesRaw || [])[0];
+          if (Array.isArray(branchesRaw) && branchesRaw.length) {
+            branches = branchesRaw.map((b: any) => ({ id: b.id, name: b.name }));
+          }
+          if (branch) branchName = branch.name;
+          else if (!branchId && branches.length > 1) branchName = "Вся сеть";
           const teacherName = new Map((usersRaw || []).map((u: any) => [u.id, (u.full_name || "").split(" ")[0] || "—"]));
           const hallName = new Map((hallsRaw || []).map((h: any) => [h.id, h.name]));
           // подписки по группе (активные)
@@ -8017,41 +8031,271 @@ export function registerMvpApi(app: express.Express) {
     };
   };
 
-  const buildPlanningOverview = (session: MvpSession, period: string, branchId: string | null) => {
-    const key = `${session.organizationId}:${period}`;
-    const budget = planningStore[key] || planningDefaults(period);
+  // ---- Помощники планирования: ключи, валидация, реальный факт ----
+  const PLAN_MAX = 1_000_000_000_000; // потолок суммы (1 трлн ₸) — защита от опечаток
+  const planKey = (org: string, period: string, branchId: string | null) => `${org}:${period}:${branchId || "all"}`;
+  const isPeriodStr = (s: string) => /^\d{4}-(0[1-9]|1[0-2])$/.test(s);
+  const isIsoDateStr = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(new Date(`${s}T00:00:00Z`).getTime());
+  const cleanMoney = (v: any): number | null => {
+    const n = Number(v);
+    if (!Number.isFinite(n) || n < 0 || n > PLAN_MAX) return null;
+    return Math.round(n);
+  };
+  const cleanCount = (v: any, max = 10_000): number => {
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? Math.min(max, Math.round(n)) : 0;
+  };
+  const cleanText = (v: any, max = 200) => String(v ?? "").trim().slice(0, max);
+  const canPlanBdr = (s: MvpSession) => s.role === "owner" || s.role === "branch_manager";
+
+  type CleanLines = { ok: boolean; lines: any[]; error?: string };
+  function cleanBudgetLines(arr: any, key: "direction" | "category"): CleanLines {
+    if (!Array.isArray(arr)) return { ok: false, lines: [], error: "строки бюджета должны быть массивом" };
+    if (arr.length > 300) return { ok: false, lines: [], error: "слишком много строк (максимум 300)" };
+    const lines: any[] = [];
+    for (const raw of arr) {
+      const name = cleanText(raw?.[key], 120) || (key === "direction" ? "Направление" : "Категория");
+      const planned = cleanMoney(raw?.planned);
+      if (planned === null) return { ok: false, lines: [], error: `строка «${name}»: сумма должна быть числом от 0 до 1 трлн ₸` };
+      lines.push({ [key]: name, planned, mode: raw?.mode === "manual" ? "manual" : "auto" });
+    }
+    return { ok: true, lines };
+  }
+
+  const shiftPeriod = (ym: string, delta: number) => {
+    const [y, m] = ym.split("-").map(Number);
+    const d = new Date(Date.UTC(y, m - 1 + delta, 1));
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+  };
+
+  // Реальный факт периода: выручка из payments (paid, Almaty-месяц), расходы из
+  // finance_transactions (type=expense, status=actual). Скоуп филиала уважается.
+  async function computePlanningFact(session: MvpSession, period: string, branchId: string | null) {
+    const orgFilter = `organization_id=eq.${session.organizationId}`;
+    const [paymentsRaw, expensesRaw, studentsRaw, groupsRaw] = await Promise.all([
+      supabaseFetch<any[]>("payments", `select=amount,branch_id,student_id,paid_at,status&${orgFilter}`).catch(() => [] as any[]),
+      supabaseFetch<any[]>("finance_transactions", `select=amount,branch_id,category,operation_date,type,status&${orgFilter}&type=eq.expense&status=eq.actual`).catch(() => [] as any[]),
+      supabaseFetch<any[]>("students", `select=id,group_id&${orgFilter}`).catch(() => [] as any[]),
+      supabaseFetch<any[]>("groups", `select=id,name,branch_id&${orgFilter}`).catch(() => [] as any[]),
+    ]);
+    const inBranch = (bid: any) => !branchId || bid === branchId;
+    const paidAll = (paymentsRaw || []).filter((p) => p.status === "paid" && inBranch(p.branch_id));
+    const paid = paidAll.filter((p) => toDate(p.paid_at).slice(0, 7) === period);
+    const revenue = paid.reduce((s, p) => s + Number(p.amount || 0), 0);
+
+    // Факт по направлениям: платёж → ученик → группа (строки плана = имена групп).
+    const groupOfStudent = new Map((studentsRaw || []).map((s: any) => [s.id, s.group_id]));
+    const groupName = new Map((groupsRaw || []).map((g: any) => [g.id, g.name]));
+    const factByGroup = new Map<string, number>();
+    paid.forEach((p) => {
+      const gid = groupOfStudent.get(p.student_id);
+      const name = gid ? groupName.get(gid) : undefined;
+      if (!name) return;
+      factByGroup.set(name, (factByGroup.get(name) || 0) + Number(p.amount || 0));
+    });
+
+    const expInPeriod = (expensesRaw || []).filter((e) => inBranch(e.branch_id) && String(e.operation_date || "").slice(0, 7) === period);
+    const expense = expInPeriod.reduce((s, e) => s + Number(e.amount || 0), 0);
+    const expenseByCategory: { category: string; fact: number }[] = [];
+    { const m = new Map<string, number>();
+      expInPeriod.forEach((e) => { const c = cleanText(e.category, 120) || "Прочее"; m.set(c, (m.get(c) || 0) + Number(e.amount || 0)); });
+      m.forEach((fact, category) => expenseByCategory.push({ category, fact }));
+      expenseByCategory.sort((a, b) => b.fact - a.fact); }
+
+    // База планирования — из реальных платежей, а не константы.
+    const monthRevenue = (ym: string) => paidAll.filter((p) => toDate(p.paid_at).slice(0, 7) === ym).reduce((s, p) => s + Number(p.amount || 0), 0);
+    const prevMonth = monthRevenue(shiftPeriod(period, -1));
+    const prevYear = monthRevenue(shiftPeriod(period, -12));
+    let avg6 = 0;
+    { let sum = 0, n = 0;
+      for (let i = 1; i <= 6; i++) { const r = monthRevenue(shiftPeriod(period, -i)); if (r > 0) { sum += r; n += 1; } }
+      avg6 = n ? Math.round(sum / n) : 0; }
+
+    // Средний чек периода и прогноз выручки к концу месяца по текущему темпу.
+    const positive = paid.filter((p) => Number(p.amount || 0) > 0);
+    const avgCheck = positive.length ? Math.round(revenue / positive.length) : 0;
+    const almatyNow = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Almaty" }).format(new Date());
+    const isCurrent = period === almatyNow.slice(0, 7);
+    const dayN = isCurrent ? Number(almatyNow.slice(8, 10)) : 0;
+    const [py, pm] = period.split("-").map(Number);
+    const daysInMonth = new Date(py, pm, 0).getDate();
+    const forecastRevenue = isCurrent && dayN > 0 ? Math.round((revenue / dayN) * daysInMonth) : revenue;
+
+    return { revenue, expense, factByGroup, expenseByCategory, basis: { prevMonth, prevYear, avg6 }, avgCheck, forecastRevenue };
+  }
+
+  // ---- Персистентность бюджета: построчно в planning_budgets (lines jsonb) ----
+  async function loadBudgetFromDb(session: MvpSession, period: string, branchId: string | null): Promise<PlanBudgetStore | null> {
+    if (!supabaseEnabled) return null;
+    try {
+      const branchFilter = branchId ? `branch_id=eq.${branchId}` : `branch_id=is.null`;
+      const rows = await supabaseFetch<any[]>("planning_budgets",
+        `select=*&organization_id=eq.${session.organizationId}&period_month=eq.${period}&${branchFilter}&order=created_at.desc&limit=1`);
+      const row = rows?.[0];
+      if (!row) return null;
+      const rev = Array.isArray(row.revenue_lines) ? row.revenue_lines : null;
+      const exp = Array.isArray(row.expense_lines) ? row.expense_lines : null;
+      return {
+        period,
+        branchId,
+        source: row.source || "manual",
+        // Старые записи хранили только итоги — показываем их одной строкой.
+        revenueLines: rev || (Number(row.planned_revenue) > 0 ? [{ direction: "Доходы (итог, без детализации)", planned: Number(row.planned_revenue), mode: "manual" }] : []),
+        expenseLines: exp || (Number(row.planned_expense) > 0 ? [{ category: "Расходы (итог, без детализации)", planned: Number(row.planned_expense), mode: "manual" }] : []),
+      };
+    } catch { return null; }
+  }
+
+  async function saveBudgetToDb(session: MvpSession, store: PlanBudgetStore) {
+    if (!supabaseEnabled) return;
+    const orgId = session.organizationId;
+    const branchFilter = store.branchId ? `branch_id=eq.${store.branchId}` : `branch_id=is.null`;
+    const payload = {
+      organization_id: orgId,
+      branch_id: store.branchId,
+      period_month: store.period,
+      source: store.source,
+      status: "active",
+      planned_revenue: store.revenueLines.reduce((s: number, r: any) => s + r.planned, 0),
+      planned_expense: store.expenseLines.reduce((s: number, e: any) => s + e.planned, 0),
+      revenue_lines: store.revenueLines,
+      expense_lines: store.expenseLines,
+      updated_at: new Date().toISOString(),
+    };
+    try {
+      const existing = await supabaseFetch<any[]>("planning_budgets",
+        `select=id&organization_id=eq.${orgId}&period_month=eq.${store.period}&${branchFilter}&limit=1`);
+      if (existing?.[0]?.id) {
+        await supabaseFetch("planning_budgets", `id=eq.${existing[0].id}`,
+          { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(payload) });
+      } else {
+        await supabaseFetch("planning_budgets", "",
+          { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify(payload) });
+      }
+    } catch { /* БД недоступна — план остаётся в памяти процесса до следующего сохранения */ }
+  }
+
+  // ---- Ежедневные отчёты: planning_daily_reports, 1 запись на день+филиал ----
+  async function loadDailyFromDb(session: MvpSession, period: string, branchId: string | null) {
+    if (!supabaseEnabled) return null;
+    try {
+      const branchFilter = branchId ? `branch_id=eq.${branchId}` : `branch_id=is.null`;
+      const from = `${period}-01`;
+      const to = `${shiftPeriod(period, 1)}-01`;
+      const rows = await supabaseFetch<any[]>("planning_daily_reports",
+        `select=*&organization_id=eq.${session.organizationId}&${branchFilter}&report_date=gte.${from}&report_date=lt.${to}&order=report_date.desc`);
+      return (rows || []).map((r) => ({
+        id: r.id,
+        date: String(r.report_date),
+        revenue: Number(r.revenue || 0),
+        trials: Number(r.trials || 0),
+        sales: Number(r.sales || 0),
+        comment: r.comment || "",
+        author: r.author || "",
+      }));
+    } catch { return null; }
+  }
+
+  // ---- Лестница мотивации: planning_motivation.config (одна на организацию) ----
+  async function loadMotivation(session: MvpSession) {
+    const cached = planningMotivation[session.organizationId];
+    if (cached) return cached;
+    if (supabaseEnabled) {
+      try {
+        const rows = await supabaseFetch<any[]>("planning_motivation",
+          `select=config&organization_id=eq.${session.organizationId}&limit=1`);
+        const cfg = rows?.[0]?.config;
+        if (Array.isArray(cfg) && cfg.length) {
+          planningMotivation[session.organizationId] = cfg;
+          return cfg;
+        }
+      } catch { /* fallthrough к дефолтам */ }
+    }
+    return motivationDefaults();
+  }
+
+  const buildPlanningOverview = async (session: MvpSession, period: string, branchId: string | null) => {
+    const key = planKey(session.organizationId, period, branchId);
+    let budget = planningStore[key] || (await loadBudgetFromDb(session, period, branchId));
+    if (!budget) {
+      // В db-режиме без сохранённого плана честно отдаём пусто (не демо-цифры).
+      budget = supabaseEnabled
+        ? { period, branchId, source: "manual", revenueLines: [], expenseLines: [] }
+        : planningDefaults(period);
+    }
+    planningStore[key] = budget;
+
     const plannedRevenue = budget.revenueLines.reduce((s, r) => s + r.planned, 0);
     const plannedExpense = budget.expenseLines.reduce((s, e) => s + e.planned, 0);
     const plannedProfit = plannedRevenue - plannedExpense;
     const margin = plannedRevenue ? Math.round((plannedProfit / plannedRevenue) * 1000) / 10 : 0;
 
-    // Факт (демо). Доход — по направлениям, расход — доля от плана.
-    const factRevenue = budget.revenueLines.reduce((s, r) => s + (planningFactByDirection[r.direction] ?? Math.round(r.planned * 0.73)), 0);
-    const factExpense = Math.round(plannedExpense * 0.747);
+    let factRevenue: number, factExpense: number, forecastRevenue: number;
+    let basis: { prevMonth: number; prevYear: number; avg6: number };
+    let incomeByDirection: { direction: string; plan: number; fact: number }[];
+    let expenseByCategory: { category: string; fact: number }[] = [];
+    let levels: { level: string; plan: number; fact: number; deviation: number; done: number }[];
+    let avgCheck: number;
+    let daily: any[];
+
+    if (supabaseEnabled) {
+      const f = await computePlanningFact(session, period, branchId);
+      factRevenue = f.revenue;
+      factExpense = f.expense;
+      forecastRevenue = f.forecastRevenue;
+      basis = f.basis;
+      avgCheck = f.avgCheck || 24_000;
+      expenseByCategory = f.expenseByCategory;
+      incomeByDirection = budget.revenueLines.map((r) => ({
+        direction: r.direction,
+        plan: r.planned,
+        fact: f.factByGroup.get(r.direction) ?? 0,
+      }));
+      // Уровни: групповые / мини / индивидуальные — по названию направления.
+      const catOf = (n: string) => (/индивид/i.test(n) ? "Индивидуальные" : /мини/i.test(n) ? "Мини-группы" : "Групповые");
+      const lv = new Map<string, { plan: number; fact: number }>([
+        ["Групповые", { plan: 0, fact: 0 }],
+        ["Мини-группы", { plan: 0, fact: 0 }],
+        ["Индивидуальные", { plan: 0, fact: 0 }],
+      ]);
+      budget.revenueLines.forEach((r) => {
+        const c = lv.get(catOf(r.direction))!;
+        c.plan += r.planned;
+        c.fact += f.factByGroup.get(r.direction) ?? 0;
+      });
+      levels = Array.from(lv.entries())
+        .filter(([, v]) => v.plan > 0 || v.fact > 0)
+        .map(([level, v]) => ({ level, plan: v.plan, fact: v.fact, deviation: v.fact - v.plan, done: v.plan > 0 ? Math.round((v.fact / v.plan) * 100) : 0 }));
+      daily = (await loadDailyFromDb(session, period, branchId)) || [];
+    } else {
+      // Демо-режим (нет Supabase): прежние демо-цифры, скоуп-ключ уже честный.
+      factRevenue = budget.revenueLines.reduce((s, r) => s + (planningFactByDirection[r.direction] ?? Math.round(r.planned * 0.73)), 0);
+      factExpense = Math.round(plannedExpense * 0.747);
+      forecastRevenue = factRevenue;
+      basis = { prevMonth: 27_400_000, prevYear: 24_100_000, avg6: 26_000_000 };
+      avgCheck = 24_000;
+      incomeByDirection = budget.revenueLines.map((r) => ({
+        direction: r.direction,
+        plan: r.planned,
+        fact: planningFactByDirection[r.direction] ?? Math.round(r.planned * 0.73),
+      }));
+      levels = [
+        { level: "Групповые", plan: 8_628_449, fact: 8_474_882 },
+        { level: "Мини-группы", plan: 882_486, fact: 810_500 },
+        { level: "Индивидуальные", plan: 551_500, fact: 554_125 },
+      ].map((l) => ({ ...l, deviation: l.fact - l.plan, done: Math.round((l.fact / l.plan) * 100) }));
+      daily = planningDaily[key] || dailyDefaults();
+      planningDaily[key] = daily;
+    }
+
     const factProfit = factRevenue - factExpense;
     const factMargin = factRevenue ? Math.round((factProfit / factRevenue) * 1000) / 10 : 0;
-
-    const incomeByDirection = budget.revenueLines.map((r) => ({
-      direction: r.direction,
-      plan: r.planned,
-      fact: planningFactByDirection[r.direction] ?? Math.round(r.planned * 0.73),
-    }));
-
-    // Выполнение плана по форматам занятий (родитель «Доходы» + подуровни).
-    const levels = [
-      { level: "Групповые", plan: 8_628_449, fact: 8_474_882 },
-      { level: "Мини-группы", plan: 882_486, fact: 810_500 },
-      { level: "Индивидуальные", plan: 551_500, fact: 554_125 },
-    ].map((l) => ({ ...l, deviation: l.fact - l.plan, done: Math.round((l.fact / l.plan) * 100) }));
-
-    // Воронка: сколько действий нужно для плана (демо-конверсии).
-    const avgCheck = 24_000;
-    const neededSales = Math.max(0, Math.ceil((plannedRevenue - factRevenue) / avgCheck));
+    const neededSales = Math.max(0, Math.ceil(Math.max(0, plannedRevenue - factRevenue) / Math.max(1, avgCheck)));
     const funnel = {
       neededSales,
-      trials: Math.ceil(neededSales / 0.4),   // конверсия пробный→продажа 40%
+      trials: Math.ceil(neededSales / 0.4),
       signups: Math.ceil(neededSales / 0.6),
-      leads: Math.ceil(neededSales / 0.2),    // лид→продажа 20%
+      leads: Math.ceil(neededSales / 0.2),
     };
 
     return {
@@ -8059,7 +8303,7 @@ export function registerMvpApi(app: express.Express) {
       branchId,
       mode: supabaseEnabled ? "db" : "mock",
       source: budget.source,
-      basis: { prevMonth: 27_400_000, prevYear: 24_100_000, avg6: 26_000_000 },
+      basis,
       plan: {
         revenueLines: budget.revenueLines,
         expenseLines: budget.expenseLines,
@@ -8068,88 +8312,179 @@ export function registerMvpApi(app: express.Express) {
       fact: {
         revenue: factRevenue, expense: factExpense, profit: factProfit, margin: factMargin,
         donePct: plannedRevenue ? Math.round((factRevenue / plannedRevenue) * 100) : 0,
+        forecastRevenue,
         incomeByDirection,
+        expenseByCategory,
       },
       levels,
       funnel,
-      motivation: planningMotivation[session.organizationId] || motivationDefaults(),
-      daily: planningDaily[session.organizationId] || dailyDefaults(),
+      motivation: await loadMotivation(session),
+      daily,
     };
   };
 
-  // Сводка БДР за период.
+  // Сводка БДР за период. Доступ: владелец и управляющий (в своём скоупе).
   app.get("/api/mvp/planning/overview", ah(async (req, res) => {
     const session = getSession(req);
-    if (session.role !== "owner") return res.status(403).json({ error: "Раздел «Планирование» доступен только владельцу" });
+    if (!canPlanBdr(session)) return res.status(403).json({ error: "Раздел «Планирование» доступен владельцу и управляющему" });
     const period = String(req.query.period || almatyMonth());
+    if (!isPeriodStr(period)) return res.status(400).json({ error: "Некорректный период: ожидается YYYY-MM" });
     const branchId = req.query.branch && req.query.branch !== "all" ? String(req.query.branch) : null;
-    const base = buildPlanningOverview(session, period, branchId);
+    if (branchId && !canSeeBranch(session, branchId)) return res.status(403).json({ error: "Филиал вне вашей зоны" });
+    const base = await buildPlanningOverview(session, period, branchId);
     const detailed = await buildDetailedPlan(session, period, branchId);
     res.json({ ...base, detailed });
   }));
 
-  // Создать / сохранить бюджет на период (план доходов и расходов).
+  // Создать / сохранить бюджет на период (план доходов и расходов, построчно).
   app.post("/api/mvp/planning/budget", ah(async (req, res) => {
     const session = getSession(req);
-    if (session.role !== "owner") return res.status(403).json({ error: "Раздел «Планирование» доступен только владельцу" });
+    if (!canPlanBdr(session)) return res.status(403).json({ error: "Раздел «Планирование» доступен владельцу и управляющему" });
     const b = req.body || {};
     const period = String(b.period || almatyMonth());
-    const key = `${session.organizationId}:${period}`;
-    const base = planningStore[key] || planningDefaults(period);
-    const store: PlanBudgetStore = {
-      period,
-      branchId: b.branchId || null,
-      source: b.source || base.source,
-      revenueLines: Array.isArray(b.revenueLines) ? b.revenueLines.map((r: any) => ({ direction: String(r.direction || "Направление"), planned: Number(r.planned) || 0, mode: r.mode === "manual" ? "manual" : "auto" })) : base.revenueLines,
-      expenseLines: Array.isArray(b.expenseLines) ? b.expenseLines.map((e: any) => ({ category: String(e.category || "Категория"), planned: Number(e.planned) || 0, mode: e.mode === "auto" ? "auto" : "manual" })) : base.expenseLines,
-    };
-    planningStore[key] = store;
-    if (supabaseEnabled) {
-      try {
-        await supabaseFetch<any[]>("planning_budgets", "", {
-          method: "POST",
-          headers: { Prefer: "resolution=merge-duplicates" },
-          body: JSON.stringify({
-            organization_id: session.organizationId,
-            branch_id: store.branchId,
-            period_month: period,
-            source: store.source,
-            planned_revenue: store.revenueLines.reduce((s, r) => s + r.planned, 0),
-            planned_expense: store.expenseLines.reduce((s, e) => s + e.planned, 0),
-          }),
-        });
-      } catch (e: any) { /* mock-режим: храним в памяти */ }
+    if (!isPeriodStr(period)) return res.status(400).json({ error: "Некорректный период: ожидается YYYY-MM" });
+    const branchId = b.branchId ? String(b.branchId) : null;
+    if (branchId && !canSeeBranch(session, branchId)) return res.status(403).json({ error: "Филиал вне вашей зоны" });
+    const key = planKey(session.organizationId, period, branchId);
+    const base = planningStore[key] || (await loadBudgetFromDb(session, period, branchId))
+      || { period, branchId, source: "manual", revenueLines: [], expenseLines: [] };
+
+    let revenueLines = base.revenueLines;
+    if (b.revenueLines !== undefined) {
+      const r = cleanBudgetLines(b.revenueLines, "direction");
+      if (!r.ok) return res.status(400).json({ error: `Доходы: ${r.error}` });
+      revenueLines = r.lines;
     }
-    res.status(201).json(buildPlanningOverview(session, period, store.branchId));
+    let expenseLines = base.expenseLines;
+    if (b.expenseLines !== undefined) {
+      const e = cleanBudgetLines(b.expenseLines, "category");
+      if (!e.ok) return res.status(400).json({ error: `Расходы: ${e.error}` });
+      expenseLines = e.lines;
+    }
+    const source = ["prev_month", "prev_year", "avg6", "manual"].includes(b.source) ? b.source : base.source || "manual";
+
+    const store: PlanBudgetStore = { period, branchId, source, revenueLines, expenseLines };
+    planningStore[key] = store;
+    await saveBudgetToDb(session, store);
+    res.status(201).json(await buildPlanningOverview(session, period, branchId));
   }));
 
-  // Сохранить настройки мотивации.
+  // Сохранить настройки мотивации (только владелец — от порогов зависит бонус).
   app.patch("/api/mvp/planning/motivation", ah(async (req, res) => {
     const session = getSession(req);
-    if (session.role !== "owner") return res.status(403).json({ error: "Раздел «Планирование» доступен только владельцу" });
-    const rows = Array.isArray(req.body?.motivation) ? req.body.motivation : [];
-    planningMotivation[session.organizationId] = rows.map((r: any) => ({
-      level: String(r.level || ""), threshold: Number(r.threshold) || 0, bonus: String(r.bonus || ""),
-    }));
-    res.json({ motivation: planningMotivation[session.organizationId] });
+    if (session.role !== "owner") return res.status(403).json({ error: "Пороги мотивации настраивает только владелец" });
+    const raw = req.body?.motivation;
+    if (!Array.isArray(raw) || raw.length === 0) {
+      return res.status(400).json({ error: "Лестница мотивации не может быть пустой — укажите хотя бы один уровень" });
+    }
+    if (raw.length > 10) return res.status(400).json({ error: "Слишком много уровней (максимум 10)" });
+    const rows: { level: string; threshold: number; bonus: string }[] = [];
+    for (const r of raw) {
+      const threshold = Number(r?.threshold);
+      if (!Number.isFinite(threshold) || threshold <= 0 || threshold > 300) {
+        return res.status(400).json({ error: "Порог уровня должен быть числом от 1 до 300 (%)" });
+      }
+      rows.push({
+        level: cleanText(r?.level, 120) || `${Math.round(threshold)}% плана`,
+        threshold: Math.round(threshold),
+        bonus: cleanText(r?.bonus, 200),
+      });
+    }
+    rows.sort((a, b) => a.threshold - b.threshold);
+    planningMotivation[session.organizationId] = rows;
+    if (supabaseEnabled) {
+      try {
+        const existing = await supabaseFetch<any[]>("planning_motivation",
+          `select=id&organization_id=eq.${session.organizationId}&limit=1`);
+        if (existing?.[0]?.id) {
+          await supabaseFetch("planning_motivation", `id=eq.${existing[0].id}`,
+            { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ config: rows, updated_at: new Date().toISOString() }) });
+        } else {
+          await supabaseFetch("planning_motivation", "",
+            { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ organization_id: session.organizationId, config: rows }) });
+        }
+      } catch { /* останется в памяти до следующего сохранения */ }
+    }
+    res.json({ motivation: rows });
   }));
 
-  // Добавить ежедневный отчёт управляющего.
+  // Добавить/обновить ежедневный отчёт (один на день и филиал; upsert по дате).
   app.post("/api/mvp/planning/daily", ah(async (req, res) => {
     const session = getSession(req);
-    if (session.role !== "owner") return res.status(403).json({ error: "Раздел «Планирование» доступен только владельцу" });
+    if (!canPlanBdr(session)) return res.status(403).json({ error: "Раздел «Планирование» доступен владельцу и управляющему" });
     const b = req.body || {};
+    const date = String(b.date || almatyToday());
+    if (!isIsoDateStr(date)) return res.status(400).json({ error: "Некорректная дата: ожидается YYYY-MM-DD" });
+    const revenue = cleanMoney(b.revenue);
+    if (revenue === null) return res.status(400).json({ error: "Выручка дня должна быть числом от 0 до 1 трлн ₸" });
+    const branchId = b.branchId ? String(b.branchId) : null;
+    if (branchId && !canSeeBranch(session, branchId)) return res.status(403).json({ error: "Филиал вне вашей зоны" });
+    const period = date.slice(0, 7);
     const row = {
-      date: String(b.date || almatyToday()),
-      revenue: Number(b.revenue) || 0,
-      trials: Number(b.trials) || 0,
-      sales: Number(b.sales) || 0,
-      comment: String(b.comment || ""),
-      author: String(b.author || "Управляющий"),
+      date,
+      revenue,
+      trials: cleanCount(b.trials),
+      sales: cleanCount(b.sales),
+      comment: cleanText(b.comment, 500),
+      author: session.fullName || (session.role === "owner" ? "Владелец" : "Управляющий"),
     };
-    const list = planningDaily[session.organizationId] || dailyDefaults();
-    planningDaily[session.organizationId] = [row, ...list];
-    res.status(201).json({ daily: planningDaily[session.organizationId] });
+
+    if (supabaseEnabled) {
+      try {
+        const branchFilter = branchId ? `branch_id=eq.${branchId}` : `branch_id=is.null`;
+        const existing = await supabaseFetch<any[]>("planning_daily_reports",
+          `select=id&organization_id=eq.${session.organizationId}&${branchFilter}&report_date=eq.${date}&limit=1`);
+        if (existing?.[0]?.id) {
+          await supabaseFetch("planning_daily_reports", `id=eq.${existing[0].id}`,
+            { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ revenue: row.revenue, trials: row.trials, sales: row.sales, comment: row.comment, author: row.author }) });
+        } else {
+          await supabaseFetch("planning_daily_reports", "",
+            { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ organization_id: session.organizationId, branch_id: branchId, report_date: date, revenue: row.revenue, trials: row.trials, sales: row.sales, comment: row.comment, author: row.author }) });
+        }
+        const daily = (await loadDailyFromDb(session, period, branchId)) || [];
+        return res.status(201).json({ daily });
+      } catch (e: any) {
+        return res.status(502).json({ error: `Не удалось сохранить отчёт: ${e?.message || "БД недоступна"}` });
+      }
+    }
+
+    // Демо-режим: список в памяти, upsert по дате в рамках периода+филиала.
+    const key = planKey(session.organizationId, period, branchId);
+    const list = (planningDaily[key] || dailyDefaults()).filter((d: any) => d.date !== date);
+    planningDaily[key] = [{ id: `mem-${date}`, ...row }, ...list].sort((a: any, b2: any) => (a.date < b2.date ? 1 : -1));
+    res.status(201).json({ daily: planningDaily[key] });
+  }));
+
+  // Удалить ошибочный ежедневный отчёт.
+  app.delete("/api/mvp/planning/daily/:id", ah(async (req, res) => {
+    const session = getSession(req);
+    if (!canPlanBdr(session)) return res.status(403).json({ error: "Раздел «Планирование» доступен владельцу и управляющему" });
+    const id = String(req.params.id || "");
+    if (!id) return res.status(400).json({ error: "Не указан id отчёта" });
+
+    if (supabaseEnabled) {
+      try {
+        const rows = await supabaseFetch<any[]>("planning_daily_reports",
+          `select=id,branch_id&organization_id=eq.${session.organizationId}&id=eq.${encodeURIComponent(id)}&limit=1`);
+        const row = rows?.[0];
+        if (!row) return res.status(404).json({ error: "Отчёт не найден" });
+        if (row.branch_id && !canSeeBranch(session, row.branch_id)) return res.status(403).json({ error: "Филиал вне вашей зоны" });
+        await supabaseFetch("planning_daily_reports", `id=eq.${encodeURIComponent(id)}`,
+          { method: "DELETE", headers: { Prefer: "return=minimal" } });
+        return res.json({ ok: true });
+      } catch (e: any) {
+        return res.status(502).json({ error: `Не удалось удалить отчёт: ${e?.message || "БД недоступна"}` });
+      }
+    }
+
+    let found = false;
+    for (const k of Object.keys(planningDaily)) {
+      const before = planningDaily[k].length;
+      planningDaily[k] = planningDaily[k].filter((d: any) => d.id !== id);
+      if (planningDaily[k].length < before) found = true;
+    }
+    if (!found) return res.status(404).json({ error: "Отчёт не найден" });
+    res.json({ ok: true });
   }));
 
   // ======================================================================

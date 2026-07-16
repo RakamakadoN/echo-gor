@@ -8,8 +8,6 @@ import "./planning-proto.css";
    Разделы без источника показывают заглушку «Данных пока нет».
    ============================================================ */
 const MONTHS_RU = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
-const H = { "x-demo-role": "owner" } as const;
-const HJ = { "Content-Type": "application/json", "x-demo-role": "owner" } as const;
 
 /* ---------- заглушка ---------- */
 const Empty = ({ children }: { children?: any }) => (
@@ -28,7 +26,7 @@ type Overview = {
   levels: { level: string; plan: number; fact: number; deviation: number; done: number }[];
   funnel: { neededSales: number; trials: number; signups: number; leads: number };
   motivation: { level: string; threshold: number; bonus: string }[];
-  daily: { date: string; revenue: number; trials: number; sales: number; comment: string; author: string }[];
+  daily: { id?: string; date: string; revenue: number; trials: number; sales: number; comment: string; author: string }[];
   detailed: {
     branchName: string; branches: { id: string; name: string }[]; groupsCount: number; studentsCount: number; fillPct: number;
     revenue: number; expense: number; profit: number; margin: number;
@@ -111,8 +109,13 @@ const TABS = [
 /* ============================================================
    Компонент
    ============================================================ */
-export function PlanningProtoView({ branches = [] }: { branches?: Branch[] }) {
+export function PlanningProtoView({ branches = [], role = "owner" }: { branches?: Branch[]; role?: "owner" | "branch_manager" }) {
   const now = new Date();
+  // Заголовки с реальной ролью пользователя: сервер пускает owner и branch_manager,
+  // подмена «все ходят как owner» больше не нужна.
+  const H = useMemo(() => ({ "x-demo-role": role } as const), [role]);
+  const HJ = useMemo(() => ({ "Content-Type": "application/json", "x-demo-role": role } as const), [role]);
+  const canEditMotivation = role === "owner";
   const [tab, setTab] = useState("plan");
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
@@ -308,13 +311,21 @@ export function PlanningProtoView({ branches = [] }: { branches?: Branch[] }) {
     try {
       const res = await fetch("/api/mvp/planning/daily", {
         method: "POST", headers: HJ,
-        body: JSON.stringify({ date: dDate, revenue: rev, trials: parseNum(dTrials), sales: parseNum(dSales), comment: dComment.trim(), author: "Управляющий" }),
+        // Автора проставляет сервер из сессии; отчёт привязан к выбранному филиалу.
+        body: JSON.stringify({ date: dDate, revenue: rev, trials: parseNum(dTrials), sales: parseNum(dSales), comment: dComment.trim(), branchId: branchId === "all" ? null : branchId }),
       });
       if (res.ok) {
         const r = await res.json();
         setOv((prev) => ({ ...prev, daily: r.daily || prev.daily }));
         setDRevenue(""); setDTrials(""); setDSales(""); setDComment("");
       }
+    } catch { /* сеть недоступна */ }
+  }
+  async function delDaily(id?: string) {
+    if (!id) return;
+    try {
+      const res = await fetch(`/api/mvp/planning/daily/${encodeURIComponent(id)}`, { method: "DELETE", headers: H });
+      if (res.ok) setOv((prev) => ({ ...prev, daily: (prev.daily || []).filter((d) => d.id !== id) }));
     } catch { /* сеть недоступна */ }
   }
 
@@ -772,12 +783,15 @@ export function PlanningProtoView({ branches = [] }: { branches?: Branch[] }) {
             <button className="btn btn-brand" style={{ padding: "7px 12px", fontSize: 12 }} onClick={addDaily}>+ Добавить</button>
           </div>
           {(ov.daily || []).length === 0 ? <Empty /> : (ov.daily || []).map((d, i) => (
-            <div key={i} className="task-item" style={{ cursor: "default" }}>
+            <div key={d.id || i} className="task-item" style={{ cursor: "default" }}>
               <div className="task-text">
                 <b>{d.date}</b> · {fmt(d.revenue)} ₸ · пробных {d.trials} · продаж {d.sales}
                 {d.comment ? <span style={{ color: "var(--text2)" }}> — {d.comment}</span> : null}
                 <span style={{ color: "var(--text2)", fontSize: 11 }}> · {d.author}</span>
               </div>
+              {d.id && (
+                <span title="Удалить отчёт" style={{ cursor: "pointer", color: "var(--text2)", fontWeight: 700, padding: "0 6px" }} onClick={() => delDaily(d.id)}>✕</span>
+              )}
             </div>
           ))}
         </div>
@@ -822,15 +836,21 @@ export function PlanningProtoView({ branches = [] }: { branches?: Branch[] }) {
                 {motRows.map((s, i) => (
                   <div key={i} className={"ladder-step" + (i === motStep ? " current" : i < motStep ? " reached" : "")} onClick={() => setMotStep(i)}>
                     <div className="ladder-pct">
-                      <input className="ladder-input" style={{ width: 54, textAlign: "center" }} value={s.threshold} onClick={(e) => e.stopPropagation()} onChange={(e) => setMotThreshold(i, e.target.value)} />%
+                      <input className="ladder-input" style={{ width: 54, textAlign: "center" }} value={s.threshold} disabled={!canEditMotivation} onClick={(e) => e.stopPropagation()} onChange={(e) => setMotThreshold(i, e.target.value)} />%
                     </div>
-                    <input className="ladder-input" value={s.bonus} onClick={(e) => e.stopPropagation()} onChange={(e) => setMotBonus(i, e.target.value)} />
+                    <input className="ladder-input" value={s.bonus} disabled={!canEditMotivation} onClick={(e) => e.stopPropagation()} onChange={(e) => setMotBonus(i, e.target.value)} />
                   </div>
                 ))}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 12 }}>
-                <button className="btn btn-brand" style={{ padding: "7px 14px", fontSize: 12 }} disabled={saving} onClick={saveMotivation}>{saving ? "Сохранение…" : "Сохранить лестницу"}</button>
-                <div style={{ fontSize: 11.5, color: "var(--text2)" }}>Порог (%) и бонус редактируются. Кликните на ступень, чтобы выбрать текущий уровень.</div>
+                {canEditMotivation ? (
+                  <>
+                    <button className="btn btn-brand" style={{ padding: "7px 14px", fontSize: 12 }} disabled={saving} onClick={saveMotivation}>{saving ? "Сохранение…" : "Сохранить лестницу"}</button>
+                    <div style={{ fontSize: 11.5, color: "var(--text2)" }}>Порог (%) и бонус редактируются. Кликните на ступень, чтобы выбрать текущий уровень.</div>
+                  </>
+                ) : (
+                  <div style={{ fontSize: 11.5, color: "var(--text2)" }}>Пороги и бонусы настраивает владелец — управляющему лестница доступна для просмотра.</div>
+                )}
               </div>
             </>
           )}
