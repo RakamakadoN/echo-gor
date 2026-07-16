@@ -1,6 +1,14 @@
 import type express from "express";
 import { createHmac, timingSafeEqual, scryptSync, randomBytes } from "node:crypto";
 import {
+  apipayConfigured,
+  apipayWebhookConfigured,
+  apipayCreateInvoice,
+  apipaySimulateStatus,
+  apipayVerifySignature,
+  normalizeKaspiPhone,
+} from "./apipay";
+import {
   initialAnnouncements,
   initialAuditLogs,
   initialBranches,
@@ -5061,6 +5069,235 @@ export function registerMvpApi(app: express.Express) {
     } catch (e: any) {
       res.status(500).json({ error: e.message || "Не удалось загрузить архив" });
     }
+  });
+
+  // ============================================================
+  // ApiPay: счета Kaspi — выставление из СРМ + вебхук об оплате (миграция 052)
+  // ============================================================
+  // СРМ — источник правды (кому/сколько/когда). ApiPay — исполнитель: «выставь
+  // счёт» → ученику push в Kaspi → оплата → вебхук сюда → строка payments
+  // (метод kaspi) + income-проводка, дальше штатный путь кассы владельца.
+  // Провайдер — сменная деталь (server/apipay.ts).
+
+  // Погашение долга — та же логика, что при ручной оплате (POST /api/mvp/payments):
+  // платёж увеличивает amount_paid активных абонементов и снимает флаг debt.
+  async function applyPaymentToDebt(orgId: string, studentId: string, amount: number) {
+    let rest = Math.max(0, Number(amount) || 0);
+    const subs = await supabaseFetch<any[]>(
+      "student_subscriptions",
+      `select=id,price,amount_paid&student_id=eq.${studentId}&status=eq.active&amount_paid=not.is.null&order=starts_on.asc`
+    );
+    let remainingDebt = 0;
+    let hasData = false;
+    for (const s of subs) {
+      hasData = true;
+      let shortfall = Math.max(0, (Number(s.price) || 0) - Number(s.amount_paid));
+      if (shortfall > 0 && rest > 0) {
+        const add = Math.min(shortfall, rest);
+        await supabaseFetch("student_subscriptions", `id=eq.${s.id}`, {
+          method: "PATCH",
+          headers: { Prefer: "return=minimal" },
+          body: JSON.stringify({ amount_paid: Number(s.amount_paid) + add }),
+        });
+        rest -= add;
+        shortfall -= add;
+      }
+      remainingDebt += shortfall;
+    }
+    if (!hasData || remainingDebt <= 0) {
+      const stu = (await supabaseFetch<any[]>(
+        "students",
+        `select=id,status&id=eq.${studentId}&organization_id=eq.${orgId}`
+      ))[0];
+      if (stu && stu.status === "debt") {
+        await supabaseFetch("students", `id=eq.${studentId}&organization_id=eq.${orgId}`, {
+          method: "PATCH",
+          headers: { Prefer: "return=minimal" },
+          body: JSON.stringify({ status: "active" }),
+        });
+      }
+    }
+  }
+
+  // Вебхук ApiPay. Путь ВНЕ /api/mvp: авторизация — подпись HMAC от сырого тела,
+  // а не логин. Обработчик идемпотентен (ApiPay ретраит до 11 раз ~2 часа).
+  app.post("/api/apipay/webhook", async (req, res) => {
+    if (!apipayWebhookConfigured()) return res.status(503).json({ error: "APIPAY_WEBHOOK_SECRET не задан" });
+    const sig = String(req.headers["x-webhook-signature"] || "");
+    if (!apipayVerifySignature((req as any).rawBody, sig)) {
+      return res.status(401).json({ error: "Неверная подпись вебхука" });
+    }
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const event = req.body || {};
+    const inv = event.invoice || {};
+    const apId = inv.id != null ? String(inv.id) : "";
+    const newStatus = String(inv.status || "");
+    if (!apId || !newStatus) return res.status(400).json({ error: "invoice.id/status отсутствуют" });
+
+    const rows = await supabaseFetch<any[]>(
+      "apipay_invoices",
+      `select=*&apipay_invoice_id=eq.${encodeURIComponent(apId)}`
+    );
+    const row = rows[0];
+    // Неизвестный счёт (напр., выставлен вручную из кабинета ApiPay): отвечаем 200,
+    // чтобы не провоцировать 2 часа ретраев; факт пишем в лог сервера.
+    if (!row) {
+      console.warn("[apipay] вебхук по неизвестному счёту:", apId, newStatus);
+      return res.json({ ok: true, unknown: true });
+    }
+    // Дубликат ретрая: этот статус уже применён.
+    if (row.status === newStatus) return res.json({ ok: true, duplicate: true });
+
+    const patch: any = { status: newStatus, last_event: event, updated_at: new Date().toISOString() };
+    if (newStatus === "paid") patch.paid_at = inv.paid_at || new Date().toISOString();
+
+    // Оплата → платёж + проводка ДО фиксации статуса: если здесь упадём, наш
+    // статус останется прежним и следующий ретрай ApiPay доведёт дело до конца.
+    if (newStatus === "paid" && !row.payment_id) {
+      const amount = Number(inv.amount ?? row.amount) || Number(row.amount) || 0;
+      const inserted = await supabaseFetch<any[]>("payments", "", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: row.organization_id,
+          branch_id: row.branch_id,
+          student_id: row.student_id,
+          amount,
+          method: "kaspi",
+          status: "paid",
+          comment: row.description || "Оплата по счёту Kaspi (ApiPay)",
+          created_by: null,
+          sold_by_name: row.sold_by_name || "ApiPay",
+        }),
+      });
+      patch.payment_id = inserted[0].id;
+      await supabaseFetch<any[]>("finance_transactions", "", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: row.organization_id,
+          branch_id: row.branch_id,
+          student_id: row.student_id,
+          payment_id: inserted[0].id,
+          amount,
+          type: "income",
+          category: "tuition",
+          category_id: await ensureIncomeCategoryId(row.organization_id),
+          description: row.description || "Оплата абонемента (счёт Kaspi)",
+        }),
+      });
+      if (row.student_id) {
+        applyPaymentToDebt(row.organization_id, row.student_id, amount)
+          .catch((e) => console.warn("[apipay] погашение долга не применилось:", e?.message || e));
+      }
+    }
+
+    await supabaseFetch("apipay_invoices", `id=eq.${row.id}`, {
+      method: "PATCH",
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify(patch),
+    });
+    res.json({ ok: true });
+  });
+
+  // Выставить счёт Kaspi ученику (сотрудник; телефон берём из карточки, если не передан).
+  app.post("/api/mvp/apipay/invoice", async (req, res) => {
+    const session = getSession(req);
+    if (session.role === "student") return res.status(403).json({ error: "Недоступно из кабинета ученика" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    if (!apipayConfigured()) return res.status(503).json({ error: "APIPAY_API_KEY не задан (кабинет ApiPay → ключ → .env)" });
+    const payload = req.body || {};
+    if (!payload.studentId || !payload.branchId || !payload.amount) {
+      return res.status(400).json({ error: "studentId, branchId and amount are required" });
+    }
+    if (!canSeeBranch(session, payload.branchId)) return res.status(403).json({ error: "Branch access denied" });
+
+    const stu = (await supabaseFetch<any[]>(
+      "students",
+      `select=id,last_name,first_name,phone,parent_phone&id=eq.${payload.studentId}&organization_id=eq.${session.organizationId}`
+    ))[0];
+    if (!stu) return res.status(404).json({ error: "Ученик не найден" });
+    const phone = normalizeKaspiPhone(payload.phone || stu.phone || stu.parent_phone || "");
+    if (!phone) {
+      return res.status(400).json({ error: "Не удалось получить телефон формата 8XXXXXXXXXX — проверьте номер в карточке ученика" });
+    }
+
+    const stuName = [stu.last_name, stu.first_name].filter(Boolean).join(" ");
+    const description = payload.description || `Абонемент · ${stuName || "ученик"}`;
+    const inserted = await supabaseFetch<any[]>("apipay_invoices", "", {
+      method: "POST",
+      body: JSON.stringify({
+        organization_id: session.organizationId,
+        branch_id: payload.branchId,
+        student_id: payload.studentId,
+        phone,
+        amount: payload.amount,
+        description,
+        status: "processing",
+        sold_by_name: session.fullName || session.role,
+        created_by: session.userId.startsWith("demo-") ? null : session.userId,
+      }),
+    });
+    const row = inserted[0];
+
+    try {
+      const created = await apipayCreateInvoice({
+        phone_number: phone,
+        amount: Number(payload.amount),
+        description,
+        external_order_id: row.id,
+      });
+      const patch = {
+        apipay_invoice_id: created?.id != null ? String(created.id) : null,
+        status: String(created?.status || "processing"),
+        updated_at: new Date().toISOString(),
+      };
+      await supabaseFetch("apipay_invoices", `id=eq.${row.id}`, {
+        method: "PATCH",
+        headers: { Prefer: "return=minimal" },
+        body: JSON.stringify(patch),
+      });
+      return res.status(201).json({ invoice: { ...row, ...patch } });
+    } catch (e: any) {
+      const error = String(e?.message || e);
+      await supabaseFetch("apipay_invoices", `id=eq.${row.id}`, {
+        method: "PATCH",
+        headers: { Prefer: "return=minimal" },
+        body: JSON.stringify({ status: "error", error, updated_at: new Date().toISOString() }),
+      }).catch(() => {});
+      return res.status(502).json({ error: `Счёт не выставлен: ${error}` });
+    }
+  });
+
+  // Список счетов Kaspi (для экрана владельца/управляющего).
+  app.get("/api/mvp/apipay/invoices", async (req, res) => {
+    const session = getSession(req);
+    if (session.role === "student") return res.status(403).json({ error: "Недоступно из кабинета ученика" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const org = String(session.organizationId);
+    const [rows, students] = await Promise.all([
+      supabaseFetch<any[]>(
+        "apipay_invoices",
+        `select=id,apipay_invoice_id,student_id,branch_id,payment_id,phone,amount,description,status,error,sold_by_name,created_at,paid_at&organization_id=eq.${org}&order=created_at.desc&limit=200`
+      ),
+      supabaseFetch<any[]>("students", `select=id,last_name,first_name&organization_id=eq.${org}`),
+    ]);
+    const name: Record<string, string> = Object.fromEntries(
+      students.map((s) => [s.id, [s.last_name, s.first_name].filter(Boolean).join(" ")])
+    );
+    res.json({ invoices: rows.map((r) => ({ ...r, student_name: name[r.student_id] || "—" })) });
+  });
+
+  // Песочница ApiPay: эмулировать смену статуса (paid и т.п.) — вебхук придёт как настоящий.
+  app.post("/api/mvp/apipay/invoice/:id/simulate", async (req, res) => {
+    const session = getSession(req);
+    if (session.role !== "owner") return res.status(403).json({ error: "Доступ только владельцу" });
+    if (!supabaseEnabled) return res.status(503).json({ error: "Supabase is not configured" });
+    const row = (await supabaseFetch<any[]>(
+      "apipay_invoices",
+      `select=id,apipay_invoice_id&id=eq.${req.params.id}&organization_id=eq.${session.organizationId}`
+    ))[0];
+    if (!row?.apipay_invoice_id) return res.status(404).json({ error: "Счёт не найден или ещё не создан в ApiPay" });
+    await apipaySimulateStatus(row.apipay_invoice_id, String(req.body?.status || "paid"));
+    res.json({ ok: true });
   });
 
   // ============================================================

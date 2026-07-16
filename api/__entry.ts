@@ -12,7 +12,8 @@ import { registerGeminiApi } from "../server/geminiApi";
 import { registerMagomedApi } from "../server/magomedApi";
 
 const app = express();
-app.use(express.json());
+// rawBody нужен вебхуку ApiPay: подпись HMAC считается от сырых байт тела.
+app.use(express.json({ verify: (req, _res, buf) => { (req as any).rawBody = buf; } }));
 registerMvpApi(app);
 registerGeminiApi(app);
 registerMagomedApi(app);
